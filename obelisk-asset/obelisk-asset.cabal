@@ -1,0 +1,33 @@
+Name: obelisk-asset
+Version: 0.1
+Synopsis: Project Synopsis Here
+Description: Project Description Here
+License: AllRightsReserved
+Author: Author
+Maintainer: maintainer@example.com
+Stability: Experimental
+Category: Web
+Build-type: Simple
+Cabal-version: >=1.2
+
+library
+  hs-source-dirs: src
+
+  build-depends:
+      base
+    , attoparsec
+    , bytestring
+    , containers
+    , directory
+    , filepath
+    , snap
+    , snap-core
+    , text
+    , transformers
+    , unix
+  exposed-modules:
+      Obelisk.Asset.Accept
+      Obelisk.Asset.Serve
+
+  other-extensions: TemplateHaskell
+  ghc-options: -threaded -Wall -Werror -fno-warn-unused-do-bind -fwarn-tabs -funbox-strict-fields -O2 -fprof-auto-calls -rtsopts
