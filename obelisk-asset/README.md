@@ -1,1 +1,0 @@
-# obelisk-asset

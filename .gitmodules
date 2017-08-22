@@ -1,0 +1,3 @@
+[submodule "obelisk-asset"]
+	path = obelisk-asset
+	url = git@github.com:obsidiansystems/obelisk-asset.git
