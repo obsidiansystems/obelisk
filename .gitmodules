@@ -1,3 +1,6 @@
 [submodule "obelisk-asset"]
 	path = obelisk-asset
 	url = git@github.com:obsidiansystems/obelisk-asset.git
+[submodule "obelisk-weighter"]
+	path = obelisk-weighter
+	url = https://github.com/obsidiansystems/obelisk-weighter.git
