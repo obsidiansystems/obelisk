@@ -4,3 +4,6 @@
 [submodule "obelisk-weighter"]
 	path = obelisk-weighter
 	url = https://github.com/obsidiansystems/obelisk-weighter.git
+[submodule "obelisk-haskpress"]
+	path = obelisk-haskpress
+	url = https://github.com/obsidiansystems/obelisk-haskpress.git
