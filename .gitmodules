@@ -7,3 +7,6 @@
 [submodule "obelisk-haskpress"]
 	path = obelisk-haskpress
 	url = https://github.com/obsidiansystems/obelisk-haskpress.git
+[submodule "obelisk-font-awesome"]
+	path = obelisk-font-awesome
+	url = https://github.com/obsidiansystems/obelisk-font-awesome.git
