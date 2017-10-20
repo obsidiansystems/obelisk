@@ -10,3 +10,6 @@
 [submodule "obelisk-font-awesome"]
 	path = obelisk-font-awesome
 	url = git@github.com:obsidiansystems/obelisk-font-awesome.git
+[submodule "obelisk-https"]
+	path = obelisk-https
+	url = git@github.com:obsidiansystems/obelisk-https
