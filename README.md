@@ -6,18 +6,18 @@ In your new project's git repository:
 ```bash
 git init
 ```
-The ob-init.hs script will add and update the focus submodule as well as
+The ob-init.hs script will add and update the obelisk submodule as well as
 generate the necessary boilerplate files and folders. Enter the following in
 your console, followed by your project's name when prompted. 
 
 ```bash
 ./ob-init.hs
 ```
-Build the frontend by running ./focus/build-frontend
+Build the frontend by running ./obelisk/build-frontend
 
 Now you can try running the backend in GHCi by running
 
-./focus/ghci-backend
+./obelisk/ghci-backend
 
 and then typing
 
