@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+nix-shell -A shells.ghc --run '
+  cd frontend
+  ghcid -W -c"cabal new-repl exe:frontend"
+'

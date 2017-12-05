@@ -13,3 +13,6 @@
 [submodule "obelisk-https"]
 	path = obelisk-https
 	url = git@github.com:obsidiansystems/obelisk-https
+[submodule "reflex-platform"]
+	path = reflex-platform
+	url = git@github.com:reflex-frp/reflex-platform.git

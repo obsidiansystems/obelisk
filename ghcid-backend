@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+nix-shell -A shells.ghc --run '
+  cd backend
+  ghcid -W -c"date >> asdf; cabal new-repl exe:backend" --restart=../common/src
+'

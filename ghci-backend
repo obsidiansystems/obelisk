@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo -ne '\033]0;'$0'\007'
+nix-shell -A shells.ghc --run '
+  cabal new-repl exe:backend
+  '
