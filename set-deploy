@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# When given a designated directory and a private key file
+# this script will create a directory layout that is suitable
+# for an obelisk project
+
+REPO=$(git config --get remote.origin.url)
+
+LOC=$1
+KEY=$(readlink -f "$2")
+
+cd $LOC
+echo "creating $LOC/deploy...\n"
+mkdir deploy
+cd deploy 
+
+echo "creating $LOC/deploy/config...\n"
+mkdir config
+
+echo "copying ssh key $LOC/deploy/ssh_key...\n"
+cp "$KEY" ssh_key
+chmod 700 ssh_key
+
+echo "cloning repository...\n"
+git clone "$REPO" src
+cd src 
+echo "updating repository submodules...\n"
+git submodule update --init --recursive
