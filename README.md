@@ -1,5 +1,5 @@
-Assuming you've already added SSH keys to both your github and gitlab
-accounts, please proceed with the instructions that follow. 
+Assuming you've already added SSH keys to your github account,
+please proceed with the instructions that follow. 
 
 In your new project's git repository:
 
