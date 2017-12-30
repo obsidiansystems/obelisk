@@ -64,7 +64,7 @@ rec {
       ios = {
         ${if ios == null then null else frontendName} = {
           executableName = "frontend";
-          #TODO: Static assets
+          ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
         } // ios;
       };
     });
