@@ -1,0 +1,14 @@
+name: obelisk-backend
+version: 0.1
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  hs-source-dirs: src
+  build-depends: base,
+                 snap,
+                 snap-server,
+                 data-default,
+                 obelisk-asset-serve,
+                 bytestring
+  exposed-modules: Obelisk.Backend

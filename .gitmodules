@@ -1,18 +1,18 @@
 [submodule "obelisk-asset"]
-	path = obelisk-asset
+	path = asset
 	url = git@github.com:obsidiansystems/obelisk-asset.git
 [submodule "obelisk-font-awesome"]
-	path = obelisk-font-awesome
+	path = font-awesome
 	url = git@github.com:obsidiansystems/obelisk-font-awesome.git
 [submodule "obelisk-https"]
-	path = obelisk-https
+	path = https
 	url = git@github.com:obsidiansystems/obelisk-https
 [submodule "reflex-platform"]
 	path = reflex-platform
 	url = git@github.com:reflex-frp/reflex-platform.git
 [submodule "obelisk-snap"]
-	path = obelisk-snap
+	path = snap
 	url = git@github.com:obsidiansystems/obelisk-snap.git
 [submodule "obelisk-example"]
-	path = obelisk-example
+	path = example
 	url = git@github.com:obsidiansystems/obelisk-example.git
