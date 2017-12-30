@@ -36,6 +36,6 @@ backend _ = do
         }
   -- Start the web server
   httpServe httpConf $ route
-    [ ("", serveAssets "frontend.jsexe.assets" "frontend.jsexe")
+    [ ("", serveAssets "frontend.jsexe.assets" "frontend.jsexe") --TODO: Can we prevent naming conflicts between frontend.jsexe and static?
     , ("", serveAssets "static.assets" "static")
     ]
