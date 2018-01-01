@@ -9,6 +9,7 @@ import Control.Monad
 import Data.Bits
 import qualified Data.ByteString.Lazy as LBS
 import Data.Function (on)
+import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Obelisk.Command.Thunk
@@ -48,7 +49,9 @@ nixBuildDashA path attr = do
     ] Nothing Nothing
   waitForProcess p >>= \case
     ExitSuccess -> return ()
-    _ -> LBS.putStr =<< LBS.hGetContents err
+    _ -> do
+      LBS.putStr =<< LBS.hGetContents err
+      fail "nix-build failed"
   T.unpack . T.strip <$> T.hGetContents out
 
 --TODO: Handle errors
@@ -63,15 +66,18 @@ findProjectObeliskCommand target = do
         False -> go $ takeDirectory this
         True -> do
           thisStat <- getFileStatus this
-          guard $ isSecure thisStat
+          when (not $ isSecure thisStat) $
+            fail $ "is writable by more than just the current user: " <> this
           doesDirectoryExist (this </> ".obelisk") >>= \case
             True -> do
               let obDir = this </> ".obelisk"
               obDirStat <- getFileStatus obDir
-              guard $ isSecure obDirStat
+              when (not $ isSecure obDirStat) $
+                fail $ "is writable by more than just the current user: " <> obDir
               let implThunk = obDir </> "impl"
               implThunkStat <- getFileStatus implThunk
-              guard $ isSecure implThunkStat
+              when (not $ isSecure implThunkStat) $
+                fail $ "is writable by more than just the current user: " <> implThunk
               obeliskCommandPkg <- nixBuildDashA implThunk "command"
               return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
             False -> do
