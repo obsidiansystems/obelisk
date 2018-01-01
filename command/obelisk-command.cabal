@@ -1,0 +1,32 @@
+name: obelisk-command
+version: 0.1
+cabal-version: >= 1.8
+build-type: Simple
+
+library
+  hs-source-dirs: src
+  build-depends:
+      aeson
+    , aeson-pretty
+    , base
+    , bytestring
+    , directory
+    , filepath
+    , github
+    , hit
+    , network-uri
+    , optparse-applicative
+    , process
+    , text
+    , unix
+    , yaml
+  exposed-modules:
+    Obelisk.Command
+    Obelisk.Command.Project
+    Obelisk.Command.Thunk
+  ghc-options: -Wall
+
+executable ob
+  main-is: src-bin/ob.hs
+  build-depends: base, obelisk-command
+  ghc-options: -Wall -O2

@@ -1,10 +1,30 @@
 { system ? builtins.currentSystem }:
 let reflex-platform = import ./reflex-platform { inherit system; };
     pkgs = reflex-platform.nixpkgs;
+    # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
+    ghcObelisk = reflex-platform.ghc.override {
+      overrides = self: super: with pkgs.haskell.lib; {
+        #TODO: Eliminate this when https://github.com/phadej/github/pull/307 makes its way to reflex-platform
+        github = overrideCabal super.github (drv: {
+          src = pkgs.fetchFromGitHub {
+            owner = "ryantrinkle";
+            repo = "github";
+            rev = "8f543cdc07876bfb7b924d3722e3dbc1df4b02ca";
+            sha256 = "0vcnx9cxqd821kmjx1r4cvj95zs742qm1pwqnb52vw3djplbqd86";
+          };
+          sha256 = null;
+          revision = null;
+          editedCabalFile = null;
+        });
+        # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
+        obelisk-command = justStaticExecutables (self.callCabal2nix "obelisk-command" ./command {});
+      };
+    };
 in
 with pkgs.lib;
 rec {
   inherit reflex-platform;
+  command = ghcObelisk.obelisk-command;
   nullIfAbsent = p: if pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
   processAssets = { src, packageName ? "static", moduleName ? "Static" }: pkgs.runCommand "asset-manifest" {
