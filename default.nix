@@ -19,8 +19,23 @@ let reflex-platform = import ./reflex-platform { inherit system; };
         });
 
         # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
-        #TODO: Put zsh completions in $out/share/zsh/vendor-completions and other completions in similar places
-        obelisk-command = justStaticExecutables (self.callCabal2nix "obelisk-command" ./command {});
+        obelisk-command = overrideCabal (justStaticExecutables (self.callCabal2nix "obelisk-command" ./command {})) (drv: {
+          postInstall = (drv.postInstall or "") + ''
+            OB="$out/bin/ob"
+
+            BASH_COMP="$out/share/bash-completion/completions"
+            mkdir -p "$BASH_COMP"
+            "$OB" --bash-completion-script "$OB" >"$BASH_COMP/ob"
+
+            ZSH_COMP="$out/share/zsh/vendor-completions"
+            mkdir -p "$ZSH_COMP"
+            "$OB" --zsh-completion-script "$OB" >"$ZSH_COMP/_ob"
+
+            FISH_COMP="$out/share/fish/vendor_completions.d"
+            mkdir -p "$FISH_COMP"
+            "$OB" --fish-completion-script "$OB" >"$FISH_COMP/ob.fish"
+          '';
+        });
 
         optparse-applicative = self.callHackage "optparse-applicative" "0.14.0.0" {};
       };
