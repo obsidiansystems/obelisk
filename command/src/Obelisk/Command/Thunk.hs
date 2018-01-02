@@ -9,24 +9,26 @@ module Obelisk.Command.Thunk
   , getLatestRev
   , updateThunkToLatest
   , createThunkWithLatest
+  , nixBuildThunkAttrWithCache
   ) where
 
 import Control.Exception
 import Control.Monad
-import qualified Data.ByteString.Lazy as LBS
 import Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
+import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable
 import Data.Git.Ref (Ref)
 import qualified Data.Git.Ref as Ref
-import Data.Maybe
-import Data.Monoid
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
+import Data.Maybe
+import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Data.Text.Encoding
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Yaml (parseMaybe, (.:))
 import qualified Data.Yaml as Yaml
 import GitHub
@@ -36,6 +38,9 @@ import Network.URI
 import System.Directory
 import System.Exit
 import System.FilePath
+import System.IO
+import System.IO.Error
+import System.Posix (modificationTime, getSymbolicLinkStatus)
 import System.Process
 
 -- | A reference to the exact data that a thunk should translate into
@@ -241,3 +246,45 @@ getHubAuth domain = do
       return $ OAuth $ encodeUtf8 token
 
 --TODO: when checking something out, make a shallow clone
+
+-- | Checks a cache directory to see if there is a fresh symlink
+-- to the result of building an attribute of a thunk.
+-- If no cache hit is found, nix-build is called to build the attribute
+-- and the result is symlinked into the cache.
+nixBuildThunkAttrWithCache :: FilePath
+                           -- ^ Path to directory containing Thunk
+                           -> String
+                           -- ^ Attribute to build
+                           -> IO FilePath
+                           -- ^ Symlink to cached or built nix output
+-- WARNING: If the thunk uses an impure reference such as '<nixpkgs>'
+-- the caching mechanism will fail as it merely measures the modification
+-- time of the cache link and the expression to build.
+nixBuildThunkAttrWithCache thunkDir attr = do
+  let cacheErrHandler e
+        | isDoesNotExistError e = return Nothing -- expected from a cache miss
+        | otherwise = hPutStrLn stderr (displayException e) >> return Nothing
+      cacheDir = thunkDir </> ".attr-cache"
+      cachePath = cacheDir </> attr <.> "out"
+  createDirectoryIfMissing False cacheDir
+  latestChange <- maximum <$> mapM (getModificationTime . (thunkDir </>)) ["default.nix", "github.json"]
+  cacheHit <- handle cacheErrHandler $ do
+    cacheTime <- posixSecondsToUTCTime . realToFrac . modificationTime <$> getSymbolicLinkStatus cachePath
+    return $ if latestChange <= cacheTime
+      then Just cachePath
+      else Nothing
+  case cacheHit of
+    Just c -> return c
+    Nothing -> do
+      hPutStrLn stderr (mconcat [ thunkDir, ":", attr, " not cached, building ..."])
+      (_, _, err, p) <- runInteractiveProcess "nix-build"
+        [ thunkDir
+        , "-A", attr
+        , "--indirect", "--add-root", cachePath
+        ] Nothing Nothing
+      waitForProcess p >>= \case
+        ExitSuccess -> return ()
+        _ -> do
+          LBS.putStr =<< LBS.hGetContents err
+          fail "nix-build failed"
+      return cachePath

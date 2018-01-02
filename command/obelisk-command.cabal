@@ -18,6 +18,7 @@ library
     , optparse-applicative
     , process
     , text
+    , time
     , transformers
     , unix
     , yaml

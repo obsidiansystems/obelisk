@@ -6,21 +6,21 @@ module Obelisk.Command.Project
   ) where
 
 import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Trans.State
 import Data.Bits
-import qualified Data.ByteString.Lazy as LBS
 import Data.Function (on)
 import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import Obelisk.Command.Thunk
 import System.Directory
-import System.Exit
 import System.FilePath
 import System.IO
-import System.Posix (FileStatus, getFileStatus, deviceID, fileID, getRealUserID, fileOwner, fileMode)
-import System.Process
-import Control.Monad.IO.Class
-import Control.Monad.Trans.State
+import System.Posix (FileStatus, getFileStatus , deviceID, fileID, getRealUserID , fileOwner, fileMode)
+
+import Obelisk.Command.Thunk
+
+--TODO: Make this module resilient to random exceptions
 
 --TODO: Don't hardcode this
 -- | Source for the Obelisk project
@@ -37,26 +37,6 @@ initProject target = do
   let obDir = target </> ".obelisk"
   createDirectory obDir
   createThunkWithLatest (obDir </> "impl") obeliskSource
-
-nixBuildDashA :: FilePath -> String -> IO FilePath
-nixBuildDashA path attr = do
-  -- We need to keep 'err' around, because nix-build seems to crash if it runs
-  -- for long enough and we've let 'err' die.  It's probably dying from the
-  -- closed output pipe, but I haven't investigated.  The code below that
-  -- outputs the contents of 'err' when an error is hit is sufficient to keep it
-  -- alive.
-  (_, out, err, p) <- runInteractiveProcess "nix-build" --TODO: Make this package depend on nix-prefetch-url properly
-    [ "--no-out-link"
-    , path
-    , "-A"
-    , attr
-    ] Nothing Nothing
-  waitForProcess p >>= \case
-    ExitSuccess -> return ()
-    _ -> do
-      LBS.putStr =<< LBS.hGetContents err
-      fail "nix-build failed"
-  T.unpack . T.strip <$> T.hGetContents out
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns
@@ -99,7 +79,7 @@ findProjectObeliskCommand target = do
   (result, insecurePaths) <- runStateT (findImpl target targetStat) []
   case (result, insecurePaths) of
     (Just projDir, []) -> do
-       obeliskCommandPkg <- nixBuildDashA (projDir </> ".obelisk" </> "impl") "command"
+       obeliskCommandPkg <- nixBuildThunkAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
        return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
