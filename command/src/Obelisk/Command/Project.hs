@@ -17,7 +17,7 @@ import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO
-import System.Posix (getFileStatus, deviceID, fileID, getRealUserID, fileOwner, fileMode)
+import System.Posix (FileStatus, getFileStatus, deviceID, fileID, getRealUserID, fileOwner, fileMode)
 import System.Process
 import Control.Monad.IO.Class
 import Control.Monad.Trans.State
@@ -69,12 +69,14 @@ findProjectObeliskCommand target = do
       isSecure s = fileOwner s == myUid && fileMode s .&. 0o22 == 0
       -- | Get the FilePath to the containing project directory, if there is
       -- one; accumulate insecure directories we visited along the way
-      findImpl :: FilePath -> StateT [FilePath] IO (Maybe FilePath)
-      findImpl this = liftIO (doesDirectoryExist this) >>= \case
+      findImpl :: FilePath -> FileStatus -> StateT [FilePath] IO (Maybe FilePath)
+      findImpl this thisStat = liftIO (doesDirectoryExist this) >>= \case
         -- It's not a directory, so it can't be a project
-        False -> findImpl $ takeDirectory this
+        False -> do
+          let dir = takeDirectory this
+          dirStat <- liftIO $ getFileStatus dir
+          findImpl dir dirStat
         True -> do
-          thisStat <- liftIO $ getFileStatus this
           when (not $ isSecure thisStat) $ modify (this:)
           liftIO (doesDirectoryExist (this </> ".obelisk")) >>= \case
             True -> do
@@ -92,8 +94,9 @@ findProjectObeliskCommand target = do
                   isSameFileAs = (==) `on` fileIdentity
               if thisStat `isSameFileAs` nextStat
                 then return Nothing -- Found a cycle; probably hit root directory
-                else findImpl next
-  (result, insecurePaths) <- runStateT (findImpl target) []
+                else findImpl next nextStat
+  targetStat <- liftIO $ getFileStatus target
+  (result, insecurePaths) <- runStateT (findImpl target targetStat) []
   case (result, insecurePaths) of
     (Just projDir, []) -> do
        obeliskCommandPkg <- nixBuildDashA (projDir </> ".obelisk" </> "impl") "command"
