@@ -19,6 +19,7 @@ noHandoff :: Parser Bool
 noHandoff = flag True False $ mconcat
   [ long "no-handoff"
   , help "Do not hand off execution to a project-specific implementation of this command"
+  , hidden
   ]
 
 argsInfo :: ParserInfo Args
