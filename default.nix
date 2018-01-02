@@ -1,5 +1,6 @@
 { system ? builtins.currentSystem }:
 let reflex-platform = import ./reflex-platform { inherit system; };
+    inherit (reflex-platform) hackGet;
     pkgs = reflex-platform.nixpkgs;
     # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
     ghcObelisk = reflex-platform.ghc.override {
@@ -35,7 +36,7 @@ rec {
     inherit src;
     outputs = [ "out" "haskellManifest" "symlinked" ];
     buildInputs = [
-      (reflex-platform.ghc.callCabal2nix "obelisk-asset-manifest" ./asset/manifest {})
+      (reflex-platform.ghc.callCabal2nix "obelisk-asset-manifest" (hackGet ./asset + "/manifest") {})
     ];
   } ''
     set -euo pipefail
@@ -58,13 +59,13 @@ rec {
           ${frontendName} = nullIfAbsent (base + "/frontend");
           ${commonName} = nullIfAbsent (base + "/common");
           ${backendName} = nullIfAbsent (base + "/backend");
-          obelisk-asset-serve = ./asset/serve;
-          obelisk-asset-manifest = ./asset/manifest;
-          obelisk-backend = ./backend;
         };
         overrides = self: super: {
           heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
           ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
+          obelisk-asset-serve = self.callCabal2nix "obelisk-asset-serve" (hackGet ./asset + "/serve") {};
+          obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./asset + "/manifest") {};
+          obelisk-backend = self.callCabal2nix "obelisk-backend" ./backend {};
         };
     in {
       inherit packages overrides;
