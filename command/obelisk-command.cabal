@@ -18,6 +18,7 @@ library
     , optparse-applicative
     , process
     , text
+    , transformers
     , unix
     , yaml
   exposed-modules:

@@ -16,8 +16,11 @@ import Obelisk.Command.Thunk
 import System.Directory
 import System.Exit
 import System.FilePath
+import System.IO
 import System.Posix (getFileStatus, deviceID, fileID, getRealUserID, fileOwner, fileMode)
 import System.Process
+import Control.Monad.IO.Class
+import Control.Monad.Trans.State
 
 --TODO: Don't hardcode this
 -- | Source for the Obelisk project
@@ -60,32 +63,45 @@ nixBuildDashA path attr = do
 findProjectObeliskCommand :: FilePath -> IO (Maybe FilePath)
 findProjectObeliskCommand target = do
   myUid <- getRealUserID
-  let isSecure s = fileOwner s == myUid && fileMode s .&. 0o22 == 0
-      go this = doesDirectoryExist this >>= \case
+  let --TODO: Is there a better way to ask if anyone else can write things?
+      --E.g. what about ACLs?
+      isSecure s = fileOwner s == myUid && fileMode s .&. 0o22 == 0
+      -- | Get the FilePath to the containing project directory, if there is
+      -- one; accumulate insecure directories we visited along the way
+      findImpl :: FilePath -> StateT [FilePath] IO (Maybe FilePath)
+      findImpl this = liftIO (doesDirectoryExist this) >>= \case
         -- It's not a directory, so it can't be a project
-        False -> go $ takeDirectory this
+        False -> findImpl $ takeDirectory this
         True -> do
-          thisStat <- getFileStatus this
-          when (not $ isSecure thisStat) $
-            fail $ "is writable by more than just the current user: " <> this
-          doesDirectoryExist (this </> ".obelisk") >>= \case
+          thisStat <- liftIO $ getFileStatus this
+          when (not $ isSecure thisStat) $ modify (this:)
+          liftIO (doesDirectoryExist (this </> ".obelisk")) >>= \case
             True -> do
               let obDir = this </> ".obelisk"
-              obDirStat <- getFileStatus obDir
-              when (not $ isSecure obDirStat) $
-                fail $ "is writable by more than just the current user: " <> obDir
+              obDirStat <- liftIO $ getFileStatus obDir
+              when (not $ isSecure obDirStat) $ modify (obDir:)
               let implThunk = obDir </> "impl"
-              implThunkStat <- getFileStatus implThunk
-              when (not $ isSecure implThunkStat) $
-                fail $ "is writable by more than just the current user: " <> implThunk
-              obeliskCommandPkg <- nixBuildDashA implThunk "command"
-              return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
+              implThunkStat <- liftIO $ getFileStatus implThunk
+              when (not $ isSecure implThunkStat) $ modify (implThunk:)
+              return $ Just this
             False -> do
               let next = this </> ".." -- Use ".." instead of chopping off path segments, so that if the current directory is moved during the traversal, the traversal stays consistent
-              nextStat <- getFileStatus next
+              nextStat <- liftIO $ getFileStatus next
               let fileIdentity fs = (deviceID fs, fileID fs)
                   isSameFileAs = (==) `on` fileIdentity
               if thisStat `isSameFileAs` nextStat
                 then return Nothing -- Found a cycle; probably hit root directory
-                else go next
-  go target
+                else findImpl next
+  (result, insecurePaths) <- runStateT (findImpl target) []
+  case (result, insecurePaths) of
+    (Just projDir, []) -> do
+       obeliskCommandPkg <- nixBuildDashA (projDir </> ".obelisk" </> "impl") "command"
+       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
+    (Nothing, _) -> return Nothing
+    (Just projDir, _) -> do
+      T.hPutStr stderr $ T.unlines
+        [ "Error: Found a project at " <> T.pack (normalise projDir) <> ", but had to traverse one or more insecure directories to get there:"
+        , T.unlines $ fmap (T.pack . normalise) insecurePaths
+        , "Please ensure that all of these directories are owned by you and are not writable by anyone else."
+        ]
+      return Nothing
