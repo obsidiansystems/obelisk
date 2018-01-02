@@ -46,7 +46,8 @@ nixBuildDashA path attr = do
   -- outputs the contents of 'err' when an error is hit is sufficient to keep it
   -- alive.
   (_, out, err, p) <- runInteractiveProcess "nix-build" --TODO: Make this package depend on nix-prefetch-url properly
-    [ path
+    [ "--no-out-link"
+    , path
     , "-A"
     , attr
     ] Nothing Nothing
