@@ -1,0 +1,8 @@
+**/dist
+**/.cabal-sandbox
+**/cabal.sandbox.config
+result
+
+TAGS
+tags
+ctags
