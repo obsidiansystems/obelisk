@@ -35,8 +35,11 @@ obeliskSource = ThunkSource_GitHub $ GitHubSource
 initProject :: FilePath -> IO ()
 initProject target = do
   let obDir = target </> ".obelisk"
+      implDir = obDir </> "impl"
   createDirectory obDir
-  createThunkWithLatest (obDir </> "impl") obeliskSource
+  createThunkWithLatest implDir obeliskSource
+  _ <- nixBuildThunkAttrWithCache implDir "command"
+  return ()
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns
