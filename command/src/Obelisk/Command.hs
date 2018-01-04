@@ -48,6 +48,11 @@ thunkCommand = hsubparser $ mconcat
   [ command "update" $ info (ThunkCommand_Update <$> some (strArgument (action "directory"))) $ progDesc "Update a thunk to the latest revision available"
   ]
 
+parserPrefs :: ParserPrefs
+parserPrefs = defaultPrefs
+  { prefShowHelpOnEmpty = True
+  }
+
 main :: IO ()
 main = do
   myArgs <- getArgs
@@ -55,11 +60,7 @@ main = do
   --but in the case where this implementation of 'ob' doesn't support all
   --arguments being passed along, this could fail.  For now, we don't bother
   --with optparse-applicative until we've done the handoff.
-
-  --TODO: Doing handoff before command-line argument completion is currently too
-  --slow; we need to make it faster, probably by avoiding calling nix-build when
-  --we know things are fresh.
-  let go = ob . _args_command =<< execParser argsInfo
+  let go = ob . _args_command =<< customExecParser parserPrefs argsInfo
   case myArgs of
     "--no-handoff" : _ -> go -- If we've been told not to hand off, don't hand off
     _ -> do
