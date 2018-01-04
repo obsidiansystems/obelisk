@@ -1,14 +1,19 @@
 {-# LANGUAGE LambdaCase #-}
 module Obelisk.Command where
 
-import Obelisk.Command.Project
-import Obelisk.Command.Thunk
 import Options.Applicative
 import System.Environment
+import System.IO
 import System.Posix.Process
 
+import Obelisk.Command.Project
+import Obelisk.Command.Thunk
+
 data Args = Args
-  { _args_handoff :: Bool
+  { _args_noHandOffPassed :: Bool
+  -- ^ This flag is actually handled outside of the optparse-applicative parser, but we detect whether
+  -- it has gotten through in order to notify the user that it should only be passed once and as the very
+  -- first argument
   , _args_command :: ObCommand
   }
 
@@ -16,7 +21,7 @@ args :: Parser Args
 args = Args <$> noHandoff <*> obCommand
 
 noHandoff :: Parser Bool
-noHandoff = flag True False $ mconcat
+noHandoff = flag False True $ mconcat
   [ long "no-handoff"
   , help "Do not hand off execution to a project-specific implementation of this command"
   , hidden
@@ -48,6 +53,11 @@ thunkCommand = hsubparser $ mconcat
   [ command "update" $ info (ThunkCommand_Update <$> some (strArgument (action "directory"))) $ progDesc "Update a thunk to the latest revision available"
   ]
 
+parserPrefs :: ParserPrefs
+parserPrefs = defaultPrefs
+  { prefShowHelpOnEmpty = True
+  }
+
 main :: IO ()
 main = do
   myArgs <- getArgs
@@ -55,16 +65,18 @@ main = do
   --but in the case where this implementation of 'ob' doesn't support all
   --arguments being passed along, this could fail.  For now, we don't bother
   --with optparse-applicative until we've done the handoff.
-
-  --TODO: Doing handoff before command-line argument completion is currently too
-  --slow; we need to make it faster, probably by avoiding calling nix-build when
-  --we know things are fresh.
-  let go = ob . _args_command =<< execParser argsInfo
+  let go as = do
+        Args noHandoffPassed cmd <- handleParseResult (execParserPure parserPrefs argsInfo as)
+        case noHandoffPassed of
+          False -> return ()
+           --TODO: Use a proper logging system with log levels and whatnot
+          True -> hPutStrLn stderr "NOTICE: --no-handoff should only be passed once and as the first argument; ignoring"
+        ob cmd
   case myArgs of
-    "--no-handoff" : _ -> go -- If we've been told not to hand off, don't hand off
-    _ -> do
+    "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
+    as -> do
       findProjectObeliskCommand "." >>= \case
-        Nothing -> go -- If we aren't in a project, just run ourselves
+        Nothing -> go as -- If we aren't in a project, just run ourselves
         Just impl -> do
           -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
           executeFile impl False ("--no-handoff" : myArgs) Nothing
