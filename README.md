@@ -1,7 +1,7 @@
 ## Installation
 1. Set up nix caches
     1. Add this to `/etc/nixos/configuration.nix`:
-      ```nix
+      ```
       nix.binaryCaches = [ "https://nixcache.reflex-frp.org" ];
       nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
       ```
@@ -9,7 +9,7 @@
     1. [Get set up to connect to GitHub with SSH](https://help.github.com/articles/connecting-to-github-with-ssh/)
     1. [Create a GitHub personal access token](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/)
     1. Add this to `/etc/nixos/configuration.nix`:
-      ```nix
+      ```
       nix.envVars = {
         NIX_GITHUB_PRIVATE_USERNAME = "your-github-username";
         NIX_GITHUB_PRIVATE_PASSWORD = "your-github-personal-access-token";
