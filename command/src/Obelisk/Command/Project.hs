@@ -39,15 +39,14 @@ obeliskSourceWithBranch branch = ThunkSource_GitHub $ GitHubSource
   , _gitHubSource_private = True
   }
 
--- TODO pass an optional argument 
-initProject :: FilePath -> Name Branch -> IO ()
+initProject :: FilePath -> Maybe (Name Branch) -> IO ()
 initProject target branch = do
   let obDir = target </> ".obelisk"
       implDir = obDir </> "impl"
   createDirectory obDir
   case branch of 
-       "" -> createThunkWithLatest implDir obeliskSource
-       _  -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+       Nothing -> createThunkWithLatest implDir obeliskSource
+       Just b -> createThunkWithLatest implDir $ obeliskSourceWithBranch b
   _ <- nixBuildThunkAttrWithCache implDir "command"
   return ()
 

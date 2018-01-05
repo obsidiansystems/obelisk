@@ -92,7 +92,7 @@ main = do
 
 ob :: ObCommand -> IO ()
 ob = \case
-  ObCommand_Init branch -> initProject "." $ fromMaybe "master" branch
+  ObCommand_Init branch -> initProject "." branch
   ObCommand_Dev -> putStrLn "Dev!"
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
