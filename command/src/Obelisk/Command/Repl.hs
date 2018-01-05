@@ -13,7 +13,7 @@ runRepl dir = do
   case projectRoot of 
        Nothing -> putStrLn "Project directory not found."
        Just pr -> do
-         setCurrentDirectory pr
+         setCurrentDirectory =<< makeAbsolute pr
          callProcess "nix-shell" 
             [ "-A" 
             , "shells.ghc"
