@@ -18,6 +18,9 @@ import System.FilePath
 import System.IO
 import System.Posix (FileStatus, getFileStatus , deviceID, fileID, getRealUserID , fileOwner, fileMode)
 
+import GitHub.Data.Name (Name)
+import GitHub.Data.GitData (Branch)
+
 import Obelisk.Command.Thunk
 
 --TODO: Make this module resilient to random exceptions
@@ -25,19 +28,26 @@ import Obelisk.Command.Thunk
 --TODO: Don't hardcode this
 -- | Source for the Obelisk project
 obeliskSource :: ThunkSource
-obeliskSource = ThunkSource_GitHub $ GitHubSource
+obeliskSource = obeliskSourceWithBranch "master"
+
+-- | Source for obelisk developer targeting a specific obelisk branch
+obeliskSourceWithBranch :: Name Branch -> ThunkSource
+obeliskSourceWithBranch branch = ThunkSource_GitHub $ GitHubSource
   { _gitHubSource_owner = "obsidiansystems"
   , _gitHubSource_repo = "obelisk"
-  , _gitHubSource_branch = Just "master"
+  , _gitHubSource_branch = Just branch
   , _gitHubSource_private = True
   }
 
-initProject :: FilePath -> IO ()
-initProject target = do
+-- TODO pass an optional argument 
+initProject :: FilePath -> Name Branch -> IO ()
+initProject target branch = do
   let obDir = target </> ".obelisk"
       implDir = obDir </> "impl"
   createDirectory obDir
-  createThunkWithLatest implDir obeliskSource
+  case branch of 
+       "" -> createThunkWithLatest implDir obeliskSource
+       _  -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
   _ <- nixBuildThunkAttrWithCache implDir "command"
   return ()
 
