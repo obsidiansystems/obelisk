@@ -20,5 +20,5 @@ runRepl dir = do
             [ "-A" 
             , "shells.ghc"
             , "--run"
-            , "\'cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"\'"
+            , "cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\""
             ]
