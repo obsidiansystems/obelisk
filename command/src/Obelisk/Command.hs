@@ -69,7 +69,7 @@ runRepl dir = callProcess "nix-shell"
   [ "-A" 
   , "shells.ghc"
   , "--run"
-  , "\'cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" 
+  , "\'cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"\'"
   ]
 
 parserPrefs :: ParserPrefs
