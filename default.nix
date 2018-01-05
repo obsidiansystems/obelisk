@@ -60,8 +60,8 @@ rec {
   '';
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project =
-    { base ? ./..
-    , android ? null #TODO: Better error when missing
+    base:
+    { android ? null #TODO: Better error when missing
     , ios ? null #TODO: Better error when missing
     }: reflex-platform.project ({ nixpkgs, ... }: with nixpkgs.haskell.lib;
     let frontendName = "frontend";
