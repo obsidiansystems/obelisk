@@ -60,14 +60,7 @@ findProjectObeliskCommand target = do
   -- | Get the FilePath to the containing project directory, if there is
   -- one; accumulate insecure directories we visited along the way
   targetStat <- liftIO $ getFileStatus target
-  (result, insecurePaths) <- runStateT (findProjectRoot target targetStat myUid) []
-  -- TODO: How important are these insecure paths if we never pattern match on them so far? If not important, discard commented out code
-      -- let obDir = this </> ".obelisk"
-      -- obDirStat <- liftIO $ getFileStatus obDir
-      -- when (not $ isSecure obDirStat myUid) $ modify (obDir:)
-      -- let implThunk = obDir </> "impl"
-      -- implThunkStat <- liftIO $ getFileStatus implThunk
-      -- when (not $ isSecure implThunkStat myUid) $ modify (implThunk:)
+  (result, insecurePaths) <- runStateT (findProjectRoot True target targetStat myUid) []
   case (result, insecurePaths) of
     (Just projDir, []) -> do
        obeliskCommandPkg <- nixBuildThunkAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
@@ -85,21 +78,31 @@ findProjectRoot' :: FilePath -> IO (Maybe FilePath)
 findProjectRoot' target = do
   myUid <- getRealUserID
   targetStat <- liftIO $ getFileStatus target
-  (result, _) <- runStateT (findProjectRoot target targetStat myUid) []
+  (result, _) <- runStateT (findProjectRoot False target targetStat myUid) []
   return result
 
 -- change to findProjectRoot.
-findProjectRoot :: FilePath -> FileStatus -> UserID -> StateT [FilePath] IO (Maybe FilePath)
-findProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
+findProjectRoot :: Bool -> FilePath -> FileStatus -> UserID -> StateT [FilePath] IO (Maybe FilePath)
+findProjectRoot secure this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
   -- It's not a directory, so it can't be a project
   False -> do
     let dir = takeDirectory this
     dirStat <- liftIO $ getFileStatus dir
-    findProjectRoot dir dirStat myUid
+    findProjectRoot secure dir dirStat myUid
   True -> do
     when (not $ isSecure thisStat myUid) $ modify (this:)
     liftIO (doesDirectoryExist (this </> ".obelisk")) >>= \case
-      True -> return $ Just this
+      True -> case secure of 
+                   True -> do 
+                      -- TODO better abstaction needed
+                      let obDir = this </> ".obelisk"
+                      obDirStat <- liftIO $ getFileStatus obDir
+                      when (not $ isSecure obDirStat myUid) $ modify (obDir:)
+                      let implThunk = obDir </> "impl"
+                      implThunkStat <- liftIO $ getFileStatus implThunk
+                      when (not $ isSecure implThunkStat myUid) $ modify (implThunk:)
+                      return $ Just this
+                   False -> return $ Just this
       False -> do
         let next = this </> ".." -- Use ".." instead of chopping off path segments, so that if the current directory is moved during the traversal, the traversal stays consistent
         nextStat <- liftIO $ getFileStatus next
@@ -107,7 +110,7 @@ findProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
             isSameFileAs = (==) `on` fileIdentity
         if thisStat `isSameFileAs` nextStat
           then return Nothing -- Found a cycle; probably hit root directory
-          else findProjectRoot next nextStat myUid
+          else findProjectRoot secure next nextStat myUid
 
 --TODO: Is there a better way to ask if anyone else can write things?
 --E.g. what about ACLs?
