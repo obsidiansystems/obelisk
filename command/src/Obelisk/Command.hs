@@ -3,19 +3,18 @@
 module Obelisk.Command where
 
 import Data.Monoid ((<>))
-import Data.String (fromString)
-import qualified Data.Text as Text
+import Data.Maybe (fromMaybe)
 import Options.Applicative
 import System.Environment
 import System.IO
 import System.Posix.Process
-import System.Process
 
 import GitHub.Data.Name 
 import GitHub.Data.GitData
 
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
+import Obelisk.Command.Repl
 
 data Args = Args
   { _args_noHandOffPassed :: Bool
@@ -42,17 +41,17 @@ argsInfo = info (args <**> helper) $ mconcat
   ]
 
 data ObCommand
-   = ObCommand_Init (Name Branch)
+   = ObCommand_Init (Maybe (Name Branch))
    | ObCommand_Dev
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl FilePath
 
 obCommand :: Parser ObCommand
 obCommand = hsubparser $ mconcat
-  [ command "init" $ info (ObCommand_Init <$> (strArgument (value "master"))) $ progDesc "Initialize an Obelisk project"
+  [ command "init" $ info (ObCommand_Init <$> (optional (strOption (long "branch" <> metavar "BRANCH")))) $ progDesc "Initialize an Obelisk project"
   , command "dev" $ info (pure ObCommand_Dev) $ progDesc "Run the current project in development mode"
   , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-  , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open a cabal repl"
+  , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
   ]
 
 data ThunkCommand
@@ -61,15 +60,6 @@ data ThunkCommand
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
   [ command "update" $ info (ThunkCommand_Update <$> some (strArgument (action "directory"))) $ progDesc "Update a thunk to the latest revision available"
-  ]
-
--- TODO modify the nix-shell arguments to recognize when the common dir's files have changed as well. 
-runRepl :: FilePath -> IO ()
-runRepl dir = callProcess "nix-shell" 
-  [ "-A" 
-  , "shells.ghc"
-  , "--run"
-  , "\'cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"\'"
   ]
 
 parserPrefs :: ParserPrefs
@@ -102,7 +92,7 @@ main = do
 
 ob :: ObCommand -> IO ()
 ob = \case
-  ObCommand_Init branch -> initProject "." branch
+  ObCommand_Init branch -> initProject "." $ fromMaybe "master" branch
   ObCommand_Dev -> putStrLn "Dev!"
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
