@@ -122,7 +122,7 @@ readThunk thunkDir = do
 
       -- Ensure that there aren't any other files in the thunk
       files <- listDirectory thunkDir
-      guard $ length files == 2
+      guard $ length files == 3
 
       txt <- LBS.readFile githubJson
       let p v = do
@@ -157,7 +157,7 @@ overwriteThunk target thunk = do
 
 createThunk :: FilePath -> ThunkPtr -> IO ()
 createThunk target thunk = do
-  createDirectory target
+  createDirectoryIfMissing True (target </> ".attr-cache")
   case _thunkPtr_source thunk of
     ThunkSource_GitHub s -> do
       T.writeFile (target </> "default.nix") $ NonEmpty.head gitHubStandaloneLoaders
