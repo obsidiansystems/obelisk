@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Obelisk.Command.Repl where
 
 import Data.Monoid ((<>))
