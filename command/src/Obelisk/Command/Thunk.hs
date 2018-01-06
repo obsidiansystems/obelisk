@@ -24,6 +24,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Maybe
 import Data.Monoid
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -112,39 +113,47 @@ getLatestRev = \case
 -- present, fail.
 readThunk :: FilePath -> IO (Maybe ThunkPtr)
 readThunk thunkDir = do
-  let githubJson = thunkDir </> "github.json"
-  doesFileExist githubJson >>= \case
-    False -> return Nothing
-    True -> do
-      -- Ensure that we recognize the thunk loader
-      loader <- T.readFile $ thunkDir </> "default.nix"
-      guard $ loader `elem` gitHubStandaloneLoaders
+  let thunkLoader = thunkDir </> "default.nix"
+      githubJson = thunkDir </> "github.json"
+      attrCache = thunkDir </> ".attr-cache"
+      expectedContents = Set.fromList $
+        [ githubJson
+        , thunkLoader
+        , attrCache
+        ]
 
-      -- Ensure that there aren't any other files in the thunk
-      files <- listDirectory thunkDir
-      guard $ length files == 3
+  -- Ensure that there aren't any other files in the thunk
+  -- NB: System.Directory.listDirectory returns the contents without the directory path
+  files <- Set.fromList . fmap (thunkDir </>) <$> listDirectory thunkDir
+  let unexpectedContents = files `Set.difference` expectedContents
+      missingContents = expectedContents `Set.difference` files
+  guard $ Set.null unexpectedContents && Set.null missingContents
 
-      txt <- LBS.readFile githubJson
-      let p v = do
-            owner <- v Aeson..: "owner"
-            repo <- v Aeson..: "repo"
-            rev <- v Aeson..: "rev"
-            sha256 <- v Aeson..: "sha256"
-            branch <- v Aeson..:! "branch"
-            mPrivate <- v Aeson..:! "private"
-            return $ ThunkPtr
-              { _thunkPtr_rev = ThunkRev
-                { _thunkRev_commit = Ref.fromHexString rev
-                , _thunkRev_nixSha256 = sha256
-                }
-              , _thunkPtr_source = ThunkSource_GitHub $ GitHubSource
-                { _gitHubSource_owner = owner
-                , _gitHubSource_repo = repo
-                , _gitHubSource_branch = branch
-                , _gitHubSource_private = fromMaybe False mPrivate
-                }
-              }
-      return $ parseMaybe p =<< decode txt
+  -- Ensure that we recognize the thunk loader
+  loader <- T.readFile thunkLoader
+  guard $ loader `elem` gitHubStandaloneLoaders
+
+  txt <- LBS.readFile githubJson
+  let p v = do
+        owner <- v Aeson..: "owner"
+        repo <- v Aeson..: "repo"
+        rev <- v Aeson..: "rev"
+        sha256 <- v Aeson..: "sha256"
+        branch <- v Aeson..:! "branch"
+        mPrivate <- v Aeson..:! "private"
+        return $ ThunkPtr
+          { _thunkPtr_rev = ThunkRev
+            { _thunkRev_commit = Ref.fromHexString rev
+            , _thunkRev_nixSha256 = sha256
+            }
+          , _thunkPtr_source = ThunkSource_GitHub $ GitHubSource
+            { _gitHubSource_owner = owner
+            , _gitHubSource_repo = repo
+            , _gitHubSource_branch = branch
+            , _gitHubSource_private = fromMaybe False mPrivate
+            }
+          }
+  return $ parseMaybe p =<< decode txt
 
 overwriteThunk :: FilePath -> ThunkPtr -> IO ()
 overwriteThunk target thunk = do
