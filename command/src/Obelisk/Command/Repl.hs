@@ -20,8 +20,11 @@ runRepl dir = do
        (Just hin, Just hout, Just herr, ph) <- createProcess_ "Error: could not create terminal spawn" 
           (shell ghcRepl)
           { cwd = Just pr, std_out = CreatePipe}
-       hShow hout
-       mapM hClose [hin, hout, herr]
+       getProcessExitCode ph >>= \case
+          Nothing -> hShow hout
+          Just _ -> do
+             mapM hClose [hin, hout, herr]  --TODO: figure out if this is necessary
+             return $ "Exiting repl..."
        return ()
   where
     ghcRepl = "nix-shell -A shells.ghc --run cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" :: String
