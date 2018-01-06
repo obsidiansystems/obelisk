@@ -18,14 +18,16 @@ runRepl dir = do
      Nothing -> putStrLn "'ob repl' must be used inside of an Obelisk project."
      Just pr -> do
        absPr <- makeAbsolute pr
-       (Just hin, Just hout, Just herr, ph) <- createProcess_ "Error: could not create terminal spawn" 
+       createProcess_ "Error: could not create terminal spawn"
           (shell ghcRepl)
-          { cwd = Just absPr, std_out = CreatePipe}
-       getProcessExitCode ph >>= \case
-          Nothing -> hShow hout
-          Just _ -> do
-             mapM hClose [hin, hout, herr]  --TODO: figure out if this is necessary
-             return $ "Exiting repl..."
-       return ()
+          { cwd = Just absPr, std_out = CreatePipe} >>= \case 
+             (Just hin, Just hout, Just herr, ph) -> do 
+                getProcessExitCode ph >>= \case
+                   Nothing -> hShow hout
+                   Just _ -> do
+                      mapM hClose [hin, hout, herr]  --TODO: figure out if this is necessary
+                      return $ "Exiting repl..."
+                return ()
+             _ -> return ()
   where
     ghcRepl = "nix-shell -A shells.ghc --run cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" :: String
