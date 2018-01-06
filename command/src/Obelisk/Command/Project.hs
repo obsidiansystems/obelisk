@@ -41,6 +41,7 @@ initProject target = do
   createDirectory obDir
   createThunkWithLatest implDir obeliskSource
   _ <- nixBuildThunkAttrWithCache implDir "command"
+  --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildThunkAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
   (_, _, _, p) <- runInteractiveProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
     [ "-r"
