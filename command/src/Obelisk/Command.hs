@@ -9,7 +9,7 @@ import System.Environment
 import System.IO
 import System.Posix.Process
 
-import GitHub.Data.Name 
+import GitHub.Data.Name
 import GitHub.Data.GitData
 
 import Obelisk.Command.Project

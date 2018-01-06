@@ -3,7 +3,7 @@
 module Obelisk.Command.Project
   ( initProject
   , findProjectObeliskCommand
-  , findProjectRoot'
+  , findProjectRoot
   ) where
 
 import Control.Monad
@@ -45,9 +45,7 @@ initProject target branch = do
   let obDir = target </> ".obelisk"
       implDir = obDir </> "impl"
   createDirectory obDir
-  case branch of 
-       Nothing -> createThunkWithLatest implDir obeliskSource
-       Just b -> createThunkWithLatest implDir $ obeliskSourceWithBranch b
+  createThunkWithLatest implDir $ maybe obeliskSource obeliskSourceWithBranch branch
   _ <- nixBuildThunkAttrWithCache implDir "command"
   return ()
 
@@ -57,21 +55,21 @@ initProject target branch = do
 findProjectObeliskCommand :: FilePath -> IO (Maybe FilePath)
 findProjectObeliskCommand target = do
   myUid <- getRealUserID
-  -- | Get the FilePath to the containing project directory, if there is
-  -- one; accumulate insecure directories we visited along the way
   targetStat <- liftIO $ getFileStatus target
   (result, insecurePaths) <- flip runStateT [] $ do
-    this' <- findProjectRoot True target targetStat myUid                      
-    case this' of 
+    walkToProjectRoot target targetStat myUid >>= \case
          Nothing -> return Nothing
-         Just this -> do 
-            let obDir = this </> ".obelisk"
+         Just projectRoot -> do
+            -- accumulate insecure directories visited along the way
+            -- insecure directories provide an opportunity for attackers
+            -- to trick someone into running unexpected code
+            let obDir = projectRoot </> ".obelisk"
             obDirStat <- liftIO $ getFileStatus obDir
             when (not $ isSecure obDirStat myUid) $ modify (obDir:)
             let implThunk = obDir </> "impl"
             implThunkStat <- liftIO $ getFileStatus implThunk
             when (not $ isSecure implThunkStat myUid) $ modify (implThunk:)
-            return $ Just this
+            return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
        obeliskCommandPkg <- nixBuildThunkAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
@@ -85,21 +83,22 @@ findProjectObeliskCommand target = do
         ]
       return Nothing
 
-findProjectRoot' :: FilePath -> IO (Maybe FilePath)
-findProjectRoot' target = do
+-- | Get the FilePath to the containing project directory, if there is one
+findProjectRoot :: FilePath -> IO (Maybe FilePath)
+findProjectRoot target = do
   myUid <- getRealUserID
   targetStat <- liftIO $ getFileStatus target
-  (result, _) <- runStateT (findProjectRoot False target targetStat myUid) []
+  (result, _) <- runStateT (walkToProjectRoot target targetStat myUid) []
   return result
 
--- change to findProjectRoot.
-findProjectRoot :: Bool -> FilePath -> FileStatus -> UserID -> StateT [FilePath] IO (Maybe FilePath)
-findProjectRoot secure this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
+-- | Get the FilePath to the containing project directory, if there is one
+walkToProjectRoot :: FilePath -> FileStatus -> UserID -> StateT [FilePath] IO (Maybe FilePath)
+walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
   -- It's not a directory, so it can't be a project
   False -> do
     let dir = takeDirectory this
     dirStat <- liftIO $ getFileStatus dir
-    findProjectRoot secure dir dirStat myUid
+    walkToProjectRoot dir dirStat myUid
   True -> do
     when (not $ isSecure thisStat myUid) $ modify (this:)
     liftIO (doesDirectoryExist (this </> ".obelisk")) >>= \case
@@ -111,7 +110,7 @@ findProjectRoot secure this thisStat myUid = liftIO (doesDirectoryExist this) >>
             isSameFileAs = (==) `on` fileIdentity
         if thisStat `isSameFileAs` nextStat
           then return Nothing -- Found a cycle; probably hit root directory
-          else findProjectRoot secure next nextStat myUid
+          else walkToProjectRoot next nextStat myUid
 
 --TODO: Is there a better way to ask if anyone else can write things?
 --E.g. what about ACLs?
