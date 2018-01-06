@@ -20,7 +20,7 @@ runRepl dir = do
        absPr <- makeAbsolute pr
        createProcess_ "Error: could not create terminal spawn"
           (shell $ ghcRepl absPr)
-          { cwd = Just absPr, std_out = CreatePipe} >>= \case 
+          { cwd = Just absPr} >>= \case 
              (Just hin, Just hout, Just herr, ph) -> do 
                 getProcessExitCode ph >>= \case
                    Nothing -> hShow hout
