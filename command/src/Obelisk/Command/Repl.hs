@@ -6,6 +6,7 @@ module Obelisk.Command.Repl where
 import Data.Monoid ((<>))
 import System.Process
 import System.Directory
+import GHC.IO.Handle.Types
 
 import Obelisk.Command.Project
 
@@ -15,10 +16,7 @@ runRepl dir = do
   findProjectRoot "." >>= \case
      Nothing -> putStrLn "'ob repl' must be used inside of an Obelisk project."
      Just pr -> do
-       setCurrentDirectory =<< makeAbsolute pr
-       callProcess "nix-shell"
-          [ "-A"
-          , "shells.ghc"
-          , "--run"
-          , "cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\""
-          ]
+       createProcess (shell ghcRepl){cwd = Just pr}
+       return ()
+  where
+    ghcRepl = "nix-shell -A shells.ghc --run cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" :: String
