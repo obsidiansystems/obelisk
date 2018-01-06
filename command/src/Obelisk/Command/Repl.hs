@@ -19,11 +19,11 @@ runRepl dir = do
      Just pr -> do
        absPr <- makeAbsolute pr
        createProcess_ "Error: could not create terminal spawn"
-          (shell $ ghcRepl absPr)
+          (shell ghcRepl)
           { cwd = Just absPr} >>= \case 
              (_, _, _, ph) -> do 
                 waitForProcess ph 
                 return ()
              _ -> return ()
   where
-    ghcRepl path = "nix-shell -A shells.ghc --run cd " <> path <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" :: String
+    ghcRepl = "nix-shell -A shells.ghc --run cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" :: String
