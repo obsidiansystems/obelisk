@@ -17,11 +17,9 @@ runRepl dir = do
   findProjectRoot "." >>= \case
      Nothing -> putStrLn "'ob repl' must be used inside of an Obelisk project."
      Just pr -> do
-       putStrLn $ "pr currently holds " ++ pr ++ " directory"
        absPr <- makeAbsolute pr
-       putStrLn $ "absPr currently holds " ++ absPr ++ " directory"
        createProcess_ "Error: could not create terminal spawn"
-          (shell ghcRepl)
+          (shell $ ghcRepl absPr)
           { cwd = Just absPr, std_out = CreatePipe} >>= \case 
              (Just hin, Just hout, Just herr, ph) -> do 
                 getProcessExitCode ph >>= \case
@@ -32,4 +30,4 @@ runRepl dir = do
                 return ()
              _ -> return ()
   where
-    ghcRepl = "nix-shell -A shells.ghc --run cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" :: String
+    ghcRepl path = "nix-shell -A shells.ghc --run cd " <> path <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" :: String
