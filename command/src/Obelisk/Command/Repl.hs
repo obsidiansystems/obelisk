@@ -21,12 +21,8 @@ runRepl dir = do
        createProcess_ "Error: could not create terminal spawn"
           (shell $ ghcRepl absPr)
           { cwd = Just absPr} >>= \case 
-             (Just hin, Just hout, Just herr, ph) -> do 
-                getProcessExitCode ph >>= \case
-                   Nothing -> hShow hout
-                   Just _ -> do
-                      mapM hClose [hin, hout, herr]  --TODO: figure out if this is necessary
-                      return $ "Exiting repl..."
+             (_, _, _, ph) -> do 
+                waitForProcess ph 
                 return ()
              _ -> return ()
   where
