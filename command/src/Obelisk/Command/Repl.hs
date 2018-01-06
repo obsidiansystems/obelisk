@@ -17,9 +17,10 @@ runRepl dir = do
   findProjectRoot "." >>= \case
      Nothing -> putStrLn "'ob repl' must be used inside of an Obelisk project."
      Just pr -> do
+       absPr <- makeAbsolute pr
        (Just hin, Just hout, Just herr, ph) <- createProcess_ "Error: could not create terminal spawn" 
           (shell ghcRepl)
-          { cwd = Just pr, std_out = CreatePipe}
+          { cwd = Just absPr, std_out = CreatePipe}
        getProcessExitCode ph >>= \case
           Nothing -> hShow hout
           Just _ -> do
