@@ -65,10 +65,10 @@ findProjectObeliskCommand target = do
             -- to trick someone into running unexpected code
             let obDir = projectRoot </> ".obelisk"
             obDirStat <- liftIO $ getFileStatus obDir
-            when (not $ isSecure obDirStat myUid) $ modify (obDir:)
+            when (not $ isWritableOnlyBy obDirStat myUid) $ modify (obDir:)
             let implThunk = obDir </> "impl"
             implThunkStat <- liftIO $ getFileStatus implThunk
-            when (not $ isSecure implThunkStat myUid) $ modify (implThunk:)
+            when (not $ isWritableOnlyBy implThunkStat myUid) $ modify (implThunk:)
             return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
@@ -100,7 +100,7 @@ walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \ca
     dirStat <- liftIO $ getFileStatus dir
     walkToProjectRoot dir dirStat myUid
   True -> do
-    when (not $ isSecure thisStat myUid) $ modify (this:)
+    when (not $ isWritableOnlyBy thisStat myUid) $ modify (this:)
     liftIO (doesDirectoryExist (this </> ".obelisk")) >>= \case
       True -> return $ Just this
       False -> do
@@ -114,5 +114,6 @@ walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \ca
 
 --TODO: Is there a better way to ask if anyone else can write things?
 --E.g. what about ACLs?
-isSecure :: FileStatus -> UserID -> Bool
-isSecure s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
+-- | Check to see if directory is only writable by a user whose User ID matches the second argument provided
+isWritableOnlyBy :: FileStatus -> UserID -> Bool
+isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
