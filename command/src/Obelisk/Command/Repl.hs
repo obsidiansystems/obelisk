@@ -19,6 +19,7 @@ runRepl dir = do
      Just pr -> do
        putStrLn $ "pr currently holds " ++ pr ++ " directory"
        absPr <- makeAbsolute pr
+       putStrLn $ "absPr currently holds " ++ absPr ++ " directory"
        createProcess_ "Error: could not create terminal spawn"
           (shell ghcRepl)
           { cwd = Just absPr, std_out = CreatePipe} >>= \case 
