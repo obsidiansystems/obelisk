@@ -60,7 +60,18 @@ findProjectObeliskCommand target = do
   -- | Get the FilePath to the containing project directory, if there is
   -- one; accumulate insecure directories we visited along the way
   targetStat <- liftIO $ getFileStatus target
-  (result, insecurePaths) <- runStateT (findProjectRoot True target targetStat myUid) []
+  (result, insecurePaths) <- flip runStateT [] $ do
+    this' <- findProjectRoot True target targetStat myUid                      
+    case this' of 
+         Nothing -> return Nothing
+         Just this -> do 
+            let obDir = this </> ".obelisk"
+            obDirStat <- liftIO $ getFileStatus obDir
+            when (not $ isSecure obDirStat myUid) $ modify (obDir:)
+            let implThunk = obDir </> "impl"
+            implThunkStat <- liftIO $ getFileStatus implThunk
+            when (not $ isSecure implThunkStat myUid) $ modify (implThunk:)
+            return $ Just this
   case (result, insecurePaths) of
     (Just projDir, []) -> do
        obeliskCommandPkg <- nixBuildThunkAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
@@ -92,17 +103,7 @@ findProjectRoot secure this thisStat myUid = liftIO (doesDirectoryExist this) >>
   True -> do
     when (not $ isSecure thisStat myUid) $ modify (this:)
     liftIO (doesDirectoryExist (this </> ".obelisk")) >>= \case
-      True -> case secure of 
-                   True -> do 
-                      -- TODO better abstaction needed
-                      let obDir = this </> ".obelisk"
-                      obDirStat <- liftIO $ getFileStatus obDir
-                      when (not $ isSecure obDirStat myUid) $ modify (obDir:)
-                      let implThunk = obDir </> "impl"
-                      implThunkStat <- liftIO $ getFileStatus implThunk
-                      when (not $ isSecure implThunkStat myUid) $ modify (implThunk:)
-                      return $ Just this
-                   False -> return $ Just this
+      True -> return $ Just this
       False -> do
         let next = this </> ".." -- Use ".." instead of chopping off path segments, so that if the current directory is moved during the traversal, the traversal stays consistent
         nextStat <- liftIO $ getFileStatus next
