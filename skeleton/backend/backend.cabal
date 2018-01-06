@@ -1,0 +1,13 @@
+name: backend
+version: 0.1
+cabal-version: >= 1.2
+build-type: Simple
+
+executable backend
+  main-is: main.hs
+  hs-source-dirs: src
+  build-depends:
+    base,
+    common,
+    obelisk-backend,
+    snap

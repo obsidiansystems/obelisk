@@ -14,9 +14,11 @@ import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
+import System.Exit
 import System.FilePath
 import System.IO
 import System.Posix (FileStatus, getFileStatus , deviceID, fileID, getRealUserID , fileOwner, fileMode)
+import System.Process
 
 import Obelisk.Command.Thunk
 
@@ -39,6 +41,15 @@ initProject target = do
   createDirectory obDir
   createThunkWithLatest implDir obeliskSource
   _ <- nixBuildThunkAttrWithCache implDir "command"
+  skeleton <- nixBuildThunkAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
+  (_, _, _, p) <- runInteractiveProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
+    [ "-r"
+    , "--no-preserve=mode"
+    , "-T"
+    , skeleton </> "."
+    , target
+    ] Nothing Nothing
+  ExitSuccess <- waitForProcess p
   return ()
 
 --TODO: Handle errors
