@@ -26,4 +26,4 @@ runRepl dir = do
                 return ()
              _ -> return ()
   where
-    ghcRepl path = "nix-shell -A shells.ghc --run cd " <> path <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" :: String
+    ghcRepl path = "cd " <> path <> "; nix-shell -A shells.ghc --run cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"" :: String
