@@ -17,8 +17,10 @@ runRepl dir = do
   findProjectRoot "." >>= \case
      Nothing -> putStrLn "'ob repl' must be used inside of an Obelisk project."
      Just pr -> do
-       (_, _, _, ph) <- createProcess_ "runRepl" (proc "nix-shell" ghcRepl){cwd = Just pr} 
-       waitForProcess ph 
+       (_, _, _, ph) <- createProcess_ "runRepl" (proc "nix-shell"
+          ["-A"
+          , "shells.ghc"
+          ,  "--run", "cd " <> dir <>"; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\""
+          ]){cwd = Just pr}
+       waitForProcess ph
        return ()
-  where
-    ghcRepl = ["-A", "shells.ghc",  "--run", ("cd " <> dir <>"; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"")]
