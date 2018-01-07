@@ -21,4 +21,4 @@ runRepl dir = do
        waitForProcess ph 
        return ()
   where
-    ghcRepl = ["-A", " shells.ghc",  "--run", "'cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"'"]
+    ghcRepl = ["-A", "shells.ghc",  "--run", "'cd " <> dir <> "; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\"'"]
