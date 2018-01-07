@@ -1,0 +1,14 @@
+name: frontend
+version: 0.1
+cabal-version: >= 1.2
+build-type: Simple
+
+executable frontend
+  main-is: main.hs
+  hs-source-dirs: src
+  build-depends: base,
+                 reflex-dom,
+                 text,
+                 static
+  --TODO: Make these ghc-options optional
+  ghc-options: -threaded

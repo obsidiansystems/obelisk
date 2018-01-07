@@ -45,6 +45,12 @@ with pkgs.lib;
 rec {
   inherit reflex-platform;
   command = ghcObelisk.obelisk-command;
+  #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
+  skeleton = pkgs.runCommand "skeleton" {
+    dir = ./skeleton;
+  } ''
+    ln -s "$dir" "$out"
+  '';
   nullIfAbsent = p: if pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
   processAssets = { src, packageName ? "static", moduleName ? "Static" }: pkgs.runCommand "asset-manifest" {
