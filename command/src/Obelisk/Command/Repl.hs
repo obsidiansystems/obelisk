@@ -20,7 +20,7 @@ runRepl dir = do
        (_, _, _, ph) <- createProcess_ "runRepl" (proc "nix-shell"
           ["-A"
           , "shells.ghc"
-          ,  "--run", "cd " <> dir <>"; ghcid -W -c\"cabal new-repl exe:" <> dir <> "\""
+          ,  "--run", "cd " <> dir <>"; ghcid -W -c\"cabal new-repl " <> dir <> "\""
           ]){cwd = Just pr}
        waitForProcess ph
        return ()
