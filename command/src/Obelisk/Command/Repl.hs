@@ -5,9 +5,6 @@ module Obelisk.Command.Repl (runRepl) where
 
 import Data.Monoid ((<>))
 import System.Process
-import System.Directory
-import GHC.IO.Handle
-import GHC.IO.Handle.Types
 
 import Obelisk.Command.Project
 
@@ -22,7 +19,7 @@ runRepl dir runGhcid = do
           , "shells.ghc"
           ,  "--run", whichCabal runGhcid
           ]
-       waitForProcess ph
+       _ <- waitForProcess ph
        return ()
   where
     whichCabal flag = case flag of
