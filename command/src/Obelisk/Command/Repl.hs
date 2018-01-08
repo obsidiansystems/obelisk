@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Obelisk.Command.Repl where
+module Obelisk.Command.Repl (runRepl) where
 
 import Data.Monoid ((<>))
 import System.Process
@@ -17,10 +17,13 @@ runRepl dir = do
   findProjectRoot "." >>= \case
      Nothing -> putStrLn "'ob repl' must be used inside of an Obelisk project."
      Just pr -> do
-       (_, _, _, ph) <- createProcess_ "runRepl" (proc "nix-shell"
+       (_, _, _, ph) <- createProcess_ "runRepl" $ setCwd (Just pr) $ proc "nix-shell"
           ["-A"
           , "shells.ghc"
           ,  "--run", "cd " <> dir <>"; ghcid -W -c\"cabal new-repl " <> dir <> "\""
-          ]){cwd = Just pr}
+          ]
        waitForProcess ph
        return ()
+
+setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
+setCwd fp cp = cp{cwd = fp}
