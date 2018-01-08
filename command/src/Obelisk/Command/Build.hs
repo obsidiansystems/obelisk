@@ -8,6 +8,7 @@ import System.Process
 
 import Obelisk.Command.Project
 
+--TODO: What is the appropriate project file?
 buildTool :: FilePath -> IO ()
 buildTool fp = do
    findProjectRoot "." >>= \case
@@ -17,6 +18,6 @@ buildTool fp = do
          [ "-A"
          , "shells.ghcjs"
          , "--run"
-         , "cabal --project-file=cabal.project --builddir=dist-ghcjs new-build exe:" <> fp <> "; mkdir -p frontendJs; (cd frontendJs; ln -sfT ../dist-ghcjs/build/*/ghcjs-*/frontend-*/c/frontend/build/frontend/frontend.jsexe frontend.jsexe)"
+         , "'cabal --project-file=cabal.project --builddir=dist-ghcjs new-build exe:" <> fp <> "; mkdir -p frontendJs; (cd frontendJs; ln -sfT ../dist-ghcjs/build/*/ghcjs-*/frontend-*/c/frontend/build/frontend/frontend.jsexe frontend.jsexe)'"
          ]){cwd =  Just pr}
        return ()
