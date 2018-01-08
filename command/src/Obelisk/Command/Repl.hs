@@ -27,4 +27,4 @@ runRepl dir runGhcid = do
        False -> "cd " <> dir <>"; cabal new-repl " <> dir
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
-setCwd fp cp = cp{cwd = fp}
+setCwd fp cp = cp{ cwd = fp }
