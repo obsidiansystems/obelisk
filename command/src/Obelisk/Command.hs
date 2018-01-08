@@ -52,7 +52,7 @@ obCommand = hsubparser $ mconcat
   , command "dev" $ info (pure ObCommand_Dev) $ progDesc "Run the current project in development mode"
   , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
   , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
-  , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch an interactive interpreter"
+  , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch directory for changes and update interactive interpreter"
   ]
 
 data ThunkCommand
