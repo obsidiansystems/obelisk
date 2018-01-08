@@ -14,7 +14,6 @@ import GitHub.Data.GitData
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Repl
-import Obelisk.Command.Build
 
 data Args = Args
   { _args_noHandOffPassed :: Bool
@@ -46,7 +45,6 @@ data ObCommand
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl FilePath
    | ObCommand_Watch FilePath
-   | ObCommand_Build FilePath
 
 obCommand :: Parser ObCommand
 obCommand = hsubparser $ mconcat
@@ -55,7 +53,6 @@ obCommand = hsubparser $ mconcat
   , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
   , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
   , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch directory for changes and update interactive interpreter"
-  , command "build" $ info (ObCommand_Build <$> (strArgument (action "directory")))$ progDesc "build component"
   ]
 
 data ThunkCommand
@@ -102,6 +99,5 @@ ob = \case
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
   ObCommand_Repl component -> runRepl component False
   ObCommand_Watch component -> runRepl component True
-  ObCommand_Build component -> buildTool component
 
 --TODO: Clean up all the magic strings throughout this codebase

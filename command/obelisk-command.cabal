@@ -28,7 +28,6 @@ library
     Obelisk.Command.Project
     Obelisk.Command.Thunk
     Obelisk.Command.Repl
-    Obelisk.Command.Build
   ghc-options: -Wall
 
 executable ob
