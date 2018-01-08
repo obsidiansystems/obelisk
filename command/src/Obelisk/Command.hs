@@ -43,7 +43,7 @@ data ObCommand
    = ObCommand_Init (Maybe (Name Branch))
    | ObCommand_Dev
    | ObCommand_Thunk ThunkCommand
-   | ObCommand_Repl FilePath 
+   | ObCommand_Repl FilePath
    | ObCommand_Watch FilePath
 
 obCommand :: Parser ObCommand
