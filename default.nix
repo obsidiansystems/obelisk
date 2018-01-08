@@ -51,6 +51,13 @@ rec {
   } ''
     ln -s "$dir" "$out"
   '';
+  haskellOverrides = self: super: {
+    obelisk-asset-serve = self.callCabal2nix "obelisk-asset-serve" (hackGet ./asset + "/serve") {};
+    obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./asset + "/manifest") {};
+    obelisk-backend = self.callCabal2nix "obelisk-backend" ./backend {};
+    obelisk-snap = self.callCabal2nix "obelisk-snap" ./snap {};
+    obelisk-font-awesome = self.callCabal2nix "obelisk-font-awesome" (hackGet ./font-awesome) {};
+  };
   nullIfAbsent = p: if pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
   processAssets = { src, packageName ? "static", moduleName ? "Static" }: pkgs.runCommand "asset-manifest" {
@@ -81,13 +88,11 @@ rec {
           ${commonName} = nullIfAbsent (base + "/common");
           ${backendName} = nullIfAbsent (base + "/backend");
         };
-        overrides = self: super: {
+        projectOverrides = self: super: {
           heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
           ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
-          obelisk-asset-serve = self.callCabal2nix "obelisk-asset-serve" (hackGet ./asset + "/serve") {};
-          obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./asset + "/manifest") {};
-          obelisk-backend = self.callCabal2nix "obelisk-backend" ./backend {};
         };
+        overrides = composeExtensions haskellOverrides projectOverrides;
     in {
       inherit packages overrides;
       shells = {
