@@ -44,14 +44,14 @@ data ObCommand
    = ObCommand_Init (Maybe (Name Branch))
    | ObCommand_Dev
    | ObCommand_Thunk ThunkCommand
-   | ObCommand_Repl FilePath
+   | ObCommand_Repl FilePath Bool
 
 obCommand :: Parser ObCommand
 obCommand = hsubparser $ mconcat
   [ command "init" $ info (ObCommand_Init <$> (optional (strOption (long "branch" <> metavar "BRANCH")))) $ progDesc "Initialize an Obelisk project"
   , command "dev" $ info (pure ObCommand_Dev) $ progDesc "Run the current project in development mode"
   , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-  , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
+  , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory")) <*> (switch (long "ghcid" <> help "whether to run ghcid"))) $ progDesc "Open an interactive interpreter"
   ]
 
 data ThunkCommand
@@ -96,6 +96,6 @@ ob = \case
   ObCommand_Dev -> putStrLn "Dev!"
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
-  ObCommand_Repl component -> runRepl component
+  ObCommand_Repl component runGhcid -> runRepl component runGhcid
 
 --TODO: Clean up all the magic strings throughout this codebase

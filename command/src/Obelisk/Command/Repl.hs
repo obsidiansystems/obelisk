@@ -12,18 +12,22 @@ import GHC.IO.Handle.Types
 import Obelisk.Command.Project
 
 --TODO: modify the nix-shell --run to recognize when the common dir's files have changed as well.
-runRepl :: FilePath -> IO ()
-runRepl dir = do
+runRepl :: FilePath -> Bool -> IO ()
+runRepl dir runGhcid = do
   findProjectRoot "." >>= \case
      Nothing -> putStrLn "'ob repl' must be used inside of an Obelisk project."
      Just pr -> do
        (_, _, _, ph) <- createProcess_ "runRepl" $ setCwd (Just pr) $ proc "nix-shell"
           ["-A"
           , "shells.ghc"
-          ,  "--run", "cd " <> dir <>"; ghcid -W -c\"cabal new-repl " <> dir <> "\""
+          ,  "--run", whichCabal runGhcid
           ]
        waitForProcess ph
        return ()
+  where
+    whichCabal flag = case flag of
+       False -> "cd " <> dir <>"; ghcid -W -c\"cabal new-repl " <> dir <> "\""
+       True  -> "cd " <> dir <>"; cabal new-repl " <> dir <> "\""
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
 setCwd fp cp = cp{cwd = fp}
