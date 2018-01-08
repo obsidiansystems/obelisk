@@ -26,8 +26,8 @@ runRepl dir runGhcid = do
        return ()
   where
     whichCabal flag = case flag of
-       False -> "cd " <> dir <>"; ghcid -W -c\"cabal new-repl " <> dir <> "\""
-       True  -> "cd " <> dir <>"; cabal new-repl " <> dir <> "\""
+       True  -> "cd " <> dir <>"; ghcid -W -c\"cabal new-repl " <> dir <> "\""
+       False -> "cd " <> dir <>"; cabal new-repl " <> dir <> "\""
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
 setCwd fp cp = cp{cwd = fp}
