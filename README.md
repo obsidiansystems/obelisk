@@ -45,16 +45,14 @@ Point your web browser at [localhost:8000](localhost:8000) and everything should
 
 Feel free to edit the frontend and backend directories as you see fit.
 
---------------------------DEVELOPER TOOLS----------------------------------------
-
+## Developer Tools
 To increase developer productivity it is highly recommended to make use of the
 `ob watch` command. This will open a live repl that
 will compile and refresh itself showing you the latest possible syntax or type errors
 as well as any other ghc warnings whenever files within their respective directories
 are saved and updated.
 
------------------------DEPLOYMENT------------------------------------------------
-
+## Deployment
 From Nix to NixOS:
 When you feel your repository is ready to be deployed, feel free to utilize some scripts to aid in the process.
 
