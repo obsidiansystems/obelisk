@@ -86,18 +86,10 @@ findProjectObeliskCommand target = do
   targetStat <- liftIO $ getFileStatus target
   (result, insecurePaths) <- flip runStateT [] $ do
     walkToProjectRoot target targetStat myUid >>= \case
-         Nothing -> return Nothing
-         Just projectRoot -> do
-            -- accumulate insecure directories visited along the way
-            -- insecure directories provide an opportunity for attackers
-            -- to trick someone into running unexpected code
-            let obDir = projectRoot </> ".obelisk"
-            obDirStat <- liftIO $ getFileStatus obDir
-            when (not $ isWritableOnlyBy obDirStat myUid) $ modify (obDir:)
-            let implThunk = obDir </> "impl"
-            implThunkStat <- liftIO $ getFileStatus implThunk
-            when (not $ isWritableOnlyBy implThunkStat myUid) $ modify (implThunk:)
-            return $ Just projectRoot
+      Nothing -> return Nothing
+      Just projectRoot -> do
+        walkToImplDir projectRoot myUid -- For security check
+        return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
        obeliskCommandPkg <- nixBuildAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
@@ -119,7 +111,9 @@ findProjectRoot target = do
   (result, _) <- runStateT (walkToProjectRoot target targetStat myUid) []
   return result
 
--- | Get the FilePath to the containing project directory, if there is one
+-- | Walk from the current directory to the containing project's root directory,
+-- if there is one, accumulating potentially insecure directories that were
+-- traversed in the process.  Return the project root directory, if found.
 walkToProjectRoot :: FilePath -> FileStatus -> UserID -> StateT [FilePath] IO (Maybe FilePath)
 walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
   -- It's not a directory, so it can't be a project
@@ -139,6 +133,18 @@ walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \ca
         if thisStat `isSameFileAs` nextStat
           then return Nothing -- Found a cycle; probably hit root directory
           else walkToProjectRoot next nextStat myUid
+
+-- | Walk from the given project root directory to its Obelisk implementation
+-- directory, accumulating potentially insecure directories that were traversed
+-- in the process.
+walkToImplDir :: FilePath -> UserID -> StateT [FilePath] IO ()
+walkToImplDir projectRoot myUid = do
+  let obDir = projectRoot </> ".obelisk"
+  obDirStat <- liftIO $ getFileStatus obDir
+  when (not $ isWritableOnlyBy obDirStat myUid) $ modify (obDir:)
+  let implThunk = obDir </> "impl"
+  implThunkStat <- liftIO $ getFileStatus implThunk
+  when (not $ isWritableOnlyBy implThunkStat myUid) $ modify (implThunk:)
 
 --TODO: Is there a better way to ask if anyone else can write things?
 --E.g. what about ACLs?
