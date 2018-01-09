@@ -48,7 +48,7 @@ Feel free to edit the frontend and backend directories as you see fit.
 --------------------------DEVELOPER TOOLS----------------------------------------
 
 To increase developer productivity it is highly recommended to make use of the
-`ghcid-frontend` and `ghcid-backend` scripts. This will open a live repl that
+`ob watch` command. This will open a live repl that
 will compile and refresh itself showing you the latest possible syntax or type errors
 as well as any other ghc warnings whenever files within their respective directories
 are saved and updated.

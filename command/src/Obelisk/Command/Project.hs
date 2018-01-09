@@ -1,8 +1,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command.Project
-  ( initProject
+  ( InitSource (..)
+  , initProject
   , findProjectObeliskCommand
+  , findProjectRoot
+  , inProjectShell
   ) where
 
 import Control.Monad
@@ -17,8 +20,12 @@ import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO
-import System.Posix (FileStatus, getFileStatus , deviceID, fileID, getRealUserID , fileOwner, fileMode)
+import System.Posix (FileStatus, getFileStatus , deviceID, fileID, getRealUserID , fileOwner, fileMode, UserID)
+import System.Posix.Files
 import System.Process
+
+import GitHub.Data.Name (Name)
+import GitHub.Data.GitData (Branch)
 
 import Obelisk.Command.Thunk
 
@@ -27,28 +34,45 @@ import Obelisk.Command.Thunk
 --TODO: Don't hardcode this
 -- | Source for the Obelisk project
 obeliskSource :: ThunkSource
-obeliskSource = ThunkSource_GitHub $ GitHubSource
+obeliskSource = obeliskSourceWithBranch "master"
+
+-- | Source for obelisk developer targeting a specific obelisk branch
+obeliskSourceWithBranch :: Name Branch -> ThunkSource
+obeliskSourceWithBranch branch = ThunkSource_GitHub $ GitHubSource
   { _gitHubSource_owner = "obsidiansystems"
   , _gitHubSource_repo = "obelisk"
-  , _gitHubSource_branch = Just "master"
+  , _gitHubSource_branch = Just branch
   , _gitHubSource_private = True
   }
 
-initProject :: FilePath -> IO ()
-initProject target = do
-  let obDir = target </> ".obelisk"
+data InitSource
+   = InitSource_Default
+   | InitSource_Branch (Name Branch)
+   | InitSource_Symlink FilePath
+
+-- | Create a new project rooted in the current directory
+initProject :: InitSource -> IO ()
+initProject source = do
+  let obDir = ".obelisk"
       implDir = obDir </> "impl"
   createDirectory obDir
-  createThunkWithLatest implDir obeliskSource
-  _ <- nixBuildThunkAttrWithCache implDir "command"
+  case source of
+    InitSource_Default -> createThunkWithLatest implDir obeliskSource
+    InitSource_Branch branch -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+    InitSource_Symlink path -> do
+      let symlinkPath = if isAbsolute path
+            then path
+            else ".." </> path
+      createSymbolicLink symlinkPath implDir
+  _ <- nixBuildAttrWithCache implDir "command"
   --TODO: We should probably handoff to the impl here
-  skeleton <- nixBuildThunkAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
+  skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
   (_, _, _, p) <- runInteractiveProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
     [ "-r"
     , "--no-preserve=mode"
     , "-T"
     , skeleton </> "."
-    , target
+    , "."
     ] Nothing Nothing
   ExitSuccess <- waitForProcess p
   return ()
@@ -59,42 +83,16 @@ initProject target = do
 findProjectObeliskCommand :: FilePath -> IO (Maybe FilePath)
 findProjectObeliskCommand target = do
   myUid <- getRealUserID
-  let --TODO: Is there a better way to ask if anyone else can write things?
-      --E.g. what about ACLs?
-      isSecure s = fileOwner s == myUid && fileMode s .&. 0o22 == 0
-      -- | Get the FilePath to the containing project directory, if there is
-      -- one; accumulate insecure directories we visited along the way
-      findImpl :: FilePath -> FileStatus -> StateT [FilePath] IO (Maybe FilePath)
-      findImpl this thisStat = liftIO (doesDirectoryExist this) >>= \case
-        -- It's not a directory, so it can't be a project
-        False -> do
-          let dir = takeDirectory this
-          dirStat <- liftIO $ getFileStatus dir
-          findImpl dir dirStat
-        True -> do
-          when (not $ isSecure thisStat) $ modify (this:)
-          liftIO (doesDirectoryExist (this </> ".obelisk")) >>= \case
-            True -> do
-              let obDir = this </> ".obelisk"
-              obDirStat <- liftIO $ getFileStatus obDir
-              when (not $ isSecure obDirStat) $ modify (obDir:)
-              let implThunk = obDir </> "impl"
-              implThunkStat <- liftIO $ getFileStatus implThunk
-              when (not $ isSecure implThunkStat) $ modify (implThunk:)
-              return $ Just this
-            False -> do
-              let next = this </> ".." -- Use ".." instead of chopping off path segments, so that if the current directory is moved during the traversal, the traversal stays consistent
-              nextStat <- liftIO $ getFileStatus next
-              let fileIdentity fs = (deviceID fs, fileID fs)
-                  isSameFileAs = (==) `on` fileIdentity
-              if thisStat `isSameFileAs` nextStat
-                then return Nothing -- Found a cycle; probably hit root directory
-                else findImpl next nextStat
   targetStat <- liftIO $ getFileStatus target
-  (result, insecurePaths) <- runStateT (findImpl target targetStat) []
+  (result, insecurePaths) <- flip runStateT [] $ do
+    walkToProjectRoot target targetStat myUid >>= \case
+      Nothing -> return Nothing
+      Just projectRoot -> do
+        walkToImplDir projectRoot myUid -- For security check
+        return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
-       obeliskCommandPkg <- nixBuildThunkAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
+       obeliskCommandPkg <- nixBuildAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
        return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
@@ -104,3 +102,69 @@ findProjectObeliskCommand target = do
         , "Please ensure that all of these directories are owned by you and are not writable by anyone else."
         ]
       return Nothing
+
+-- | Get the FilePath to the containing project directory, if there is one
+findProjectRoot :: FilePath -> IO (Maybe FilePath)
+findProjectRoot target = do
+  myUid <- getRealUserID
+  targetStat <- liftIO $ getFileStatus target
+  (result, _) <- runStateT (walkToProjectRoot target targetStat myUid) []
+  return result
+
+-- | Walk from the current directory to the containing project's root directory,
+-- if there is one, accumulating potentially insecure directories that were
+-- traversed in the process.  Return the project root directory, if found.
+walkToProjectRoot :: FilePath -> FileStatus -> UserID -> StateT [FilePath] IO (Maybe FilePath)
+walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
+  -- It's not a directory, so it can't be a project
+  False -> do
+    let dir = takeDirectory this
+    dirStat <- liftIO $ getFileStatus dir
+    walkToProjectRoot dir dirStat myUid
+  True -> do
+    when (not $ isWritableOnlyBy thisStat myUid) $ modify (this:)
+    liftIO (doesDirectoryExist (this </> ".obelisk")) >>= \case
+      True -> return $ Just this
+      False -> do
+        let next = this </> ".." -- Use ".." instead of chopping off path segments, so that if the current directory is moved during the traversal, the traversal stays consistent
+        nextStat <- liftIO $ getFileStatus next
+        let fileIdentity fs = (deviceID fs, fileID fs)
+            isSameFileAs = (==) `on` fileIdentity
+        if thisStat `isSameFileAs` nextStat
+          then return Nothing -- Found a cycle; probably hit root directory
+          else walkToProjectRoot next nextStat myUid
+
+-- | Walk from the given project root directory to its Obelisk implementation
+-- directory, accumulating potentially insecure directories that were traversed
+-- in the process.
+walkToImplDir :: FilePath -> UserID -> StateT [FilePath] IO ()
+walkToImplDir projectRoot myUid = do
+  let obDir = projectRoot </> ".obelisk"
+  obDirStat <- liftIO $ getFileStatus obDir
+  when (not $ isWritableOnlyBy obDirStat myUid) $ modify (obDir:)
+  let implThunk = obDir </> "impl"
+  implThunkStat <- liftIO $ getFileStatus implThunk
+  when (not $ isWritableOnlyBy implThunkStat myUid) $ modify (implThunk:)
+
+--TODO: Is there a better way to ask if anyone else can write things?
+--E.g. what about ACLs?
+-- | Check to see if directory is only writable by a user whose User ID matches the second argument provided
+isWritableOnlyBy :: FileStatus -> UserID -> Bool
+isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
+
+-- | Run a command in the given shell for the current project
+inProjectShell :: String -> String -> IO ()
+inProjectShell shellName command = do
+  findProjectRoot "." >>= \case
+     Nothing -> putStrLn "Must be used inside of an Obelisk project"
+     Just root -> do
+       (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell"
+          [ "-A"
+          , "shells." <> shellName
+          , "--run", command
+          ]
+       _ <- waitForProcess ph
+       return ()
+
+setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
+setCwd fp cp = cp { cwd = fp }

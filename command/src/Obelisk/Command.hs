@@ -1,6 +1,8 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command where
 
+import Data.Monoid ((<>))
 import Options.Applicative
 import System.Environment
 import System.IO
@@ -8,6 +10,7 @@ import System.Posix.Process
 
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
+import Obelisk.Command.Repl
 
 data Args = Args
   { _args_noHandOffPassed :: Bool
@@ -33,16 +36,27 @@ argsInfo = info (args <**> helper) $ mconcat
   , progDesc "Manage Obelisk projects"
   ]
 
+initSource :: Parser InitSource
+initSource = foldl1 (<|>)
+  [ pure InitSource_Default
+  , InitSource_Branch <$> strOption (long "branch" <> metavar "BRANCH")
+  , InitSource_Symlink <$> strOption (long "symlink" <> metavar "PATH")
+  ]
+
 data ObCommand
-   = ObCommand_Init
+   = ObCommand_Init InitSource
    | ObCommand_Dev
    | ObCommand_Thunk ThunkCommand
+   | ObCommand_Repl FilePath
+   | ObCommand_Watch FilePath
 
 obCommand :: Parser ObCommand
 obCommand = hsubparser $ mconcat
-  [ command "init" $ info (pure ObCommand_Init) $ progDesc "Initialize an Obelisk project"
+  [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
   , command "dev" $ info (pure ObCommand_Dev) $ progDesc "Run the current project in development mode"
   , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
+  , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
+  , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch directory for changes and update interactive interpreter"
   ]
 
 data ThunkCommand
@@ -83,9 +97,11 @@ main = do
 
 ob :: ObCommand -> IO ()
 ob = \case
-  ObCommand_Init -> initProject "."
+  ObCommand_Init source -> initProject source
   ObCommand_Dev -> putStrLn "Dev!"
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
+  ObCommand_Repl component -> runRepl component
+  ObCommand_Watch component -> watch component
 
 --TODO: Clean up all the magic strings throughout this codebase
