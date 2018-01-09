@@ -97,7 +97,7 @@ ob = \case
   ObCommand_Dev -> putStrLn "Dev!"
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
-  ObCommand_Repl component -> runRepl component False
-  ObCommand_Watch component -> runRepl component True
+  ObCommand_Repl component -> runInteractiveShell component
+  ObCommand_Watch component -> watchInteractiveShell component
 
 --TODO: Clean up all the magic strings throughout this codebase
