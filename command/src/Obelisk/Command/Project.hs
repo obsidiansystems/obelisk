@@ -1,7 +1,8 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command.Project
-  ( initProject
+  ( InitSource (..)
+  , initProject
   , findProjectObeliskCommand
   , findProjectRoot
   , inProjectShell
@@ -20,6 +21,7 @@ import System.Exit
 import System.FilePath
 import System.IO
 import System.Posix (FileStatus, getFileStatus , deviceID, fileID, getRealUserID , fileOwner, fileMode, UserID)
+import System.Posix.Files
 import System.Process
 
 import GitHub.Data.Name (Name)
@@ -43,12 +45,25 @@ obeliskSourceWithBranch branch = ThunkSource_GitHub $ GitHubSource
   , _gitHubSource_private = True
   }
 
-initProject :: FilePath -> Maybe (Name Branch) -> IO ()
-initProject target branch = do
-  let obDir = target </> ".obelisk"
+data InitSource
+   = InitSource_Default
+   | InitSource_Branch (Name Branch)
+   | InitSource_Symlink FilePath
+
+-- | Create a new project rooted in the current directory
+initProject :: InitSource -> IO ()
+initProject source = do
+  let obDir = ".obelisk"
       implDir = obDir </> "impl"
   createDirectory obDir
-  createThunkWithLatest implDir $ maybe obeliskSource obeliskSourceWithBranch branch
+  case source of
+    InitSource_Default -> createThunkWithLatest implDir obeliskSource
+    InitSource_Branch branch -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+    InitSource_Symlink path -> do
+      let symlinkPath = if isAbsolute path
+            then path
+            else ".." </> path
+      createSymbolicLink symlinkPath implDir
   _ <- nixBuildAttrWithCache implDir "command"
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
@@ -57,7 +72,7 @@ initProject target branch = do
     , "--no-preserve=mode"
     , "-T"
     , skeleton </> "."
-    , target
+    , "."
     ] Nothing Nothing
   ExitSuccess <- waitForProcess p
   return ()

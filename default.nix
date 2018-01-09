@@ -47,7 +47,7 @@ rec {
   command = ghcObelisk.obelisk-command;
   #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
   skeleton = pkgs.runCommand "skeleton" {
-    dir = ./skeleton;
+    dir = builtins.filterSource (path: type: builtins.trace path (baseNameOf path != ".obelisk")) ./skeleton;
   } ''
     ln -s "$dir" "$out"
   '';

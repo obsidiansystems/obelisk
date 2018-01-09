@@ -8,9 +8,6 @@ import System.Environment
 import System.IO
 import System.Posix.Process
 
-import GitHub.Data.Name
-import GitHub.Data.GitData
-
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Repl
@@ -39,8 +36,15 @@ argsInfo = info (args <**> helper) $ mconcat
   , progDesc "Manage Obelisk projects"
   ]
 
+initSource :: Parser InitSource
+initSource = foldl1 (<|>)
+  [ pure InitSource_Default
+  , InitSource_Branch <$> strOption (long "branch" <> metavar "BRANCH")
+  , InitSource_Symlink <$> strOption (long "symlink" <> metavar "PATH")
+  ]
+
 data ObCommand
-   = ObCommand_Init (Maybe (Name Branch))
+   = ObCommand_Init InitSource
    | ObCommand_Dev
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl FilePath
@@ -48,7 +52,7 @@ data ObCommand
 
 obCommand :: Parser ObCommand
 obCommand = hsubparser $ mconcat
-  [ command "init" $ info (ObCommand_Init <$> (optional (strOption (long "branch" <> metavar "BRANCH")))) $ progDesc "Initialize an Obelisk project"
+  [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
   , command "dev" $ info (pure ObCommand_Dev) $ progDesc "Run the current project in development mode"
   , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
   , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
@@ -93,7 +97,7 @@ main = do
 
 ob :: ObCommand -> IO ()
 ob = \case
-  ObCommand_Init branch -> initProject "." branch
+  ObCommand_Init source -> initProject source
   ObCommand_Dev -> putStrLn "Dev!"
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
