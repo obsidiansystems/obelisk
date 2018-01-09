@@ -4,6 +4,7 @@ module Obelisk.Command.Project
   ( initProject
   , findProjectObeliskCommand
   , findProjectRoot
+  , inProjectShell
   ) where
 
 import Control.Monad
@@ -129,3 +130,20 @@ walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \ca
 -- | Check to see if directory is only writable by a user whose User ID matches the second argument provided
 isWritableOnlyBy :: FileStatus -> UserID -> Bool
 isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
+
+-- | Run a command in the given shell for the current project
+inProjectShell :: String -> String -> IO ()
+inProjectShell shellName command = do
+  findProjectRoot "." >>= \case
+     Nothing -> putStrLn "Must be used inside of an Obelisk project"
+     Just root -> do
+       (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell"
+          [ "-A"
+          , "shells." <> shellName
+          , "--run", command
+          ]
+       _ <- waitForProcess ph
+       return ()
+
+setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
+setCwd fp cp = cp { cwd = fp }
