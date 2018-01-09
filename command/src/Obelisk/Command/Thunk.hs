@@ -9,14 +9,16 @@ module Obelisk.Command.Thunk
   , getLatestRev
   , updateThunkToLatest
   , createThunkWithLatest
-  , nixBuildThunkAttrWithCache
+  , nixBuildAttrWithCache
   ) where
 
 import Control.Exception
 import Control.Monad
+import Control.Monad.Except
 import Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.ByteString.Lazy as LBS
+import Data.Default
 import Data.Foldable
 import Data.Git.Ref (Ref)
 import qualified Data.Git.Ref as Ref
@@ -24,6 +26,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Maybe
 import Data.Monoid
+import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -36,6 +39,7 @@ import GitHub
 import GitHub.Endpoints.Repos.Contents (archiveForR)
 import GitHub.Data.Name
 import Network.URI
+import Obelisk.Command.Nix
 import System.Directory
 import System.Exit
 import System.FilePath
@@ -109,10 +113,15 @@ getLatestRev = \case
       , _thunkRev_nixSha256 = nixSha256
       }
 
+data ReadThunkError
+   = ReadThunkError_WrongContents (Set String) (Set String)
+   | ReadThunkError_UnrecognizedLoader Text
+   | ReadThunkError_UnparseablePtr LBS.ByteString
+
 -- | Read a thunk and validate that it is only a thunk.  If additional data is
 -- present, fail.
-readThunk :: FilePath -> IO (Maybe ThunkPtr)
-readThunk thunkDir = do
+readThunk :: FilePath -> IO (Either ReadThunkError ThunkPtr)
+readThunk thunkDir = runExceptT $ do
   let thunkLoader = thunkDir </> "default.nix"
       githubJson = thunkDir </> "github.json"
       attrCache = thunkDir </> ".attr-cache"
@@ -124,16 +133,18 @@ readThunk thunkDir = do
 
   -- Ensure that there aren't any other files in the thunk
   -- NB: System.Directory.listDirectory returns the contents without the directory path
-  files <- Set.fromList . fmap (thunkDir </>) <$> listDirectory thunkDir
+  files <- liftIO $ Set.fromList . fmap (thunkDir </>) <$> listDirectory thunkDir
   let unexpectedContents = files `Set.difference` expectedContents
       missingContents = expectedContents `Set.difference` files
-  guard $ Set.null unexpectedContents && Set.null missingContents
+  unless (Set.null unexpectedContents && Set.null missingContents) $ do
+    throwError $ ReadThunkError_WrongContents unexpectedContents missingContents
 
   -- Ensure that we recognize the thunk loader
-  loader <- T.readFile thunkLoader
-  guard $ loader `elem` gitHubStandaloneLoaders
+  loader <- liftIO $ T.readFile thunkLoader
+  unless (loader `elem` gitHubStandaloneLoaders) $ do
+    throwError $ ReadThunkError_UnrecognizedLoader loader
 
-  txt <- LBS.readFile githubJson
+  txt <- liftIO $ LBS.readFile githubJson
   let p v = do
         owner <- v Aeson..: "owner"
         repo <- v Aeson..: "repo"
@@ -153,12 +164,14 @@ readThunk thunkDir = do
             , _gitHubSource_private = fromMaybe False mPrivate
             }
           }
-  return $ parseMaybe p =<< decode txt
+  case parseMaybe p =<< decode txt of
+    Nothing -> throwError $ ReadThunkError_UnparseablePtr txt
+    Just ptr -> return ptr
 
 overwriteThunk :: FilePath -> ThunkPtr -> IO ()
 overwriteThunk target thunk = do
   -- Ensure that this directory is a valid thunk (i.e. so we aren't losing any data)
-  Just _ <- readThunk target
+  Right _ <- readThunk target
 
   --TODO: Is there a safer way to do this overwriting?
   removeDirectoryRecursive target
@@ -208,7 +221,7 @@ createThunkWithLatest target s = do
 
 updateThunkToLatest :: FilePath -> IO ()
 updateThunkToLatest target = do
-  Just ptr <- readThunk target
+  Right ptr <- readThunk target
   let src = _thunkPtr_source ptr
   rev <- getLatestRev src
   overwriteThunk target $ ThunkPtr
@@ -285,15 +298,30 @@ nixBuildThunkAttrWithCache thunkDir attr = do
   case cacheHit of
     Just c -> return c
     Nothing -> do
-      hPutStrLn stderr (mconcat [ thunkDir, ":", attr, " not cached, building ..."])
-      (_, _, err, p) <- runInteractiveProcess "nix-build"
-        [ thunkDir
-        , "-A", attr
-        , "--indirect", "--add-root", cachePath
-        ] Nothing Nothing
-      waitForProcess p >>= \case
-        ExitSuccess -> return ()
-        _ -> do
-          LBS.putStr =<< LBS.hGetContents err
-          fail "nix-build failed"
+      hPutStrLn stderr (mconcat [thunkDir, ": ", attr, " not cached, building ..."])
+      _ <- nixBuild $ def
+        { _nixBuildConfig_target = Target
+          { _target_path = thunkDir
+          , _target_attr = Just attr
+          }
+        , _nixBuildConfig_outLink = OutLink_IndirectRoot cachePath
+        }
       return cachePath
+
+-- | Build a nix attribute, and cache the result if possible
+nixBuildAttrWithCache :: FilePath
+                      -- ^ Path to directory containing Thunk
+                      -> String
+                      -- ^ Attribute to build
+                      -> IO FilePath
+                      -- ^ Symlink to cached or built nix output
+nixBuildAttrWithCache exprPath attr = do
+  readThunk exprPath >>= \case
+    Right _ -> nixBuildThunkAttrWithCache exprPath attr
+    Left _ -> nixBuild $ def
+      { _nixBuildConfig_target = Target
+        { _target_path = exprPath
+        , _target_attr = Just attr
+        }
+      , _nixBuildConfig_outLink = OutLink_None
+      }

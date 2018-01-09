@@ -49,9 +49,9 @@ initProject target branch = do
       implDir = obDir </> "impl"
   createDirectory obDir
   createThunkWithLatest implDir $ maybe obeliskSource obeliskSourceWithBranch branch
-  _ <- nixBuildThunkAttrWithCache implDir "command"
+  _ <- nixBuildAttrWithCache implDir "command"
   --TODO: We should probably handoff to the impl here
-  skeleton <- nixBuildThunkAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
+  skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
   (_, _, _, p) <- runInteractiveProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
     [ "-r"
     , "--no-preserve=mode"
@@ -85,7 +85,7 @@ findProjectObeliskCommand target = do
             return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
-       obeliskCommandPkg <- nixBuildThunkAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
+       obeliskCommandPkg <- nixBuildAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
        return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
