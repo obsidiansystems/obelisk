@@ -31,7 +31,7 @@ nix-build -A ghcjs.frontend --out-link frontend-js
 Now you can try running the backend in GHCi by running
 
 ```bash
-nix-shell -A ghc.backend.env --run "cd backend; cabal repl"
+ob repl backend
 ```
 and then typing
 
