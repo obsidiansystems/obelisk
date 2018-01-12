@@ -72,51 +72,55 @@ rec {
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
-  project =
-    base:
-    { android ? null #TODO: Better error when missing
-    , ios ? null #TODO: Better error when missing
-    }: reflex-platform.project ({ nixpkgs, ... }: with nixpkgs.haskell.lib;
-    let frontendName = "frontend";
-        backendName = "backend";
-        commonName = "common";
-        staticName = "static";
-        staticPath = base + "/static";
-        assets = processAssets { src = base + "/static"; };
-        packages = filterAttrs (_: x: x != null) {
-          ${frontendName} = nullIfAbsent (base + "/frontend");
-          ${commonName} = nullIfAbsent (base + "/common");
-          ${backendName} = nullIfAbsent (base + "/backend");
+  project = base: projectDefinition: reflex-platform.project (args@{ nixpkgs, ... }: with nixpkgs.haskell.lib;
+    let mkProject = { android ? null #TODO: Better error when missing
+                    , ios ? null #TODO: Better error when missing
+                    , packages ? {}
+                    }:
+        let frontendName = "frontend";
+            backendName = "backend";
+            commonName = "common";
+            staticName = "static";
+            staticPath = base + "/static";
+            assets = processAssets { src = base + "/static"; };
+            # The packages whose names and roles are defined by this package
+            predefinedPackages = filterAttrs (_: x: x != null) {
+              ${frontendName} = nullIfAbsent (base + "/frontend");
+              ${commonName} = nullIfAbsent (base + "/common");
+              ${backendName} = nullIfAbsent (base + "/backend");
+            };
+            combinedPackages = predefinedPackages // packages;
+            projectOverrides = self: super: {
+              heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
+              ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
+            };
+            overrides = composeExtensions haskellOverrides projectOverrides;
+        in {
+          inherit overrides;
+          packages = combinedPackages;
+          shells = {
+            ghc = filter (x: hasAttr x combinedPackages) [
+              backendName
+              commonName
+              frontendName
+            ];
+            ghcjs = filter (x: hasAttr x combinedPackages) [
+              frontendName
+              commonName
+            ];
+          };
+          android = {
+            ${if android == null then null else frontendName} = {
+              executableName = "frontend";
+              ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
+            } // android;
+          };
+          ios = {
+            ${if ios == null then null else frontendName} = {
+              executableName = "frontend";
+              ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
+            } // ios;
+          };
         };
-        projectOverrides = self: super: {
-          heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
-          ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
-        };
-        overrides = composeExtensions haskellOverrides projectOverrides;
-    in {
-      inherit packages overrides;
-      shells = {
-        ghc = filter (x: hasAttr x packages) [
-          backendName
-          commonName
-          frontendName
-        ];
-        ghcjs = filter (x: hasAttr x packages) [
-          frontendName
-          commonName
-        ];
-      };
-      android = {
-        ${if android == null then null else frontendName} = {
-          executableName = "frontend";
-          ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
-        } // android;
-      };
-      ios = {
-        ${if ios == null then null else frontendName} = {
-          executableName = "frontend";
-          ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
-        } // ios;
-      };
-    });
+    in mkProject (projectDefinition args));
 }
