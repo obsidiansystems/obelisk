@@ -92,8 +92,8 @@ findProjectObeliskCommand target = do
         return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
-       obeliskCommandPkg <- nixBuildAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
-       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
+      obeliskCommandPkg <- nixBuildAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
+      return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
       T.hPutStr stderr $ T.unlines

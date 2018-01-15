@@ -2,9 +2,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command where
 
-import Data.Monoid ((<>))
+import Control.Monad
+import Data.Monoid
 import Options.Applicative
 import System.Environment
+import System.FilePath
 import System.IO
 import System.Posix.Process
 
@@ -26,7 +28,7 @@ args = Args <$> noHandoff <*> obCommand
 noHandoff :: Parser Bool
 noHandoff = flag False True $ mconcat
   [ long "no-handoff"
-  , help "Do not hand off execution to a project-specific implementation of this command"
+  , help "Do not hand off execution to project-specific implementation of this command"
   , hidden
   ]
 
@@ -53,18 +55,44 @@ data ObCommand
 obCommand :: Parser ObCommand
 obCommand = hsubparser $ mconcat
   [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
-  , command "dev" $ info (pure ObCommand_Dev) $ progDesc "Run the current project in development mode"
+  , command "dev" $ info (pure ObCommand_Dev) $ progDesc "Run current project in development mode"
   , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
   , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
   , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch directory for changes and update interactive interpreter"
   ]
 
+--TODO: Result should provide normalised path and also original user input for error reporting.
+thunkDirectoryParser :: Parser FilePath
+thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
+  [ action "directory"
+  , metavar "THUNKDIR"
+  , help "Path to directory containing thunk data"
+  ]
+
+data ThunkPackOpts = ThunkPackOpts
+  { _thunkPackOpts_directory :: FilePath
+  , _thunkPackOpts_upstream :: String
+  }
+
 data ThunkCommand
    = ThunkCommand_Update [FilePath]
+   | ThunkCommand_Unpack [FilePath]
+   | ThunkCommand_Pack [ThunkPackOpts]
+
+thunkPackOpts :: Parser ThunkPackOpts
+thunkPackOpts = (ThunkPackOpts <$> thunkDirectoryParser <*>) . strOption $ mconcat
+  [ long "upstream"
+  , value "origin"
+  , metavar "REMOTE"
+  , help "Git remote that packed thunk will point to"
+  , showDefault
+  ]
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some (strArgument (action "directory"))) $ progDesc "Update a thunk to the latest revision available"
+  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser) $ progDesc "Update thunk to latest revision available"
+  , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
+  , command "pack" $ info (ThunkCommand_Pack <$> some thunkPackOpts) $ progDesc "Pack git checkout into thunk that points at given upstream"
   ]
 
 parserPrefs :: ParserPrefs
@@ -101,6 +129,8 @@ ob = \case
   ObCommand_Dev -> putStrLn "Dev!"
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
+    ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
+    ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir upstream
   ObCommand_Repl component -> runRepl component
   ObCommand_Watch component -> watch component
 

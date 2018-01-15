@@ -58,6 +58,7 @@ nixBuild cfg = do
   waitForProcess p >>= \case
     ExitSuccess -> return ()
     _ -> do
+      LBS.putStr =<< LBS.hGetContents out
       LBS.putStr =<< LBS.hGetContents err
       fail "nix-build failed"
   T.unpack . T.strip <$> T.hGetContents out

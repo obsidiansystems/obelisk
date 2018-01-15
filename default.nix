@@ -1,4 +1,6 @@
-{ system ? builtins.currentSystem }:
+{ system ? builtins.currentSystem
+, profiling ? false
+}:
 let reflex-platform = import ./reflex-platform { inherit system; };
     inherit (reflex-platform) hackGet;
     pkgs = reflex-platform.nixpkgs;
@@ -6,6 +8,9 @@ let reflex-platform = import ./reflex-platform { inherit system; };
     ghcObelisk = reflex-platform.ghc.override {
       overrides = self: super: with pkgs.haskell.lib; {
         #TODO: Eliminate this when https://github.com/phadej/github/pull/307 makes its way to reflex-platform
+        mkDerivation = args: super.mkDerivation (args // {
+          enableLibraryProfiling = profiling;
+        });
         github = overrideCabal super.github (drv: {
           src = pkgs.fetchFromGitHub {
             owner = "ryantrinkle";

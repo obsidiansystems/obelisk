@@ -20,11 +20,13 @@ library
     , network-uri
     , optparse-applicative
     , process
+    , temporary
     , text
     , time
     , transformers
     , unix
     , yaml
+    , placeholders
   exposed-modules:
     Obelisk.Command
     Obelisk.Command.Nix
@@ -36,4 +38,4 @@ library
 executable ob
   main-is: src-bin/ob.hs
   build-depends: base, obelisk-command
-  ghc-options: -Wall -O2
+  ghc-options: -Wall -O2 -threaded
