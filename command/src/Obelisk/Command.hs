@@ -3,6 +3,7 @@
 module Obelisk.Command where
 
 import Control.Monad
+import Data.List
 import Data.Monoid
 import Options.Applicative
 import System.Environment
@@ -114,14 +115,18 @@ main = do
            --TODO: Use a proper logging system with log levels and whatnot
           True -> hPutStrLn stderr "NOTICE: --no-handoff should only be passed once and as the first argument; ignoring"
         ob cmd
-  case myArgs of
-    "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
-    as -> do
-      findProjectObeliskCommand "." >>= \case
-        Nothing -> go as -- If we aren't in a project, just run ourselves
+      handoffAndGo as = findProjectObeliskCommand "." >>= \case
+        Nothing -> go as -- If not in a project, just run ourselves
         Just impl -> do
           -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
           executeFile impl False ("--no-handoff" : myArgs) Nothing
+  case myArgs of
+    "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
+    a:as -- Otherwise bash completion would always hand-off even if the user isn't trying to
+      | "--bash-completion" `isPrefixOf` a
+      && "--no-handoff" `elem` as -> go (a:as)
+      | otherwise -> handoffAndGo (a:as)
+    as -> handoffAndGo as
 
 ob :: ObCommand -> IO ()
 ob = \case
