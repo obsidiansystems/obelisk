@@ -67,7 +67,7 @@ import Development.Placeholders
 data ThunkData
    = ThunkData_Packed ThunkPtr
    -- ^ Packed thunk
-   | ThunkData_Checkout ThunkPtr
+   | ThunkData_Checkout (Maybe ThunkPtr)
    -- ^ Checked out thunk that was unpacked from this pointer
   deriving (Show, Eq, Ord)
 
@@ -169,7 +169,11 @@ readThunk :: FilePath -> IO (Either ReadThunkError ThunkData)
 readThunk thunkDir = do
   files <- listDirectory thunkDir
   case ".git" `elem` files of
-    True -> fmap ThunkData_Checkout <$> readPackedThunk (thunkDir </> ".git" </> "obelisk" </> "orig-thunk")
+    True -> fmap ThunkData_Checkout <$> do
+      let origThunkPath = thunkDir </> ".git" </> "obelisk" </> "orig-thunk"
+      doesDirectoryExist origThunkPath >>= \case
+        True -> fmap Just <$> readPackedThunk origThunkPath
+        False -> return $ return Nothing
     False -> fmap ThunkData_Packed <$> readPackedThunk thunkDir
 
 -- | Read a thunk and validate that it is exactly a packed thunk.
@@ -318,7 +322,7 @@ updateThunkToLatest target = do
     Left err -> fail $ "thunk update: " <> show err
     Right c -> return $ case c of
       ThunkData_Packed t -> (target, t)
-      ThunkData_Checkout t -> (target </> ".git" </> "obelisk", t)
+      ThunkData_Checkout _ -> fail "cannot update an unpacked thunk"
   let src = _thunkPtr_source ptr
   rev <- getLatestRev src
   overwriteThunk overwrite $ ThunkPtr
