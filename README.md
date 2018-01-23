@@ -15,7 +15,7 @@
           NIX_GITHUB_PRIVATE_PASSWORD = "your-github-personal-access-token";
         };
         ```
-    1. `nix-env -i hub`
+    1. `nix-env -i hub` OR `nix-env -iA nixos.gitAndTools.hub`
     1. `hub clone obsidiansystems/obelisk`
       * NOTE: you must authenticate with hub at least once, because the `ob` command uses `hub` for authentication
       #TODO: Make ob do this itself (either invoke hub automatically or not depend on hub)
