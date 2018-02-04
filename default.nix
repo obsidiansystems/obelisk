@@ -61,7 +61,6 @@ rec {
     obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
     obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
     obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};
-    obelisk-font-awesome = self.callCabal2nix "obelisk-font-awesome" (hackGet ./lib/font-awesome) {};
   };
   nullIfAbsent = p: if pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
