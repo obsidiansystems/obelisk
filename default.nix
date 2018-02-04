@@ -1,7 +1,7 @@
 { system ? builtins.currentSystem
 , profiling ? false
 }:
-let reflex-platform = import ./reflex-platform { inherit system; };
+let reflex-platform = import ./dep/reflex-platform { inherit system; };
     inherit (reflex-platform) hackGet;
     pkgs = reflex-platform.nixpkgs;
     # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
@@ -24,7 +24,7 @@ let reflex-platform = import ./reflex-platform { inherit system; };
         });
 
         # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
-        obelisk-command = overrideCabal (justStaticExecutables (self.callCabal2nix "obelisk-command" ./command {})) (drv: {
+        obelisk-command = overrideCabal (justStaticExecutables (self.callCabal2nix "obelisk-command" ./lib/command {})) (drv: {
           postInstall = (drv.postInstall or "") + ''
             OB="$out/bin/ob"
 
@@ -57,11 +57,11 @@ rec {
     ln -s "$dir" "$out"
   '';
   haskellOverrides = self: super: {
-    obelisk-asset-serve = self.callCabal2nix "obelisk-asset-serve" (hackGet ./asset + "/serve") {};
-    obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./asset + "/manifest") {};
-    obelisk-backend = self.callCabal2nix "obelisk-backend" ./backend {};
-    obelisk-snap = self.callCabal2nix "obelisk-snap" ./snap {};
-    obelisk-font-awesome = self.callCabal2nix "obelisk-font-awesome" (hackGet ./font-awesome) {};
+    obelisk-asset-serve = self.callCabal2nix "obelisk-asset-serve" (hackGet ./lib/asset + "/serve") {};
+    obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
+    obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
+    obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};
+    obelisk-font-awesome = self.callCabal2nix "obelisk-font-awesome" (hackGet ./lib/font-awesome) {};
   };
   nullIfAbsent = p: if pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
@@ -69,7 +69,7 @@ rec {
     inherit src;
     outputs = [ "out" "haskellManifest" "symlinked" ];
     buildInputs = [
-      (reflex-platform.ghc.callCabal2nix "obelisk-asset-manifest" (hackGet ./asset + "/manifest") {})
+      (reflex-platform.ghc.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {})
     ];
   } ''
     set -euo pipefail
