@@ -1,0 +1,22 @@
+name: obelisk-selftest
+version: 0.1
+synopsys: Impure and nix-level tests for obelisk
+license: BSD3
+build-type: Simple
+cabal-version: >=1.8
+
+library
+  hs-source-dir: src
+  build-depends:
+      base
+    , hspec
+    , shelly
+    , temporary
+    , text
+  exposed-modules:
+    Obelisk.SelfTest
+
+executable obelisk-selftest
+  main-is: src-bin/obelisk-selftest.hs
+  build-depends: base, obelisk-selftest
+  ghc-options: -Wall -O2 -threaded

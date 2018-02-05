@@ -4,13 +4,36 @@
 let reflex-platform = import ./dep/reflex-platform { inherit system; };
     inherit (reflex-platform) hackGet;
     pkgs = reflex-platform.nixpkgs;
+in with pkgs.haskell.lib; with pkgs.lib;
+let #TODO: Upstream
+    # Modify a Haskell package to add completion scripts for the given
+    # executable produced by it.  These completion scripts will be picked up
+    # automatically if the resulting derivation is installed, e.g. by
+    # `nix-env -i`.
+    addOptparseApplicativeCompletionScripts = exeName: pkg: overrideCabal pkg (drv: {
+      postInstall = (drv.postInstall or "") + ''
+        BASH_COMP_DIR="$out/share/bash-completion/completions"
+        mkdir -p "$BASH_COMP_DIR"
+        "$out/bin/${exeName}" --bash-completion-script "$out/bin/${exeName}" >"$BASH_COMP_DIR/ob"
+
+        ZSH_COMP_DIR="$out/share/zsh/vendor-completions"
+        mkdir -p "$ZSH_COMP_DIR"
+        "$out/bin/${exeName}" --zsh-completion-script "$out/bin/${exeName}" >"$ZSH_COMP_DIR/_ob"
+
+        FISH_COMP_DIR="$out/share/fish/vendor_completions.d"
+        mkdir -p "$FISH_COMP_DIR"
+        "$out/bin/${exeName}" --fish-completion-script "$out/bin/${exeName}" >"$FISH_COMP_DIR/ob.fish"
+      '';
+    });
+
     # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
     ghcObelisk = reflex-platform.ghc.override {
-      overrides = self: super: with pkgs.haskell.lib; {
-        #TODO: Eliminate this when https://github.com/phadej/github/pull/307 makes its way to reflex-platform
+      overrides = composeExtensions addLibs (self: super: {
         mkDerivation = args: super.mkDerivation (args // {
           enableLibraryProfiling = profiling;
         });
+
+        #TODO: Eliminate this when https://github.com/phadej/github/pull/307 makes its way to reflex-platform
         github = overrideCabal super.github (drv: {
           src = pkgs.fetchFromGitHub {
             owner = "ryantrinkle";
@@ -24,44 +47,39 @@ let reflex-platform = import ./dep/reflex-platform { inherit system; };
         });
 
         # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
-        obelisk-command = overrideCabal (justStaticExecutables (self.callCabal2nix "obelisk-command" ./lib/command {})) (drv: {
-          postInstall = (drv.postInstall or "") + ''
-            OB="$out/bin/ob"
-
-            BASH_COMP="$out/share/bash-completion/completions"
-            mkdir -p "$BASH_COMP"
-            "$OB" --bash-completion-script "$OB" >"$BASH_COMP/ob"
-
-            ZSH_COMP="$out/share/zsh/vendor-completions"
-            mkdir -p "$ZSH_COMP"
-            "$OB" --zsh-completion-script "$OB" >"$ZSH_COMP/_ob"
-
-            FISH_COMP="$out/share/fish/vendor_completions.d"
-            mkdir -p "$FISH_COMP"
-            "$OB" --fish-completion-script "$OB" >"$FISH_COMP/ob.fish"
-          '';
-        });
+        obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables super.obelisk-command);
 
         optparse-applicative = self.callHackage "optparse-applicative" "0.14.0.0" {};
-      };
+      });
+    };
+
+    addLibs = self: super: {
+      obelisk-asset-serve = self.callCabal2nix "obelisk-asset-serve" (hackGet ./lib/asset + "/serve") {};
+      obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
+      obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
+      obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};
+      obelisk-selftest = self.callCabal2nix "obelisk-selftest" ./lib/selftest {};
+      obelisk-command = self.callCabal2nix "obelisk-command" ./lib/command {};
     };
 in
 with pkgs.lib;
 rec {
   inherit reflex-platform;
   command = ghcObelisk.obelisk-command;
+  selftest = pkgs.writeScript "selftest" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    PATH="${ghcObelisk.obelisk-command}/bin:$PATH"
+    export OBELISK_IMPL="${hackGet ./.}"
+    "${justStaticExecutables ghcObelisk.obelisk-selftest}/bin/obelisk-selftest"
+  '';
   #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
   skeleton = pkgs.runCommand "skeleton" {
     dir = builtins.filterSource (path: type: builtins.trace path (baseNameOf path != ".obelisk")) ./skeleton;
   } ''
     ln -s "$dir" "$out"
   '';
-  haskellOverrides = self: super: {
-    obelisk-asset-serve = self.callCabal2nix "obelisk-asset-serve" (hackGet ./lib/asset + "/serve") {};
-    obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
-    obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
-    obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};
-  };
   nullIfAbsent = p: if pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
   processAssets = { src, packageName ? "static", moduleName ? "Static" }: pkgs.runCommand "asset-manifest" {
@@ -76,7 +94,7 @@ rec {
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
-  project = base: projectDefinition: reflex-platform.project (args@{ nixpkgs, ... }: with nixpkgs.haskell.lib;
+  project = base: projectDefinition: reflex-platform.project (args@{ nixpkgs, ... }:
     let mkProject = { android ? null #TODO: Better error when missing
                     , ios ? null #TODO: Better error when missing
                     , packages ? {}
@@ -98,7 +116,7 @@ rec {
               heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
               ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
             };
-            overrides = composeExtensions haskellOverrides projectOverrides;
+            overrides = composeExtensions addLibs projectOverrides;
         in {
           inherit overrides;
           packages = combinedPackages;
