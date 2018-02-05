@@ -9,5 +9,4 @@ executable backend
   build-depends:
     base,
     common,
-    obelisk-backend,
-    snap
+    obelisk-backend
