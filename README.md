@@ -51,21 +51,3 @@ To increase developer productivity it is highly recommended to make use of the
 will compile and refresh itself showing you the latest possible syntax or type errors
 as well as any other ghc warnings whenever files within their respective directories
 are saved and updated.
-
-## Deployment
-From Nix to NixOS:
-When you feel your repository is ready to be deployed, feel free to utilize some scripts to aid in the process.
-
-Assuming you have taken the neccessary steps in setting up your staging/production server: #TODO: Elaborate on this setup as well.
-
-From within the root of your obelisk project directory, use the script and syntax provided below:
-
-```bash
-./set-deploy [DESTINATION DIR] [PRIVATE KEY FILE]
-```
-
-This script will create a `deploy` directory within the directory you've specified within the first arguement to the script. To start deployment to your NixOS server, `cd` into the `deploy/src` directory and use the following script and syntax provided below:
-
-```bash
-./obelisk/deploy [yourServer.org] .. --arg ssl true
-```
