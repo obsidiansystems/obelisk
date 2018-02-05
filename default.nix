@@ -28,7 +28,7 @@ let #TODO: Upstream
 
     # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
     ghcObelisk = reflex-platform.ghc.override {
-      overrides = composeExtensions addLibs (self: super: {
+      overrides = composeExtensions defaultHaskellOverrides (self: super: {
         mkDerivation = args: super.mkDerivation (args // {
           enableLibraryProfiling = profiling;
         });
@@ -53,14 +53,21 @@ let #TODO: Upstream
       });
     };
 
-    addLibs = self: super: {
-      obelisk-asset-serve = self.callCabal2nix "obelisk-asset-serve" (hackGet ./lib/asset + "/serve") {};
-      obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
-      obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
-      obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};
-      obelisk-selftest = self.callCabal2nix "obelisk-selftest" ./lib/selftest {};
-      obelisk-command = self.callCabal2nix "obelisk-command" ./lib/command {};
+    fixUpstreamPkgs = self: super: {
+      heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
     };
+
+    addLibs = self: super: {
+      obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
+      obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
+      obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
+      obelisk-command = self.callCabal2nix "obelisk-command" ./lib/command {};
+      obelisk-selftest = self.callCabal2nix "obelisk-selftest" ./lib/selftest {};
+      obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};
+      obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" ./lib/snap-extras {};
+    };
+
+    defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
 in
 with pkgs.lib;
 rec {
@@ -113,10 +120,9 @@ rec {
             };
             combinedPackages = predefinedPackages // packages;
             projectOverrides = self: super: {
-              heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
               ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
             };
-            overrides = composeExtensions addLibs projectOverrides;
+            overrides = composeExtensions defaultHaskellOverrides projectOverrides;
         in {
           inherit overrides;
           packages = combinedPackages;
@@ -145,4 +151,9 @@ rec {
           };
         };
     in mkProject (projectDefinition args));
+  haskellPackageSets = {
+    ghc = reflex-platform.ghc.override {
+      overrides = defaultHaskellOverrides;
+    };
+  };
 }

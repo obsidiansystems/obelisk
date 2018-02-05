@@ -1,0 +1,43 @@
+Name: obelisk-asset-manifest
+Version: 0.1
+Synopsis: Project Synopsis Here
+Description: Project Description Here
+License: BSD3
+Author: Obsidian Systems LLC
+Maintainer: maintainer@obsidian.systems
+Stability: Experimental
+Category: Web
+Build-type: Simple
+Cabal-version: >= 1.8
+
+library
+  hs-source-dirs: src
+
+  build-depends:
+      base
+    , bytestring
+    , containers
+    , directory
+    , SHA
+    , filepath
+    , template-haskell
+    , text
+    , transformers
+    , unix
+    , vector
+  exposed-modules:
+    Obelisk.Asset.Gather
+    Obelisk.Asset.Promoted
+    Obelisk.Asset.Symlink
+    Obelisk.Asset.TH
+
+  other-extensions: TemplateHaskell
+  ghc-options: -Wall -Werror -fno-warn-unused-do-bind -fwarn-tabs -funbox-strict-fields -O2 -fprof-auto-calls
+
+executable obelisk-asset-manifest-generate
+  hs-source-dirs: src-bin
+  main-is: generate.hs
+  build-depends:
+      base
+    , obelisk-asset-manifest
+    , text

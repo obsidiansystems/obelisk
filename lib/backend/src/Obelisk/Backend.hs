@@ -8,7 +8,7 @@ module Obelisk.Backend
 
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
-import Obelisk.Asset.Serve (serveAssets)
+import Obelisk.Asset.Serve.Snap (serveAssets)
 import System.IO (hSetBuffering, stderr, BufferMode (..))
 import Snap (httpServe, defaultConfig, commandLineConfig, route)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))

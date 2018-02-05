@@ -9,6 +9,6 @@ library
                  snap,
                  snap-server,
                  data-default,
-                 obelisk-asset-serve,
+                 obelisk-asset-serve-snap,
                  bytestring
   exposed-modules: Obelisk.Backend

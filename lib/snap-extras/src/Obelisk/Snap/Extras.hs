@@ -1,0 +1,37 @@
+{-# LANGUAGE OverloadedStrings #-}
+module Obelisk.Snap.Extras
+  ( cachePermanently
+  , doNotCache
+  , serveFileIfExists
+  , serveFileIfExistsAs
+  ) where
+
+import Control.Monad.IO.Class
+import Data.ByteString (ByteString)
+import Snap.Core
+import Snap.Util.FileServe
+import System.Directory
+
+-- | Set response header for "permanent" caching
+cachePermanently :: MonadSnap m => m ()
+cachePermanently = do
+  modifyResponse $ setHeader "Cache-Control" "public, max-age=315360000"
+  modifyResponse $ setHeader "Expires" "Tue, 01 Feb 2050 00:00:00 GMT" --TODO: This should be set to "approximately one year from the time the response is sent"
+
+-- | Set response header to not cache
+doNotCache :: MonadSnap m => m ()
+doNotCache = do
+  modifyResponse $ setHeader "Cache-Control" "no-cache, no-store, must-revalidate"
+  modifyResponse $ setHeader "Expires" "0"
+
+-- | Serves the specified file if it exists; otherwise, 'pass'es
+serveFileIfExists :: MonadSnap m => FilePath -> m ()
+serveFileIfExists f = do
+  exists <- liftIO $ doesFileExist f
+  if exists then serveFile f else pass
+
+-- | Like 'serveFileIfExists', but with a given MIME type
+serveFileIfExistsAs :: MonadSnap m => ByteString -> FilePath -> m ()
+serveFileIfExistsAs mimeType f = do
+  exists <- liftIO $ doesFileExist f
+  if exists then serveFileAs mimeType f else pass
