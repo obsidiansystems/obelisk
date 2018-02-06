@@ -1,7 +1,17 @@
-# DO NOT HAND-EDIT THIS FILE
-import ((import <nixpkgs> {}).fetchFromGitHub (
-  let json = builtins.fromJSON (builtins.readFile ./github.json);
-  in { inherit (json) owner repo rev sha256;
-       private = json.private or false;
-     }
-))
+{ mkDerivation, base, bytestring, data-default, diagrams-lib
+, diagrams-svg, filepath, lens, lucid, monad-control
+, obelisk-asset-serve, raw-strings-qq, semigroups, snap, snap-core
+, stdenv, svg-builder, text, transformers-base
+}:
+mkDerivation {
+  pname = "obelisk-snap";
+  version = "0.1";
+  src = ./.;
+  libraryHaskellDepends = [
+    base bytestring data-default diagrams-lib diagrams-svg filepath
+    lens lucid monad-control obelisk-asset-serve raw-strings-qq
+    semigroups snap snap-core svg-builder text transformers-base
+  ];
+  description = "Project Synopsis Here";
+  license = stdenv.lib.licenses.bsd3;
+}
