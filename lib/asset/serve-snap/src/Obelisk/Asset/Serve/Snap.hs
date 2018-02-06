@@ -3,6 +3,8 @@
 module Obelisk.Asset.Serve.Snap
   ( serveAssets
   , serveAssetsInPlace
+  , serveAsset
+  , serveAssetInPlace
   , getAssetPath
   ) where
 
@@ -48,6 +50,14 @@ serveAssets = serveAssets' True
 serveAssetsInPlace :: MonadSnap m => FilePath -> FilePath -> m ()
 serveAssetsInPlace = serveAssets' False
 
+-- | Like 'serveAssets', but only serves a single specified asset
+serveAsset :: MonadSnap m => FilePath -> FilePath -> FilePath -> m ()
+serveAsset = serveAsset' True
+
+-- | Like 'serveAssetsInPlace', but only serves a single specified asset
+serveAssetInPlace :: MonadSnap m => FilePath -> FilePath -> FilePath -> m ()
+serveAssetInPlace = serveAsset' False
+
 -- | Serve static assets from an asset directory generated via @assets.nix@ or, failing that, from a regular directory.
 --
 -- For assets generated from @assets.nix@, the @Bool@ argument @doRedirect@ controls whether redirects will be sent to the browser if a request is made for
@@ -56,51 +66,53 @@ serveAssetsInPlace = serveAssets' False
 serveAssets' :: MonadSnap m => Bool -> FilePath -> FilePath -> m ()
 serveAssets' doRedirect base fallback = do
   pRaw <- getSafePath
-  go $ if "/" `isSuffixOf` pRaw || pRaw == "" then pRaw <> "index.html" else pRaw
-  where
-    go p = do
-      assetType <- liftIO $ try $ BS.readFile $ base </> p </> "type"
-      case assetType of
-        Right "immutable" -> do
-          conditionalOnModification <- getsRequest $ getHeader "If-Modified-Since"
-          case conditionalOnModification of
-            Nothing -> do
-              encodedFiles <- liftM (filter (`notElem` [".", ".."])) $ liftIO $ getDirectoryContents $ base </> p </> "encodings"
-              availableEncodings <- liftM (map snd . sort) $ forM encodedFiles $ \f -> do
-                stat <- liftIO $ getFileStatus $ base </> p </> "encodings" </> f
-                return (fileSize stat, Encoding $ encodeUtf8 $ T.pack f)
-              acceptEncodingRaw <- getsRequest $ getHeader "Accept-Encoding"
-              ae <- case acceptEncodingRaw of
-                Nothing -> return missingAcceptableEncodings
-                Just aer -> case parseOnly (acceptEncodingBody <* endOfInput) aer of
-                  Right ae -> return ae
-                  Left err -> error err
-              Just (Encoding e) <- return $ chooseEncoding availableEncodings ae
-              modifyResponse $ setHeader "Content-Encoding" e . setHeader "Vary" "Accept-Encoding"
-              if doRedirect then cachePermanently else doNotCache --TODO: Use Etags when not redirecting
-              let finalFilename = base </> p </> "encodings" </> T.unpack (decodeUtf8 e)
-              stat <- liftIO $ getFileStatus finalFilename
-              modifyResponse $ setHeader "Last-Modified" "Thu, 1 Jan 1970 00:00:00 GMT"
-              modifyResponse $ setResponseCode 200 . setContentLength (fromIntegral $ fileSize stat) . setContentType (fileType defaultMimeTypes p)
-              sendFile finalFilename
-            Just _ -> cachePermanently >> modifyResponse (setResponseCode 304)
-        Right "redirect" -> do
-          mtarget <- liftIO $ getAssetTarget $ base </> p
-          case mtarget of
-            Just target -> if doRedirect
-                           then do
-                             doNotCache
-                             redirect target
-                           else go $ takeDirectory p </> T.unpack (decodeUtf8 target)
-            Nothing -> serveFile $ fallback </> p
-        Right unknown -> error $ T.unpack ("serveAssets': Unknown asset " <> decodeUtf8 unknown)
-        Left err | isDoesNotExistError err -> (doNotCache >> serveFileIfExists (fallback </> p)) <|> do
-                     let (dirname, filename) = splitFileName p
-                         unhashedFilename = drop 1 $ dropWhile (/= '-') filename
-                     if null unhashedFilename then pass else do
-                       doNotCache
-                       serveFileIfExists $ fallback </> dirname </> unhashedFilename
-                 | otherwise -> liftIO $ throwIO err
+  serveAsset' doRedirect base fallback $ if "/" `isSuffixOf` pRaw || pRaw == "" then pRaw <> "index.html" else pRaw
+
+-- | Serve a single static asset from an asset directory generated via @assets.nix@ or, failing that, from a regular directory.
+serveAsset' :: MonadSnap m => Bool -> FilePath -> FilePath -> FilePath -> m ()
+serveAsset' doRedirect base fallback p = do
+  assetType <- liftIO $ try $ BS.readFile $ base </> p </> "type"
+  case assetType of
+    Right "immutable" -> do
+      conditionalOnModification <- getsRequest $ getHeader "If-Modified-Since"
+      case conditionalOnModification of
+        Nothing -> do
+          encodedFiles <- liftM (filter (`notElem` [".", ".."])) $ liftIO $ getDirectoryContents $ base </> p </> "encodings"
+          availableEncodings <- liftM (map snd . sort) $ forM encodedFiles $ \f -> do
+            stat <- liftIO $ getFileStatus $ base </> p </> "encodings" </> f
+            return (fileSize stat, Encoding $ encodeUtf8 $ T.pack f)
+          acceptEncodingRaw <- getsRequest $ getHeader "Accept-Encoding"
+          ae <- case acceptEncodingRaw of
+            Nothing -> return missingAcceptableEncodings
+            Just aer -> case parseOnly (acceptEncodingBody <* endOfInput) aer of
+              Right ae -> return ae
+              Left err -> error err
+          Just (Encoding e) <- return $ chooseEncoding availableEncodings ae
+          modifyResponse $ setHeader "Content-Encoding" e . setHeader "Vary" "Accept-Encoding"
+          if doRedirect then cachePermanently else doNotCache --TODO: Use Etags when not redirecting
+          let finalFilename = base </> p </> "encodings" </> T.unpack (decodeUtf8 e)
+          stat <- liftIO $ getFileStatus finalFilename
+          modifyResponse $ setHeader "Last-Modified" "Thu, 1 Jan 1970 00:00:00 GMT"
+          modifyResponse $ setResponseCode 200 . setContentLength (fromIntegral $ fileSize stat) . setContentType (fileType defaultMimeTypes p)
+          sendFile finalFilename
+        Just _ -> cachePermanently >> modifyResponse (setResponseCode 304)
+    Right "redirect" -> do
+      mtarget <- liftIO $ getAssetTarget $ base </> p
+      case mtarget of
+        Just target -> if doRedirect
+                       then do
+                         doNotCache
+                         redirect target
+                       else serveAsset' doRedirect base fallback $ takeDirectory p </> T.unpack (decodeUtf8 target)
+        Nothing -> serveFile $ fallback </> p
+    Right unknown -> error $ T.unpack ("serveAssets': Unknown asset " <> decodeUtf8 unknown)
+    Left err | isDoesNotExistError err -> (doNotCache >> serveFileIfExists (fallback </> p)) <|> do
+                 let (dirname, filename) = splitFileName p
+                     unhashedFilename = drop 1 $ dropWhile (/= '-') filename
+                 if null unhashedFilename then pass else do
+                   doNotCache
+                   serveFileIfExists $ fallback </> dirname </> unhashedFilename
+             | otherwise -> liftIO $ throwIO err
 
 -- | If the given file exists in a hashed location, return that location.  The
 -- resulting FilePath will be relative to @base@, just like @assetPath@ is.
