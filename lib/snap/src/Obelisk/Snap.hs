@@ -25,18 +25,6 @@ import System.FilePath
 import Text.RawString.QQ
 import Control.Monad.IO.Class
 
-
-{- | Takes a port number and session handle to determine if what has been 
- - passed is an HTTPS Session. If not, it will request URI along with the name
- - of host and return a HTTPS redirect. -}
-ensureSecure :: Int -> Handler a b () -> Handler a b ()
-ensureSecure port h = do
-  s <- getsRequest rqIsSecure
-  if s then h else do
-    uri <- getsRequest rqURI
-    host <- getsRequest rqHostName --TODO: It might be better to use the canonical base of the server
-    redirect $ "https://" <> host <> (if port == 443 then "" else ":" <> fromString (show port)) <> uri
-
 -- Data type for web app configuration
 data AppConfig m
    = AppConfig { _appConfig_logo :: Diagram SVG
@@ -107,7 +95,7 @@ serveStaticIndex cfg = do
 	-- Render and write html head and body to response
   writeLBS $ renderBS $ doctypehtml_ $ do
     head_ $ do
-      meta_ [charset_ "utf-8"] -- meta-data charset description 
+      meta_ [charset_ "utf-8"] -- meta-data charset description
       meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"] -- meta-data viewport description
       _appConfig_extraHeadMarkup cfg -- any additional <head> html from 'AppConfig' type
       toHtmlRaw initialHead -- HtmlT monad wrapper
