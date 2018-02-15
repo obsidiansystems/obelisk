@@ -1,0 +1,27 @@
+name: obelisk-executable-config
+version: 0.1
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  hs-source-dirs: src
+  if os(ios)
+    hs-source-dirs: src-ios
+    build-depends: jsaddle-wkwebview
+  else
+    hs-source-dirs: src-android
+    c-sources: cbits/ExecutableConfig.c
+    other-modules: Obelisk.ExecutableConfig.Internal.AssetManager
+    build-depends:
+      android-activity,
+      bytestring
+    ld-options: -landroid
+
+  build-depends:
+    base, 
+    filepath,
+    text,
+    transformers
+
+  exposed-modules: Obelisk.ExecutableConfig
+  other-modules: Obelisk.ExecutableConfig.Internal
