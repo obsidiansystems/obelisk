@@ -5,7 +5,7 @@ build-type: Simple
 
 library
   hs-source-dirs: src
-  if os(ios)
+  if os(darwin) || os(ios)
     hs-source-dirs: src-ios
     build-depends: jsaddle-wkwebview
   else
@@ -13,12 +13,12 @@ library
     c-sources: cbits/ExecutableConfig.c
     other-modules: Obelisk.ExecutableConfig.Internal.AssetManager
     build-depends:
-      android-activity,
-      bytestring
+      android-activity
     ld-options: -landroid
 
   build-depends:
     base, 
+    bytestring,
     filepath,
     text,
     transformers
