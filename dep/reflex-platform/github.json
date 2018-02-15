@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "aa-select-ghc-backend",
-  "rev": "ef87465cbe72c5ea7c53c099d842eab9319f79c4",
-  "sha256": "01nc0nzdq3jf624zwq7rhyzdd5m2qj2r5b7yynhx7ivj30jdz1kf"
+  "branch": "aa-android",
+  "rev": "b37c1c8bda5c3f457119cab44decc124edb0c488",
+  "sha256": "13j4z7647zvscimzvci2797bzqnwypq53g2i4vbkr8jf5sj9db3f"
 }
