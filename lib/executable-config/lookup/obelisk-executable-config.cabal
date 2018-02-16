@@ -3,18 +3,28 @@ version: 0.1
 cabal-version: >= 1.2
 build-type: Simple
 
+flag ios
+  description: Build for ios
+  default: False
+  manual: True
+
+flag android
+  description: Build for android
+  default: False
+  manual: True
+
 library
   hs-source-dirs: src
-  if os(darwin) || os(ios)
+  if flag(ios)
     hs-source-dirs: src-ios
     build-depends: jsaddle-wkwebview
   else
-    hs-source-dirs: src-android
-    c-sources: cbits/ExecutableConfig.c
-    other-modules: Obelisk.ExecutableConfig.Internal.AssetManager
-    build-depends:
-      android-activity
-    ld-options: -landroid
+    if flag(android)
+      hs-source-dirs: src-android
+      c-sources: cbits/ExecutableConfig.c
+      other-modules: Obelisk.ExecutableConfig.Internal.AssetManager
+      build-depends: android-activity
+      ld-options: -landroid
 
   build-depends:
     base, 
