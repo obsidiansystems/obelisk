@@ -16,7 +16,7 @@ let injectConfig = config: assets: nixpkgs.runCommand "inject-config" {} ''
       cp -a "${config}"/* "$out/config"
     '';
 in with nixpkgs.haskell.lib; {
-  haskellPackage = self: self.callPackage (filterGitSource ./hs) {};
+  haskellPackage = self: self.callPackage (filterGitSource ./lookup) {};
   platforms = {
     android = {
       # Inject the given config directory into an android assets folder
