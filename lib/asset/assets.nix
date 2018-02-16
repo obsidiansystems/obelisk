@@ -103,9 +103,9 @@ mapSnds = f: l: zipLists (map (x: x.fst) l) (f (map (x: x.snd) l));
 chunkDerivations = n: l:
   let a = take n l;
       b = drop n l;
-      go = x: if x == [] then builtins.toFile "emptyList.nix" "[]" else chunkDerivations2 n (take n x) (go (drop n x));
+      go = x: if x == [] then builtins.toFile "emptyList.nix" "[]" else makeChunkDerivation (take n x) (go (drop n x));
 
-      # makeChunkDerivation :: Int -> [a] -> ExprFile [a] -> ExprFile [a]
+      # makeChunkDerivation :: [a] -> ExprFile [a] -> ExprFile [a]
       makeChunkDerivation = chunk': next:
         let chunk = map (path: "(import ${builtins.unsafeDiscardOutputDependency path.drvPath}).${path.outputName}") chunk';
         in builtins.seq (builtins.toPath next) (nixpkgs.stdenv.mkDerivation {
@@ -120,6 +120,7 @@ chunkDerivations = n: l:
           echo "[ $chunk ] ++ (import $next)" >"$out"
         '';
       });
+
   in a ++ import (go b);
 
 # Recursively map some function over a @AttrSet DirEntry@, unioning the results of the application at each level.
