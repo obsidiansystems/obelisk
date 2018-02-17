@@ -27,6 +27,7 @@ in with nixpkgs.haskell.lib; {
       inject = injectConfig;
     };
     web = {
+      inject = self: self.callCabal2nix "obelisk-executable-config-inject" (filterGitSource ./inject) {};
     };
   };
 }

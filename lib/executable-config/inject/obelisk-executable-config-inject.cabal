@@ -1,0 +1,17 @@
+name: obelisk-executable-config-inject
+version: 0.1
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  hs-source-dirs: src
+
+  build-depends:
+    base, 
+    bytestring,
+    filepath,
+    reflex-dom,
+    text,
+    transformers
+
+  exposed-modules: Obelisk.ExecutableConfig.Inject
