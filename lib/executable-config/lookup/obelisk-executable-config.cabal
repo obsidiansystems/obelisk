@@ -19,11 +19,10 @@ flag ghcjs
   manual: True
 
 library
-  hs-source-dirs: src
+  exposed-modules: Obelisk.ExecutableConfig
   if flag(ios)
     hs-source-dirs: src-ios
     build-depends: jsaddle-wkwebview
-    exposed-modules: Obelisk.ExecutableConfig
   else
     if flag(android)
       hs-source-dirs: src-android
@@ -31,12 +30,12 @@ library
       other-modules: Obelisk.ExecutableConfig.Internal.AssetManager
       build-depends: android-activity
       ld-options: -landroid
-      exposed-modules: Obelisk.ExecutableConfig
     else
       if flag(ghcjs)
         hs-source-dirs: src-ghcjs
         build-depends: ghcjs-dom
-        exposed-modules: Obelisk.ExecutableConfig
+      else
+        hs-source-dirs: src
 
   build-depends:
     base, 
@@ -44,5 +43,3 @@ library
     filepath,
     text,
     transformers
-
-  other-modules: Obelisk.ExecutableConfig.Internal
