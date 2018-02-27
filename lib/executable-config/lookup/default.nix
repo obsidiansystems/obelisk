@@ -3,7 +3,7 @@
 , android-activity ? null, jsaddle-wkwebview ? null, ghcjs-dom ? null
 }:
 let isAndroid = hostPlatform.libc == "bionic";
-    isIOS = hostPlatform.isDarwin && hostPlatform.isAArch64;
+    isIOS = hostPlatform.isDarwin && hostPlatform.isAarch64;
     isGhcjs = ghc.isGhcjs or false;
 in mkDerivation {
   pname = "obelisk-executable-config";
