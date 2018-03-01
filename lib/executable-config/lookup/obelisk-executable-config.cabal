@@ -1,37 +1,22 @@
 name: obelisk-executable-config
-version: 0.1
+version: 0.1.1
 cabal-version: >= 1.2
 build-type: Simple
 
-flag ios
-  description: Build for ios
-  default: False
-  manual: True
-
-flag android
-  description: Build for android
-  default: False
-  manual: True
-
-flag ghcjs
-  description: Build for ghcjs
-  default: False
-  manual: True
-
 library
   exposed-modules: Obelisk.ExecutableConfig
-  if flag(ios)
+  if os(ios)
     hs-source-dirs: src-ios
     build-depends: jsaddle-wkwebview
   else
-    if flag(android)
+    if os(linux-android)
       hs-source-dirs: src-android
       c-sources: cbits/ExecutableConfig.c
       other-modules: Obelisk.ExecutableConfig.Internal.AssetManager
       build-depends: android-activity
       ld-options: -landroid
     else
-      if flag(ghcjs)
+      if impl(ghcjs)
         hs-source-dirs: src-ghcjs
         build-depends: ghcjs-dom
       else

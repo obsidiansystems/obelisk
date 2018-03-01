@@ -19,14 +19,6 @@ in mkDerivation {
     ghcjs-dom
   ] else [
   ]);
-  configureFlags = if isAndroid then [
-    "-fandroid"
-  ] else if isIOS then [
-    "-fios"
-  ] else if isGhcjs then [
-    "-fghcjs"
-  ] else [
-  ];
   license = stdenv.lib.licenses.bsd3;
 }
 
