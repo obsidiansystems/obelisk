@@ -10,4 +10,4 @@ import System.IO.Error
 get :: Text -> IO (Maybe Text)
 get path = do
   let doesNotExist = \e -> if isDoesNotExistError e then Just () else Nothing
-  catchJust doesNotExist (fmap Just $ T.readFile $ "config" </> T.unpack path) (\_ -> pure Nothing)
+  catchJust doesNotExist (fmap Just $ T.readFile $ "exe-config" </> T.unpack path) (\_ -> pure Nothing)
