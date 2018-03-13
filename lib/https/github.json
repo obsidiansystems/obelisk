@@ -1,7 +1,6 @@
 {
   "owner": "obsidiansystems",
   "repo": "obelisk-https",
-  "branch": "aa-nginx-locations",
   "private": true,
   "rev": "862214f9379a830f5e5b45a03f267896bd752971",
   "sha256": "1m2ryi157c6hwgalibygb5swj0w4kha1g438vnp6z0bbw31bcvzg"
