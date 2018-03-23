@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "aa-bump-acme",
-  "rev": "e332dd1abb47aa852f7a80a62fe309cb8f68fa7e",
-  "sha256": "020hnv521ls6n64hdwxlxx5y0yyd6gvqhxrc60n826rwbbif79kh"
+  "branch": "sensible-logging",
+  "rev": "f53eebfcc31c261f889c54e5866fd8bb0b613a15",
+  "sha256": "0zzzb3m68gqb129cirgxnncd0jilgi97qqw92bfvlx8is50b8an1"
 }
