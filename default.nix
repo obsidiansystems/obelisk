@@ -134,7 +134,7 @@ rec {
               backendName
               commonName
               frontendName
-            ]) ++ ghcDevPackages;
+            ]);
             ghcjs = filter (x: hasAttr x combinedPackages) [
               frontendName
               commonName

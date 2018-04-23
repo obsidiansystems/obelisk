@@ -17,6 +17,7 @@ library
     , github
     , hit
     , mtl
+    , network
     , network-uri
     , optparse-applicative
     , process

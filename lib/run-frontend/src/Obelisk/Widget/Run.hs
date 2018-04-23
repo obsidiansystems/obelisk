@@ -11,22 +11,27 @@ import Network.Wai.Handler.Warp (defaultSettings, setTimeout, setPort, runSettin
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Reflex.Dom.Core
 
-test :: IO ()
-test = do
-  runWidget $ do
-    text "hello world"
-    elAttr "img" ("src" =: "/obelisk.jpg") $ return ()
-
-runWidget :: Widget () () -> IO ()
-runWidget w = do
+runWidget :: RunConfig -> Widget () () -> IO ()
+runWidget conf w = do
   man <- newManager defaultManagerSettings
-  let port = 3003 -- TODO
-      redirectHost = "0.0.0.0"
-      redirectPort = 38383
-  runSettings (setPort port (setTimeout 3600 defaultSettings)) =<<
+  let redirectHost = _runConfig_redirectHost conf
+      redirectPort = _runConfig_redirectPort conf
+  runSettings (setPort (_runConfig_port conf) (setTimeout 3600 defaultSettings)) =<<
     jsaddleWithAppOr defaultConnectionOptions (mainWidget' w >> syncPoint) (fallbackProxy redirectHost redirectPort man)
 
 fallbackProxy :: ByteString -> Int -> Manager -> Application
 fallbackProxy host port = RP.waiProxyTo handleRequest RP.defaultOnExc
   where handleRequest _req = return $ RP.WPRProxyDest $ RP.ProxyDest host port
 
+data RunConfig = RunConfig
+  { _runConfig_port :: Int
+  , _runConfig_redirectHost :: ByteString
+  , _runConfig_redirectPort :: Int
+  }
+
+defRunConfig :: RunConfig
+defRunConfig = RunConfig
+  { _runConfig_port = 3000
+  , _runConfig_redirectHost = "0.0.0.0"
+  , _runConfig_redirectPort = 3001
+  }

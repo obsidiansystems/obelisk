@@ -5,10 +5,12 @@ module Obelisk.Command where
 import Control.Monad
 import Data.List
 import Data.Monoid
+import qualified Data.Text as T
 import Options.Applicative
 import System.Environment
 import System.FilePath
 import System.IO
+import System.IO.Temp (withSystemTempDirectory)
 import System.Posix.Process
 
 import Obelisk.Command.Project
@@ -48,7 +50,7 @@ initSource = foldl1 (<|>)
 
 data ObCommand
    = ObCommand_Init InitSource
-   | ObCommand_Dev
+   | ObCommand_Dev FilePath
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl FilePath
    | ObCommand_Watch FilePath
@@ -56,7 +58,7 @@ data ObCommand
 obCommand :: Parser ObCommand
 obCommand = hsubparser $ mconcat
   [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
-  , command "dev" $ info (pure ObCommand_Dev) $ progDesc "Run current project in development mode"
+  , command "dev" $ info (ObCommand_Dev <$> (strArgument (action "directory"))) $ progDesc "Run current project in development mode"
   , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
   , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
   , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch directory for changes and update interactive interpreter"
@@ -131,7 +133,24 @@ main = do
 ob :: ObCommand -> IO ()
 ob = \case
   ObCommand_Init source -> initProject source
-  ObCommand_Dev -> putStrLn "Dev!"
+  ObCommand_Dev _ -> do
+    freePort <- getFreePort
+    let dotGhci = unlines
+          [ ":set args --port " <> show freePort
+          , ":set -ibackend/src:common/src:frontend/src"
+          , ":add Common.Api Backend.App Frontend.App"
+          , ":module + Control.Concurrent Obelisk.Widget.Run Common.Api Frontend.App Backend.App"
+          ]
+        testCmd = unlines
+          [ "backendId <- forkIO backend"
+          , "let conf = defRunConfig { _runConfig_redirectPort = " <> show freePort <> "}"
+          , "runWidget conf frontend"
+          , "killThread backendId"
+          ]
+    withSystemTempDirectory "ob-ghci" $ \fp -> do
+      let dotGhciPath = fp </> ".ghci"
+      writeFile dotGhciPath dotGhci
+      runDev dotGhciPath $ Just testCmd
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks

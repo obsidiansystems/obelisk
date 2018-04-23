@@ -8,6 +8,7 @@ library
   build-depends: base
                , reflex-dom
                , static
+               , obelisk-run-frontend
                , text
   exposed-modules:
     Frontend.App
