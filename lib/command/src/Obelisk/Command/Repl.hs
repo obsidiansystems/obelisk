@@ -10,8 +10,9 @@ import Obelisk.Command.Project
 
 -- | Run an interactive repl within a given path
 runRepl :: FilePath -> IO ()
-runRepl dir = inProjectShell "ghc" $ "cd " <> dir <> "; cabal new-repl " <> dir
+runRepl dir = inProjectShell "ghc" $ "cd " <> dir <> "; cabal new-repl"
 
 -- | Watch the given directory for errors and warnings
 watch :: FilePath -> IO ()
-watch dir = inProjectShell "ghc" $ "cd " <> dir <> "; ghcid -W -c'cabal new-repl " <> dir <> "'"
+watch dir = inProjectShell "ghc" $ "cd " <> dir <> "; ghcid -W --command='cabal new-repl'"
+

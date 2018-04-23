@@ -1,12 +1,21 @@
 name: backend
 version: 0.1
-cabal-version: >= 1.2
+cabal-version: >= 1.8
 build-type: Simple
+
+library
+  hs-source-dirs: src
+  build-depends: base
+               , common
+               , obelisk-backend
+  exposed-modules:
+    Backend.App
+  ghc-options: -Wall
 
 executable backend
   main-is: main.hs
   hs-source-dirs: src
-  build-depends:
-    base,
-    common,
-    obelisk-backend
+  build-depends: base
+               , backend
+               , common
+               , obelisk-backend
