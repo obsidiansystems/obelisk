@@ -1,0 +1,23 @@
+name: obelisk-run-frontend
+version: 0.1
+license: BSD3
+build-type: Simple
+cabal-version: >=1.2
+
+library
+  hs-source-dirs: src
+  build-depends:
+      base
+    , bytestring
+    , http-client
+    , http-reverse-proxy
+    , jsaddle
+    , jsaddle-warp
+    , reflex-dom
+    , text
+    , wai
+    , warp
+    , websockets
+  exposed-modules:
+      Obelisk.Widget.Run
+  ghc-options: -Wall

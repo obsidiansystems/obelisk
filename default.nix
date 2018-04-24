@@ -62,6 +62,7 @@ let #TODO: Upstream
       obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
       obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
       obelisk-command = self.callCabal2nix "obelisk-command" ./lib/command {};
+      obelisk-run-frontend = self.callCabal2nix "obelisk-run-frontend" ./lib/run-frontend {};
       obelisk-selftest = self.callCabal2nix "obelisk-selftest" ./lib/selftest {};
       obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};
       obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" ./lib/snap-extras {};
@@ -124,15 +125,16 @@ rec {
               ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
             };
             overrides = composeExtensions defaultHaskellOverrides projectOverrides;
+            ghcDevPackages = ["obelisk-run-frontend"];
         in {
           inherit overrides;
           packages = combinedPackages;
           shells = {
-            ghc = filter (x: hasAttr x combinedPackages) [
+            ghc = (filter (x: hasAttr x combinedPackages) [
               backendName
               commonName
               frontendName
-            ];
+            ]) ++ ghcDevPackages;
             ghcjs = filter (x: hasAttr x combinedPackages) [
               frontendName
               commonName
