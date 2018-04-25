@@ -61,7 +61,7 @@ let #TODO: Upstream
       obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
       obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
       obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
-      obelisk-command = self.callCabal2nix "obelisk-command" ./lib/command {};
+      obelisk-command = (self.callCabal2nix "obelisk-command" ./lib/command {}).override { Cabal = super.Cabal_2_0_0_2; };
       obelisk-run-frontend = self.callCabal2nix "obelisk-run-frontend" ./lib/run-frontend {};
       obelisk-selftest = self.callCabal2nix "obelisk-selftest" ./lib/selftest {};
       obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};

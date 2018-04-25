@@ -11,6 +11,7 @@ library
     , base
     , bytestring
     , containers
+    , Cabal
     , data-default
     , directory
     , filepath

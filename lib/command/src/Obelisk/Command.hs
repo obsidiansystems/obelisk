@@ -4,9 +4,16 @@ module Obelisk.Command where
 
 import Control.Monad
 import Data.List
+import Data.Maybe
 import Data.Monoid
-import qualified Data.Text as T
+import Distribution.Utils.Generic (withUTF8FileContents)
+import Distribution.PackageDescription.Parse (parseGenericPackageDescription, ParseResult(..))
+import Distribution.Types.BuildInfo
+import Distribution.Types.CondTree
+import Distribution.Types.Library
+import Distribution.Types.GenericPackageDescription
 import Options.Applicative
+import System.Directory
 import System.Environment
 import System.FilePath
 import System.IO
@@ -135,9 +142,15 @@ ob = \case
   ObCommand_Init source -> initProject source
   ObCommand_Dev _ -> do
     freePort <- getFreePort
+    let pkgs = ["backend", "common", "frontend"]
+    hsSrcDirs <- forM pkgs $ \pkg -> do
+      let cabalFp = pkg </> pkg <.> "cabal"
+      mHsSrcDirs <- parseHsSrcDir cabalFp
+      return $ flip fmap mHsSrcDirs $ \hsSrcDirs -> do
+        if null hsSrcDirs then pure pkg else map (pkg </>) hsSrcDirs
     let dotGhci = unlines
           [ ":set args --port " <> show freePort
-          , ":set -ibackend/src:common/src:frontend/src"
+          , ":set -i" <> intercalate ":" (mconcat $ catMaybes hsSrcDirs)
           , ":add Common.Api Backend.App Frontend.App"
           , ":module + Control.Concurrent Obelisk.Widget.Run Common.Api Frontend.App Backend.App"
           ]
@@ -157,5 +170,21 @@ ob = \case
     ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir upstream
   ObCommand_Repl component -> runRepl component
   ObCommand_Watch component -> watch component
+
+parseHsSrcDir :: FilePath -- ^ package cabal file path
+              -> IO (Maybe [FilePath]) -- ^ List of hs src dirs of the library component
+parseHsSrcDir cabalFp = do
+  exists <- doesFileExist cabalFp
+  if exists
+    then do
+      withUTF8FileContents cabalFp $ \cabal -> do
+      case parseGenericPackageDescription cabal of
+        ParseOk warnings gpkg -> do
+          mapM_ print warnings
+          return $ do
+            (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
+            return $ hsSourceDirs $ libBuildInfo lib
+        ParseFailed _ -> return Nothing
+    else return Nothing
 
 --TODO: Clean up all the magic strings throughout this codebase
