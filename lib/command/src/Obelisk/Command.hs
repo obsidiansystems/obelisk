@@ -57,7 +57,7 @@ initSource = foldl1 (<|>)
 
 data ObCommand
    = ObCommand_Init InitSource
-   | ObCommand_Dev FilePath
+   | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl FilePath
    | ObCommand_Watch FilePath
@@ -65,7 +65,7 @@ data ObCommand
 obCommand :: Parser ObCommand
 obCommand = hsubparser $ mconcat
   [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
-  , command "dev" $ info (ObCommand_Dev <$> (strArgument (action "directory"))) $ progDesc "Run current project in development mode"
+  , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
   , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
   , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
   , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch directory for changes and update interactive interpreter"
@@ -140,7 +140,7 @@ main = do
 ob :: ObCommand -> IO ()
 ob = \case
   ObCommand_Init source -> initProject source
-  ObCommand_Dev _ -> do
+  ObCommand_Run -> do
     freePort <- getFreePort
     let pkgs = ["backend", "common", "frontend"]
     hsSrcDirs <- forM pkgs $ \pkg -> do
