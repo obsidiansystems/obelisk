@@ -3,7 +3,10 @@
 module Obelisk.Command where
 
 import Control.Monad
+import Data.Either
+import Data.Foldable
 import Data.List
+import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import Data.Monoid
 import Distribution.Utils.Generic (withUTF8FileContents)
@@ -142,15 +145,20 @@ ob = \case
   ObCommand_Init source -> initProject source
   ObCommand_Run -> do
     freePort <- getFreePort
-    let pkgs = ["backend", "common", "frontend"]
-    hsSrcDirs <- forM pkgs $ \pkg -> do
+    pkgs <- getLocalPkgs
+    (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
       let cabalFp = pkg </> pkg <.> "cabal"
-      mHsSrcDirs <- parseHsSrcDir cabalFp
-      return $ flip fmap mHsSrcDirs $ \hsSrcDirs -> do
-        if null hsSrcDirs then pure pkg else map (pkg </>) hsSrcDirs
+      xs <- parseHsSrcDir cabalFp
+      return $ case xs of
+        Nothing -> Left pkg
+        Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
+    when (null hsSrcDirs) $
+      fail $ "No valid pkgs found in " <> intercalate ", " pkgs
+    when (not (null pkgDirErrs)) $
+      putStrLn $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
     let dotGhci = unlines
           [ ":set args --port " <> show freePort
-          , ":set -i" <> intercalate ":" (mconcat $ catMaybes hsSrcDirs)
+          , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
           , ":add Common.Api Backend.App Frontend.App"
           , ":module + Control.Concurrent Obelisk.Widget.Run Common.Api Frontend.App Backend.App"
           ]
@@ -171,8 +179,13 @@ ob = \case
   ObCommand_Repl component -> runRepl component
   ObCommand_Watch component -> watch component
 
+-- | Relative paths to local packages of an obelisk project
+-- TODO a way to query this
+getLocalPkgs :: IO [FilePath]
+getLocalPkgs = return ["backend", "common", "frontend"]
+
 parseHsSrcDir :: FilePath -- ^ package cabal file path
-              -> IO (Maybe [FilePath]) -- ^ List of hs src dirs of the library component
+              -> IO (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
 parseHsSrcDir cabalFp = do
   exists <- doesFileExist cabalFp
   if exists
@@ -183,7 +196,7 @@ parseHsSrcDir cabalFp = do
           mapM_ print warnings
           return $ do
             (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
-            return $ hsSourceDirs $ libBuildInfo lib
+            pure $ fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
         ParseFailed _ -> return Nothing
     else return Nothing
 
