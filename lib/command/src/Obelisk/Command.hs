@@ -157,7 +157,7 @@ ob = \case
     when (not (null pkgDirErrs)) $
       putStrLn $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
     let dotGhci = unlines
-          [ ":set args --port " <> show freePort
+          [ ":set args --quiet --port " <> show freePort
           , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
           , ":add Common.Api Backend.App Frontend.App"
           , ":module + Control.Concurrent Obelisk.Widget.Run Common.Api Frontend.App Backend.App"
