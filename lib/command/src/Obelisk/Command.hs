@@ -159,8 +159,8 @@ ob = \case
     let dotGhci = unlines
           [ ":set args --quiet --port " <> show freePort
           , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
-          , ":add Common.Api Backend.App Frontend.App"
-          , ":module + Control.Concurrent Obelisk.Widget.Run Common.Api Frontend.App Backend.App"
+          , ":add Backend.App Frontend.App"
+          , ":module + Control.Concurrent Obelisk.Widget.Run Frontend.App Backend.App"
           ]
         testCmd = unlines
           [ "backendId <- forkIO backend"
