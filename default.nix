@@ -116,6 +116,7 @@ rec {
     let mkProject = { android ? null #TODO: Better error when missing
                     , ios ? null #TODO: Better error when missing
                     , packages ? {}
+                    , overrides ? _: _: {}
                     }:
         let frontendName = "frontend";
             backendName = "backend";
@@ -133,10 +134,10 @@ rec {
             projectOverrides = self: super: {
               ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
             };
-            overrides = composeExtensions defaultHaskellOverrides projectOverrides;
+            totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
             ghcDevPackages = ["obelisk-run-frontend"];
         in {
-          inherit overrides;
+          overrides = totalOverrides;
           packages = combinedPackages;
           shells = {
             ghc = (filter (x: hasAttr x combinedPackages) [
