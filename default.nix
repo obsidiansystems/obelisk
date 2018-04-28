@@ -150,6 +150,7 @@ rec {
               commonName
             ];
           };
+          withHoogle = false; # Setting this to `true` makes shell reloading far slower
           android = {
             ${if android == null then null else frontendName} = {
               executableName = "frontend";
