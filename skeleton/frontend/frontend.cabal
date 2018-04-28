@@ -11,7 +11,7 @@ library
                , obelisk-run-frontend
                , text
   exposed-modules:
-    Frontend.App
+    Frontend
   ghc-options: -Wall
 
 executable frontend

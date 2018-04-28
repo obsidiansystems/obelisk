@@ -9,7 +9,7 @@ library
                , common
                , obelisk-backend
   exposed-modules:
-    Backend.App
+    Backend
   ghc-options: -Wall
 
 executable backend
