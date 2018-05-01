@@ -54,10 +54,14 @@ nixBuild cfg = do
             OutLink_None -> ["--no-out-link"]
             OutLink_IndirectRoot outLink -> ["--indirect", "--add-root", outLink]
         ]
-  (_, out, err, p) <- runInteractiveProcess "nix-build" args Nothing Nothing
+  (_, Just out, Just err, p) <- createProcess (proc "nix-build" args)
+    { std_out = CreatePipe
+    , std_err = CreatePipe
+    }
   waitForProcess p >>= \case
     ExitSuccess -> return ()
     _ -> do
+      -- FIXME: We should interleave `out` and `err` in their original order?
       LBS.putStr =<< LBS.hGetContents out
       LBS.putStr =<< LBS.hGetContents err
       fail "nix-build failed"
