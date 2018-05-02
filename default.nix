@@ -55,6 +55,8 @@ let #TODO: Upstream
 
     fixUpstreamPkgs = self: super: {
       heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
+      network-transport = self.callHackage "network-transport" "0.5.2" {};
+      network-transport-tcp = self.callHackage "network-transport-tcp" "0.6.0" {};
     };
 
     cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(

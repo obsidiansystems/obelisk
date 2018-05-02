@@ -9,9 +9,8 @@ module Obelisk.Command.Repl
 import qualified Control.Exception as E
 import Data.Maybe
 import Data.Monoid ((<>))
-import Data.Text (Text)
-import qualified Data.Text as T
 import Network.Socket
+import System.Process (callCommand)
 
 import Obelisk.Command.Project
 
@@ -25,11 +24,10 @@ watch dir = inProjectShell "ghc" $ "cd " <> dir <> "; ghcid -W --command='cabal 
 
 -- | Dev
 runDev :: FilePath -> Maybe String -> IO ()
-runDev dotGhci mcmd = inProjectShell "ghc" ghcidOpts
+runDev dotGhci mcmd = callCommand $ unwords $ "ghcid" : ghcidOpts
   where
-    ghcidOpts = unwords $
-      [ "ghcid"
-      , "-W"
+    ghcidOpts =
+      [ "-W"
       , "--command='ghci -ghci-script " <> dotGhci <> "' "
       ] <> maybeToList (flip fmap mcmd $ \cmd -> " --test=$'" <> cmd <> "'")
 

@@ -14,12 +14,17 @@ library
     , Cabal
     , data-default
     , directory
+    , distributed-process
+    , distributed-process-simplelocalnet
+    , exceptions
     , filepath
     , github
     , hit
     , mtl
     , network
     , network-uri
+    , network-transport
+    , network-transport-tcp
     , optparse-applicative
     , process
     , temporary

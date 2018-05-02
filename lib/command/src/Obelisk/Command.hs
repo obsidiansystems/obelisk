@@ -1,8 +1,16 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Command where
 
+import System.Process ()
+import Control.Concurrent
+import Control.Distributed.Process hiding (finally)
+import Control.Distributed.Process.Closure
+import Control.Distributed.Process.Node (initRemoteTable, runProcess)
+import Control.Distributed.Process.Backend.SimpleLocalnet
 import Control.Monad
+import Control.Monad.Catch
 import Data.Either
 import Data.Foldable
 import Data.List
@@ -26,6 +34,66 @@ import System.Posix.Process
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Repl
+
+run :: IO ()
+run = do
+  freePort <- getFreePort
+  pkgs <- getLocalPkgs
+  (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
+    let cabalFp = pkg </> pkg <.> "cabal"
+    xs <- parseHsSrcDir cabalFp
+    return $ case xs of
+      Nothing -> Left pkg
+      Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
+  when (null hsSrcDirs) $
+    fail $ "No valid pkgs found in " <> intercalate ", " pkgs
+  when (not (null pkgDirErrs)) $
+    putStrLn $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
+  let dotGhci = unlines
+        [ ":set args --quiet --port " <> show freePort
+        , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
+        , ":add Backend Frontend"
+        , ":module + Control.Concurrent Obelisk.Widget.Run Frontend Backend"
+        ]
+      testCmd = unlines
+        [ "backendId <- forkIO backend"
+        , "let conf = defRunConfig { _runConfig_redirectPort = " <> show freePort <> "}"
+        , "runWidget conf frontend"
+        , "killThread backendId"
+        ]
+  withSystemTempDirectory "ob-ghci" $ \fp -> do
+    let dotGhciPath = fp </> ".ghci"
+    writeFile dotGhciPath dotGhci
+    runDev dotGhciPath $ Just testCmd
+
+-- | Relative paths to local packages of an obelisk project
+-- TODO a way to query this
+getLocalPkgs :: IO [FilePath]
+getLocalPkgs = return ["backend", "common", "frontend"]
+
+parseHsSrcDir :: FilePath -- ^ package cabal file path
+              -> IO (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
+parseHsSrcDir cabalFp = do
+  exists <- doesFileExist cabalFp
+  if exists
+    then do
+      withUTF8FileContents cabalFp $ \cabal -> do
+      case parseGenericPackageDescription cabal of
+        ParseOk warnings gpkg -> do
+          mapM_ print warnings
+          return $ do
+            (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
+            pure $ fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
+        ParseFailed _ -> return Nothing
+    else return Nothing
+
+ghcidAction :: () -> Process ()
+ghcidAction () = liftIO run
+
+remotable ['ghcidAction]
+
+obRemoteTable :: RemoteTable
+obRemoteTable = Obelisk.Command.__remoteTable initRemoteTable
 
 data Args = Args
   { _args_noHandOffPassed :: Bool
@@ -64,14 +132,48 @@ data ObCommand
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl FilePath
    | ObCommand_Watch FilePath
+   | ObCommand_Internal ObInternal
+
+data ObInternal
+  = ObInternal_Daemon
+
+inNixShell :: Closure (Process ()) -> IO ()
+inNixShell m = do
+  progName <- getProgName
+  _ <- forkIO $ inProjectShell "ghc" $ unwords [progName, "internal", "daemon"]
+  -- NB: Loading a nix-shell takes around 4 seconds
+  threadDelay $ 1000 * 1000 * 4
+  backend <- initializeBackend "127.0.0.1" "0" obRemoteTable
+  backendNode <- newLocalNode backend
+  startMaster backend (daemonMaster m) `finally`
+    runProcess backendNode (terminateAllSlaves backend)
+
+daemonMaster :: Closure (Process ()) -> [NodeId] -> Process ()
+daemonMaster p nodeIds = do
+  forM_ nodeIds $ \nodeId -> spawn nodeId p
+  expect
+
+daemonSlave :: IO ()
+daemonSlave = startSlave =<< initializeBackend "127.0.0.1" "0" obRemoteTable
 
 obCommand :: Parser ObCommand
-obCommand = hsubparser $ mconcat
-  [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
-  , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
-  , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-  , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
-  , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch directory for changes and update interactive interpreter"
+obCommand = hsubparser
+    (mconcat
+      [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
+      , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+      , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
+      , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
+      , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch directory for changes and update interactive interpreter"
+      ])
+  <|> subparser
+    (mconcat
+      [ internal
+      , command "internal" (info (ObCommand_Internal <$> internalCommand) mempty)
+      ])
+
+internalCommand :: Parser ObInternal
+internalCommand = subparser $ mconcat
+  [ command "daemon" $ info (pure ObInternal_Daemon) mempty
   ]
 
 --TODO: Result should provide normalised path and also original user input for error reporting.
@@ -140,64 +242,21 @@ main = do
       | otherwise -> handoffAndGo (a:as)
     as -> handoffAndGo as
 
+replyBack :: (ProcessId, String) -> Process ()
+replyBack (sender, msg) = send sender msg
+
+logMessage :: String -> Process ()
+logMessage msg = say $ "handling " ++ msg
+
 ob :: ObCommand -> IO ()
 ob = \case
   ObCommand_Init source -> initProject source
-  ObCommand_Run -> do
-    freePort <- getFreePort
-    pkgs <- getLocalPkgs
-    (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
-      let cabalFp = pkg </> pkg <.> "cabal"
-      xs <- parseHsSrcDir cabalFp
-      return $ case xs of
-        Nothing -> Left pkg
-        Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
-    when (null hsSrcDirs) $
-      fail $ "No valid pkgs found in " <> intercalate ", " pkgs
-    when (not (null pkgDirErrs)) $
-      putStrLn $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
-    let dotGhci = unlines
-          [ ":set args --quiet --port " <> show freePort
-          , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
-          , ":add Backend Frontend"
-          , ":module + Control.Concurrent Obelisk.Widget.Run Frontend Backend"
-          ]
-        testCmd = unlines
-          [ "backendId <- forkIO backend"
-          , "let conf = defRunConfig { _runConfig_redirectPort = " <> show freePort <> "}"
-          , "runWidget conf frontend"
-          , "killThread backendId"
-          ]
-    withSystemTempDirectory "ob-ghci" $ \fp -> do
-      let dotGhciPath = fp </> ".ghci"
-      writeFile dotGhciPath dotGhci
-      runDev dotGhciPath $ Just testCmd
+  ObCommand_Run -> inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir upstream
   ObCommand_Repl component -> runRepl component
   ObCommand_Watch component -> watch component
-
--- | Relative paths to local packages of an obelisk project
--- TODO a way to query this
-getLocalPkgs :: IO [FilePath]
-getLocalPkgs = return ["backend", "common", "frontend"]
-
-parseHsSrcDir :: FilePath -- ^ package cabal file path
-              -> IO (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
-parseHsSrcDir cabalFp = do
-  exists <- doesFileExist cabalFp
-  if exists
-    then do
-      withUTF8FileContents cabalFp $ \cabal -> do
-      case parseGenericPackageDescription cabal of
-        ParseOk warnings gpkg -> do
-          mapM_ print warnings
-          return $ do
-            (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
-            pure $ fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
-        ParseFailed _ -> return Nothing
-    else return Nothing
-
+  ObCommand_Internal ObInternal_Daemon -> daemonSlave
 --TODO: Clean up all the magic strings throughout this codebase
