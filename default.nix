@@ -57,15 +57,20 @@ let #TODO: Upstream
       heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
     };
 
+    cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
+      builtins.match "^\\.ghc\\.environment.*" baseName != null ||
+      baseName == "cabal.project.local"
+    ));
+
     addLibs = self: super: {
       obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
       obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
-      obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
-      obelisk-command = (self.callCabal2nix "obelisk-command" ./lib/command {}).override { Cabal = super.Cabal_2_0_0_2; };
-      obelisk-run-frontend = self.callCabal2nix "obelisk-run-frontend" ./lib/run-frontend {};
-      obelisk-selftest = self.callCabal2nix "obelisk-selftest" ./lib/selftest {};
-      obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};
-      obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" ./lib/snap-extras {};
+      obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
+      obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
+      obelisk-run-frontend = self.callCabal2nix "obelisk-run-frontend" (cleanSource ./lib/run-frontend) {};
+      obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
+      obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
+      obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
     };
 
     defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
