@@ -42,14 +42,14 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import Data.Text.Encoding
+import qualified Data.Text.IO as T
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Yaml (parseMaybe, (.:))
 import qualified Data.Yaml as Yaml
 import GitHub
-import GitHub.Endpoints.Repos.Contents (archiveForR)
 import GitHub.Data.Name
+import GitHub.Endpoints.Repos.Contents (archiveForR)
 import Network.URI
 import Obelisk.Command.Nix
 import System.Directory
@@ -58,7 +58,7 @@ import System.FilePath
 import System.IO
 import System.IO.Error
 import System.IO.Temp
-import System.Posix (modificationTime, getSymbolicLinkStatus)
+import System.Posix (getSymbolicLinkStatus, modificationTime)
 import System.Process
 
 import Development.Placeholders
@@ -116,12 +116,12 @@ commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 
 getNixSha256ForUriUnpacked :: URI -> IO NixSha256
 getNixSha256ForUriUnpacked uri = do
-  (_, out, err, p) <- runInteractiveProcess "nix-prefetch-url" --TODO: Make this package depend on nix-prefetch-url properly
-    [ "--unpack"
-    , "--type"
-    , "sha256"
-    , show uri
-    ] Nothing Nothing
+  --TODO: Make this package depend on nix-prefetch-url properly
+  let cmd = proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
+  (_, Just out, Just err, p) <- createProcess cmd
+    { std_out = CreatePipe
+    , std_err = CreatePipe
+    }
   --TODO: Deal with errors here; usually they're HTTP errors
   waitForProcess p >>= \case
     ExitSuccess -> return ()

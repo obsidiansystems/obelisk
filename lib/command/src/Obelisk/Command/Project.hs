@@ -20,12 +20,12 @@ import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO
-import System.Posix (FileStatus, getFileStatus , deviceID, fileID, getRealUserID , fileOwner, fileMode, UserID)
+import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process
 
-import GitHub.Data.Name (Name)
 import GitHub.Data.GitData (Branch)
+import GitHub.Data.Name (Name)
 
 import Obelisk.Command.Thunk
 
@@ -67,14 +67,13 @@ initProject source = do
   _ <- nixBuildAttrWithCache implDir "command"
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
-  (_, _, _, p) <- runInteractiveProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
+  callProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
     [ "-r"
     , "--no-preserve=mode"
     , "-T"
     , skeleton </> "."
     , "."
-    ] Nothing Nothing
-  ExitSuccess <- waitForProcess p
+    ]
   return ()
 
 --TODO: Handle errors
