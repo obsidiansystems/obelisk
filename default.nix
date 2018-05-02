@@ -78,6 +78,8 @@ in
 with pkgs.lib;
 rec {
   inherit reflex-platform;
+  inherit (reflex-platform) nixpkgs;
+  path = reflex-platform.filterGit ./.;
   command = ghcObelisk.obelisk-command;
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
