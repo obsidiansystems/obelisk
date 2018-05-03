@@ -158,7 +158,8 @@ inProjectShell shellName command = do
      Nothing -> putStrLn "Must be used inside of an Obelisk project"
      Just root -> do
        (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell"
-          [ "-A"
+          [ "--pure"
+          , "-A"
           , "shells." <> shellName
           , "--run", command
           ]
