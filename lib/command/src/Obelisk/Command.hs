@@ -138,9 +138,9 @@ data ObInternal
   = ObInternal_Daemon
 
 inNixShell :: Closure (Process ()) -> IO ()
-inNixShell m = do
+inNixShell m = withProjectRoot "." $ \root -> do
   progName <- getProgName
-  _ <- forkIO $ inImpureProjectShell "ghc" $ unwords [progName, "internal", "daemon"]
+  _ <- forkIO $ projectShell root False "ghc" $ unwords [progName, "internal", "daemon"]
   backend <- initializeBackend "127.0.0.1" "0" obRemoteTable
   backendNode <- newLocalNode backend
   startMaster backend (daemonMaster backend m) `finally`

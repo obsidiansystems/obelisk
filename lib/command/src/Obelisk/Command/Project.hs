@@ -5,8 +5,10 @@ module Obelisk.Command.Project
   , initProject
   , findProjectObeliskCommand
   , findProjectRoot
+  , withProjectRoot
   , inProjectShell
   , inImpureProjectShell
+  , projectShell
   ) where
 
 import Control.Monad
@@ -110,6 +112,11 @@ findProjectRoot target = do
   (result, _) <- runStateT (walkToProjectRoot target targetStat myUid) []
   return result
 
+withProjectRoot :: FilePath -> (FilePath -> IO ()) -> IO ()
+withProjectRoot target f = findProjectRoot target >>= \case
+  Nothing -> fail "Must be used inside of an Obelisk project"
+  Just root -> f root
+
 -- | Walk from the current directory to the containing project's root directory,
 -- if there is one, accumulating potentially insecure directories that were
 -- traversed in the process.  Return the project root directory, if found.
@@ -153,24 +160,23 @@ isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
 
 -- | Run a command in the given shell for the current project
 inProjectShell :: String -> String -> IO ()
-inProjectShell = inProjectShell' ["--pure"]
-
-inProjectShell' :: [String] -> String -> String -> IO ()
-inProjectShell' args shellName command = do
-  findProjectRoot "." >>= \case
-     Nothing -> putStrLn "Must be used inside of an Obelisk project"
-     Just root -> do
-       (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
-          args <>
-          [ "-A"
-          , "shells." <> shellName
-          , "--run", command
-          ]
-       _ <- waitForProcess ph
-       return ()
+inProjectShell shellName command = withProjectRoot "." $ \root ->
+  projectShell root True shellName command
 
 inImpureProjectShell :: String -> String -> IO ()
-inImpureProjectShell = inProjectShell' []
+inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
+  projectShell root False shellName command
+
+projectShell :: FilePath -> Bool -> String -> String -> IO ()
+projectShell root isPure shellName command = do
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
+     [ "--pure" | isPure ] <>
+     [ "-A"
+     , "shells." <> shellName
+     , "--run", command
+     ]
+  _ <- waitForProcess ph
+  return ()
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
 setCwd fp cp = cp { cwd = fp }
