@@ -1,4 +1,4 @@
-import Backend.App
+import Backend
 
 main :: IO ()
 main = backend
