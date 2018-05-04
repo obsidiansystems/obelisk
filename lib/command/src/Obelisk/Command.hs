@@ -140,7 +140,7 @@ data ObInternal
 inNixShell :: Closure (Process ()) -> IO ()
 inNixShell m = do
   progName <- getProgName
-  _ <- forkIO $ inProjectShell "ghc" $ unwords [progName, "internal", "daemon"]
+  _ <- forkIO $ inImpureProjectShell "ghc" $ unwords [progName, "internal", "daemon"]
   -- NB: Loading a nix-shell takes around 4 seconds
   threadDelay $ 1000 * 1000 * 4
   backend <- initializeBackend "127.0.0.1" "0" obRemoteTable

@@ -6,6 +6,7 @@ module Obelisk.Command.Project
   , findProjectObeliskCommand
   , findProjectRoot
   , inProjectShell
+  , inImpureProjectShell
   ) where
 
 import Control.Monad
@@ -152,18 +153,24 @@ isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
 
 -- | Run a command in the given shell for the current project
 inProjectShell :: String -> String -> IO ()
-inProjectShell shellName command = do
+inProjectShell = inProjectShell' ["--pure"]
+
+inProjectShell' :: [String] -> String -> String -> IO ()
+inProjectShell' args shellName command = do
   findProjectRoot "." >>= \case
      Nothing -> putStrLn "Must be used inside of an Obelisk project"
      Just root -> do
-       (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell"
-          [ "--pure"
-          , "-A"
+       (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
+          args <>
+          [ "-A"
           , "shells." <> shellName
           , "--run", command
           ]
        _ <- waitForProcess ph
        return ()
+
+inImpureProjectShell :: String -> String -> IO ()
+inImpureProjectShell = inProjectShell' []
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
 setCwd fp cp = cp { cwd = fp }
