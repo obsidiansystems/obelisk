@@ -141,16 +141,19 @@ inNixShell :: Closure (Process ()) -> IO ()
 inNixShell m = do
   progName <- getProgName
   _ <- forkIO $ inImpureProjectShell "ghc" $ unwords [progName, "internal", "daemon"]
-  -- NB: Loading a nix-shell takes around 4 seconds
-  threadDelay $ 1000 * 1000 * 4
   backend <- initializeBackend "127.0.0.1" "0" obRemoteTable
   backendNode <- newLocalNode backend
-  startMaster backend (daemonMaster m) `finally`
+  startMaster backend (daemonMaster backend m) `finally`
     runProcess backendNode (terminateAllSlaves backend)
 
-daemonMaster :: Closure (Process ()) -> [NodeId] -> Process ()
-daemonMaster p nodeIds = do
-  forM_ nodeIds $ \nodeId -> spawn nodeId p
+daemonMaster :: Backend -> Closure (Process ()) -> [NodeId] -> Process ()
+daemonMaster backend p [] = do
+  slaves <- findSlaves backend
+  daemonMaster backend p $ processNodeId <$> slaves
+daemonMaster _ p nodeIds = do
+  forM_ nodeIds $ \nodeId -> do
+    _pid <- spawnLink nodeId p
+    return ()
   expect
 
 daemonSlave :: IO ()
