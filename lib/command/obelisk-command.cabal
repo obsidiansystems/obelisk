@@ -7,11 +7,11 @@ library
   hs-source-dirs: src
   build-depends:
       aeson
+    , Cabal
     , aeson-pretty
     , base
     , bytestring
     , containers
-    , Cabal
     , data-default
     , directory
     , distributed-process
@@ -22,10 +22,11 @@ library
     , hit
     , mtl
     , network
-    , network-uri
     , network-transport
     , network-transport-tcp
+    , network-uri
     , optparse-applicative
+    , placeholders
     , process
     , temporary
     , text
@@ -33,7 +34,6 @@ library
     , transformers
     , unix
     , yaml
-    , placeholders
   exposed-modules:
     Obelisk.Command
     Obelisk.Command.Nix
