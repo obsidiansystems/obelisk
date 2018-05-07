@@ -10,27 +10,15 @@ import Control.Monad
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
-import Data.Either
-import Data.Foldable
 import Data.List
-import qualified Data.List.NonEmpty as NE
-import Data.Maybe
 import Data.Monoid
 import qualified Data.Text as T
 import Data.Text.Encoding
-import Distribution.Utils.Generic (withUTF8FileContents)
-import Distribution.PackageDescription.Parse (parseGenericPackageDescription, ParseResult(..))
-import Distribution.Types.BuildInfo
-import Distribution.Types.CondTree
-import Distribution.Types.Library
-import Distribution.Types.GenericPackageDescription
 import GHC.StaticPtr
 import Options.Applicative
-import System.Directory
 import System.Environment
 import System.FilePath
 import System.IO
-import System.IO.Temp (withSystemTempDirectory)
 import System.Posix.Process
 
 import Obelisk.Command.Project
