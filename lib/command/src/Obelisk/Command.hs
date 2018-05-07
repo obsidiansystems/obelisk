@@ -21,10 +21,11 @@ import System.FilePath
 import System.IO
 import System.Posix.Process
 
+import Obelisk.Command.Deploy
 import Obelisk.Command.Project
-import Obelisk.Command.Thunk
 import Obelisk.Command.Repl
 import Obelisk.Command.Run
+import Obelisk.Command.Thunk
 
 data Args = Args
   { _args_noHandOffPassed :: Bool
@@ -59,6 +60,7 @@ initSource = foldl1 (<|>)
 
 data ObCommand
    = ObCommand_Init InitSource
+   | ObCommand_Deploy DeployCommand
    | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl FilePath
@@ -82,6 +84,7 @@ obCommand :: Parser ObCommand
 obCommand = hsubparser
     (mconcat
       [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
+      , command "deploy" $ info (ObCommand_Deploy <$> deployCommand) $ progDesc "Prepare a deployment for an Obelisk project"
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
@@ -92,6 +95,20 @@ obCommand = hsubparser
       [ internal
       , command "internal" (info (ObCommand_Internal <$> internalCommand) mempty)
       ])
+
+deployCommand :: Parser DeployCommand
+deployCommand = subparser $ mconcat
+  [ command "init" $ info deployInitCommand $ progDesc "Initialize a deployment configuration directory"
+  ]
+
+deployInitCommand :: Parser DeployCommand
+deployInitCommand = DeployCommand_Init
+  <$> strArgument (action "deploy-dir" <> metavar "DEPLOYDIR")
+  <*> strArgument (action "ssh-key" <> metavar "SSH_KEY")
+  <*> strArgument (action "hostname" <> metavar "HOSTNAME")
+
+data DeployCommand
+  = DeployCommand_Init String String String
 
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
@@ -167,6 +184,9 @@ main = do
 ob :: ObCommand -> IO ()
 ob = \case
   ObCommand_Init source -> initProject source
+  ObCommand_Deploy dc -> case dc of
+    DeployCommand_Init deployDir sshKeyPath hostname -> withProjectRoot "." $ \root ->
+      deployInit (root </> "config") deployDir sshKeyPath hostname
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of

@@ -79,6 +79,13 @@ initProject source = do
   let configDir = "config"
   createDirectory configDir
   mapM_ (createDirectory . (configDir </>)) ["backend", "common", "frontend"]
+  initGit
+
+initGit :: IO ()
+initGit = do
+  callProcess "git" ["init"]
+  callProcess "git" ["add", "."]
+  callProcess "git" ["commit", "-m", "Initial commit."]
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns
