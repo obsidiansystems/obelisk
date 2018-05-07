@@ -10,20 +10,17 @@ library
     , Cabal
     , aeson-pretty
     , base
+    , base16-bytestring
+    , binary
     , bytestring
     , containers
     , data-default
     , directory
-    , distributed-process
-    , distributed-process-simplelocalnet
-    , exceptions
     , filepath
     , github
     , hit
     , mtl
     , network
-    , network-transport
-    , network-transport-tcp
     , network-uri
     , optparse-applicative
     , placeholders
@@ -40,7 +37,8 @@ library
     Obelisk.Command.Project
     Obelisk.Command.Repl
     Obelisk.Command.Thunk
-  ghc-options: -Wall
+  -- -fobject-code is so that the StaticPointers extension can work in ghci
+  ghc-options: -Wall -fobject-code
 
 executable ob
   main-is: src-bin/ob.hs
