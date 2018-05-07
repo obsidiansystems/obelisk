@@ -36,6 +36,7 @@ library
     Obelisk.Command.Nix
     Obelisk.Command.Project
     Obelisk.Command.Repl
+    Obelisk.Command.Run
     Obelisk.Command.Thunk
   -- -fobject-code is so that the StaticPointers extension can work in ghci
   ghc-options: -Wall -fobject-code
