@@ -76,7 +76,9 @@ initProject source = do
     , skeleton </> "."
     , "."
     ]
-  return ()
+  let configDir = "config"
+  createDirectory configDir
+  mapM_ (createDirectory . (configDir </>)) ["backend", "common", "frontend"]
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns
