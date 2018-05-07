@@ -18,10 +18,8 @@ import Data.Bits
 import Data.Function (on)
 import Data.Monoid
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import System.Directory
 import System.FilePath
-import System.IO
 import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process (CreateProcess, callProcess, createProcess_, cwd, proc, waitForProcess)
@@ -29,7 +27,7 @@ import System.Process (CreateProcess, callProcess, createProcess_, cwd, proc, wa
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
-import Obelisk.Command.CLI (withSpinner)
+import Obelisk.Command.CLI (putError, putErrorAndExit, withSpinner)
 import Obelisk.Command.Thunk
 
 --TODO: Make this module resilient to random exceptions
@@ -108,7 +106,7 @@ findProjectObeliskCommand target = do
       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
-      T.hPutStr stderr $ T.unlines
+      putError $ T.unlines
         [ "Error: Found a project at " <> T.pack (normalise projDir) <> ", but had to traverse one or more insecure directories to get there:"
         , T.unlines $ fmap (T.pack . normalise) insecurePaths
         , "Please ensure that all of these directories are owned by you and are not writable by anyone else."
@@ -125,7 +123,7 @@ findProjectRoot target = do
 
 withProjectRoot :: FilePath -> (FilePath -> IO ()) -> IO ()
 withProjectRoot target f = findProjectRoot target >>= \case
-  Nothing -> fail "Must be used inside of an Obelisk project"
+  Nothing -> putErrorAndExit "Must be used inside of an Obelisk project"
   Just root -> f root
 
 -- | Walk from the current directory to the containing project's root directory,
@@ -186,7 +184,7 @@ projectShell root isPure shellName command = do
      , "shells." <> shellName
      , "--run", command
      ]
-  void $ withSpinner "Project shell ..." (Just "Finishing running project shell (runNixShellAttr)") $ do
+  void $ withSpinner "Launching project shell ..." Nothing $ do
     waitForProcess ph
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess

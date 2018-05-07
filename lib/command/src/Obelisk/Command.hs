@@ -16,9 +16,9 @@ import GHC.StaticPtr
 import Options.Applicative
 import System.Environment
 import System.FilePath
-import System.IO
 import System.Posix.Process (executeFile)
 
+import Obelisk.Command.CLI (putErrorAndExit, putWarning, runCLI)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
@@ -153,7 +153,7 @@ parserPrefs = defaultPrefs
   }
 
 main :: IO ()
-main = do
+main = runCLI $ do
   myArgs <- getArgs
   --TODO: We'd like to actually use the parser to determine whether to hand off,
   --but in the case where this implementation of 'ob' doesn't support all
@@ -164,7 +164,7 @@ main = do
         case noHandoffPassed of
           False -> return ()
            --TODO: Use a proper logging system with log levels and whatnot
-          True -> hPutStrLn stderr "NOTICE: --no-handoff should only be passed once and as the first argument; ignoring"
+          True -> putWarning "--no-handoff should only be passed once and as the first argument; ignoring"
         ob cmd
       handoffAndGo as = findProjectObeliskCommand "." >>= \case
         Nothing -> go as -- If not in a project, just run ourselves
@@ -195,7 +195,7 @@ ob = \case
   ObCommand_Watch component -> watch component
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> unsafeLookupStaticPtr @(IO ()) k >>= \case
-      Nothing -> fail $ "ObInternal_RunStaticIO: no such StaticKey: " <> show k
+      Nothing -> putErrorAndExit $ "ObInternal_RunStaticIO: no such StaticKey: " <> (T.pack $ show k)
       Just p -> deRefStaticPtr p
 --TODO: Clean up all the magic strings throughout this codebase
 

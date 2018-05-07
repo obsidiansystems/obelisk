@@ -64,7 +64,7 @@ import System.Process (StdStream (CreatePipe), callProcess, createProcess, proc,
 
 import Development.Placeholders
 
-import Obelisk.Command.CLI (withSpinner)
+import Obelisk.Command.CLI (putError, putErrorAndExit, putWarning, withSpinner)
 
 --TODO: Support symlinked thunk data
 data ThunkData
@@ -120,7 +120,6 @@ commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 getNixSha256ForUriUnpacked :: URI -> IO NixSha256
 getNixSha256ForUriUnpacked uri = do
   --TODO: Make this package depend on nix-prefetch-url properly
-  putStrLn "Calling nix-prefetch-url"
   let cmd = proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
   (_, Just out, Just err, p) <- createProcess cmd
     { std_out = CreatePipe
@@ -133,7 +132,7 @@ getNixSha256ForUriUnpacked uri = do
      hPutStrLn stdout =<< hGetContents out
      hPutStrLn stderr =<< hGetContents err
      --TODO: actual error
-     fail $ "nix-prefetch-url"
+     putErrorAndExit $ "nix-prefetch-url"
   T.strip <$> T.hGetContents out
 
 -- | Get the latest revision available from the given source
@@ -403,7 +402,7 @@ nixBuildThunkAttrWithCache thunkDir attr = do
   --This should be guaranteed by the command argument parser.
   let cacheErrHandler e
         | isDoesNotExistError e = return Nothing -- expected from a cache miss
-        | otherwise = hPutStrLn stderr (displayException e) >> return Nothing
+        | otherwise = putError (T.pack $ displayException e) >> return Nothing
       cacheDir = thunkDir </> ".attr-cache"
       cachePath = cacheDir </> attr <.> "out"
   createDirectoryIfMissing False cacheDir
@@ -416,7 +415,7 @@ nixBuildThunkAttrWithCache thunkDir attr = do
   case cacheHit of
     Just c -> return c
     Nothing -> do
-      hPutStrLn stderr (mconcat [thunkDir, ": ", attr, " not cached, building ..."])
+      putWarning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
       _ <- nixBuild $ def
         { _nixBuildConfig_target = Target
           { _target_path = thunkDir
@@ -448,9 +447,9 @@ nixBuildAttrWithCache exprPath attr = do
 unpackThunk :: FilePath
             -> IO ()
 unpackThunk thunkDir = readThunk thunkDir >>= \case
-  Left err -> fail $ "thunk unpack: " <> show err
+  Left err -> putErrorAndExit $ "thunk unpack: " <> (T.pack $ show err)
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
-  Right (ThunkData_Checkout _) -> fail "thunk unpack: thunk is already unpacked"
+  Right (ThunkData_Checkout _) -> putErrorAndExit "thunk unpack: thunk is already unpacked"
   Right (ThunkData_Packed tptr) -> case _thunkPtr_source tptr of
     ThunkSource_GitHub s | (thunkParent, thunkName) <- splitFileName thunkDir -> withTempDirectory thunkParent thunkName $ \tmpRepo -> do
       mauth <- getHubAuth "github.com"
@@ -458,8 +457,7 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
       githubURI <- either throwIO (return . repoSshUrl) repoResult >>= \case
         Nothing -> fail "Cannot determine clone URI for thunk source"
         Just c -> return $ T.unpack $ getUrl c
-      putStrLn "Call hub"
-      withSpinner "hub:clone ..." (Just $ "Cloned " <> githubURI) $ do
+      withSpinner "Cloning from GitHub ..." (Just $ "Cloned " <> githubURI) $ do
         callProcess "hub" --TODO: Depend on hub explicitly
           [ "clone"
           , "-n"
@@ -469,8 +467,7 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
       let obGitDir = tmpRepo </> ".git" </> "obelisk"
       --If this directory already exists then something is weird and we should fail
       createDirectory obGitDir
-      putStrLn "Call cp (orig-thunk)"
-      withSpinner "cp orig-thunk ..." (Just "Copied orig-thunk") $ do
+      withSpinner "Copying thunk ..." Nothing $ do
         callProcess "cp"
           [ "-r"
           , "-T"
@@ -504,7 +501,7 @@ packThunk :: FilePath
           -> IO ()
 packThunk thunkDir upstream = readThunk thunkDir >>= \case
   Left err -> fail $ "thunk pack: " <> show err
-  Right (ThunkData_Packed _) -> fail "pack: thunk is already packed"
+  Right (ThunkData_Packed _) -> putErrorAndExit "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
     --Check whether the working directory is clean
     statusOutput <- readProcess "hub"

@@ -3,6 +3,9 @@
 **/cabal.sandbox.config
 result
 
+*.hi
+*.o
+
 TAGS
 tags
 ctags

@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Nix
   ( nixBuild
@@ -14,7 +15,7 @@ import qualified Data.Text.IO as T
 import System.Exit (ExitCode (ExitSuccess))
 import System.Process (StdStream (CreatePipe), createProcess, proc, std_err, std_out, waitForProcess)
 
-import Obelisk.Command.CLI (withSpinner)
+import Obelisk.Command.CLI (putErrorAndExit, withSpinner)
 
 -- | Where to put nix-build output
 data OutLink
@@ -67,5 +68,5 @@ nixBuild cfg = do
       -- FIXME: We should interleave `out` and `err` in their original order?
       LBS.putStr =<< LBS.hGetContents out
       LBS.putStr =<< LBS.hGetContents err
-      fail "nix-build failed"
+      putErrorAndExit "nix-build failed"
   T.unpack . T.strip <$> T.hGetContents out
