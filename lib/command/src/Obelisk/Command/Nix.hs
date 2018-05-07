@@ -52,7 +52,7 @@ nixBuild cfg = do
         , case _nixBuildConfig_outLink cfg of
             OutLink_Default -> []
             OutLink_None -> ["--no-out-link"]
-            OutLink_IndirectRoot outLink -> ["--indirect", "--add-root", outLink]
+            OutLink_IndirectRoot outLink -> ["--out-link", outLink]
         ]
   (_, Just out, Just err, p) <- createProcess (proc "nix-build" args)
     { std_out = CreatePipe
