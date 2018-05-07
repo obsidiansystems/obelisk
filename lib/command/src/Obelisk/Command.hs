@@ -1,11 +1,9 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StaticPointers #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command where
 
-import System.Process ()
 import Control.Monad
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Base16 as Base16
@@ -19,7 +17,7 @@ import Options.Applicative
 import System.Environment
 import System.FilePath
 import System.IO
-import System.Posix.Process
+import System.Posix.Process (executeFile)
 
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project

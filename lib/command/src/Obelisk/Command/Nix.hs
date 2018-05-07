@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Nix
   ( nixBuild
   , NixBuildConfig (..)
@@ -10,8 +11,10 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Default
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import System.Exit
-import System.Process
+import System.Exit (ExitCode (ExitSuccess))
+import System.Process (StdStream (CreatePipe), createProcess, proc, std_err, std_out, waitForProcess)
+
+import Obelisk.Command.CLI (withSpinner)
 
 -- | Where to put nix-build output
 data OutLink
@@ -58,7 +61,7 @@ nixBuild cfg = do
     { std_out = CreatePipe
     , std_err = CreatePipe
     }
-  waitForProcess p >>= \case
+  (withSpinner "Running nix-build ..." Nothing $ waitForProcess p) >>= \case
     ExitSuccess -> return ()
     _ -> do
       -- FIXME: We should interleave `out` and `err` in their original order?

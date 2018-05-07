@@ -59,9 +59,12 @@ import System.IO
 import System.IO.Error
 import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
-import System.Process
+import System.Process (StdStream (CreatePipe), callProcess, createProcess, proc, readProcess, std_err,
+                       std_out, waitForProcess)
 
 import Development.Placeholders
+
+import Obelisk.Command.CLI (withSpinner)
 
 --TODO: Support symlinked thunk data
 data ThunkData
@@ -117,6 +120,7 @@ commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 getNixSha256ForUriUnpacked :: URI -> IO NixSha256
 getNixSha256ForUriUnpacked uri = do
   --TODO: Make this package depend on nix-prefetch-url properly
+  putStrLn "Calling nix-prefetch-url"
   let cmd = proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
   (_, Just out, Just err, p) <- createProcess cmd
     { std_out = CreatePipe
@@ -454,21 +458,25 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
       githubURI <- either throwIO (return . repoSshUrl) repoResult >>= \case
         Nothing -> fail "Cannot determine clone URI for thunk source"
         Just c -> return $ T.unpack $ getUrl c
-      callProcess "hub" --TODO: Depend on hub explicitly
-        [ "clone"
-        , "-n"
-        , githubURI
-        , tmpRepo
-        ]
+      putStrLn "Call hub"
+      withSpinner "hub:clone ..." (Just $ "Cloned " <> githubURI) $ do
+        callProcess "hub" --TODO: Depend on hub explicitly
+          [ "clone"
+          , "-n"
+          , githubURI
+          , tmpRepo
+          ]
       let obGitDir = tmpRepo </> ".git" </> "obelisk"
       --If this directory already exists then something is weird and we should fail
       createDirectory obGitDir
-      callProcess "cp"
-        [ "-r"
-        , "-T"
-        , thunkDir </> "."
-        , obGitDir </> "orig-thunk"
-        ]
+      putStrLn "Call cp (orig-thunk)"
+      withSpinner "cp orig-thunk ..." (Just "Copied orig-thunk") $ do
+        callProcess "cp"
+          [ "-r"
+          , "-T"
+          , thunkDir </> "."
+          , obGitDir </> "orig-thunk"
+          ]
       let checkoutOptions = concat
             [ ["-C", tmpRepo]
             , pure "checkout"

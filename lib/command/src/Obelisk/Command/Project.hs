@@ -24,11 +24,12 @@ import System.FilePath
 import System.IO
 import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
-import System.Process
+import System.Process (CreateProcess, callProcess, createProcess_, cwd, proc, waitForProcess)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
+import Obelisk.Command.CLI (withSpinner)
 import Obelisk.Command.Thunk
 
 --TODO: Make this module resilient to random exceptions
@@ -69,13 +70,14 @@ initProject source = do
   _ <- nixBuildAttrWithCache implDir "command"
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
-  callProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
-    [ "-r"
-    , "--no-preserve=mode"
-    , "-T"
-    , skeleton </> "."
-    , "."
-    ]
+  withSpinner "Copying project skeleton ..." (Just "Copied project skeleton.") $ do
+    callProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
+      [ "-r"
+      , "--no-preserve=mode"
+      , "-T"
+      , skeleton </> "."
+      , "."
+      ]
   let configDir = "config"
   createDirectory configDir
   mapM_ (createDirectory . (configDir </>)) ["backend", "common", "frontend"]
@@ -184,8 +186,8 @@ projectShell root isPure shellName command = do
      , "shells." <> shellName
      , "--run", command
      ]
-  _ <- waitForProcess ph
-  return ()
+  void $ withSpinner "Project shell ..." (Just "Finishing running project shell (runNixShellAttr)") $ do
+    waitForProcess ph
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
 setCwd fp cp = cp { cwd = fp }
