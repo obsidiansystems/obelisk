@@ -2,6 +2,8 @@
 module Obelisk.Widget.Run where
 
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as BSC
+import Data.Semigroup ((<>))
 import Language.Javascript.JSaddle.WebSockets
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Network.HTTP.Client (defaultManagerSettings, newManager, Manager)
@@ -16,6 +18,9 @@ runWidget conf w = do
   man <- newManager defaultManagerSettings
   let redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
+
+  putStrLn $ "Backend running on " <> BSC.unpack redirectHost <> ":" <> show redirectPort
+  putStrLn $ "Frontend running on localhost:" <> show (_runConfig_port conf)
   runSettings (setPort (_runConfig_port conf) (setTimeout 3600 defaultSettings)) =<<
     jsaddleWithAppOr defaultConnectionOptions (mainWidget' w >> syncPoint) (fallbackProxy redirectHost redirectPort man)
 
