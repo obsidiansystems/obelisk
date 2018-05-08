@@ -64,6 +64,7 @@ import System.Posix (getSymbolicLinkStatus, modificationTime)
 import System.Process
 
 import Development.Placeholders
+import Obelisk.Command.Utils
 
 --TODO: Support symlinked thunk data
 data ThunkData
@@ -510,12 +511,7 @@ packThunk thunkDir upstream = readThunk thunkDir >>= \case
 
 getThunkPtr :: FilePath -> String -> IO ThunkPtr
 getThunkPtr thunkDir upstream = do
-    --Check whether the working directory is clean
-    statusOutput <- readProcess "hub"
-      [ "-C", thunkDir
-      , "status", "--porcelain", "--ignored" ] ""
-    diffOutput <- readProcess "hub" [ "-C", thunkDir , "diff" ] ""
-    case null statusOutput && null diffOutput of
+    checkGitCleanStatus thunkDir >>= \case
       False -> do
         statusDebug <- readProcess "hub"
           [ "-C", thunkDir, "status", "--ignored" ] ""

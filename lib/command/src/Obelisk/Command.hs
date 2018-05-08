@@ -26,6 +26,7 @@ import Obelisk.Command.Deploy
 import Obelisk.Command.Thunk
 import Obelisk.Command.Repl
 import Obelisk.Command.Run
+import Obelisk.Command.Utils
 
 data Args = Args
   { _args_noHandOffPassed :: Bool

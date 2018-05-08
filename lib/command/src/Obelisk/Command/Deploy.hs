@@ -7,6 +7,7 @@ import System.FilePath
 import System.Posix.Files
 import System.Process
 
+import Obelisk.Command.Utils
 import Obelisk.Command.Thunk
 
 deployInit :: ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> IO ()
