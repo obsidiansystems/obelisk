@@ -325,10 +325,10 @@ createThunkWithLatest target s = do
 updateThunkToLatest :: FilePath -> IO ()
 updateThunkToLatest target = do
   (overwrite, ptr) <- readThunk target >>= \case
-    Left err -> fail $ "thunk update: " <> show err
-    Right c -> return $ case c of
-      ThunkData_Packed t -> (target, t)
-      ThunkData_Checkout _ -> fail "cannot update an unpacked thunk"
+    Left err -> failWith $ T.pack $ "thunk update: " <> show err
+    Right c -> case c of
+      ThunkData_Packed t -> return (target, t)
+      ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
   let src = _thunkPtr_source ptr
   rev <- getLatestRev src
   overwriteThunk overwrite $ ThunkPtr
@@ -458,7 +458,7 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
       mauth <- getHubAuth "github.com"
       repoResult <- executeRequestMaybe mauth $ repositoryR (_gitHubSource_owner s) (_gitHubSource_repo s)
       githubURI <- either throwIO (return . repoSshUrl) repoResult >>= \case
-        Nothing -> fail "Cannot determine clone URI for thunk source"
+        Nothing -> failWith "Cannot determine clone URI for thunk source"
         Just c -> return $ T.unpack $ getUrl c
       withSpinner "Cloning from GitHub ..." (Just $ "Cloned " <> githubURI) $ do
         callProcess "hub" --TODO: Depend on hub explicitly
@@ -503,7 +503,7 @@ packThunk :: FilePath
           -> String
           -> IO ()
 packThunk thunkDir upstream = readThunk thunkDir >>= \case
-  Left err -> fail $ "thunk pack: " <> show err
+  Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
     thunkPtr <- getThunkPtr thunkDir upstream
@@ -520,7 +520,7 @@ getThunkPtr thunkDir upstream = do
       False -> do
         statusDebug <- readProcess "hub"
           [ "-C", thunkDir, "status", "--ignored" ] ""
-        fail $ unlines $
+        failWith $ T.pack $ unlines $
           [ "thunk pack: thunk checkout contains unsaved modifications"
           , "git status:"
           ] ++ lines statusDebug
@@ -530,7 +530,7 @@ getThunkPtr thunkDir upstream = do
     stashOutput <- readProcess "hub" [ "-C", thunkDir, "stash", "list" ] ""
     case null stashOutput of
       False -> do
-        fail $ unlines $
+        failWith $ T.pack $ unlines $
           [ "thunk pack: thunk checkout has stashes"
           , "git stash list:"
           ] ++ lines stashOutput
@@ -544,7 +544,7 @@ getThunkPtr thunkDir upstream = do
     remotes <- lines <$> readProcess "hub" [ "-C", thunkDir, "remote" ] ""
     --Check that the upstream specified actually exists
     case L.find (== upstream) remotes of
-      Nothing -> fail $ "thunk pack: upstream " <> upstream <> " does not exist"
+      Nothing -> failWith $ T.pack $ "thunk pack: upstream " <> upstream <> " does not exist"
       Just _ -> return ()
     -- iterate over cartesian product
     forM_ repoHeads $ \hd -> do
@@ -558,7 +558,7 @@ getThunkPtr thunkDir upstream = do
           , "remotes/" <> rm <> "/" <> hd
           ] ""
         case remoteMergeRev == localRev of
-          False -> fail $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
+          False -> failWith $ T.pack $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
           True -> return ()
 
     --We assume it's safe to pack the thunk at this point
@@ -571,7 +571,7 @@ getThunkPtr thunkDir upstream = do
         mRemoteUri = parseURIReference remoteUri'
                 <|> parseSshShorthand remoteUri'
     thunkPtr <- case mRemoteUri of
-      Nothing -> fail uriParseFailure
+      Nothing -> failWith $ T.pack uriParseFailure
       Just remoteUri -> do
         refs <- fmap (refsToTuples . words) . lines <$> readProcess "hub"
           [ "-C"
@@ -631,7 +631,7 @@ getThunkPtr thunkDir upstream = do
    case uriScheme u of
      "https:" -> return ()
      "git:" -> return ()
-     _ -> fail $ "thunk pack: obelisk currently only supports https and git protocols for non-GitHub remotes"
+     _ -> failWith "thunk pack: obelisk currently only supports https and git protocols for non-GitHub remotes"
    $notImplemented
   parseSshShorthand uri' = do
     -- This is what git does to check that the remote

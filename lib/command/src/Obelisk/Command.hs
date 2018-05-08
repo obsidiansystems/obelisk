@@ -196,7 +196,7 @@ ob = \case
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
       thunkPtr <- readThunk root >>= \case
-        Left err -> fail $ "thunk pack: " <> show err
+        Left err -> failWith $ T.pack $ "thunk pack: " <> show err
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
@@ -208,7 +208,7 @@ ob = \case
     DeployCommand_Push -> do
       checkGitCleanStatus "." >>= \case
         True -> return ()
-        False -> fail "ob push: Commit any changes to the deployment configuration before proceeding"
+        False -> failWith "ob push: Commit any changes to the deployment configuration before proceeding"
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
@@ -219,17 +219,20 @@ ob = \case
   ObCommand_Watch component -> watch component
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> unsafeLookupStaticPtr @(IO ()) k >>= \case
-      Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> (T.pack $ show k)
+      Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> deRefStaticPtr p
 --TODO: Clean up all the magic strings throughout this codebase
 
 encodeStaticKey :: StaticKey -> String
 encodeStaticKey = T.unpack . decodeUtf8 . Base16.encode . LBS.toStrict . Binary.encode
 
+-- TODO: This function should use `failWith` instead of `fail` so as to be consistent with the way obelisk
+-- outputs in the rest of the codebase. However `failWith` returns `IO a`, so that involves revisiting
+-- this function and thinking of how best to raise errors from pure (non-IO) functions.
 decodeStaticKey :: String -> Either String StaticKey
 decodeStaticKey s = case Base16.decode $ encodeUtf8 $ T.pack s of
   (b, "") -> case Binary.decodeOrFail $ LBS.fromStrict b of
     Right ("", _, a) -> pure a
-    Right _ -> fail $ "decodeStaticKey: Binary.decodeOrFail didn't consume all input"
+    Right _ -> fail "decodeStaticKey: Binary.decodeOrFail didn't consume all input"
     Left (_, _, e) -> fail $ "decodeStaticKey: Binary.decodeOrFail failed: " <> show e
   _ -> fail $ "decodeStaticKey: could not decode hex string: " <> show s
