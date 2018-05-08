@@ -100,6 +100,7 @@ obCommand = hsubparser
 deployCommand :: Parser DeployCommand
 deployCommand = hsubparser $ mconcat
   [ command "init" $ info deployInitCommand $ progDesc "Initialize a deployment configuration directory"
+  , command "push" $ info (pure DeployCommand_Push) mempty
   ]
 
 deployInitCommand :: Parser DeployCommand
@@ -111,6 +112,7 @@ deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
 
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
+  | DeployCommand_Push
 
 data DeployInitOpts = DeployInitOpts
   { _deployInitOpts_ouputDir :: FilePath
@@ -205,6 +207,10 @@ ob = \case
           sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
+    DeployCommand_Push -> do
+      checkGitCleanStatus "." >>= \case
+        True -> return ()
+        False -> fail "ob push: Commit any changes to the deployment configuration before proceeding"
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
