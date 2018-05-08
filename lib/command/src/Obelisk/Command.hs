@@ -194,7 +194,12 @@ ob = \case
   ObCommand_Init source -> initProject source
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
-      thunkPtr <- getThunkPtr root (_deployInitOpts_remote deployOpts)
+      thunkPtr <- readThunk root >>= \case
+        Left err -> fail $ "thunk pack: " <> show err
+        Right (ThunkData_Packed ptr) -> return ptr
+        Right (ThunkData_Checkout (Just ptr)) -> return ptr
+        Right (ThunkData_Checkout Nothing) ->
+          getThunkPtr root (_deployInitOpts_remote deployOpts)
       let deployDir = _deployInitOpts_ouputDir deployOpts
           sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
