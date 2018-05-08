@@ -22,6 +22,7 @@ import System.IO
 import System.Posix.Process
 
 import Obelisk.Command.Project
+import Obelisk.Command.Deploy
 import Obelisk.Command.Thunk
 import Obelisk.Command.Repl
 import Obelisk.Command.Run
@@ -59,6 +60,7 @@ initSource = foldl1 (<|>)
 
 data ObCommand
    = ObCommand_Init InitSource
+   | ObCommand_Deploy DeployCommand
    | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl FilePath
@@ -82,6 +84,7 @@ obCommand :: Parser ObCommand
 obCommand = hsubparser
     (mconcat
       [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
+      , command "deploy" $ info (ObCommand_Deploy <$> deployCommand) $ progDesc "Prepare a deployment for an Obelisk project"
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
@@ -92,6 +95,28 @@ obCommand = hsubparser
       [ internal
       , command "internal" (info (ObCommand_Internal <$> internalCommand) mempty)
       ])
+
+deployCommand :: Parser DeployCommand
+deployCommand = hsubparser $ mconcat
+  [ command "init" $ info deployInitCommand $ progDesc "Initialize a deployment configuration directory"
+  ]
+
+deployInitCommand :: Parser DeployCommand
+deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
+  <$> strArgument (action "deploy-dir" <> metavar "DEPLOYDIR" <> help "Path to a directory that it will create")
+  <*> strOption (long "ssh-key" <> metavar "SSHKEY" <> help "Path to an ssh key that it will symlink to")
+  <*> some (strOption (long "hostname" <> metavar "HOSTNAME" <> help "hostname of the deployment target"))
+  <*> strOption (long "remote" <> metavar "REMOTE" <> help "git remote to use for the src thunk")
+
+data DeployCommand
+  = DeployCommand_Init DeployInitOpts
+
+data DeployInitOpts = DeployInitOpts
+  { _deployInitOpts_ouputDir :: FilePath
+  , _deployInitOpts_sshKey :: FilePath
+  , _deployInitOpts_hostname :: [String]
+  , _deployInitOpts_remote :: String
+  }
 
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
@@ -167,6 +192,13 @@ main = do
 ob :: ObCommand -> IO ()
 ob = \case
   ObCommand_Init source -> initProject source
+  ObCommand_Deploy dc -> case dc of
+    DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
+      thunkPtr <- getThunkPtr root (_deployInitOpts_remote deployOpts)
+      let deployDir = _deployInitOpts_ouputDir deployOpts
+          sshKeyPath = _deployInitOpts_sshKey deployOpts
+          hostname = _deployInitOpts_hostname deployOpts
+      deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
