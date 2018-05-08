@@ -67,7 +67,7 @@ import System.Process (StdStream (CreatePipe), callProcess, createProcess, proc,
 import Development.Placeholders
 import Obelisk.Command.Utils
 
-import Obelisk.Command.CLI (putError, putErrorAndExit, putWarning, withSpinner)
+import Obelisk.Command.CLI (failWith, putError, putWarning, withSpinner)
 
 --TODO: Support symlinked thunk data
 data ThunkData
@@ -135,7 +135,7 @@ getNixSha256ForUriUnpacked uri = do
      hPutStrLn stdout =<< hGetContents out
      hPutStrLn stderr =<< hGetContents err
      --TODO: actual error
-     putErrorAndExit $ "nix-prefetch-url"
+     failWith $ "nix-prefetch-url"
   T.strip <$> T.hGetContents out
 
 -- | Get the latest revision available from the given source
@@ -450,9 +450,9 @@ nixBuildAttrWithCache exprPath attr = do
 unpackThunk :: FilePath
             -> IO ()
 unpackThunk thunkDir = readThunk thunkDir >>= \case
-  Left err -> putErrorAndExit $ "thunk unpack: " <> (T.pack $ show err)
+  Left err -> failWith $ "thunk unpack: " <> (T.pack $ show err)
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
-  Right (ThunkData_Checkout _) -> putErrorAndExit "thunk unpack: thunk is already unpacked"
+  Right (ThunkData_Checkout _) -> failWith "thunk unpack: thunk is already unpacked"
   Right (ThunkData_Packed tptr) -> case _thunkPtr_source tptr of
     ThunkSource_GitHub s | (thunkParent, thunkName) <- splitFileName thunkDir -> withTempDirectory thunkParent thunkName $ \tmpRepo -> do
       mauth <- getHubAuth "github.com"
@@ -504,7 +504,7 @@ packThunk :: FilePath
           -> IO ()
 packThunk thunkDir upstream = readThunk thunkDir >>= \case
   Left err -> fail $ "thunk pack: " <> show err
-  Right (ThunkData_Packed _) -> putErrorAndExit "pack: thunk is already packed"
+  Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
     thunkPtr <- getThunkPtr thunkDir upstream
     callProcess "rm"

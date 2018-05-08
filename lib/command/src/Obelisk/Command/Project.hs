@@ -27,7 +27,7 @@ import System.Process (CreateProcess, callProcess, createProcess_, cwd, proc, wa
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
-import Obelisk.Command.CLI (putError, putErrorAndExit, withSpinner)
+import Obelisk.Command.CLI (failWith, putError, withSpinner)
 import Obelisk.Command.Thunk
 
 --TODO: Make this module resilient to random exceptions
@@ -116,7 +116,7 @@ findProjectRoot target = do
 
 withProjectRoot :: FilePath -> (FilePath -> IO ()) -> IO ()
 withProjectRoot target f = findProjectRoot target >>= \case
-  Nothing -> putErrorAndExit "Must be used inside of an Obelisk project"
+  Nothing -> failWith "Must be used inside of an Obelisk project"
   Just root -> f root
 
 -- | Walk from the current directory to the containing project's root directory,

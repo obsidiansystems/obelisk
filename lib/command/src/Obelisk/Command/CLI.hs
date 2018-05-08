@@ -26,7 +26,7 @@ withSpinner
 withSpinner s e f = do
   spinner <- dots1Spinner (1000 * 200) s
 
-  -- Upon exception (typically raised by putErrorAndExit), stop the spinner, log the error and exit.
+  -- Upon exception (typically raised by failWith), stop the spinner, log the error and exit.
   result <- catch f $ \exc -> do
     stopIndicator spinner
     case exc of
@@ -46,8 +46,8 @@ data Level = Level_Normal | Level_Warning | Level_Error
 -- takes care of cleaning on spinners.
 -- TODO: Replace the uses of 'fail' throughout Stela to use this function.
 -- TODO: Handle this error cleanly when evaluating outside of `withSpinner` (eg: runCLI)
-putErrorAndExit :: Text -> IO ()
-putErrorAndExit = throw . AppError
+failWith :: Text -> IO ()
+failWith = throw . AppError
 
 putError :: Text -> IO ()
 putError = putMsg Level_Error

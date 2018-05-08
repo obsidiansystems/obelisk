@@ -21,7 +21,7 @@ import System.IO.Temp (withSystemTempDirectory)
 import System.Process (callCommand)
 import qualified Data.Text as T
 
-import Obelisk.Command.CLI (putInfo, putErrorAndExit)
+import Obelisk.Command.CLI (putInfo, failWith)
 
 run :: IO ()
 run = do
@@ -34,7 +34,7 @@ run = do
       Nothing -> Left pkg
       Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
   when (null hsSrcDirs) $
-    putErrorAndExit $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
+    failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
   when (not (null pkgDirErrs)) $
     putInfo $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
   let dotGhci = unlines

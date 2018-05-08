@@ -18,7 +18,7 @@ import System.Environment
 import System.FilePath
 import System.Posix.Process (executeFile)
 
-import Obelisk.Command.CLI (putErrorAndExit, putWarning)
+import Obelisk.Command.CLI (failWith, putWarning)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
@@ -219,7 +219,7 @@ ob = \case
   ObCommand_Watch component -> watch component
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> unsafeLookupStaticPtr @(IO ()) k >>= \case
-      Nothing -> putErrorAndExit $ "ObInternal_RunStaticIO: no such StaticKey: " <> (T.pack $ show k)
+      Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> (T.pack $ show k)
       Just p -> deRefStaticPtr p
 --TODO: Clean up all the magic strings throughout this codebase
 

@@ -5,9 +5,6 @@ result
 *.o
 *.hi
 
-*.hi
-*.o
-
 TAGS
 tags
 ctags
