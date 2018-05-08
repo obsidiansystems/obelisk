@@ -20,10 +20,12 @@ import System.Posix.Process (executeFile)
 
 import Obelisk.Command.CLI (putErrorAndExit, putWarning, runCLI)
 import Obelisk.Command.Deploy
+import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
+import Obelisk.Command.Utils
 
 data Args = Args
   { _args_noHandOffPassed :: Bool
@@ -95,18 +97,28 @@ obCommand = hsubparser
       ])
 
 deployCommand :: Parser DeployCommand
-deployCommand = subparser $ mconcat
+deployCommand = hsubparser $ mconcat
   [ command "init" $ info deployInitCommand $ progDesc "Initialize a deployment configuration directory"
+  , command "push" $ info (pure DeployCommand_Push) mempty
   ]
 
 deployInitCommand :: Parser DeployCommand
-deployInitCommand = DeployCommand_Init
-  <$> strArgument (action "deploy-dir" <> metavar "DEPLOYDIR")
-  <*> strArgument (action "ssh-key" <> metavar "SSH_KEY")
-  <*> strArgument (action "hostname" <> metavar "HOSTNAME")
+deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
+  <$> strArgument (action "deploy-dir" <> metavar "DEPLOYDIR" <> help "Path to a directory that it will create")
+  <*> strOption (long "ssh-key" <> metavar "SSHKEY" <> help "Path to an ssh key that it will symlink to")
+  <*> some (strOption (long "hostname" <> metavar "HOSTNAME" <> help "hostname of the deployment target"))
+  <*> strOption (long "remote" <> metavar "REMOTE" <> help "git remote to use for the src thunk")
 
 data DeployCommand
-  = DeployCommand_Init String String String
+  = DeployCommand_Init DeployInitOpts
+  | DeployCommand_Push
+
+data DeployInitOpts = DeployInitOpts
+  { _deployInitOpts_ouputDir :: FilePath
+  , _deployInitOpts_sshKey :: FilePath
+  , _deployInitOpts_hostname :: [String]
+  , _deployInitOpts_remote :: String
+  }
 
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
@@ -183,8 +195,21 @@ ob :: ObCommand -> IO ()
 ob = \case
   ObCommand_Init source -> initProject source
   ObCommand_Deploy dc -> case dc of
-    DeployCommand_Init deployDir sshKeyPath hostname -> withProjectRoot "." $ \root ->
-      deployInit (root </> "config") deployDir sshKeyPath hostname
+    DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
+      thunkPtr <- readThunk root >>= \case
+        Left err -> fail $ "thunk pack: " <> show err
+        Right (ThunkData_Packed ptr) -> return ptr
+        Right (ThunkData_Checkout (Just ptr)) -> return ptr
+        Right (ThunkData_Checkout Nothing) ->
+          getThunkPtr root (_deployInitOpts_remote deployOpts)
+      let deployDir = _deployInitOpts_ouputDir deployOpts
+          sshKeyPath = _deployInitOpts_sshKey deployOpts
+          hostname = _deployInitOpts_hostname deployOpts
+      deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
+    DeployCommand_Push -> do
+      checkGitCleanStatus "." >>= \case
+        True -> return ()
+        False -> fail "ob push: Commit any changes to the deployment configuration before proceeding"
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of

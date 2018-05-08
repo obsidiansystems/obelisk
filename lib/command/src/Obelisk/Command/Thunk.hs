@@ -13,12 +13,14 @@ module Obelisk.Command.Thunk
   , GitHubSource (..)
   , getLatestRev
   , updateThunkToLatest
+  , createThunk
   , createThunkWithLatest
   , nixBuildAttrWithCache
   , nixBuildThunkAttrWithCache
   , unpackThunk
   , packThunk
   , readThunk
+  , getThunkPtr
   ) where
 
 import Control.Applicative
@@ -63,6 +65,7 @@ import System.Process (StdStream (CreatePipe), callProcess, createProcess, proc,
                        std_out, waitForProcess)
 
 import Development.Placeholders
+import Obelisk.Command.Utils
 
 import Obelisk.Command.CLI (putError, putErrorAndExit, putWarning, withSpinner)
 
@@ -503,12 +506,17 @@ packThunk thunkDir upstream = readThunk thunkDir >>= \case
   Left err -> fail $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> putErrorAndExit "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
-    --Check whether the working directory is clean
-    statusOutput <- readProcess "hub"
-      [ "-C", thunkDir
-      , "status", "--porcelain", "--ignored" ] ""
-    diffOutput <- readProcess "hub" [ "-C", thunkDir , "diff" ] ""
-    case null statusOutput && null diffOutput of
+    thunkPtr <- getThunkPtr thunkDir upstream
+    callProcess "rm"
+      [ "-rf"
+      , thunkDir
+      ]
+    createThunk thunkDir thunkPtr
+    return ()
+
+getThunkPtr :: FilePath -> String -> IO ThunkPtr
+getThunkPtr thunkDir upstream = do
+    checkGitCleanStatus thunkDir >>= \case
       False -> do
         statusDebug <- readProcess "hub"
           [ "-C", thunkDir, "status", "--ignored" ] ""
@@ -583,12 +591,7 @@ packThunk thunkDir upstream = readThunk thunkDir >>= \case
         if
           | isGithubThunk remoteUri -> githubThunkPtr remoteUri currentHead currentUpstreamBranch
           | otherwise -> gitThunkPtr remoteUri currentHead currentUpstreamBranch
-    callProcess "rm"
-      [ "-rf"
-      , thunkDir
-      ]
-    createThunk thunkDir thunkPtr
-    return ()
+    return thunkPtr
  where
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
