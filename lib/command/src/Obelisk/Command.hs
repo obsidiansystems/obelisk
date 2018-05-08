@@ -18,8 +18,7 @@ import System.Environment
 import System.FilePath
 import System.Posix.Process (executeFile)
 
-import Obelisk.Command.CLI (putErrorAndExit, putWarning, runCLI)
-import Obelisk.Command.Deploy
+import Obelisk.Command.CLI (putErrorAndExit, putWarning)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
@@ -165,7 +164,7 @@ parserPrefs = defaultPrefs
   }
 
 main :: IO ()
-main = runCLI $ do
+main = do
   myArgs <- getArgs
   --TODO: We'd like to actually use the parser to determine whether to hand off,
   --but in the case where this implementation of 'ob' doesn't support all

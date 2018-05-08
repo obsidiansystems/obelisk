@@ -62,7 +62,7 @@ nixBuild cfg = do
     { std_out = CreatePipe
     , std_err = CreatePipe
     }
-  (withSpinner "Running nix-build ..." Nothing $ waitForProcess p) >>= \case
+  withSpinner "Running nix-build ..." Nothing $ waitForProcess p >>= \case
     ExitSuccess -> return ()
     _ -> do
       -- FIXME: We should interleave `out` and `err` in their original order?

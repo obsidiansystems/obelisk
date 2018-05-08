@@ -16,6 +16,8 @@ newtype AppError = AppError Text
 
 instance Exception AppError
 
+-- TODO: When printing warnings and such, the spinner should let them be printed
+-- in new line (above the spinner)
 withSpinner
   :: String  -- ^ Text to print alongside the spinner
   -> Maybe String  -- ^ Optional text to print at the end
@@ -40,12 +42,10 @@ withSpinner s e f = do
 
 data Level = Level_Normal | Level_Warning | Level_Error
 
-runCLI :: IO () -> IO ()
-runCLI = handle $ \(AppError err) -> putError err
-
 -- | Prefer this over the alternative ways to exit the program with an error message as it automatically
 -- takes care of cleaning on spinners.
 -- TODO: Replace the uses of 'fail' throughout Stela to use this function.
+-- TODO: Handle this error cleanly when evaluating outside of `withSpinner` (eg: runCLI)
 putErrorAndExit :: Text -> IO ()
 putErrorAndExit = throw . AppError
 

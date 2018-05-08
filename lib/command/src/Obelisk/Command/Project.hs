@@ -177,8 +177,7 @@ projectShell root isPure shellName command = do
      , "shells." <> shellName
      , "--run", command
      ]
-  void $ withSpinner "Launching project shell ..." Nothing $ do
-    waitForProcess ph
+  void $ waitForProcess ph
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
 setCwd fp cp = cp { cwd = fp }
