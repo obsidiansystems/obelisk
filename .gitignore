@@ -2,6 +2,8 @@
 **/.cabal-sandbox
 **/cabal.sandbox.config
 result
+.o
+.hi
 
 TAGS
 tags
