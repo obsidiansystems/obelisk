@@ -12,7 +12,7 @@ import Obelisk.Command.Thunk
 
 deployInit :: ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> IO ()
 deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
-  createDirectory deployDir
+  createDirectoryIfMissing True deployDir
   hasConfigDir <- doesDirectoryExist configDir
   when hasConfigDir $ do
     callProcess "cp"
@@ -27,4 +27,5 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
     createSymbolicLink target (deployDir </> "ssh_key")
   createThunk (deployDir </> "src") thunkPtr
   writeFile (deployDir </> "backend_hosts") $ unlines hostnames
+  initGit deployDir
 
