@@ -33,6 +33,7 @@ library
     , yaml
   exposed-modules:
     Obelisk.Command
+    Obelisk.Command.Deploy
     Obelisk.Command.Nix
     Obelisk.Command.Project
     Obelisk.Command.Repl

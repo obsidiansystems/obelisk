@@ -13,12 +13,14 @@ module Obelisk.Command.Thunk
   , GitHubSource (..)
   , getLatestRev
   , updateThunkToLatest
+  , createThunk
   , createThunkWithLatest
   , nixBuildAttrWithCache
   , nixBuildThunkAttrWithCache
   , unpackThunk
   , packThunk
   , readThunk
+  , getThunkPtr
   ) where
 
 import Control.Applicative
@@ -498,6 +500,16 @@ packThunk thunkDir upstream = readThunk thunkDir >>= \case
   Left err -> fail $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> fail "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
+    thunkPtr <- getThunkPtr thunkDir upstream
+    callProcess "rm"
+      [ "-rf"
+      , thunkDir
+      ]
+    createThunk thunkDir thunkPtr
+    return ()
+
+getThunkPtr :: FilePath -> String -> IO ThunkPtr
+getThunkPtr thunkDir upstream = do
     --Check whether the working directory is clean
     statusOutput <- readProcess "hub"
       [ "-C", thunkDir
@@ -578,12 +590,7 @@ packThunk thunkDir upstream = readThunk thunkDir >>= \case
         if
           | isGithubThunk remoteUri -> githubThunkPtr remoteUri currentHead currentUpstreamBranch
           | otherwise -> gitThunkPtr remoteUri currentHead currentUpstreamBranch
-    callProcess "rm"
-      [ "-rf"
-      , thunkDir
-      ]
-    createThunk thunkDir thunkPtr
-    return ()
+    return thunkPtr
  where
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
