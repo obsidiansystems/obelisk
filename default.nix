@@ -111,13 +111,12 @@ rec {
     touch "$out"
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
-  serverExe = exe: assets: config:
+  serverExe = backend: frontend: assets: config:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${exe}"/* $out/
-      ln -s $out/ghc/backend/bin/backend $out/
-      ln -s $out/ghcjs/frontend/bin/frontend.jsexe $out/
+      ln -s "${backend}"/bin/backend $out/backend
+      ln -s ${frontend}/bin/frontend.jsexe $out/frontend.jsexe
       ln -s "${assets}" $out/static
       ln -s "${config}" $out/config
     '';
@@ -221,7 +220,8 @@ rec {
           in mkProject (projectDefinition args));
     in projectOut //
          { server = { hostName }:
-             server (serverExe projectOut.all assets.symlinked configPath) hostName;
+             let exe = serverExe projectOut.ghc.backend projectOut.ghcjs.frontend assets.symlinked configPath;
+             in server exe hostName;
          };
   haskellPackageSets = {
     ghc = reflex-platform.ghc.override {
