@@ -1,4 +1,4 @@
 module Common.Api where 
 
 commonStuff :: String
-commonStuff = undefined
+commonStuff = "here is a comon string"

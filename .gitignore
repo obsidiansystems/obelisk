@@ -2,8 +2,12 @@
 **/.cabal-sandbox
 **/cabal.sandbox.config
 result
+*.o
+*.hi
 
 TAGS
 tags
 ctags
 dist-newstyle
+cabal.project.local
+.ghc.environment.*

@@ -55,16 +55,24 @@ let #TODO: Upstream
 
     fixUpstreamPkgs = self: super: {
       heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
+      network-transport = self.callHackage "network-transport" "0.5.2" {};
+      network-transport-tcp = self.callHackage "network-transport-tcp" "0.6.0" {};
     };
+
+    cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
+      builtins.match "^\\.ghc\\.environment.*" baseName != null ||
+      baseName == "cabal.project.local"
+    ));
 
     addLibs = self: super: {
       obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
       obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
-      obelisk-backend = self.callCabal2nix "obelisk-backend" ./lib/backend {};
-      obelisk-command = self.callCabal2nix "obelisk-command" ./lib/command {};
-      obelisk-selftest = self.callCabal2nix "obelisk-selftest" ./lib/selftest {};
-      obelisk-snap = self.callCabal2nix "obelisk-snap" ./lib/snap {};
-      obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" ./lib/snap-extras {};
+      obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
+      obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
+      obelisk-run-frontend = self.callCabal2nix "obelisk-run-frontend" (cleanSource ./lib/run-frontend) {};
+      obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
+      obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
+      obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
     };
 
     defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
@@ -72,6 +80,8 @@ in
 with pkgs.lib;
 rec {
   inherit reflex-platform;
+  inherit (reflex-platform) nixpkgs;
+  path = reflex-platform.filterGit ./.;
   command = ghcObelisk.obelisk-command;
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
@@ -150,21 +160,24 @@ rec {
         ec2.hvm = true;
       };
     };
+
+
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
     let assets = processAssets { src = base + "/static"; };
         configPath = base + "/config";
-        p = reflex-platform.project (args@{ nixpkgs, ... }:
+        projectOut = reflex-platform.project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
                           , packages ? {}
+                          , overrides ? _: _: {}
                           }:
               let frontendName = "frontend";
                   backendName = "backend";
                   commonName = "common";
                   staticName = "static";
                   staticPath = base + "/static";
-
+                  assets = processAssets { src = base + "/static"; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
@@ -175,21 +188,23 @@ rec {
                   projectOverrides = self: super: {
                     ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
                   };
-                  overrides = composeExtensions defaultHaskellOverrides projectOverrides;
+                  totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
+                  ghcDevPackages = ["obelisk-run-frontend"];
               in {
-                inherit overrides;
+                overrides = totalOverrides;
                 packages = combinedPackages;
                 shells = {
-                  ghc = filter (x: hasAttr x combinedPackages) [
+                  ghc = (filter (x: hasAttr x combinedPackages) [
                     backendName
                     commonName
                     frontendName
-                  ];
+                  ]);
                   ghcjs = filter (x: hasAttr x combinedPackages) [
                     frontendName
                     commonName
                   ];
                 };
+                withHoogle = false; # Setting this to `true` makes shell reloading far slower
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
@@ -202,11 +217,12 @@ rec {
                     ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
                   } // ios;
                 };
-
               };
           in mkProject (projectDefinition args));
-    in p // { server = { hostName }: server (serverExe p.all assets.symlinked configPath) hostName;
-            };
+    in projectOut //
+         { server = { hostName }:
+             server (serverExe projectOut.all assets.symlinked configPath) hostName;
+         };
   haskellPackageSets = {
     ghc = reflex-platform.ghc.override {
       overrides = defaultHaskellOverrides;

@@ -1,5 +1,5 @@
-import Obelisk.Backend
-import Common.Api
+import Backend
 
 main :: IO ()
-main = backend def
+main = backend
+

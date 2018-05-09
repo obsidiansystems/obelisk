@@ -7,8 +7,11 @@ library
   hs-source-dirs: src
   build-depends:
       aeson
+    , Cabal
     , aeson-pretty
     , base
+    , base16-bytestring
+    , binary
     , bytestring
     , containers
     , data-default
@@ -17,8 +20,10 @@ library
     , github
     , hit
     , mtl
+    , network
     , network-uri
     , optparse-applicative
+    , placeholders
     , process
     , temporary
     , text
@@ -26,14 +31,17 @@ library
     , transformers
     , unix
     , yaml
-    , placeholders
   exposed-modules:
     Obelisk.Command
+    Obelisk.Command.Deploy
     Obelisk.Command.Nix
     Obelisk.Command.Project
     Obelisk.Command.Repl
+    Obelisk.Command.Run
     Obelisk.Command.Thunk
-  ghc-options: -Wall
+    Obelisk.Command.Utils
+  -- -fobject-code is so that the StaticPointers extension can work in ghci
+  ghc-options: -Wall -fobject-code
 
 executable ob
   main-is: src-bin/ob.hs

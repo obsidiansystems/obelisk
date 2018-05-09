@@ -5,7 +5,10 @@ module Obelisk.Command.Project
   , initProject
   , findProjectObeliskCommand
   , findProjectRoot
+  , withProjectRoot
   , inProjectShell
+  , inImpureProjectShell
+  , projectShell
   ) where
 
 import Control.Monad
@@ -17,15 +20,14 @@ import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
-import System.Exit
 import System.FilePath
 import System.IO
-import System.Posix (FileStatus, getFileStatus , deviceID, fileID, getRealUserID , fileOwner, fileMode, UserID)
+import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process
 
-import GitHub.Data.Name (Name)
 import GitHub.Data.GitData (Branch)
+import GitHub.Data.Name (Name)
 
 import Obelisk.Command.Thunk
 
@@ -67,15 +69,16 @@ initProject source = do
   _ <- nixBuildAttrWithCache implDir "command"
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
-  (_, _, _, p) <- runInteractiveProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
+  callProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
     [ "-r"
     , "--no-preserve=mode"
     , "-T"
     , skeleton </> "."
     , "."
-    ] Nothing Nothing
-  ExitSuccess <- waitForProcess p
-  return ()
+    ]
+  let configDir = "config"
+  createDirectory configDir
+  mapM_ (createDirectory . (configDir </>)) ["backend", "common", "frontend"]
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns
@@ -110,6 +113,11 @@ findProjectRoot target = do
   targetStat <- liftIO $ getFileStatus target
   (result, _) <- runStateT (walkToProjectRoot target targetStat myUid) []
   return result
+
+withProjectRoot :: FilePath -> (FilePath -> IO ()) -> IO ()
+withProjectRoot target f = findProjectRoot target >>= \case
+  Nothing -> fail "Must be used inside of an Obelisk project"
+  Just root -> f root
 
 -- | Walk from the current directory to the containing project's root directory,
 -- if there is one, accumulating potentially insecure directories that were
@@ -154,17 +162,23 @@ isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
 
 -- | Run a command in the given shell for the current project
 inProjectShell :: String -> String -> IO ()
-inProjectShell shellName command = do
-  findProjectRoot "." >>= \case
-     Nothing -> putStrLn "Must be used inside of an Obelisk project"
-     Just root -> do
-       (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell"
-          [ "-A"
-          , "shells." <> shellName
-          , "--run", command
-          ]
-       _ <- waitForProcess ph
-       return ()
+inProjectShell shellName command = withProjectRoot "." $ \root ->
+  projectShell root True shellName command
+
+inImpureProjectShell :: String -> String -> IO ()
+inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
+  projectShell root False shellName command
+
+projectShell :: FilePath -> Bool -> String -> String -> IO ()
+projectShell root isPure shellName command = do
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
+     [ "--pure" | isPure ] <>
+     [ "-A"
+     , "shells." <> shellName
+     , "--run", command
+     ]
+  _ <- waitForProcess ph
+  return ()
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
 setCwd fp cp = cp { cwd = fp }
