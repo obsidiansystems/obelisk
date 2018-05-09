@@ -29,7 +29,6 @@ runWidget conf w = do
   let redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
       beforeMainLoop = do
-        putStrLn $ "Backend running on " <> showUrl (BSC.unpack redirectHost) redirectPort
         putStrLn $ "Frontend running on " <> showUrl "127.0.0.1" (_runConfig_port conf)
       settings = setBeforeMainLoop beforeMainLoop (setPort (_runConfig_port conf) (setTimeout 3600 defaultSettings))
       logErr p = putStrLn $ unwords [ "Port", show p, "is in use."]
