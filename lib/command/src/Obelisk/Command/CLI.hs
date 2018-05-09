@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 module Obelisk.Command.CLI where
 
-import Control.Exception (Exception, catch, handle, throw)
+import Control.Exception (Exception, SomeException, catch, displayException, handle, throw)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -11,13 +11,10 @@ import System.Exit (ExitCode (ExitFailure), exitWith)
 import System.Console.ANSI
 import System.Console.Questioner (dots1Spinner, stopIndicator)
 
-newtype AppError = AppError Text
-  deriving (Show, Typeable)
-
-instance Exception AppError
-
--- TODO: When printing warnings and such, the spinner should let them be printed
--- in new line (above the spinner)
+-- TODO: This doesn't handle the put* line of functions below, in that: when we print anything while the
+-- spinner is already running, it won't appear correctly in the terminal. The exception is `failWith` which
+-- raises an exception (that gets handled properly here). One solution to fix this problem is to run a
+-- singleton spinner thread and interact with it in order to print something.
 withSpinner
   :: String  -- ^ Text to print alongside the spinner
   -> Maybe String  -- ^ Optional text to print at the end
@@ -29,8 +26,7 @@ withSpinner s e f = do
   -- Upon exception (typically raised by failWith), stop the spinner, log the error and exit.
   result <- catch f $ \exc -> do
     stopIndicator spinner
-    case exc of
-      AppError err -> putError err
+    putError $ T.pack $ displayException (exc :: SomeException)
     exitWith $ ExitFailure 2
 
   -- Upon no exceptions, stop the spinner and log the optional exit message.
