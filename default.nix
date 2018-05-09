@@ -101,57 +101,112 @@ rec {
     touch "$out"
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
-  # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
-  project = base: projectDefinition: reflex-platform.project (args@{ nixpkgs, ... }:
-    let mkProject = { android ? null #TODO: Better error when missing
-                    , ios ? null #TODO: Better error when missing
-                    , packages ? {}
-                    }:
-        let frontendName = "frontend";
-            backendName = "backend";
-            commonName = "common";
-            staticName = "static";
-            staticPath = base + "/static";
-            assets = processAssets { src = base + "/static"; };
-            # The packages whose names and roles are defined by this package
-            predefinedPackages = filterAttrs (_: x: x != null) {
-              ${frontendName} = nullIfAbsent (base + "/frontend");
-              ${commonName} = nullIfAbsent (base + "/common");
-              ${backendName} = nullIfAbsent (base + "/backend");
-            };
-            combinedPackages = predefinedPackages // packages;
-            projectOverrides = self: super: {
-              ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
-            };
-            overrides = composeExtensions defaultHaskellOverrides projectOverrides;
-        in {
-          inherit overrides;
-          packages = combinedPackages;
-          shells = {
-            ghc = filter (x: hasAttr x combinedPackages) [
-              backendName
-              commonName
-              frontendName
-            ];
-            ghcjs = filter (x: hasAttr x combinedPackages) [
-              frontendName
-              commonName
-            ];
-          };
-          android = {
-            ${if android == null then null else frontendName} = {
-              executableName = "frontend";
-              ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
-            } // android;
-          };
-          ios = {
-            ${if ios == null then null else frontendName} = {
-              executableName = "frontend";
-              ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
-            } // ios;
+  serverExe = exe: assets: config:
+    pkgs.runCommand "serverExe" {} ''
+      mkdir $out
+      set -eux
+      ln -s "${exe}"/* $out/
+      ln -s $out/ghc/backend/bin/backend $out/
+      ln -s $out/ghcjs/frontend/bin/frontend.jsexe $out/
+      ln -s "${assets}" $out/static
+      ln -s "${config}" $out/config
+    '';
+  server = exe: hostName:
+    let system = "x86_64-linux";
+        nixos = import (pkgs.path + /nixos);
+        cfg = args: {
+        };
+    in nixos {
+      inherit system;
+      configuration = args: {
+        imports = [
+          (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+        ];
+        networking = { inherit hostName; };
+        systemd.services.backend = {
+          wantedBy = [ "multi-user-target" ];
+          after = [ "network.target" ];
+          restartIfChanged = true;
+          script = ''
+            ln -sft . "${exe}"/*
+            mkdir -p log
+            exec ./backend >>backend.out 2>>backend.err </dev/null
+          '';
+          serviceConfig = {
+            User = "backend";
+            KillMode = "process";
+            WorkingDirectory = "~";
+            Restart = "always";
+            RestartSec = 5;
           };
         };
-    in mkProject (projectDefinition args));
+        users.extraUsers.backend = {
+          description = "backend service";
+          home = "/var/lib/backend";
+          createHome = true;
+          isSystemUser = true;
+          group = "backend";
+        };
+        ec2.hvm = true;
+      };
+    };
+  # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
+  project = base: projectDefinition:
+    let assets = processAssets { src = base + "/static"; };
+        configPath = base + "/config";
+        p = reflex-platform.project (args@{ nixpkgs, ... }:
+          let mkProject = { android ? null #TODO: Better error when missing
+                          , ios ? null #TODO: Better error when missing
+                          , packages ? {}
+                          }:
+              let frontendName = "frontend";
+                  backendName = "backend";
+                  commonName = "common";
+                  staticName = "static";
+                  staticPath = base + "/static";
+
+                  # The packages whose names and roles are defined by this package
+                  predefinedPackages = filterAttrs (_: x: x != null) {
+                    ${frontendName} = nullIfAbsent (base + "/frontend");
+                    ${commonName} = nullIfAbsent (base + "/common");
+                    ${backendName} = nullIfAbsent (base + "/backend");
+                  };
+                  combinedPackages = predefinedPackages // packages;
+                  projectOverrides = self: super: {
+                    ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
+                  };
+                  overrides = composeExtensions defaultHaskellOverrides projectOverrides;
+              in {
+                inherit overrides;
+                packages = combinedPackages;
+                shells = {
+                  ghc = filter (x: hasAttr x combinedPackages) [
+                    backendName
+                    commonName
+                    frontendName
+                  ];
+                  ghcjs = filter (x: hasAttr x combinedPackages) [
+                    frontendName
+                    commonName
+                  ];
+                };
+                android = {
+                  ${if android == null then null else frontendName} = {
+                    executableName = "frontend";
+                    ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
+                  } // android;
+                };
+                ios = {
+                  ${if ios == null then null else frontendName} = {
+                    executableName = "frontend";
+                    ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
+                  } // ios;
+                };
+
+              };
+          in mkProject (projectDefinition args));
+    in p // { server = { hostName }: server (serverExe p.all assets.symlinked configPath) hostName;
+            };
   haskellPackageSets = {
     ghc = reflex-platform.ghc.override {
       overrides = defaultHaskellOverrides;
