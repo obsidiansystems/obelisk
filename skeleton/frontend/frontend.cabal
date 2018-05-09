@@ -10,8 +10,9 @@ library
                , reflex-dom
                , static
                , text
-  if impl(ghc)
+  if !impl(ghcjs)
     build-depends: obelisk-run-frontend
+
   exposed-modules:
     Frontend
   ghc-options: -Wall
@@ -20,8 +21,10 @@ executable frontend
   main-is: main.hs
   hs-source-dirs: src
   build-depends: base
+               , common
                , reflex-dom
                , static
+               , text
                , frontend
   --TODO: Make these ghc-options optional
   ghc-options: -threaded

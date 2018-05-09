@@ -111,61 +111,117 @@ rec {
     touch "$out"
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
-  # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
-  project = base: projectDefinition: reflex-platform.project (args@{ nixpkgs, ... }:
-    let mkProject = { android ? null #TODO: Better error when missing
-                    , ios ? null #TODO: Better error when missing
-                    , packages ? {}
-                    , overrides ? _: _: {}
-                    }:
-        let frontendName = "frontend";
-            backendName = "backend";
-            commonName = "common";
-            staticName = "static";
-            staticPath = base + "/static";
-            assets = processAssets { src = base + "/static"; };
-            # The packages whose names and roles are defined by this package
-            predefinedPackages = filterAttrs (_: x: x != null) {
-              ${frontendName} = nullIfAbsent (base + "/frontend");
-              ${commonName} = nullIfAbsent (base + "/common");
-              ${backendName} = nullIfAbsent (base + "/backend");
-            };
-            combinedPackages = predefinedPackages // packages;
-            projectOverrides = self: super: {
-              ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
-              frontend = if self.ghc.isGhcjs then super.frontend.override { obelisk-run-frontend = null; } else super.frontend;
-            };
-            totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
-            ghcDevPackages = ["obelisk-run-frontend"];
-        in {
-          overrides = totalOverrides;
-          packages = combinedPackages;
-          shells = {
-            ghc = (filter (x: hasAttr x combinedPackages) [
-              backendName
-              commonName
-              frontendName
-            ]);
-            ghcjs = filter (x: hasAttr x combinedPackages) [
-              frontendName
-              commonName
-            ];
-          };
-          withHoogle = false; # Setting this to `true` makes shell reloading far slower
-          android = {
-            ${if android == null then null else frontendName} = {
-              executableName = "frontend";
-              ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
-            } // android;
-          };
-          ios = {
-            ${if ios == null then null else frontendName} = {
-              executableName = "frontend";
-              ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
-            } // ios;
+  serverExe = backend: frontend: assets: config:
+    pkgs.runCommand "serverExe" {} ''
+      mkdir $out
+      set -eux
+      ln -s "${backend}"/bin/backend $out/backend
+      ln -s ${frontend}/bin/frontend.jsexe $out/frontend.jsexe
+      ln -s "${assets}" $out/static
+      ln -s "${config}" $out/config
+    '';
+  server = exe: hostName:
+    let system = "x86_64-linux";
+        nixos = import (pkgs.path + /nixos);
+    in nixos {
+      inherit system;
+      configuration = args: {
+        imports = [
+          (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+        ];
+        networking = { inherit hostName; };
+        systemd.services.backend = {
+          wantedBy = [ "multi-user-target" ];
+          after = [ "network.target" ];
+          restartIfChanged = true;
+          script = ''
+            ln -sft . "${exe}"/*
+            mkdir -p log
+            exec ./backend >>backend.out 2>>backend.err </dev/null
+          '';
+          serviceConfig = {
+            User = "backend";
+            KillMode = "process";
+            WorkingDirectory = "~";
+            Restart = "always";
+            RestartSec = 5;
           };
         };
-    in mkProject (projectDefinition args));
+        users.extraUsers.backend = {
+          description = "backend service";
+          home = "/var/lib/backend";
+          createHome = true;
+          isSystemUser = true;
+          group = "backend";
+        };
+        ec2.hvm = true;
+      };
+    };
+
+
+  # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
+  project = base: projectDefinition:
+    let assets = processAssets { src = base + "/static"; };
+        configPath = base + "/config";
+        projectOut = reflex-platform.project (args@{ nixpkgs, ... }:
+          let mkProject = { android ? null #TODO: Better error when missing
+                          , ios ? null #TODO: Better error when missing
+                          , packages ? {}
+                          , overrides ? _: _: {}
+                          }:
+              let frontendName = "frontend";
+                  backendName = "backend";
+                  commonName = "common";
+                  staticName = "static";
+                  staticPath = base + "/static";
+                  assets = processAssets { src = base + "/static"; };
+                  # The packages whose names and roles are defined by this package
+                  predefinedPackages = filterAttrs (_: x: x != null) {
+                    ${frontendName} = nullIfAbsent (base + "/frontend");
+                    ${commonName} = nullIfAbsent (base + "/common");
+                    ${backendName} = nullIfAbsent (base + "/backend");
+                  };
+                  combinedPackages = predefinedPackages // packages;
+                  projectOverrides = self: super: {
+                    ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
+                    frontend = if self.ghc.isGhcjs then super.frontend.override { obelisk-run-frontend = null; } else super.frontend;
+                  };
+                  totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
+                  ghcDevPackages = ["obelisk-run-frontend"];
+              in {
+                overrides = totalOverrides;
+                packages = combinedPackages;
+                shells = {
+                  ghc = (filter (x: hasAttr x combinedPackages) [
+                    backendName
+                    commonName
+                    frontendName
+                  ]);
+                  ghcjs = filter (x: hasAttr x combinedPackages) [
+                    frontendName
+                    commonName
+                  ];
+                };
+                withHoogle = false; # Setting this to `true` makes shell reloading far slower
+                android = {
+                  ${if android == null then null else frontendName} = {
+                    executableName = "frontend";
+                    ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
+                  } // android;
+                };
+                ios = {
+                  ${if ios == null then null else frontendName} = {
+                    executableName = "frontend";
+                    ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
+                  } // ios;
+                };
+              };
+          in mkProject (projectDefinition args));
+    in projectOut //
+         { server = { hostName }:
+             let exe = serverExe projectOut.ghc.backend projectOut.ghcjs.frontend assets.symlinked configPath;
+             in server exe hostName;
+         };
   haskellPackageSets = {
     ghc = reflex-platform.ghc.override {
       overrides = defaultHaskellOverrides;
