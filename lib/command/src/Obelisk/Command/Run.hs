@@ -37,14 +37,16 @@ run = do
   let dotGhci = unlines
         [ ":set args --quiet --port " <> show freePort
         , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
+        , ":set -XScopedTypeVariables"
         , ":add Backend Frontend"
-        , ":module + Control.Concurrent Obelisk.Widget.Run Frontend Backend"
+        , ":module + System.IO Control.Exception Control.Concurrent Obelisk.Widget.Run Frontend Backend"
         ]
       testCmd = unlines
-        [ "backendId <- forkIO backend"
+        [ "let handleBackendErr (_ :: SomeException) = hPutStrLn stderr \"backend stopped; make a change to your code to reload\""
+        , "backendTid <- forkIO $ handle handleBackendErr backend"
         , "let conf = defRunConfig { _runConfig_redirectPort = " <> show freePort <> "}"
         , "runWidget conf frontend"
-        , "killThread backendId"
+        , "killThread backendTid"
         ]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
