@@ -8,8 +8,9 @@ library
   build-depends: base
                , reflex-dom
                , static
-               , obelisk-run-frontend
                , text
+  if impl(ghc)
+    build-depends: obelisk-run-frontend
   exposed-modules:
     Frontend
   ghc-options: -Wall
