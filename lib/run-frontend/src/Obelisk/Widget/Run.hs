@@ -3,10 +3,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Widget.Run where
 
-import Control.Applicative
 import Control.Concurrent
 import Control.Exception
-import Control.Monad
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -34,13 +32,14 @@ runWidget conf w = do
         putStrLn $ "Backend running on " <> showUrl (BSC.unpack redirectHost) redirectPort
         putStrLn $ "Frontend running on " <> showUrl "127.0.0.1" (_runConfig_port conf)
       settings = setBeforeMainLoop beforeMainLoop (setPort (_runConfig_port conf) (setTimeout 3600 defaultSettings))
+      logErr p = putStrLn $ unwords [ "Port", show p, "is in use."]
   bracket
-    (bindPortTCPRetry settings (logPortBindErr (_runConfig_port conf)) (_runConfig_retryTimeout conf))
+    (bindPortTCPRetry settings (logErr (_runConfig_port conf)) (_runConfig_retryTimeout conf))
     close
-    (\socket -> do
+    (\skt -> do
         man <- newManager defaultManagerSettings
         app <- jsaddleWithAppOr defaultConnectionOptions (mainWidget' w >> syncPoint) (fallbackProxy redirectHost redirectPort man)
-        runSettingsSocket settings socket app)
+        runSettingsSocket settings skt app)
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
@@ -52,13 +51,11 @@ bindPortTCPRetry settings m n = catch (bindPortTCP (settingsPort settings) (sett
   threadDelay $ 1000000 * n
   bindPortTCPRetry settings (return ()) n
 
+-- TODO
 logPortBindErr :: Int -> IO ()
 logPortBindErr p = getProcessIdForPort p >>= \case
   Nothing -> return ()
-  Just pid -> putStrLn $ unwords
-    [ "Port", show p
-    , "is in use."
-    ]
+  Just _ -> return ()
 
 getProcessIdForPort :: Int -> IO (Maybe Int)
 getProcessIdForPort port = do

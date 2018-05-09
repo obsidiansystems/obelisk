@@ -14,7 +14,11 @@ library
     , http-reverse-proxy
     , jsaddle
     , jsaddle-warp
+    , network
+    , network-uri
+    , process
     , reflex-dom
+    , streaming-commons
     , text
     , wai
     , warp
