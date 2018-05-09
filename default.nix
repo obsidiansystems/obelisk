@@ -123,8 +123,6 @@ rec {
   server = exe: hostName:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
-        cfg = args: {
-        };
     in nixos {
       inherit system;
       configuration = args: {
