@@ -6,10 +6,12 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base
+               , common
                , reflex-dom
                , static
-               , obelisk-run-frontend
                , text
+  if impl(ghc)
+    build-depends: obelisk-run-frontend
   exposed-modules:
     Frontend
   ghc-options: -Wall
