@@ -10,6 +10,7 @@ module Obelisk.Command.Nix
 
 import qualified Data.ByteString.Lazy as LBS
 import Data.Default
+import Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Exit (ExitCode (ExitSuccess))
@@ -62,7 +63,8 @@ nixBuild cfg = do
     { std_out = CreatePipe
     , std_err = CreatePipe
     }
-  withSpinner "Running nix-build ..." Nothing $ waitForProcess p >>= \case
+  let msg = "Running nix-build [" <> _target_path (_nixBuildConfig_target cfg) <> "] ..."
+  withSpinner msg Nothing $ waitForProcess p >>= \case
     ExitSuccess -> return ()
     _ -> do
       -- FIXME: We should interleave `out` and `err` in their original order?

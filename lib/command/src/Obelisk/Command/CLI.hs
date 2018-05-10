@@ -25,8 +25,8 @@ withSpinner
   -> IO a
 withSpinner s e f = do
   isTerm <- hIsTerminalDevice stdout
-  -- When running in bash completion, disable the spinner. TODO: Do this using ReaderT and config.
-  inBashCompletion <- isInfixOf "bash-completion" . unwords <$> getArgs
+  -- When running in shell completion, disable the spinner. TODO: Do this using ReaderT and config.
+  inBashCompletion <- isInfixOf "completion" . unwords <$> getArgs
   if | not isTerm || inBashCompletion -> f
      | otherwise -> do
       spinner <- dots1Spinner (1000 * 200) s
