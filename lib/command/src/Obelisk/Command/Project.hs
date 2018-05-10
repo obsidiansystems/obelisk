@@ -22,13 +22,14 @@ import System.Directory
 import System.FilePath
 import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
-import System.Process (CreateProcess, callProcess, createProcess_, cwd, proc, waitForProcess)
+import System.Process (CreateProcess, createProcess_, cwd, proc, waitForProcess)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
 import Obelisk.Command.CLI (failWith, putError, withSpinner)
 import Obelisk.Command.Thunk
+import Obelisk.Command.Utils (cp)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -69,7 +70,7 @@ initProject source = do
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
   withSpinner "Copying project skeleton ..." (Just "Copied project skeleton.") $ do
-    callProcess "cp" --TODO: Make this package depend on nix-prefetch-url properly
+    cp --TODO: Make this package depend on nix-prefetch-url properly
       [ "-r"
       , "--no-preserve=mode"
       , "-T"
@@ -180,4 +181,4 @@ projectShell root isPure shellName command = do
   void $ waitForProcess ph
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
-setCwd fp cp = cp { cwd = fp }
+setCwd fp cfg = cfg { cwd = fp }

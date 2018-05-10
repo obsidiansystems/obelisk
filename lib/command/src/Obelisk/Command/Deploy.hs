@@ -5,7 +5,6 @@ import Control.Monad
 import System.Directory
 import System.FilePath
 import System.Posix.Files
-import System.Process
 
 import Obelisk.Command.Utils
 import Obelisk.Command.Thunk
@@ -15,7 +14,7 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
   createDirectoryIfMissing True deployDir
   hasConfigDir <- doesDirectoryExist configDir
   when hasConfigDir $ do
-    callProcess "cp"
+    cp
       [ "-r"
       , "-T"
       , configDir
