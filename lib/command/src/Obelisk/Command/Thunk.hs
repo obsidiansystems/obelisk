@@ -469,7 +469,7 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
       githubURI <- liftIO $ either throwIO (return . repoSshUrl) repoResult >>= \case
         Nothing -> failWith "Cannot determine clone URI for thunk source"
         Just c -> return $ T.unpack $ getUrl c
-      withSpinner "Cloning from GitHub ..." (Just $ "Cloned " <> githubURI) $ do
+      withSpinner "Cloning from GitHub ..." (Just $ "Cloned " <> T.pack githubURI) $ do
         liftIO $ callProcess "hub" --TODO: Depend on hub explicitly
           [ "clone"
           , "-n"

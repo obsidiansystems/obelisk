@@ -24,8 +24,8 @@ import Obelisk.App (MonadObelisk, _obelisk_verbose)
 -- singleton spinner thread and interact with it in order to print something.
 withSpinner
   :: MonadObelisk m
-  => String  -- ^ Text to print alongside the spinner
-  -> Maybe String  -- ^ Optional text to print at the end
+  => Text  -- ^ Text to print alongside the spinner
+  -> Maybe Text  -- ^ Optional text to print at the end
   -> m a  -- ^ Action to run and wait for
   -> m a
 withSpinner s e f = do
@@ -36,14 +36,14 @@ withSpinner s e f = do
   let spinnerDisabled = not isTerm || inBashCompletion || verbose
   case spinnerDisabled of
     True -> do
-      putInfo $ T.pack s
+      putInfo s
       f
     False -> do
-      spinner <- liftIO $ dots1Spinner (1000 * 200) s
+      spinner <- liftIO $ dots1Spinner (1000 * 200) $ T.unpack s
       result <- finally f $ do
         liftIO $ stopIndicator spinner
       case e of
-        Just exitMsg -> putInfo $ T.pack exitMsg
+        Just exitMsg -> putInfo exitMsg
         Nothing -> liftIO $ hFlush stdout
       return result
 

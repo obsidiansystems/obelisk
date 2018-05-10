@@ -67,7 +67,7 @@ nixBuild cfg = do
     { std_out = CreatePipe
     , std_err = CreatePipe
     }
-  let msg = "Running nix-build [" <> _target_path (_nixBuildConfig_target cfg) <> "] ..."
+  let msg = T.pack $ "Running nix-build [" <> _target_path (_nixBuildConfig_target cfg) <> "] ..."
   withSpinner msg Nothing $ do
     liftIO $ waitForProcess p >>= \case
       ExitSuccess -> return ()
