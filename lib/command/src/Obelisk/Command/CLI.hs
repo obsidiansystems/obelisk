@@ -1,5 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
 module Obelisk.Command.CLI where
 
 import Control.Exception (finally)
@@ -27,8 +26,9 @@ withSpinner s e f = do
   isTerm <- hIsTerminalDevice stdout
   -- When running in shell completion, disable the spinner. TODO: Do this using ReaderT and config.
   inBashCompletion <- isInfixOf "completion" . unwords <$> getArgs
-  if | not isTerm || inBashCompletion -> f
-     | otherwise -> do
+  case not isTerm || inBashCompletion of
+    True -> f
+    False -> do
       spinner <- dots1Spinner (1000 * 200) s
       result <- finally f $ do
         stopIndicator spinner
@@ -38,6 +38,7 @@ withSpinner s e f = do
       return result
 
 data Level = Level_Normal | Level_Warning | Level_Error
+  deriving (Bounded, Enum, Eq, Ord, Show)
 
 -- TODO: Handle this error cleanly when evaluating outside of `withSpinner` (eg: runCLI)
 failWith :: Text -> IO a
