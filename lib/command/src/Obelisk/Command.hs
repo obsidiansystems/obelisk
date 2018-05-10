@@ -1,10 +1,15 @@
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StaticPointers #-}
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command where
 
 import Control.Monad
+import Control.Monad.Reader (liftIO, runReaderT)
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
@@ -18,6 +23,7 @@ import System.Environment
 import System.FilePath
 import System.Posix.Process (executeFile)
 
+import Obelisk.App
 import Obelisk.Command.CLI (failWith, putWarning)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
@@ -69,9 +75,9 @@ data ObCommand
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
 
-inNixShell' :: StaticPtr (IO ()) -> IO ()
+inNixShell' :: MonadObelisk m => StaticPtr (IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
-  progName <- getExecutablePath
+  progName <- liftIO getExecutablePath
   projectShell root False "ghc" $ unwords --TODO: shell escape
     [ progName
     , "internal"
@@ -165,18 +171,19 @@ parserPrefs = defaultPrefs
 
 main :: IO ()
 main = do
+  let obeliskConfig = Obelisk "0.1"
   myArgs <- getArgs
   --TODO: We'd like to actually use the parser to determine whether to hand off,
   --but in the case where this implementation of 'ob' doesn't support all
   --arguments being passed along, this could fail.  For now, we don't bother
   --with optparse-applicative until we've done the handoff.
   let go as = do
-        Args noHandoffPassed cmd <- handleParseResult (execParserPure parserPrefs argsInfo as)
-        case noHandoffPassed of
+        args' <- handleParseResult (execParserPure parserPrefs argsInfo as)
+        case _args_noHandOffPassed args' of
           False -> return ()
           True -> putWarning "--no-handoff should only be passed once and as the first argument; ignoring"
-        ob cmd
-      handoffAndGo as = findProjectObeliskCommand "." >>= \case
+        runReaderT (ob $ _args_command args') obeliskConfig
+      handoffAndGo as = flip runReaderT obeliskConfig (findProjectObeliskCommand ".") >>= \case
         Nothing -> go as -- If not in a project, just run ourselves
         Just impl -> do
           -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
@@ -189,22 +196,22 @@ main = do
       | otherwise -> handoffAndGo (a:as)
     as -> handoffAndGo as
 
-ob :: ObCommand -> IO ()
+ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
   ObCommand_Init source -> initProject source
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
       thunkPtr <- readThunk root >>= \case
-        Left err -> failWith $ T.pack $ "thunk pack: " <> show err
+        Left err -> liftIO $ failWith $ T.pack $ "thunk pack: " <> show err
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr root (_deployInitOpts_remote deployOpts)
+          liftIO $ getThunkPtr root (_deployInitOpts_remote deployOpts)
       let deployDir = _deployInitOpts_ouputDir deployOpts
           sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
-      deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
-    DeployCommand_Push -> do
+      liftIO $ deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
+    DeployCommand_Push -> liftIO $ do
       checkGitCleanStatus "." >>= \case
         True -> return ()
         False -> failWith "ob push: Commit any changes to the deployment configuration before proceeding"
@@ -217,7 +224,7 @@ ob = \case
   ObCommand_Repl component -> runRepl component
   ObCommand_Watch component -> watch component
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> unsafeLookupStaticPtr @(IO ()) k >>= \case
+    ObInternal_RunStaticIO k -> liftIO $ unsafeLookupStaticPtr @(IO ()) k >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> deRefStaticPtr p
 --TODO: Clean up all the magic strings throughout this codebase

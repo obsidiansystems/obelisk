@@ -21,6 +21,7 @@ library
     , github
     , hit
     , questioner
+    , exceptions
     , mtl
     , network
     , network-uri
@@ -34,6 +35,7 @@ library
     , unix
     , yaml
   exposed-modules:
+    Obelisk.App
     Obelisk.Command
     Obelisk.Command.Deploy
     Obelisk.Command.CLI

@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command.Project
@@ -12,7 +13,7 @@ module Obelisk.Command.Project
   ) where
 
 import Control.Monad
-import Control.Monad.IO.Class
+import Control.Monad.Reader (liftIO)
 import Control.Monad.Trans.State
 import Data.Bits
 import Data.Function (on)
@@ -27,6 +28,7 @@ import System.Process (CreateProcess, createProcess_, cwd, proc, waitForProcess)
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
+import Obelisk.App (MonadObelisk)
 import Obelisk.Command.CLI (failWith, putError, withSpinner)
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils (cp)
@@ -53,24 +55,24 @@ data InitSource
    | InitSource_Symlink FilePath
 
 -- | Create a new project rooted in the current directory
-initProject :: InitSource -> IO ()
+initProject :: MonadObelisk m => InitSource -> m ()
 initProject source = do
   let obDir = ".obelisk"
       implDir = obDir </> "impl"
-  createDirectory obDir
+  liftIO $ createDirectory obDir
   case source of
-    InitSource_Default -> createThunkWithLatest implDir obeliskSource
-    InitSource_Branch branch -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+    InitSource_Default -> liftIO $ createThunkWithLatest implDir obeliskSource
+    InitSource_Branch branch -> liftIO $ createThunkWithLatest implDir $ obeliskSourceWithBranch branch
     InitSource_Symlink path -> do
       let symlinkPath = if isAbsolute path
             then path
             else ".." </> path
-      createSymbolicLink symlinkPath implDir
+      liftIO $ createSymbolicLink symlinkPath implDir
   _ <- nixBuildAttrWithCache implDir "command"
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
   withSpinner "Copying project skeleton ..." (Just "Copied project skeleton.") $ do
-    cp --TODO: Make this package depend on nix-prefetch-url properly
+    liftIO $ cp --TODO: Make this package depend on nix-prefetch-url properly
       [ "-r"
       , "--no-preserve=mode"
       , "-T"
@@ -78,17 +80,17 @@ initProject source = do
       , "."
       ]
   let configDir = "config"
-  createDirectory configDir
-  mapM_ (createDirectory . (configDir </>)) ["backend", "common", "frontend"]
+  liftIO $ createDirectory configDir
+  liftIO $ mapM_ (createDirectory . (configDir </>)) ["backend", "common", "frontend"]
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns
 -- | Find the Obelisk implementation for the project at the given path
-findProjectObeliskCommand :: FilePath -> IO (Maybe FilePath)
+findProjectObeliskCommand :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectObeliskCommand target = do
-  myUid <- getRealUserID
+  myUid <- liftIO $ getRealUserID
   targetStat <- liftIO $ getFileStatus target
-  (result, insecurePaths) <- flip runStateT [] $ do
+  (result, insecurePaths) <- liftIO $ flip runStateT [] $ do
     walkToProjectRoot target targetStat myUid >>= \case
       Nothing -> return Nothing
       Just projectRoot -> do
@@ -100,7 +102,7 @@ findProjectObeliskCommand target = do
       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
-      putError $ T.unlines
+      liftIO $ putError $ T.unlines
         [ "Error: Found a project at " <> T.pack (normalise projDir) <> ", but had to traverse one or more insecure directories to get there:"
         , T.unlines $ fmap (T.pack . normalise) insecurePaths
         , "Please ensure that all of these directories are owned by you and are not writable by anyone else."
@@ -108,16 +110,16 @@ findProjectObeliskCommand target = do
       return Nothing
 
 -- | Get the FilePath to the containing project directory, if there is one
-findProjectRoot :: FilePath -> IO (Maybe FilePath)
+findProjectRoot :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectRoot target = do
-  myUid <- getRealUserID
+  myUid <- liftIO $ getRealUserID
   targetStat <- liftIO $ getFileStatus target
-  (result, _) <- runStateT (walkToProjectRoot target targetStat myUid) []
+  (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat myUid) []
   return result
 
-withProjectRoot :: FilePath -> (FilePath -> IO ()) -> IO ()
+withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m ()) -> m ()
 withProjectRoot target f = findProjectRoot target >>= \case
-  Nothing -> failWith "Must be used inside of an Obelisk project"
+  Nothing -> liftIO $ failWith "Must be used inside of an Obelisk project"
   Just root -> f root
 
 -- | Walk from the current directory to the containing project's root directory,
@@ -162,23 +164,23 @@ isWritableOnlyBy :: FileStatus -> UserID -> Bool
 isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
 
 -- | Run a command in the given shell for the current project
-inProjectShell :: String -> String -> IO ()
+inProjectShell :: MonadObelisk m => String -> String -> m ()
 inProjectShell shellName command = withProjectRoot "." $ \root ->
   projectShell root True shellName command
 
-inImpureProjectShell :: String -> String -> IO ()
+inImpureProjectShell :: MonadObelisk m => String -> String -> m ()
 inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
   projectShell root False shellName command
 
-projectShell :: FilePath -> Bool -> String -> String -> IO ()
+projectShell :: MonadObelisk m => FilePath -> Bool -> String -> String -> m ()
 projectShell root isPure shellName command = do
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
+  (_, _, _, ph) <- liftIO $ createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
      [ "--pure" | isPure ] <>
      [ "-A"
      , "shells." <> shellName
      , "--run", command
      ]
-  void $ waitForProcess ph
+  void $ liftIO $ waitForProcess ph
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
 setCwd fp cfg = cfg { cwd = fp }
