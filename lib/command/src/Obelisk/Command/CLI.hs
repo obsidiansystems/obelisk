@@ -4,7 +4,7 @@
 module Obelisk.Command.CLI where
 
 import Control.Monad.Catch (finally)
-import Control.Monad.Reader (MonadIO, liftIO)
+import Control.Monad.Reader (MonadIO, liftIO, reader)
 import Data.List (isInfixOf)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -16,7 +16,7 @@ import System.IO (hFlush, hIsTerminalDevice)
 import System.Console.ANSI
 import System.Console.Questioner (dots1Spinner, stopIndicator)
 
-import Obelisk.App (MonadObelisk)
+import Obelisk.App (MonadObelisk, _obelisk_verbose)
 
 -- TODO: This doesn't handle the put* line of functions below, in that: when we print anything while the
 -- spinner is already running, it won't appear correctly in the terminal. The exception is `failWith` which
@@ -29,11 +29,15 @@ withSpinner
   -> m a  -- ^ Action to run and wait for
   -> m a
 withSpinner s e f = do
+  verbose <- reader _obelisk_verbose
   isTerm <- liftIO $ hIsTerminalDevice stdout
-  -- When running in shell completion, disable the spinner. TODO: Do this using ReaderT and config.
+  -- When running in shell completion, disable the spinner.
   inBashCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
-  case not isTerm || inBashCompletion of
-    True -> f
+  let spinnerDisabled = not isTerm || inBashCompletion || verbose
+  case spinnerDisabled of
+    True -> do
+      putInfo $ T.pack s
+      f
     False -> do
       spinner <- liftIO $ dots1Spinner (1000 * 200) s
       result <- finally f $ do
@@ -62,8 +66,8 @@ putInfo = liftIO . putMsg Level_Normal
 putMsg :: MonadIO m => Level -> Text -> m ()
 putMsg level s = liftIO $ do
   setColor level
-  T.putStrLn s
-  setSGR [Reset]
+  finally (T.putStrLn s) $
+    setSGR [Reset]
 
 setColor :: Level -> IO ()
 setColor = \case

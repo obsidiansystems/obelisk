@@ -9,7 +9,8 @@ import Control.Monad.Reader (MonadIO, MonadReader)
 
 -- TODO: Add configuration for logging, etc. here.
 data Obelisk = Obelisk
-  { _obelisk_version :: String
+  { _obelisk_verbose :: Bool
   }
+  deriving (Eq, Show)
 
 type MonadObelisk m = (MonadReader Obelisk m, MonadIO m, MonadMask m)

@@ -1,9 +1,8 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StaticPointers #-}
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command where
@@ -171,8 +170,10 @@ parserPrefs = defaultPrefs
 
 main :: IO ()
 main = do
-  let obeliskConfig = Obelisk "0.1"
   myArgs <- getArgs
+  -- We are not passing this as cli argument (--verbose) because run-static-io does not
+  -- pass along the cli arguments to recursive obelisks.
+  obeliskConfig <- Obelisk . maybe False read <$> lookupEnv "VERBOSE"
   --TODO: We'd like to actually use the parser to determine whether to hand off,
   --but in the case where this implementation of 'ob' doesn't support all
   --arguments being passed along, this could fail.  For now, we don't bother
@@ -183,7 +184,7 @@ main = do
           False -> return ()
           True -> putWarning "--no-handoff should only be passed once and as the first argument; ignoring"
         runReaderT (ob $ _args_command args') obeliskConfig
-      handoffAndGo as = flip runReaderT obeliskConfig (findProjectObeliskCommand ".") >>= \case
+      handoffAndGo as = runReaderT (findProjectObeliskCommand ".") obeliskConfig >>= \case
         Nothing -> go as -- If not in a project, just run ourselves
         Just impl -> do
           -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
