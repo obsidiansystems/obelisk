@@ -1,11 +1,15 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
 module Obelisk.Command.CLI where
 
-import Control.Exception (SomeException, displayException, finally, handle)
+import Control.Exception (finally)
+import Data.List (isInfixOf)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import System.Exit (ExitCode (ExitFailure), exitWith)
+import GHC.IO.Handle.FD (stdout)
+import System.Environment (getArgs)
+import System.IO (hIsTerminalDevice)
 
 import System.Console.ANSI
 import System.Console.Questioner (dots1Spinner, stopIndicator)
@@ -20,13 +24,18 @@ withSpinner
   -> IO a  -- ^ Action to run and wait for
   -> IO a
 withSpinner s e f = do
-  spinner <- dots1Spinner (1000 * 200) s
-  result <- finally f $ do
-    stopIndicator spinner
-  case e of
-    Just exitMsg -> putInfo $ T.pack exitMsg
-    _ -> return ()
-  return result
+  isTerm <- hIsTerminalDevice stdout
+  -- When running in bash completion, disable the spinner. TODO: Do this using ReaderT and config.
+  inBashCompletion <- isInfixOf "bash-completion" . unwords <$> getArgs
+  if | not isTerm || inBashCompletion -> f
+     | otherwise -> do
+      spinner <- dots1Spinner (1000 * 200) s
+      result <- finally f $ do
+        stopIndicator spinner
+      case e of
+        Just exitMsg -> putInfo $ T.pack exitMsg
+        _ -> return ()
+      return result
 
 data Level = Level_Normal | Level_Warning | Level_Error
 
