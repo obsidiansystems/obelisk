@@ -3,8 +3,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Obelisk.Command.CLI where
 
-import Control.Monad.Catch (MonadMask, finally)
-import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, ask, liftIO, runReaderT)
+import Control.Monad.Catch (finally)
+import Control.Monad.Reader (MonadIO, liftIO)
 import Data.List (isInfixOf)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -16,14 +16,14 @@ import System.IO (hFlush, hIsTerminalDevice)
 import System.Console.ANSI
 import System.Console.Questioner (dots1Spinner, stopIndicator)
 
-import Obelisk.App (Obelisk)
+import Obelisk.App (MonadObelisk)
 
 -- TODO: This doesn't handle the put* line of functions below, in that: when we print anything while the
 -- spinner is already running, it won't appear correctly in the terminal. The exception is `failWith` which
 -- raises an exception (that gets handled properly here). One solution to fix this problem is to run a
 -- singleton spinner thread and interact with it in order to print something.
 withSpinner
-  :: (MonadReader Obelisk m, MonadIO m, MonadMask m)
+  :: MonadObelisk m
   => String  -- ^ Text to print alongside the spinner
   -> Maybe String  -- ^ Optional text to print at the end
   -> m a  -- ^ Action to run and wait for
@@ -39,7 +39,7 @@ withSpinner s e f = do
       result <- finally f $ do
         liftIO $ stopIndicator spinner
       case e of
-        Just exitMsg -> liftIO $ putInfo $ T.pack exitMsg
+        Just exitMsg -> putInfo $ T.pack exitMsg
         Nothing -> liftIO $ hFlush stdout
       return result
 
@@ -47,20 +47,20 @@ data Level = Level_Normal | Level_Warning | Level_Error
   deriving (Bounded, Enum, Eq, Ord, Show)
 
 -- TODO: Handle this error cleanly when evaluating outside of `withSpinner` (eg: runCLI)
-failWith :: Text -> IO a
-failWith = ioError . userError . T.unpack
+failWith :: MonadIO m => Text -> m a
+failWith = liftIO . ioError . userError . T.unpack
 
-putError :: Text -> IO ()
-putError = putMsg Level_Error
+putError :: MonadIO m => Text -> m ()
+putError = liftIO . putMsg Level_Error
 
-putWarning :: Text -> IO ()
-putWarning = putMsg Level_Warning
+putWarning :: MonadIO m => Text -> m ()
+putWarning = liftIO . putMsg Level_Warning
 
-putInfo :: Text -> IO ()
-putInfo = putMsg Level_Normal
+putInfo :: MonadIO m => Text -> m ()
+putInfo = liftIO . putMsg Level_Normal
 
-putMsg :: Level -> Text -> IO ()
-putMsg level s = do
+putMsg :: MonadIO m => Level -> Text -> m ()
+putMsg level s = liftIO $ do
   setColor level
   T.putStrLn s
   setSGR [Reset]

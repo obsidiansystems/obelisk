@@ -88,7 +88,7 @@ initProject source = do
 -- | Find the Obelisk implementation for the project at the given path
 findProjectObeliskCommand :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectObeliskCommand target = do
-  myUid <- liftIO $ getRealUserID
+  myUid <- liftIO getRealUserID
   targetStat <- liftIO $ getFileStatus target
   (result, insecurePaths) <- liftIO $ flip runStateT [] $ do
     walkToProjectRoot target targetStat myUid >>= \case
@@ -102,7 +102,7 @@ findProjectObeliskCommand target = do
       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
-      liftIO $ putError $ T.unlines
+      putError $ T.unlines
         [ "Error: Found a project at " <> T.pack (normalise projDir) <> ", but had to traverse one or more insecure directories to get there:"
         , T.unlines $ fmap (T.pack . normalise) insecurePaths
         , "Please ensure that all of these directories are owned by you and are not writable by anyone else."
@@ -112,14 +112,14 @@ findProjectObeliskCommand target = do
 -- | Get the FilePath to the containing project directory, if there is one
 findProjectRoot :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectRoot target = do
-  myUid <- liftIO $ getRealUserID
+  myUid <- liftIO getRealUserID
   targetStat <- liftIO $ getFileStatus target
   (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat myUid) []
   return result
 
 withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m ()) -> m ()
 withProjectRoot target f = findProjectRoot target >>= \case
-  Nothing -> liftIO $ failWith "Must be used inside of an Obelisk project"
+  Nothing -> failWith "Must be used inside of an Obelisk project"
   Just root -> f root
 
 -- | Walk from the current directory to the containing project's root directory,

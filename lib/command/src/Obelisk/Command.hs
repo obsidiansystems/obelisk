@@ -202,7 +202,7 @@ ob = \case
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
       thunkPtr <- readThunk root >>= \case
-        Left err -> liftIO $ failWith $ T.pack $ "thunk pack: " <> show err
+        Left err -> failWith $ T.pack $ "thunk pack: " <> show err
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
