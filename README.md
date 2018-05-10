@@ -19,7 +19,9 @@
     1. `hub clone obsidiansystems/obelisk`
       * NOTE: you must authenticate with hub at least once, because the `ob` command uses `hub` for authentication
       #TODO: Make ob do this itself (either invoke hub automatically or not depend on hub)
-1. Install `ob`: `nix-env -f obelisk -iA command`
+1. Install `ob`: `nix-env -f obelisk -iA command`.
+   Alternatively, if you prefer not to install to your user nix environment, you can
+   enter a shell with the `ob` command available: `nix-shell -A shell`.
 
 ## Building
 Build the frontend by running
