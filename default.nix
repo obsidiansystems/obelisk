@@ -11,7 +11,13 @@ let #TODO: Upstream
     # automatically if the resulting derivation is installed, e.g. by
     # `nix-env -i`.
 
-    justStaticExecutables' = drvOrig: overrideCabal (justStaticExecutables drvOrig) (drv: { configureFlags = drvOrig.configureFlags or [];});
+    # TODO: Remove this after updating nixpkgs: https://github.com/NixOS/nixpkgs/issues/37750
+    justStaticExecutables' = drv: let
+        drv' = justStaticExecutables drv;
+      in if pkgs.stdenv.isDarwin
+        then removeConfigureFlag drv' "--ghc-option=-optl=-dead_strip"
+        else drv';
+
 
     addOptparseApplicativeCompletionScripts = exeName: pkg: overrideCabal pkg (drv: {
       postInstall = (drv.postInstall or "") + ''
