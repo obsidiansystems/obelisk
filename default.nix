@@ -10,6 +10,9 @@ let #TODO: Upstream
     # executable produced by it.  These completion scripts will be picked up
     # automatically if the resulting derivation is installed, e.g. by
     # `nix-env -i`.
+
+    justStaticExecutables' = drvOrig: overrideCabal (justStaticExecutables drvOrig) (drv: { configureFlags = drvOrig.configureFlags or [];});
+
     addOptparseApplicativeCompletionScripts = exeName: pkg: overrideCabal pkg (drv: {
       postInstall = (drv.postInstall or "") + ''
         BASH_COMP_DIR="$out/share/bash-completion/completions"
@@ -47,7 +50,7 @@ let #TODO: Upstream
         });
 
         # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
-        obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables super.obelisk-command);
+        obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
 
         optparse-applicative = self.callHackage "optparse-applicative" "0.14.0.0" {};
       });
@@ -83,13 +86,14 @@ rec {
   inherit (reflex-platform) nixpkgs;
   path = reflex-platform.filterGit ./.;
   command = ghcObelisk.obelisk-command;
+
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
     set -euo pipefail
 
     PATH="${ghcObelisk.obelisk-command}/bin:$PATH"
     export OBELISK_IMPL="${hackGet ./.}"
-    "${justStaticExecutables ghcObelisk.obelisk-selftest}/bin/obelisk-selftest"
+    "${justStaticExecutables' ghcObelisk.obelisk-selftest}/bin/obelisk-selftest"
   '';
   #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
   skeleton = pkgs.runCommand "skeleton" {
