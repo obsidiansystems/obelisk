@@ -471,7 +471,7 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
       --If this directory already exists then something is weird and we should fail
       createDirectory obGitDir
       withSpinner "Copying thunk ..." Nothing $ do
-        callProcess "cp"
+        cp
           [ "-r"
           , "-T"
           , thunkDir </> "."
@@ -488,7 +488,7 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
         [ "-r"
         , thunkDir
         ]
-      callProcess "mv"
+      callProcessNixShell ["coreutils"] "mv"
         [ "-T"
         , tmpRepo
         , thunkDir
