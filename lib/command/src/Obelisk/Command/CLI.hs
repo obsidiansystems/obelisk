@@ -8,7 +8,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.IO.Handle.FD (stdout)
 import System.Environment (getArgs)
-import System.IO (hIsTerminalDevice)
+import System.IO (hFlush, hIsTerminalDevice)
 
 import System.Console.ANSI
 import System.Console.Questioner (dots1Spinner, stopIndicator)
@@ -34,7 +34,7 @@ withSpinner s e f = do
         stopIndicator spinner
       case e of
         Just exitMsg -> putInfo $ T.pack exitMsg
-        _ -> return ()
+        Nothing -> hFlush stdout
       return result
 
 data Level = Level_Normal | Level_Warning | Level_Error
