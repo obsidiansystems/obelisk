@@ -174,7 +174,6 @@ main = do
         Args noHandoffPassed cmd <- handleParseResult (execParserPure parserPrefs argsInfo as)
         case noHandoffPassed of
           False -> return ()
-           --TODO: Use a proper logging system with log levels and whatnot
           True -> putWarning "--no-handoff should only be passed once and as the first argument; ignoring"
         ob cmd
       handoffAndGo as = findProjectObeliskCommand "." >>= \case

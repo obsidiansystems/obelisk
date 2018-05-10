@@ -1,11 +1,10 @@
 {-# LANGUAGE LambdaCase #-}
 module Obelisk.Command.CLI where
 
-import Control.Exception (Exception, SomeException, catch, displayException, handle, throw)
+import Control.Exception (SomeException, displayException, finally, handle)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import Data.Typeable (Typeable)
 import System.Exit (ExitCode (ExitFailure), exitWith)
 
 import System.Console.ANSI
@@ -22,15 +21,8 @@ withSpinner
   -> IO a
 withSpinner s e f = do
   spinner <- dots1Spinner (1000 * 200) s
-
-  -- Upon exception (typically raised by failWith), stop the spinner, log the error and exit.
-  result <- catch f $ \exc -> do
+  result <- finally f $ do
     stopIndicator spinner
-    putError $ T.pack $ displayException (exc :: SomeException)
-    exitWith $ ExitFailure 2
-
-  -- Upon no exceptions, stop the spinner and log the optional exit message.
-  stopIndicator spinner
   case e of
     Just exitMsg -> putInfo $ T.pack exitMsg
     _ -> return ()
@@ -38,8 +30,6 @@ withSpinner s e f = do
 
 data Level = Level_Normal | Level_Warning | Level_Error
 
--- | Prefer this over the alternative ways to exit the program with an error message as it automatically
--- takes care of cleaning on spinners.
 -- TODO: Handle this error cleanly when evaluating outside of `withSpinner` (eg: runCLI)
 failWith :: Text -> IO a
 failWith = ioError . userError . T.unpack
