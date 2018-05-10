@@ -38,7 +38,7 @@ ob repl backend
 and then typing
 
 ```bash
-main
+backend
 ```
 
 at the GHCi prompt.
