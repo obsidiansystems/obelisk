@@ -11,7 +11,13 @@ let #TODO: Upstream
     # automatically if the resulting derivation is installed, e.g. by
     # `nix-env -i`.
 
-    justStaticExecutables' = drvOrig: overrideCabal (justStaticExecutables drvOrig) (drv: { configureFlags = drvOrig.configureFlags or [];});
+    # TODO: Remove this after updating nixpkgs: https://github.com/NixOS/nixpkgs/issues/37750
+    justStaticExecutables' = drv: let
+        drv' = justStaticExecutables drv;
+      in if pkgs.stdenv.isDarwin
+        then removeConfigureFlag drv' "--ghc-option=-optl=-dead_strip"
+        else drv';
+
 
     addOptparseApplicativeCompletionScripts = exeName: pkg: overrideCabal pkg (drv: {
       postInstall = (drv.postInstall or "") + ''
@@ -86,6 +92,11 @@ rec {
   inherit (reflex-platform) nixpkgs;
   path = reflex-platform.filterGit ./.;
   command = ghcObelisk.obelisk-command;
+  shell = nixpkgs.stdenv.mkDerivation {
+    name = "obelisk-shell";
+    src = null;
+    nativeBuildInputs = [command];
+  };
 
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
@@ -127,11 +138,26 @@ rec {
   server = exe: hostName:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
+        https = import (pkgs.fetchFromGitHub {
+            owner = "obsidiansystems";
+            repo = "obelisk-https";
+            rev = "999e36b4ab14cbe31be6815cdbc3a1223a7b4617";
+            sha256 = "0qxi7hg751ikkp4r5j7d706gjrsl26lzlrnh905havij10plcg1l";
+            private = true;
+          } + "/module.nix") {} {
+            backendPort = 8000; # TODO read from config
+            # sslConfig = {
+            #   hostName = "example.com";
+            #   adminEmail = "webmaster@example.com";
+            #   subdomains = [ "www" ];
+            # };
+          };
     in nixos {
       inherit system;
       configuration = args: {
         imports = [
           (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+          https
         ];
         networking = { inherit hostName; };
         systemd.services.backend = {
