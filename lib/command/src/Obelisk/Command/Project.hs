@@ -13,7 +13,7 @@ module Obelisk.Command.Project
   ) where
 
 import Control.Monad
-import Control.Monad.Reader (liftIO)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.State
 import Data.Bits
 import Data.Function (on)

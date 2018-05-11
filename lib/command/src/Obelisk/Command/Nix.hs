@@ -11,7 +11,7 @@ module Obelisk.Command.Nix
   , Arg (..)
   ) where
 
-import Control.Monad.Reader (liftIO)
+import Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Default
 import Data.Monoid ((<>))

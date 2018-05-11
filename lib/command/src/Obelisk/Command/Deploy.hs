@@ -6,7 +6,7 @@ module Obelisk.Command.Deploy where
 
 import Control.Monad
 import Control.Monad.Catch (finally)
-import Control.Monad.Reader (liftIO)
+import Control.Monad.IO.Class (liftIO)
 import Data.Default
 import Data.Maybe
 import Data.Monoid

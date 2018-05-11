@@ -8,7 +8,8 @@
 module Obelisk.Command where
 
 import Control.Monad
-import Control.Monad.Reader (liftIO, runReaderT)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (runReaderT)
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS

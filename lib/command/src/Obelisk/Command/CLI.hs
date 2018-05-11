@@ -4,7 +4,8 @@
 module Obelisk.Command.CLI where
 
 import Control.Monad.Catch (MonadThrow, finally, throwM)
-import Control.Monad.Reader (MonadIO, liftIO, reader)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (MonadIO, asks)
 import Data.List (isInfixOf)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -29,7 +30,7 @@ withSpinner
   -> m a  -- ^ Action to run and wait for
   -> m a
 withSpinner s e f = do
-  verbose <- reader _obelisk_verbose
+  verbose <- asks _obelisk_verbose
   isTerm <- liftIO $ hIsTerminalDevice stdout
   -- When running in shell completion, disable the spinner.
   inBashCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
