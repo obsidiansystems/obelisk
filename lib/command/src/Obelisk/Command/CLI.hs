@@ -3,7 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Obelisk.Command.CLI where
 
-import Control.Monad.Catch (finally)
+import Control.Monad.Catch (MonadThrow, finally, throwM)
 import Control.Monad.Reader (MonadIO, liftIO, reader)
 import Data.List (isInfixOf)
 import Data.Text (Text)
@@ -51,8 +51,8 @@ data Level = Level_Normal | Level_Warning | Level_Error
   deriving (Bounded, Enum, Eq, Ord, Show)
 
 -- TODO: Handle this error cleanly when evaluating outside of `withSpinner` (eg: runCLI)
-failWith :: MonadIO m => Text -> m a
-failWith = liftIO . ioError . userError . T.unpack
+failWith :: MonadThrow m => Text -> m a
+failWith = throwM . userError . T.unpack
 
 putError :: MonadIO m => Text -> m ()
 putError = liftIO . putMsg Level_Error
