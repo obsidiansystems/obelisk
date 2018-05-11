@@ -42,21 +42,30 @@ deployPush deployPath = do
   callProcess "ssh-add" [deployPath </> "ssh_key"]
   host <- fmap (T.unpack . T.strip) $ T.readFile $ deployPath </> "backend_hosts"
   let srcPath = deployPath </> "src"
+      build = do
+        buildOutput <- nixBuild $ def
+          { _nixBuildConfig_target = Target
+            { _target_path = srcPath
+            , _target_attr = Just "server"
+            }
+          , _nixBuildConfig_outLink = OutLink_None
+          , _nixBuildConfig_args = pure $ Arg "hostName" host
+          }
+        return $ listToMaybe $ lines $ buildOutput
   result <- readThunk srcPath >>= \case
     Right (ThunkData_Packed _) -> do
       unpackThunk srcPath
-      let build = do
-            buildOutput <- nixBuild $ def
-              { _nixBuildConfig_target = Target
-                { _target_path = srcPath
-                , _target_attr = Just "server"
-                }
-              , _nixBuildConfig_outLink = OutLink_None
-              , _nixBuildConfig_args = pure $ Arg "hostName" host
-              }
-            return $ listToMaybe $ lines $ buildOutput
       result <- build `finally` packThunk srcPath "origin" -- get upstream
       return result
+    Right (ThunkData_Checkout _) -> do
+      checkGitCleanStatus srcPath >>= \case
+        True -> do
+          result <- build
+          packThunk srcPath "origin" -- get upstream
+          return result
+        False -> do
+          _ <- fail $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
+          return Nothing
     _ -> return Nothing
   forM_ result $ \res -> do
     callProcess "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", res]
