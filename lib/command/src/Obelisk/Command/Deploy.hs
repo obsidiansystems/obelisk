@@ -81,3 +81,7 @@ deployPush deployPath = do
     when (not isClean) $ do
       callProcess "git" ["-C", deployPath, "add", "--update"]
       callProcess "git" ["-C", deployPath, "commit", "-m", "New deployment"]
+
+deployUpdate :: FilePath -> IO ()
+deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
+

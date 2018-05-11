@@ -98,6 +98,7 @@ deployCommand :: Parser DeployCommand
 deployCommand = hsubparser $ mconcat
   [ command "init" $ info deployInitCommand $ progDesc "Initialize a deployment configuration directory"
   , command "push" $ info (pure DeployCommand_Push) mempty
+  , command "update" $ info (pure DeployCommand_Update) $ progDesc "Update the deployment's src thunk to latest"
   ]
 
 deployInitCommand :: Parser DeployCommand
@@ -110,6 +111,7 @@ deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
   | DeployCommand_Push
+  | DeployCommand_Update
 
 data DeployInitOpts = DeployInitOpts
   { _deployInitOpts_ouputDir :: FilePath
@@ -204,6 +206,7 @@ ob = \case
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
     DeployCommand_Push -> deployPush "."
+    DeployCommand_Update -> deployUpdate "."
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
