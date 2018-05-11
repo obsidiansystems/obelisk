@@ -484,6 +484,8 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
             , pure $ Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr
             ]
       callProcess "hub" checkoutOptions
+      forM_ (_gitHubSource_branch s) $ \branch ->
+        callProcess "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
       callProcess "rm"
         [ "-r"
         , thunkDir
