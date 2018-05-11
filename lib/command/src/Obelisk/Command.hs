@@ -206,7 +206,7 @@ ob = \case
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
     DeployCommand_Push -> do
       checkGitCleanStatus "." >>= \case
-        True -> return ()
+        True -> deployPush "."
         False -> failWith "ob push: Commit any changes to the deployment configuration before proceeding"
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
