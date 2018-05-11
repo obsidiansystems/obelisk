@@ -24,7 +24,6 @@ import Obelisk.Command.Project
 import Obelisk.Command.Repl
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils
 
 data Args = Args
   { _args_noHandOffPassed :: Bool
@@ -204,10 +203,7 @@ ob = \case
           sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
-    DeployCommand_Push -> do
-      checkGitCleanStatus "." >>= \case
-        True -> deployPush "."
-        False -> failWith "ob push: Commit any changes to the deployment configuration before proceeding"
+    DeployCommand_Push -> deployPush "."
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of

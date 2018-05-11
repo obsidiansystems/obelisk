@@ -55,7 +55,8 @@ deployPush deployPath = do
               , _nixBuildConfig_args = pure $ Arg "hostName" host
               }
             return $ listToMaybe $ lines $ buildOutput
-      build `finally` packThunk srcPath "origin" -- get upstream
+      result <- build `finally` packThunk srcPath "origin" -- get upstream
+      return result
     _ -> return Nothing
   forM_ result $ \res -> do
     callProcess "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", res]
@@ -67,3 +68,7 @@ deployPush deployPath = do
           , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
           ]
       ]
+    isClean <- checkGitCleanStatus deployPath
+    when (not isClean) $ do
+      callProcess "git" ["-C", deployPath, "add", "--update"]
+      callProcess "git" ["-C", deployPath, "commit", "-m", "New deployment"]
