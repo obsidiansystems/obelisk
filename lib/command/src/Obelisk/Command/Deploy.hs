@@ -85,3 +85,6 @@ deployPush deployPath = do
     when (not isClean) $ liftIO $ do
       callProcess "git" ["-C", deployPath, "add", "--update"]
       callProcess "git" ["-C", deployPath, "commit", "-m", "New deployment"]
+
+deployUpdate :: MonadObelisk m => FilePath -> m ()
+deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"

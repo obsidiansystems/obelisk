@@ -492,17 +492,20 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
             , maybe [] (\n -> ["-B", T.unpack (untagName n)]) (_gitHubSource_branch s)
             , pure $ Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr
             ]
-      liftIO $ callProcess "hub" checkoutOptions
-      liftIO $ callProcess "rm"
-        [ "-r"
-        , thunkDir
-        ]
-      liftIO $ callProcessNixShell ["coreutils"] "mv"
-        [ "-T"
-        , tmpRepo
-        , thunkDir
-        ]
-      return ()
+      liftIO $ do
+        callProcess "hub" checkoutOptions
+        forM_ (_gitHubSource_branch s) $ \branch ->
+          callProcess "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
+        callProcess "rm"
+          [ "-r"
+          , thunkDir
+          ]
+        callProcessNixShell ["coreutils"] "mv"
+          [ "-T"
+          , tmpRepo
+          , thunkDir
+          ]
+        return ()
     ThunkSource_Git _s -> do
       $notImplemented
 
