@@ -79,9 +79,6 @@ initProject source = do
       , "."
       ]
   putLog Notice "Created project skeleton."
-  let configDir = "config"
-  liftIO $ createDirectory configDir
-  liftIO $ mapM_ (createDirectory . (configDir </>)) ["backend", "common", "frontend"]
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns

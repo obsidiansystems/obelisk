@@ -82,6 +82,7 @@ nixBuild cfg = do
       ExitSuccess -> return ()
       _ -> do
         -- FIXME: We should interleave `out` and `err` in their original order?
+        -- TODO: Replace this with logging functions for coordinating cleanly with spinner.
         liftIO $ LBS.putStr =<< LBS.hGetContents out
         liftIO $ LBS.putStr =<< LBS.hGetContents err
         failWith "nix-build failed"
