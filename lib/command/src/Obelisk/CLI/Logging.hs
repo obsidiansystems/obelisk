@@ -4,7 +4,7 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.CLI.Logging
-  ( Severity (Error, Warning, Notice)
+  ( Severity (Error, Warning, Notice, Debug)
   , LoggingConfig (..)
   , Output (..)
   , failWith
@@ -13,7 +13,7 @@ module Obelisk.CLI.Logging
   ) where
 
 import Control.Concurrent.MVar (MVar, modifyMVar_)
-import Control.Monad ((>=>))
+import Control.Monad (unless, when, (>=>))
 import Control.Monad.Catch (MonadMask, bracket_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -47,13 +47,15 @@ handleLog :: MonadIO m => LoggingConfig -> Output -> m ()
 handleLog c current = do
   let lock = _loggingConfig_lock c
   liftIO $ modifyMVar_ lock $ \raw -> do
-    case (raw, current) of
-      (True, Output_Log _) -> do
-        -- If the last output was raw, clear the line prior to logging a non-raw
-        -- message.
-        handleLog' Output_ClearLine
-        handleLog' current
-      _ -> do
+    case current of
+      Output_Log (WithSeverity sev _) -> do
+        -- Discard unless severity is above configured log level
+        unless (sev > _loggingConfig_level c) $ do
+          -- If the last output was raw first clear it,
+          when raw $ handleLog' Output_ClearLine
+          -- ... then actually write the log.
+          handleLog' current
+      _ ->
         handleLog' current
     return $ isRaw current
 

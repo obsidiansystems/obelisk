@@ -10,7 +10,7 @@ module Obelisk.Command where
 import Control.Concurrent (newMVar, threadDelay)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Log
+import Control.Monad.Reader (ask)
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
@@ -26,7 +26,8 @@ import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
 
 import Obelisk.App
-import Obelisk.CLI.Logging (LoggingConfig (LoggingConfig), Severity (..), failWith, putLog)
+import Obelisk.CLI.Logging (LoggingConfig (LoggingConfig, _loggingConfig_level), Severity (..), failWith,
+                            putLog)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
@@ -185,16 +186,23 @@ isInteractiveTerm = do
 
 main :: IO ()
 main = do
-  -- We are not passing this as cli argument (--verbose) because run-static-io does not
+  -- We are not passing `logLevel` as cli argument (--verbose) because run-static-io does not
   -- pass along the cli arguments to recursive obelisks.
-  verbose <- maybe False read <$> lookupEnv "VERBOSE"
+  logLevel <- maybe Notice read <$> lookupEnv "LOGLEVEL"
   noSpinner <- not <$> isInteractiveTerm
-  loggingConfig <- LoggingConfig Debug <$> newMVar False
-  let obeliskConfig = Obelisk verbose noSpinner loggingConfig
+  loggingConfig <- LoggingConfig logLevel <$> newMVar False
+  let obeliskConfig = Obelisk noSpinner loggingConfig
   runObelisk obeliskConfig $ ObeliskT main'
 
 main' :: MonadObelisk m => m ()
 main' = do
+  c <- ask
+  putLog Debug $ T.unwords
+    [ "Obelisk"
+    , "noSpinner=" <> T.pack (show $ _obelisk_noSpinner c)
+    , "logging-level=" <> T.pack (show $ _loggingConfig_level $ _obelisk_logging c)
+    ]
+
   myArgs <- liftIO getArgs
   --TODO: We'd like to actually use the parser to determine whether to hand off,
   --but in the case where this implementation of 'ob' doesn't support all
@@ -210,7 +218,7 @@ main' = do
         Nothing -> go as -- If not in a project, just run ourselves
         Just impl -> do
           -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
-          putLog Notice $ "Handing off to " <> T.pack impl
+          putLog Debug $ "Handing off to " <> T.pack impl
           liftIO $ executeFile impl False ("--no-handoff" : myArgs) Nothing
   case myArgs of
     "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
