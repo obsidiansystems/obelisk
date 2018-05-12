@@ -1,10 +1,16 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command.Utils where
 
+import Control.Monad.Reader (asks)
 import qualified Data.List as L
 import Data.Semigroup ((<>))
+import Data.Text (Text)
 import qualified Data.Text as T
 import System.Process
+
+import Obelisk.App (MonadObelisk, _obelisk_logging)
+import Obelisk.CLI.Spinner (withSpinner')
 
 -- Check whether the working directory is clean
 checkGitCleanStatus :: FilePath -> IO Bool
@@ -30,3 +36,8 @@ callProcessNixShell pkgs cmd args = callProcess "nix-shell" $
 
 cp :: [String] -> IO ()
 cp = callProcessNixShell ["coreutils"] "cp"
+
+withSpinner :: MonadObelisk m => Text -> m a -> m a
+withSpinner s a = do
+  c <- asks _obelisk_logging
+  withSpinner' c s a

@@ -21,7 +21,8 @@ import System.Exit (ExitCode (ExitSuccess))
 import System.Process (StdStream (CreatePipe), createProcess, proc, std_err, std_out, waitForProcess)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.Command.CLI (failWith, withSpinner)
+import Obelisk.CLI.Logging (failWith)
+import Obelisk.Command.Utils (withSpinner)
 
 -- | Where to put nix-build output
 data OutLink
@@ -76,12 +77,12 @@ nixBuild cfg = do
     , std_err = CreatePipe
     }
   let msg = T.pack $ "Running nix-build [" <> _target_path (_nixBuildConfig_target cfg) <> "] ..."
-  withSpinner msg Nothing $ do
-    liftIO $ waitForProcess p >>= \case
+  withSpinner msg $ do
+    liftIO (waitForProcess p) >>= \case
       ExitSuccess -> return ()
       _ -> do
         -- FIXME: We should interleave `out` and `err` in their original order?
-        LBS.putStr =<< LBS.hGetContents out
-        LBS.putStr =<< LBS.hGetContents err
+        liftIO $ LBS.putStr =<< LBS.hGetContents out
+        liftIO $ LBS.putStr =<< LBS.hGetContents err
         failWith "nix-build failed"
   liftIO $ T.unpack . T.strip <$> T.hGetContents out

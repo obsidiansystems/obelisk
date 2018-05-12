@@ -18,7 +18,7 @@ import System.Posix.Files
 import System.Process
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.Command.CLI (failWith)
+import Obelisk.CLI.Logging (failWith)
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils

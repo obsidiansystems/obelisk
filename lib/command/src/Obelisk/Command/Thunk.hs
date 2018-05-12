@@ -30,7 +30,8 @@ import Control.Exception (displayException, throwIO)
 import Control.Monad
 import Control.Monad.Catch (handle)
 import Control.Monad.Except
-import Data.Aeson as Aeson
+import Data.Aeson (decode, (.=))
+import qualified Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.ByteString.Lazy as LBS
 import Data.Default
@@ -69,8 +70,8 @@ import System.Process (StdStream (CreatePipe), callProcess, createProcess, proc,
 
 import Development.Placeholders
 import Obelisk.App (MonadObelisk)
-import Obelisk.Command.CLI (failWith, putError, putWarning, withSpinner)
-import Obelisk.Command.Utils
+import Obelisk.CLI.Logging (Severity (..), failWith, putLog)
+import Obelisk.Command.Utils (callProcessNixShell, checkGitCleanStatus, cp, withSpinner)
 
 --TODO: Support symlinked thunk data
 data ThunkData
@@ -123,6 +124,7 @@ data GitSource = GitSource
 commitNameToRef :: Name Commit -> Ref
 commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 
+-- TODO: Use spinner here.
 getNixSha256ForUriUnpacked :: URI -> IO NixSha256
 getNixSha256ForUriUnpacked uri = do
   --TODO: Make this package depend on nix-prefetch-url properly
@@ -138,7 +140,7 @@ getNixSha256ForUriUnpacked uri = do
      hPutStrLn stdout =<< hGetContents out
      hPutStrLn stderr =<< hGetContents err
      --TODO: actual error
-     failWith $ "nix-prefetch-url"
+     fail "nix-prefetch-url"
   T.strip <$> T.hGetContents out
 
 -- | Get the latest revision available from the given source
@@ -410,7 +412,7 @@ nixBuildThunkAttrWithCache thunkDir attr = do
   --This should be guaranteed by the command argument parser.
   let cacheErrHandler e
         | isDoesNotExistError e = return Nothing -- expected from a cache miss
-        | otherwise = putError (T.pack $ displayException e) >> return Nothing
+        | otherwise = putLog Error (T.pack $ displayException e) >> return Nothing
       cacheDir = thunkDir </> ".attr-cache"
       cachePath = cacheDir </> attr <.> "out"
   liftIO $ createDirectoryIfMissing False cacheDir
@@ -423,7 +425,7 @@ nixBuildThunkAttrWithCache thunkDir attr = do
   case cacheHit of
     Just c -> return c
     Nothing -> do
-      putWarning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
+      putLog Warning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
       _ <- nixBuild $ def
         { _nixBuildConfig_target = Target
           { _target_path = thunkDir
@@ -467,19 +469,20 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
       mauth <- liftIO $ getHubAuth "github.com"
       repoResult <- liftIO $ executeRequestMaybe mauth $ repositoryR (_gitHubSource_owner s) (_gitHubSource_repo s)
       githubURI <- liftIO $ either throwIO (return . repoSshUrl) repoResult >>= \case
-        Nothing -> failWith "Cannot determine clone URI for thunk source"
+        Nothing -> fail "Cannot determine clone URI for thunk source"
         Just c -> return $ T.unpack $ getUrl c
-      withSpinner "Cloning from GitHub ..." (Just $ "Cloned " <> T.pack githubURI) $ do
+      withSpinner "Cloning from GitHub ..." $ do
         liftIO $ callProcess "hub" --TODO: Depend on hub explicitly
           [ "clone"
           , "-n"
           , githubURI
           , tmpRepo
           ]
+      putLog Notice $ "Cloned " <> T.pack githubURI
       let obGitDir = tmpRepo </> ".git" </> "obelisk"
       --If this directory already exists then something is weird and we should fail
       liftIO $ createDirectory obGitDir
-      withSpinner "Copying thunk ..." Nothing $ do
+      withSpinner "Copying thunk ..." $ do
         liftIO $ cp
           [ "-r"
           , "-T"
@@ -534,7 +537,7 @@ getThunkPtr thunkDir upstream = do
       False -> do
         statusDebug <- readProcess "hub"
           [ "-C", thunkDir, "status", "--ignored" ] ""
-        failWith $ T.pack $ unlines $
+        fail $ unlines $
           [ "thunk pack: thunk checkout contains unsaved modifications"
           , "git status:"
           ] ++ lines statusDebug
@@ -544,7 +547,7 @@ getThunkPtr thunkDir upstream = do
     stashOutput <- readProcess "hub" [ "-C", thunkDir, "stash", "list" ] ""
     case null stashOutput of
       False -> do
-        failWith $ T.pack $ unlines $
+        fail $ unlines $
           [ "thunk pack: thunk checkout has stashes"
           , "git stash list:"
           ] ++ lines stashOutput
@@ -558,7 +561,7 @@ getThunkPtr thunkDir upstream = do
     remotes <- lines <$> readProcess "hub" [ "-C", thunkDir, "remote" ] ""
     --Check that the upstream specified actually exists
     case L.find (== upstream) remotes of
-      Nothing -> failWith $ T.pack $ "thunk pack: upstream " <> upstream <> " does not exist"
+      Nothing -> fail $ "thunk pack: upstream " <> upstream <> " does not exist"
       Just _ -> return ()
     -- iterate over cartesian product
     forM_ repoHeads $ \hd -> do
@@ -572,7 +575,7 @@ getThunkPtr thunkDir upstream = do
           , "remotes/" <> rm <> "/" <> hd
           ] ""
         case remoteMergeRev == localRev of
-          False -> failWith $ T.pack $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
+          False -> fail $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
           True -> return ()
 
     --We assume it's safe to pack the thunk at this point
@@ -585,7 +588,7 @@ getThunkPtr thunkDir upstream = do
         mRemoteUri = parseURIReference remoteUri'
                 <|> parseSshShorthand remoteUri'
     thunkPtr <- case mRemoteUri of
-      Nothing -> failWith $ T.pack uriParseFailure
+      Nothing -> fail uriParseFailure
       Just remoteUri -> do
         refs <- fmap (refsToTuples . words) . lines <$> readProcess "hub"
           [ "-C"
@@ -645,7 +648,7 @@ getThunkPtr thunkDir upstream = do
    case uriScheme u of
      "https:" -> return ()
      "git:" -> return ()
-     _ -> failWith "thunk pack: obelisk currently only supports https and git protocols for non-GitHub remotes"
+     _ -> fail "thunk pack: obelisk currently only supports https and git protocols for non-GitHub remotes"
    $notImplemented
   parseSshShorthand uri' = do
     -- This is what git does to check that the remote

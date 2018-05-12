@@ -1,14 +1,37 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Obelisk.App where
 
-import Control.Monad.Catch (MonadMask)
-import Control.Monad.Reader (MonadIO, MonadReader)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
+import Control.Monad.Log (LoggingT, MonadLog, runLoggingT)
+import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, runReaderT)
+
+import Obelisk.CLI.Logging (LoggingConfig, Output, handleLog)
 
 data Obelisk = Obelisk
   { _obelisk_verbose :: Bool
+  , _obelisk_noSpinner :: Bool
+  , _obelisk_logging :: LoggingConfig
   }
-  deriving (Eq, Show)
 
-type MonadObelisk m = (MonadReader Obelisk m, MonadIO m, MonadMask m)
+newtype ObeliskT m a = ObeliskT
+  { unObeliskT :: ReaderT Obelisk (LoggingT Output m) a
+  }
+  deriving (Functor, Applicative, Monad, MonadIO)
+
+deriving instance MonadThrow m => MonadThrow (ObeliskT m)
+deriving instance MonadCatch m => MonadCatch (ObeliskT m)
+deriving instance MonadMask m => MonadMask (ObeliskT m)
+
+runObelisk :: MonadIO m => Obelisk -> ObeliskT m a -> m a
+runObelisk c =
+    flip runLoggingT loggingConfig
+  . flip runReaderT c
+  . unObeliskT
+  where
+    loggingConfig = handleLog $ _obelisk_logging c
+
+type MonadObelisk m = (MonadReader Obelisk m, MonadIO m, MonadMask m, MonadLog Output m)

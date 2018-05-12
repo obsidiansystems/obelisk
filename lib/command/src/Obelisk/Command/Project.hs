@@ -29,10 +29,9 @@ import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.Command.CLI (failWith, putError, withSpinner)
+import Obelisk.CLI.Logging (Severity (..), failWith, putLog)
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (cp)
-
+import Obelisk.Command.Utils (cp, withSpinner)
 --TODO: Make this module resilient to random exceptions
 
 --TODO: Don't hardcode this
@@ -71,7 +70,7 @@ initProject source = do
   _ <- nixBuildAttrWithCache implDir "command"
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
-  withSpinner "Copying project skeleton ..." (Just "Copied project skeleton.") $ do
+  withSpinner "Copying project skeleton ..." $ do
     liftIO $ cp --TODO: Make this package depend on nix-prefetch-url properly
       [ "-r"
       , "--no-preserve=mode"
@@ -79,6 +78,7 @@ initProject source = do
       , skeleton </> "."
       , "."
       ]
+  putLog Notice "Created project skeleton."
   let configDir = "config"
   liftIO $ createDirectory configDir
   liftIO $ mapM_ (createDirectory . (configDir </>)) ["backend", "common", "frontend"]
@@ -102,7 +102,7 @@ findProjectObeliskCommand target = do
       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
-      putError $ T.unlines
+      putLog Error $ T.unlines
         [ "Error: Found a project at " <> T.pack (normalise projDir) <> ", but had to traverse one or more insecure directories to get there:"
         , T.unlines $ fmap (T.pack . normalise) insecurePaths
         , "Please ensure that all of these directories are owned by you and are not writable by anyone else."

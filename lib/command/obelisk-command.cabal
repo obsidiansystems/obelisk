@@ -22,6 +22,7 @@ library
     , hit
     , questioner
     , exceptions
+    , logging-effect
     , mtl
     , network
     , network-uri
@@ -36,9 +37,10 @@ library
     , yaml
   exposed-modules:
     Obelisk.App
+    Obelisk.CLI.Logging
+    Obelisk.CLI.Spinner
     Obelisk.Command
     Obelisk.Command.Deploy
-    Obelisk.Command.CLI
     Obelisk.Command.Nix
     Obelisk.Command.Project
     Obelisk.Command.Repl
