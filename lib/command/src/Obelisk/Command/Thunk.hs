@@ -471,18 +471,17 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
       githubURI <- liftIO $ either throwIO (return . repoSshUrl) repoResult >>= \case
         Nothing -> fail "Cannot determine clone URI for thunk source"
         Just c -> return $ T.unpack $ getUrl c
-      withSpinner "Cloning from GitHub ..." $ do
+      withSpinner ("Cloning " <> T.pack thunkName <> " from GitHub") $ do
         liftIO $ callProcess "hub" --TODO: Depend on hub explicitly
           [ "clone"
           , "-n"
           , githubURI
           , tmpRepo
           ]
-      putLog Notice $ "Cloned " <> T.pack githubURI
       let obGitDir = tmpRepo </> ".git" </> "obelisk"
       --If this directory already exists then something is weird and we should fail
       liftIO $ createDirectory obGitDir
-      withSpinner "Copying thunk ..." $ do
+      withSpinner "Copying thunk" $ do
         liftIO $ cp
           [ "-r"
           , "-T"

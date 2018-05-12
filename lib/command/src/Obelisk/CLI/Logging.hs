@@ -29,40 +29,40 @@ import Control.Monad.Log (MonadLog, Severity (..), WithSeverity (..), logMessage
 
 data LoggingConfig = LoggingConfig
   { _loggingConfig_level :: Severity  -- TODO: Start using this.
-  , _loggingConfig_lock :: MVar Bool  -- Whether the last message was raw
+  , _loggingConfig_lock :: MVar Bool  -- Whether the last message was an Overwrite output
   }
 
 data Output
   = Output_Log (WithSeverity Text)  -- Regular logging message (with colors and newlines)
-  | Output_Raw [String]  -- Raw text messages to print using `putStr`
+  | Output_Overwrite [String]  -- Overwrites the current line (i.e. \r followed by `putStr`)
   | Output_ClearLine  -- Clears the line
   deriving (Eq, Show, Ord)
 
-isRaw :: Output -> Bool
-isRaw = \case
-  Output_Raw _ -> True
+isOverwrite :: Output -> Bool
+isOverwrite = \case
+  Output_Overwrite _ -> True
   _ -> False
 
 handleLog :: MonadIO m => LoggingConfig -> Output -> m ()
 handleLog c current = do
   let lock = _loggingConfig_lock c
-  liftIO $ modifyMVar_ lock $ \raw -> do
+  liftIO $ modifyMVar_ lock $ \wasOverwriting -> do
     case current of
       Output_Log (WithSeverity sev _) -> do
         -- Discard unless severity is above configured log level
         unless (sev > _loggingConfig_level c) $ do
-          -- If the last output was raw first clear it,
-          when raw $ handleLog' Output_ClearLine
+          -- If the last output was an overwrite (with cursor on same line), first clear it,
+          when wasOverwriting $ handleLog' Output_ClearLine
           -- ... then actually write the log.
           handleLog' current
       _ ->
         handleLog' current
-    return $ isRaw current
+    return $ isOverwrite current
 
 handleLog' :: MonadIO m => Output -> m ()
 handleLog' = \case
   Output_Log m -> liftIO $ writeLog m
-  Output_Raw xs -> liftIO $ putStrs xs
+  Output_Overwrite xs -> liftIO $ putStrs $ "\r" : xs
   Output_ClearLine -> liftIO $ do
     -- Go to the first column and clear the whole line
     putStrs ["\r"]

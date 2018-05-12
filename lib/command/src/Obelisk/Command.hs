@@ -259,18 +259,17 @@ ob = \case
       Just p -> liftIO $ deRefStaticPtr p
     ObInternal_TestLogging -> do  -- TODO: Remove this command once thoroughly satisfied with logging/spinner.
       putLog Notice "We will now log a warning, and then start a spinner"
-      putLog Warning "Warnings are outputed in color"
-      withSpinner "Just spinning!" $ do
+      withSpinner "Running some long-running task" $ do
         liftIO $ threadDelay 1000000
         putLog Error "Some user error while spinning"
         liftIO $ threadDelay 1000000
         putLog Notice "This is some info mesage"
         putLog Warning "And now a warning as well"
         liftIO $ threadDelay 1000000
-        -- failWith "Failing inside spinner"
-      putLog Notice "Done spinning."
-      putLog Warning "Going to fail now..."
-      failWith "This is fail message"
+      putLog Notice "Now we start a 2nd spinner and fail inside of that:"
+      withSpinner "Doing something dangerous" $ do
+        liftIO $ threadDelay 1000000
+        failWith "Something dangerous happened"
 
 --TODO: Clean up all the magic strings throughout this codebase
 

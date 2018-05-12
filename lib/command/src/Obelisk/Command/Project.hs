@@ -70,7 +70,7 @@ initProject source = do
   _ <- nixBuildAttrWithCache implDir "command"
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
-  withSpinner "Copying project skeleton ..." $ do
+  withSpinner "Copying project skeleton" $ do
     liftIO $ cp --TODO: Make this package depend on nix-prefetch-url properly
       [ "-r"
       , "--no-preserve=mode"
@@ -78,7 +78,6 @@ initProject source = do
       , skeleton </> "."
       , "."
       ]
-  putLog Notice "Created project skeleton."
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns
