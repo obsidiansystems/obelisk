@@ -523,7 +523,7 @@ packThunk thunkDir upstream = readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
-    thunkPtr <- liftIO $ getThunkPtr thunkDir upstream
+    thunkPtr <- getThunkPtr thunkDir upstream
     liftIO $ callProcess "rm"
       [ "-rf"
       , thunkDir
@@ -531,55 +531,54 @@ packThunk thunkDir upstream = readThunk thunkDir >>= \case
     liftIO $ createThunk thunkDir thunkPtr
     return ()
 
-getThunkPtr :: FilePath -> String -> IO ThunkPtr
+getThunkPtr :: MonadObelisk m => FilePath -> String -> m ThunkPtr
 getThunkPtr thunkDir upstream = do
-    checkGitCleanStatus thunkDir >>= \case
+    liftIO (checkGitCleanStatus thunkDir) >>= \case
       False -> do
-        statusDebug <- readProcess "hub"
+        statusDebug <- liftIO $ fmap (T.strip . T.pack) $ readProcess "hub"
           [ "-C", thunkDir, "status", "--ignored" ] ""
-        fail $ unlines $
-          [ "thunk pack: thunk checkout contains unsaved modifications"
-          , "git status:"
-          ] ++ lines statusDebug
+        putLog Warning "cannot proceed with unsaved working copy (git status):"
+        putLog Notice statusDebug
+        failWith "thunk pack: thunk checkout contains unsaved modifications"
       True -> return ()
 
     -- Check whether there are any stashes
-    stashOutput <- readProcess "hub" [ "-C", thunkDir, "stash", "list" ] ""
-    case null stashOutput of
+    stashOutput <- liftIO $ fmap T.pack $ readProcess "hub" [ "-C", thunkDir, "stash", "list" ] ""
+    case T.null stashOutput of
       False -> do
-        fail $ unlines $
+        failWith $ T.unlines $
           [ "thunk pack: thunk checkout has stashes"
           , "git stash list:"
-          ] ++ lines stashOutput
+          ] ++ T.lines stashOutput
       True -> return ()
 
     --Check whether all local heads are pushed
-    repoHeads <- lines <$> readProcess "hub"
+    repoHeads <- liftIO $ lines <$> readProcess "hub"
       [ "-C", thunkDir
       , "for-each-ref", "--format=%(refname:short)", "refs/heads/"
       ] ""
-    remotes <- lines <$> readProcess "hub" [ "-C", thunkDir, "remote" ] ""
+    remotes <- liftIO $ lines <$> readProcess "hub" [ "-C", thunkDir, "remote" ] ""
     --Check that the upstream specified actually exists
     case L.find (== upstream) remotes of
-      Nothing -> fail $ "thunk pack: upstream " <> upstream <> " does not exist"
+      Nothing -> failWith $ T.pack $ "thunk pack: upstream " <> upstream <> " does not exist"
       Just _ -> return ()
     -- iterate over cartesian product
     forM_ repoHeads $ \hd -> do
-      [localRev] <- lines <$> readProcess "hub" [ "-C", thunkDir, "rev-parse", hd ] ""
+      [localRev] <- liftIO $ lines <$> readProcess "hub" [ "-C", thunkDir, "rev-parse", hd ] ""
       forM_ remotes $ \rm -> do
         --TODO: The error you get if a branch isn't pushed anywhere could be made more user friendly
-        [remoteMergeRev] <- lines <$> readProcess "hub"
+        [remoteMergeRev] <- liftIO $ lines <$> readProcess "hub"
           [ "-C", thunkDir
           , "merge-base"
           , localRev
           , "remotes/" <> rm <> "/" <> hd
           ] ""
         case remoteMergeRev == localRev of
-          False -> fail $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
+          False -> failWith $ T.pack $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
           True -> return ()
 
     --We assume it's safe to pack the thunk at this point
-    [remoteUri'] <- lines <$> readProcess "hub"
+    [remoteUri'] <- liftIO $ lines <$> readProcess "hub"
        [ "-C", thunkDir
        , "config", "--get", "remote." <> upstream <> ".url"
        ] ""
@@ -587,9 +586,9 @@ getThunkPtr thunkDir upstream = do
     let uriParseFailure = "Could not identify git remote: " <> remoteUri'
         mRemoteUri = parseURIReference remoteUri'
                 <|> parseSshShorthand remoteUri'
-    thunkPtr <- case mRemoteUri of
-      Nothing -> fail uriParseFailure
-      Just remoteUri -> do
+    case mRemoteUri of
+      Nothing -> failWith $ T.pack uriParseFailure
+      Just remoteUri -> liftIO $ do
         refs <- fmap (refsToTuples . words) . lines <$> readProcess "hub"
           [ "-C"
           , thunkDir
@@ -608,7 +607,6 @@ getThunkPtr thunkDir upstream = do
         if
           | isGithubThunk remoteUri -> githubThunkPtr remoteUri currentHead currentUpstreamBranch
           | otherwise -> gitThunkPtr remoteUri currentHead currentUpstreamBranch
-    return thunkPtr
  where
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x

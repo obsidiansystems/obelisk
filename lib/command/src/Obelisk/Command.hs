@@ -230,7 +230,7 @@ ob = \case
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
-          liftIO $ getThunkPtr root (_deployInitOpts_remote deployOpts)
+          getThunkPtr root (_deployInitOpts_remote deployOpts)
       let deployDir = _deployInitOpts_ouputDir deployOpts
           sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
