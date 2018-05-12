@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Obelisk.CLI.Logging
   ( Severity (Error, Warning, Notice)
   , LoggingConfig (..)
@@ -83,10 +84,11 @@ failWith s = do
 -- TODO: Disable colours when not on interactive terminal
 writeLog :: (MonadIO m, MonadMask m) => WithSeverity Text -> m ()
 writeLog (WithSeverity severity s) = case sevColor severity of
-  Just setColor -> bracket_ setColor reset $ liftIO (T.putStrLn s)
+  Just setColor -> bracket_ setColor reset $ liftIO (T.putStr s)
   Nothing -> liftIO $ T.putStrLn s
   where
-    reset = liftIO $ setSGR [Reset]
+    -- We must reset *before* the newline, else the cursor won't be reset.
+    reset = liftIO $ setSGR [Reset] >> T.putStrLn ""
     sevColor sev = if
       | sev <= Error -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Red]
       | sev <= Warning -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Yellow]

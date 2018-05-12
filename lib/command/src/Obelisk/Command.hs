@@ -250,7 +250,8 @@ ob = \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> liftIO $ deRefStaticPtr p
     ObInternal_TestLogging -> do  -- TODO: Remove this command once thoroughly satisfied with logging/spinner.
-      putLog Notice "We are going to start a spinner and log at the same time"
+      putLog Notice "We will now log a warning, and then start a spinner"
+      putLog Warning "Warnings are outputed in color"
       withSpinner "Just spinning!" $ do
         liftIO $ threadDelay 1000000
         putLog Error "Some user error while spinning"
