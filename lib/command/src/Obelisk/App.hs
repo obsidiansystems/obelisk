@@ -12,7 +12,7 @@ import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, runReaderT)
 import Obelisk.CLI.Logging (LoggingConfig, Output, handleLog)
 
 data Obelisk = Obelisk
-  { _obelisk_noSpinner :: Bool
+  { _obelisk_noSpinner :: Bool  -- Used to disable the spinner.
   , _obelisk_logging :: LoggingConfig
   }
 
