@@ -24,10 +24,12 @@ import System.Environment
 import System.FilePath
 import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
+import System.Process (proc)
 
 import Obelisk.App
 import Obelisk.CLI.Logging (LoggingConfig (LoggingConfig, _loggingConfig_level), Severity (..), failWith,
                             putLog)
+import Obelisk.CLI.Process (readProcessAndLogStderr)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
@@ -258,6 +260,7 @@ ob = \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> liftIO $ deRefStaticPtr p
     ObInternal_TestLogging -> do  -- TODO: Remove this command once thoroughly satisfied with logging/spinner.
+      -- Or move it to CLI.hs
       putLog Notice "We will now log a warning, and then start a spinner"
       withSpinner "Running some long-running task" $ do
         liftIO $ threadDelay 1000000
@@ -266,8 +269,13 @@ ob = \case
         putLog Notice "This is some info mesage"
         putLog Warning "And now a warning as well"
         liftIO $ threadDelay 1000000
-      putLog Notice "Now we start a 2nd spinner and fail inside of that:"
-      withSpinner "Doing something dangerous" $ do
+      putLog Notice "Now we start a 2nd spinner, run a couple of process, the last of which fails:"
+      withSpinner "Looking around" $ do
+        liftIO $ threadDelay 1000000
+        output <- readProcessAndLogStderr Notice $ proc "ls" ["-l", "/"]
+        putLog Notice $ "Output was: " <> T.pack output
+        liftIO $ threadDelay 1000000
+        _ <- readProcessAndLogStderr Notice $ proc "ls" ["-l", "/does-not-exist"]
         liftIO $ threadDelay 1000000
         failWith "Something dangerous happened"
 

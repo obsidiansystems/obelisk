@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,17 +10,14 @@ module Obelisk.Command.Nix
   , Arg (..)
   ) where
 
-import Control.Monad.IO.Class (liftIO)
-import qualified Data.ByteString.Lazy as LBS
 import Data.Default
 import Data.Monoid ((<>))
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import System.Exit (ExitCode (ExitSuccess))
-import System.Process (StdStream (CreatePipe), createProcess, proc, std_err, std_out, waitForProcess)
+import System.Process (proc)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI.Logging (failWith)
+import Obelisk.CLI.Logging (Severity (..))
+import Obelisk.CLI.Process (readProcessAndLogStderr)
 import Obelisk.Command.Utils (withSpinner)
 
 -- | Where to put nix-build output
@@ -72,18 +68,6 @@ nixBuild cfg = do
             OutLink_None -> ["--no-out-link"]
             OutLink_IndirectRoot outLink -> ["--out-link", outLink]
         ]
-  (_, Just out, Just err, p) <- liftIO $ createProcess (proc "nix-build" args)
-    { std_out = CreatePipe
-    , std_err = CreatePipe
-    }
-  let msg = T.pack $ "Running nix-build [" <> _target_path (_nixBuildConfig_target cfg) <> "]"
+  let msg = T.pack $ "Running nix-build (" <> _target_path (_nixBuildConfig_target cfg) <> ")"
   withSpinner msg $ do
-    liftIO (waitForProcess p) >>= \case
-      ExitSuccess -> return ()
-      _ -> do
-        -- FIXME: We should interleave `out` and `err` in their original order?
-        -- TODO: Replace this with logging functions for coordinating cleanly with spinner.
-        liftIO $ LBS.putStr =<< LBS.hGetContents out
-        liftIO $ LBS.putStr =<< LBS.hGetContents err
-        failWith "nix-build failed"
-  liftIO $ T.unpack . T.strip <$> T.hGetContents out
+    readProcessAndLogStderr Debug (proc "nix-build" args)

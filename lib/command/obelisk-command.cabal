@@ -20,7 +20,7 @@ library
     , filepath
     , github
     , hit
-    , questioner
+    , io-streams
     , exceptions
     , logging-effect
     , mtl
@@ -38,6 +38,7 @@ library
   exposed-modules:
     Obelisk.App
     Obelisk.CLI.Logging
+    Obelisk.CLI.Process
     Obelisk.CLI.Spinner
     Obelisk.Command
     Obelisk.Command.Deploy

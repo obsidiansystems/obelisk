@@ -71,6 +71,7 @@ import System.Process (StdStream (CreatePipe), callProcess, createProcess, proc,
 import Development.Placeholders
 import Obelisk.App (MonadObelisk)
 import Obelisk.CLI.Logging (Severity (..), failWith, putLog)
+import Obelisk.CLI.Process (callProcessAndLogOutput)
 import Obelisk.Command.Utils (callProcessNixShell, checkGitCleanStatus, cp, withSpinner)
 
 --TODO: Support symlinked thunk data
@@ -471,17 +472,12 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
       githubURI <- liftIO $ either throwIO (return . repoSshUrl) repoResult >>= \case
         Nothing -> fail "Cannot determine clone URI for thunk source"
         Just c -> return $ T.unpack $ getUrl c
-      withSpinner ("Cloning " <> T.pack thunkName <> " from GitHub") $ do
-        liftIO $ callProcess "hub" --TODO: Depend on hub explicitly
-          [ "clone"
-          , "-n"
-          , githubURI
-          , tmpRepo
-          ]
+      withSpinner ("Retrieving thunk " <> T.pack thunkName <> " from GitHub") $ do
+        callProcessAndLogOutput Notice (proc "hub" ["clone", "-n", githubURI, tmpRepo])
       let obGitDir = tmpRepo </> ".git" </> "obelisk"
       --If this directory already exists then something is weird and we should fail
       liftIO $ createDirectory obGitDir
-      withSpinner "Copying thunk" $ do
+      withSpinner ("Copying thunk " <> T.pack thunkName <> " to " <> T.pack thunkDir) $ do
         liftIO $ cp
           [ "-r"
           , "-T"
@@ -507,7 +503,6 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
           , tmpRepo
           , thunkDir
           ]
-        return ()
     ThunkSource_Git _s -> do
       $notImplemented
 
@@ -527,8 +522,8 @@ packThunk thunkDir upstream = readThunk thunkDir >>= \case
       [ "-rf"
       , thunkDir
       ]
-    liftIO $ createThunk thunkDir thunkPtr
-    return ()
+    withSpinner ("Packing thunk " <> T.pack thunkDir) $
+      liftIO $ createThunk thunkDir thunkPtr
 
 getThunkPtr :: MonadObelisk m => FilePath -> String -> m ThunkPtr
 getThunkPtr thunkDir upstream = do

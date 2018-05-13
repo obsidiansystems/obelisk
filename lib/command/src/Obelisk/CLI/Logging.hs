@@ -9,6 +9,7 @@ module Obelisk.CLI.Logging
   , Output (..)
   , failWith
   , putLog
+  , putLogRaw
   , handleLog
   ) where
 
@@ -26,14 +27,14 @@ import System.IO (hFlush, stdout)
 
 import Control.Monad.Log (MonadLog, Severity (..), WithSeverity (..), logMessage)
 
-
 data LoggingConfig = LoggingConfig
-  { _loggingConfig_level :: Severity  -- TODO: Start using this.
+  { _loggingConfig_level :: Severity
   , _loggingConfig_lock :: MVar Bool  -- Whether the last message was an Overwrite output
   }
 
 data Output
   = Output_Log (WithSeverity Text)  -- Regular logging message (with colors and newlines)
+  | Output_LogRaw (WithSeverity Text)  -- Like `Output_Log` but without the implicit newline added.
   | Output_Overwrite [String]  -- Overwrites the current line (i.e. \r followed by `putStr`)
   | Output_ClearLine  -- Clears the line
   deriving (Eq, Show, Ord)
@@ -43,25 +44,33 @@ isOverwrite = \case
   Output_Overwrite _ -> True
   _ -> False
 
+getSeverity :: Output -> Maybe Severity
+getSeverity = \case
+  Output_Log (WithSeverity sev _) -> Just sev
+  Output_LogRaw (WithSeverity sev _) -> Just sev
+  _ -> Nothing
+
 handleLog :: MonadIO m => LoggingConfig -> Output -> m ()
-handleLog c current = do
+handleLog c output = do
   let lock = _loggingConfig_lock c
   liftIO $ modifyMVar_ lock $ \wasOverwriting -> do
-    case current of
-      Output_Log (WithSeverity sev _) -> do
+    case getSeverity output of
+      Nothing -> handleLog' output
+      Just sev -> do
         -- Discard unless severity is above configured log level
         unless (sev > _loggingConfig_level c) $ do
           -- If the last output was an overwrite (with cursor on same line), first clear it,
           when wasOverwriting $ handleLog' Output_ClearLine
           -- ... then actually write the log.
-          handleLog' current
-      _ ->
-        handleLog' current
-    return $ isOverwrite current
+          handleLog' output
+    return $ isOverwrite output
 
 handleLog' :: MonadIO m => Output -> m ()
 handleLog' = \case
-  Output_Log m -> liftIO $ writeLog m
+  Output_Log m -> liftIO $ writeLogWith T.putStrLn m
+  Output_LogRaw m -> liftIO $ do
+    writeLogWith T.putStr m
+    hFlush stdout
   Output_Overwrite xs -> liftIO $ putStrs $ "\r" : xs
   Output_ClearLine -> liftIO $ do
     -- Go to the first column and clear the whole line
@@ -76,6 +85,10 @@ handleLog' = \case
 putLog :: MonadLog Output m => Severity -> Text -> m ()
 putLog sev = logMessage . Output_Log . WithSeverity sev
 
+-- | Like `putLog` but without the implicit newline added.
+putLogRaw :: MonadLog Output m => Severity -> Text -> m ()
+putLogRaw sev = logMessage . Output_LogRaw . WithSeverity sev
+
 -- | Like `putLog Error` but also abrupts the program.
 failWith :: (MonadIO m, MonadLog Output m) => Text -> m a
 failWith s = do
@@ -84,13 +97,13 @@ failWith s = do
 
 -- | Write log to stdout with colors
 -- TODO: Disable colours when not on interactive terminal
-writeLog :: (MonadIO m, MonadMask m) => WithSeverity Text -> m ()
-writeLog (WithSeverity severity s) = case sevColor severity of
+writeLogWith :: (MonadIO m, MonadMask m) => (Text -> IO ()) -> WithSeverity Text -> m ()
+writeLogWith f (WithSeverity severity s) = case sevColor severity of
   Just setColor -> bracket_ setColor reset $ liftIO (T.putStr s)
-  Nothing -> liftIO $ T.putStrLn s
+  Nothing -> liftIO $ f s
   where
     -- We must reset *before* the newline, else the cursor won't be reset.
-    reset = liftIO $ setSGR [Reset] >> T.putStrLn ""
+    reset = liftIO $ setSGR [Reset] >> f ""
     sevColor sev = if
       | sev <= Error -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Red]
       | sev <= Warning -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Yellow]

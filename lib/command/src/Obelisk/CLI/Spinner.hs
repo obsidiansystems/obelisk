@@ -21,10 +21,10 @@ import Obelisk.CLI.Logging (LoggingConfig, Output (..), handleLog)
 withSpinner'
   :: (MonadIO m, MonadMask m, MonadLog Output m)
   => LoggingConfig -> Text -> m a -> m a
-withSpinner' c s = bracket' run cleanup . const
+withSpinner' conf s = bracket' run cleanup . const
   where
     -- TODO: Can we obviate passing LoggingConfig just to use forkIO?
-    run = liftIO $ forkIO $ flip runLoggingT (handleLog c) $ do
+    run = liftIO $ forkIO $ flip runLoggingT (handleLog conf) $ do
       forM_ spin $ \e -> do
         logMessage $ Output_Overwrite [e, " ", T.unpack s]
         delay
@@ -35,6 +35,8 @@ withSpinner' c s = bracket' run cleanup . const
       logMessage $ Output_Overwrite [mark, " ", T.unpack s, "\n"]
     delay = liftIO $ threadDelay 100000  -- A shorter delay ensures that we update promptly.
     spin = coloredSpinner spinnerCircleHalves
+
+-- Spinner types
 
 type Spinner = [String]
 
