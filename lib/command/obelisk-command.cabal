@@ -37,6 +37,7 @@ library
     , yaml
   exposed-modules:
     Obelisk.App
+    Obelisk.CLI
     Obelisk.CLI.Logging
     Obelisk.CLI.Process
     Obelisk.CLI.Spinner

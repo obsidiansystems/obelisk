@@ -70,9 +70,8 @@ import System.Process (StdStream (CreatePipe), callProcess, createProcess, proc,
 
 import Development.Placeholders
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI.Logging (Severity (..), failWith, putLog)
-import Obelisk.CLI.Process (callProcessAndLogOutput)
-import Obelisk.Command.Utils (callProcessNixShell, checkGitCleanStatus, cp, withSpinner)
+import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
+import Obelisk.Command.Utils (callProcessNixShell, checkGitCleanStatus, cp)
 
 --TODO: Support symlinked thunk data
 data ThunkData

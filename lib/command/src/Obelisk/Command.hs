@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command where
 
-import Control.Concurrent (newMVar, threadDelay)
+import Control.Concurrent (newMVar)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask)
@@ -24,18 +24,15 @@ import System.Environment
 import System.FilePath
 import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
-import System.Process (proc)
 
 import Obelisk.App
-import Obelisk.CLI.Logging (LoggingConfig (LoggingConfig, _loggingConfig_level), Severity (..), failWith,
-                            putLog)
-import Obelisk.CLI.Process (readProcessAndLogStderr)
+import Obelisk.CLI (LoggingConfig (LoggingConfig, _loggingConfig_level), Severity (..), cliDemo, failWith,
+                    putLog)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (withSpinner)
 
 data Args = Args
   { _args_noHandOffPassed :: Bool
@@ -79,7 +76,7 @@ data ObCommand
 
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
-   | ObInternal_TestLogging
+   | ObInternal_CLIDemo
 
 inNixShell' :: MonadObelisk m => StaticPtr (IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
@@ -136,7 +133,7 @@ data DeployInitOpts = DeployInitOpts
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
   [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
-  , command "testlog" $ info (pure ObInternal_TestLogging) mempty
+  , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
 
 --TODO: Result should provide normalised path and also original user input for error reporting.
@@ -259,25 +256,7 @@ ob = \case
     ObInternal_RunStaticIO k -> liftIO  (unsafeLookupStaticPtr @(IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> liftIO $ deRefStaticPtr p
-    ObInternal_TestLogging -> do  -- TODO: Remove this command once thoroughly satisfied with logging/spinner.
-      -- Or move it to CLI.hs
-      putLog Notice "We will now log a warning, and then start a spinner"
-      withSpinner "Running some long-running task" $ do
-        liftIO $ threadDelay 1000000
-        putLog Error "Some user error while spinning"
-        liftIO $ threadDelay 1000000
-        putLog Notice "This is some info mesage"
-        putLog Warning "And now a warning as well"
-        liftIO $ threadDelay 1000000
-      putLog Notice "Now we start a 2nd spinner, run a couple of process, the last of which fails:"
-      withSpinner "Looking around" $ do
-        liftIO $ threadDelay 1000000
-        output <- readProcessAndLogStderr Notice $ proc "ls" ["-l", "/"]
-        putLog Notice $ "Output was: " <> T.pack output
-        liftIO $ threadDelay 1000000
-        _ <- readProcessAndLogStderr Notice $ proc "ls" ["-l", "/does-not-exist"]
-        liftIO $ threadDelay 1000000
-        failWith "Something dangerous happened"
+    ObInternal_CLIDemo -> cliDemo
 
 --TODO: Clean up all the magic strings throughout this codebase
 
