@@ -196,8 +196,9 @@ main = do
 main' :: MonadObelisk m => m ()
 main' = do
   c <- ask
+  myPath <- liftIO $ fmap T.pack getExecutablePath
   putLog Debug $ T.unwords
-    [ "Obelisk"
+    [ "Starting Obelisk <" <> myPath <> ">"
     , "noSpinner=" <> T.pack (show $ _obelisk_noSpinner c)
     , "logging-level=" <> T.pack (show $ _loggingConfig_level $ _obelisk_logging c)
     ]

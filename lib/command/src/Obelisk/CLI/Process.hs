@@ -16,11 +16,11 @@ module Obelisk.CLI.Process
 import Control.Applicative (liftA2)
 import Control.Monad (void, (<=<))
 import Control.Monad.Catch (MonadMask)
-import Control.Monad.Fix (fix)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Log (MonadLog)
 import Control.Monad.Reader (MonadIO)
 import qualified Data.ByteString.Char8 as BSC
+import Data.Function (fix)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8)
@@ -45,12 +45,12 @@ readProcessAndLogStderr sev process = do
   -- TODO: Why are we using Text here?
   liftIO $ T.unpack . T.strip <$> T.hGetContents out
 
--- | Like `System.Process.callProcess` but logs the combined output, including stdout and stderr with the
--- corresponding severity.
+-- | Like `System.Process.callProcess` but logs the combined output--stdout and stderr with the corresponding
+-- severity.
 --
--- Usually you would call this function as: `callProcessAndLogOutput (Notice, Error)`. However some processes
--- are known to spit out diagnostic or informative messages in stderr, in which case you are obviously
--- adviced to call it using something else like: `callProcessAndLogOutput (Debug, Debug)`.
+-- Usually this function is called as `callProcessAndLogOutput (Debug, Error)`. However some processes
+-- are known to spit out diagnostic or informative messages in stderr, in which case it is advisable to call
+-- it with a non-Error severity for stderr, like `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
   :: (MonadIO m, MonadMask m, MonadLog Output m)
   => (Severity, Severity) -> CreateProcess -> m ()
@@ -65,14 +65,14 @@ callProcessAndLogOutput (sev_out, sev_err) process = do
 withProcess
   :: (MonadIO m, MonadMask m, MonadLog Output m)
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
-withProcess process action = do
+withProcess process f = do
   let procTitle = T.pack $ show $ cmdspec process
   putLog Debug $ "Starting process: " <> procTitle
   (_, Just out, Just err, p) <- liftIO $ createProcess $ process
     { std_out = CreatePipe
     , std_err = CreatePipe
     }
-  action out err  -- Pass the handles to the custom action
+  f out err  -- Pass the handles to the passed function
   liftIO (waitForProcess p) >>= \case
     ExitSuccess -> return ()
     ExitFailure code -> do
@@ -80,7 +80,7 @@ withProcess process action = do
       failWith $ procTitle <> " failed with exit code: " <> T.pack (show code)
   return (out, err)  -- Return the handles
 
--- Create an input stream from the file handle, associating each item with the severity.
+-- Create an input stream from the file handle, associating each item with the given severity.
 streamHandle :: Severity -> Handle -> IO (InputStream (Severity, BSC.ByteString))
 streamHandle sev = Streams.map (sev,) <=< handleToInputStream
 

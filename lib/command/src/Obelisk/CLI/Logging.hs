@@ -3,6 +3,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
+-- | Provides a logging handler that facilitates safe ouputting to terminal using MVar based locking.
+-- | Spinner.hs and Process.hs work on this guarantee.
 module Obelisk.CLI.Logging
   ( Severity (Error, Warning, Notice, Debug)
   , LoggingConfig (..)
@@ -14,14 +16,15 @@ module Obelisk.CLI.Logging
   ) where
 
 import Control.Concurrent.MVar (MVar, modifyMVar_)
-import Control.Monad (unless, void, when, (>=>))
+import Control.Monad (void, when)
 import Control.Monad.Catch (MonadMask, bracket_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
 import Data.Text (Text)
 import qualified Data.Text.IO as T
-import System.Console.ANSI (Color (Red, Yellow), ColorIntensity (Vivid), ConsoleLayer (Foreground),
-                            SGR (Reset, SetColor), clearLine, setSGR)
+import System.Console.ANSI (Color (Red, White, Yellow), ColorIntensity (Vivid),
+                            ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
+                            SGR (Reset, SetColor, SetConsoleIntensity), clearLine, setSGR)
 import System.Exit (ExitCode (ExitFailure), exitWith)
 import System.IO (hFlush, stdout)
 
@@ -57,31 +60,30 @@ handleLog (LoggingConfig level noColor lock) output = do
     case getSeverity output of
       Nothing -> handleLog' noColor output
       Just sev -> case sev > level of
-        -- Discard unless severity is above configured log level
         True -> return wasOverwriting  -- Discard if sev is above configured log level
         False -> do
           -- If the last output was an overwrite (with cursor on same line), ...
           when wasOverwriting $
             void $ handleLog' noColor Output_ClearLine  -- first clear it,
-          handleLog' noColor output  -- then, actually write it.
+          handleLog' noColor output  -- then, actually write the msg.
 
 handleLog' :: MonadIO m => Bool -> Output -> m Bool
 handleLog' noColor output = do
   case output of
-    Output_Log m -> liftIO $ writeLogWith T.putStrLn noColor m
+    Output_Log m -> liftIO $ do
+      writeLogWith T.putStrLn noColor m
     Output_LogRaw m -> liftIO $ do
       writeLogWith T.putStr noColor m
+      hFlush stdout  -- Explicitly flush, as there is no newline
+    Output_Overwrite xs -> liftIO $ do
+      mapM_ putStr $ "\r" : xs
       hFlush stdout
-    Output_Overwrite xs -> liftIO $ putStrs $ "\r" : xs
     Output_ClearLine -> liftIO $ do
       -- Go to the first column and clear the whole line
-      putStrs ["\r"]
+      putStr "\r"
       clearLine
+      hFlush stdout
   return $ isOverwrite output
-  where
-    -- putStr xs, and flush at the end.
-    putStrs :: [String] -> IO ()
-    putStrs = mapM_ putStr >=> const (hFlush stdout)
 
 -- | Safely log a message to the console. This is what we should use.
 putLog :: MonadLog Output m => Severity -> Text -> m ()
@@ -103,10 +105,11 @@ writeLogWith f noColor (WithSeverity severity s) = case sevColor severity of
   Just setColor -> bracket_ setColor reset $ liftIO (T.putStr s)
   Nothing -> liftIO $ f s
   where
-    -- We must reset *before* the newline, else the cursor won't be reset.
+    -- We must reset *before* outputting the newline (if any), otherwise the cursor won't be reset.
     reset = liftIO $ setSGR [Reset] >> f ""
     sevColor sev = if
       | noColor -> Nothing
       | sev <= Error -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Red]
       | sev <= Warning -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Yellow]
+      | sev >= Debug -> Just $ liftIO $ setSGR [SetColor Foreground Vivid White, SetConsoleIntensity FaintIntensity]
       | otherwise -> Nothing

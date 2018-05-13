@@ -22,8 +22,8 @@ import Obelisk.CLI.Spinner
 
 import Obelisk.App (MonadObelisk, _obelisk_logging, _obelisk_noSpinner)
 
--- NOTE: Only these functions are hardcoded to Obelisk, but everything under `Obelisk.CLI` is independent of
--- Obelisk, and can be made a library of its own.
+-- NOTE: Everything under `Obelisk.CLI` is independent of the rest of Obelisk, with the exception of the
+-- below functions, as they read the obelisk cli config using MonadReader.
 
 withSpinner :: MonadObelisk m => Text -> m a -> m a
 withSpinner s action = do
@@ -36,18 +36,20 @@ cliDemo :: MonadObelisk m => m ()
 cliDemo = do
   putLog Notice "This demo will showcase the CLI library functionality"
   withSpinner "Running some long-running task" $ do
-    liftIO $ threadDelay 1000000
+    delay
     putLog Error "Some user error while spinning"
-    liftIO $ threadDelay 1000000
+    delay
     putLog Notice "This is some info mesage"
     putLog Warning "And now a warning as well"
-    liftIO $ threadDelay 1000000
+    delay
   putLog Notice "Now we start a 2nd spinner, run a couple of process, the last of which fails:"
   withSpinner "Looking around" $ do
-    liftIO $ threadDelay 1000000
+    delay
     output <- readProcessAndLogStderr Notice $ proc "ls" ["-l", "/"]
     putLog Notice $ "Output was: " <> T.pack output
-    liftIO $ threadDelay 1000000
+    delay
     callProcessAndLogOutput (Notice, Error) $ proc "ls" ["-l", "/does-not-exist"]
-    liftIO $ threadDelay 1000000
+    delay
     failWith "Something dangerous happened"
+  where
+    delay = liftIO $ threadDelay 1000000
