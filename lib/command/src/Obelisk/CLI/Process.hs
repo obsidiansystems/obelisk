@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -32,7 +33,7 @@ import System.IO.Streams.Concurrent (concurrentMerge)
 import System.Process (CreateProcess, StdStream (CreatePipe), cmdspec, createProcess, std_err, std_out,
                        waitForProcess)
 
-import Obelisk.CLI.Logging (Output, Severity (..), failWith, putLogRaw)
+import Obelisk.CLI.Logging (Output, Severity (..), failWith, putLog, putLogRaw)
 
 -- | Like `System.Process.readProcess` but logs the stderr instead of letting the external process inherit it.
 readProcessAndLogStderr
@@ -65,6 +66,8 @@ withProcess
   :: (MonadIO m, MonadMask m, MonadLog Output m)
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
 withProcess process action = do
+  let procTitle = T.pack $ show $ cmdspec process
+  putLog Debug $ "Starting process: " <> procTitle
   (_, Just out, Just err, p) <- liftIO $ createProcess $ process
     { std_out = CreatePipe
     , std_err = CreatePipe
@@ -74,7 +77,7 @@ withProcess process action = do
     ExitSuccess -> return ()
     ExitFailure code -> do
       -- Log an error. We also fail immediately; however we should probably let the caller control that.
-      failWith $ T.pack $ show (cmdspec process) <> " failed with exit code: " <> show code
+      failWith $ procTitle <> " failed with exit code: " <> T.pack (show code)
   return (out, err)  -- Return the handles
 
 -- Create an input stream from the file handle, associating each item with the severity.
