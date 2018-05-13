@@ -71,7 +71,7 @@ initProject source = do
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
   withSpinner "Copying project skeleton" $ do
-    callProcessAndLogOutput Notice $
+    callProcessAndLogOutput (Notice, Error) $
       cp --TODO: Make this package depend on nix-prefetch-url properly
         [ "-r"
         , "--no-preserve=mode"

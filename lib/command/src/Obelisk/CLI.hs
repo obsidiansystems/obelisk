@@ -48,6 +48,6 @@ cliDemo = do
     output <- readProcessAndLogStderr Notice $ proc "ls" ["-l", "/"]
     putLog Notice $ "Output was: " <> T.pack output
     liftIO $ threadDelay 1000000
-    callProcessAndLogOutput Notice $ proc "ls" ["-l", "/does-not-exist"]
+    callProcessAndLogOutput (Notice, Error) $ proc "ls" ["-l", "/does-not-exist"]
     liftIO $ threadDelay 1000000
     failWith "Something dangerous happened"

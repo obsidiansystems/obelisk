@@ -472,17 +472,17 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
         Nothing -> fail "Cannot determine clone URI for thunk source"
         Just c -> return $ T.unpack $ getUrl c
       withSpinner ("Retrieving thunk " <> T.pack thunkName <> " from GitHub") $ do
-        callProcessAndLogOutput Notice $
+        callProcessAndLogOutput (Notice, Notice) $
           proc "hub" ["clone", "-n", githubURI, tmpRepo]
         let obGitDir = tmpRepo </> ".git" </> "obelisk"
         --If this directory already exists then something is weird and we should fail
         liftIO $ createDirectory obGitDir
-        callProcessAndLogOutput Notice $
+        callProcessAndLogOutput (Notice, Error) $
           cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
       withSpinner ("Preparing thunk in " <> T.pack thunkDir) $ do
         -- Checkout
         putLog Notice $ "Checking out " <> T.pack (show $ maybe "" untagName $ _gitHubSource_branch s)
-        callProcessAndLogOutput Debug $
+        callProcessAndLogOutput (Notice, Notice) $
           proc "hub" $ concat
             [ ["-C", tmpRepo]
             , pure "checkout"
@@ -491,11 +491,11 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
             ]
         -- Set upstream branch
         forM_ (_gitHubSource_branch s) $ \branch ->
-          callProcessAndLogOutput Debug $
+          callProcessAndLogOutput (Notice, Error) $
             proc "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
-        callProcessAndLogOutput Notice $
+        callProcessAndLogOutput (Notice, Error) $
           proc "rm" ["-r", thunkDir]
-        callProcessAndLogOutput Notice $
+        callProcessAndLogOutput (Notice, Error) $
           procWithPackages ["coreutils"] "mv"
             [ "-T"
             , tmpRepo

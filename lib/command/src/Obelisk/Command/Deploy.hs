@@ -29,7 +29,7 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
     createDirectoryIfMissing True deployDir
     doesDirectoryExist configDir
   when hasConfigDir $ do
-    callProcessAndLogOutput Notice $
+    callProcessAndLogOutput (Notice, Error) $
       cp
         [ "-r"
         , "-T"

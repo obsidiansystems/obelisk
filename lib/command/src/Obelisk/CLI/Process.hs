@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | An extension of `System.Process` that integrates with logging (`Obelisk.CLI.Logging`)
 -- and is thus spinner friendly.
@@ -12,7 +13,7 @@ module Obelisk.CLI.Process
   ) where
 
 import Control.Applicative (liftA2)
-import Control.Monad (void)
+import Control.Monad (void, (<=<))
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.Fix (fix)
 import Control.Monad.IO.Class (liftIO)
@@ -39,19 +40,24 @@ readProcessAndLogStderr
   => Severity -> CreateProcess -> m String
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
-    streamToLog sev =<< liftIO (handleToInputStream err)
+    streamToLog =<< liftIO (streamHandle sev err)
   -- TODO: Why are we using Text here?
   liftIO $ T.unpack . T.strip <$> T.hGetContents out
 
--- | Like `System.Process.callProcess` but logs the combined output (stdout and stderr)
+-- | Like `System.Process.callProcess` but logs the combined output, including stdout and stderr with the
+-- corresponding severity.
+--
+-- Usually you would call this function as: `callProcessAndLogOutput (Notice, Error)`. However some processes
+-- are known to spit out diagnostic or informative messages in stderr, in which case you are obviously
+-- adviced to call it using something else like: `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
   :: (MonadIO m, MonadMask m, MonadLog Output m)
-  => Severity -> CreateProcess -> m ()
-callProcessAndLogOutput sev process = do
+  => (Severity, Severity) -> CreateProcess -> m ()
+callProcessAndLogOutput (sev_out, sev_err) process = do
   void $ withProcess process $ \out err -> do
     stream <- liftIO $ do
-      uncurry combineStream =<< liftA2 (,) (handleToInputStream out) (handleToInputStream err)
-    streamToLog sev stream
+      uncurry combineStream =<< liftA2 (,) (streamHandle sev_out out) (streamHandle sev_err err)
+    streamToLog stream
   where
     combineStream s1 s2 = concurrentMerge [s1, s2]
 
@@ -71,11 +77,15 @@ withProcess process action = do
       failWith $ T.pack $ show (cmdspec process) <> " failed with exit code: " <> show code
   return (out, err)  -- Return the handles
 
+-- Create an input stream from the file handle, associating each item with the severity.
+streamHandle :: Severity -> Handle -> IO (InputStream (Severity, BSC.ByteString))
+streamHandle sev = Streams.map (sev,) <=< handleToInputStream
+
 -- | Read from an input stream and log its contents
 streamToLog
   :: (MonadIO m, MonadMask m, MonadLog Output m)
-  => Severity -> InputStream BSC.ByteString -> m ()
-streamToLog sev stream = fix $ \loop -> do
+  => InputStream (Severity, BSC.ByteString) -> m ()
+streamToLog stream = fix $ \loop -> do
   liftIO (Streams.read stream) >>= \case
     Nothing -> return ()
-    Just line -> putLogRaw sev (decodeUtf8 line) >> loop
+    Just (sev, line) -> putLogRaw sev (decodeUtf8 line) >> loop
