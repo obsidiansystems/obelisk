@@ -14,7 +14,7 @@ module Obelisk.CLI.Logging
   ) where
 
 import Control.Concurrent.MVar (MVar, modifyMVar_)
-import Control.Monad (unless, when, (>=>))
+import Control.Monad (unless, void, when, (>=>))
 import Control.Monad.Catch (MonadMask, bracket_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -56,26 +56,28 @@ handleLog (LoggingConfig level noColor lock) output = do
   liftIO $ modifyMVar_ lock $ \wasOverwriting -> do
     case getSeverity output of
       Nothing -> handleLog' noColor output
-      Just sev -> do
+      Just sev -> case sev > level of
         -- Discard unless severity is above configured log level
-        unless (sev > level) $ do
-          -- If the last output was an overwrite (with cursor on same line), first clear it,
-          when wasOverwriting $ handleLog' noColor Output_ClearLine
-          -- ... then actually write the log.
-          handleLog' noColor output
-    return $ isOverwrite output
+        True -> return wasOverwriting  -- Discard if sev is above configured log level
+        False -> do
+          -- If the last output was an overwrite (with cursor on same line), ...
+          when wasOverwriting $
+            void $ handleLog' noColor Output_ClearLine  -- first clear it,
+          handleLog' noColor output  -- then, actually write it.
 
-handleLog' :: MonadIO m => Bool -> Output -> m ()
-handleLog' noColor = \case
-  Output_Log m -> liftIO $ writeLogWith T.putStrLn noColor m
-  Output_LogRaw m -> liftIO $ do
-    writeLogWith T.putStr noColor m
-    hFlush stdout
-  Output_Overwrite xs -> liftIO $ putStrs $ "\r" : xs
-  Output_ClearLine -> liftIO $ do
-    -- Go to the first column and clear the whole line
-    putStrs ["\r"]
-    clearLine
+handleLog' :: MonadIO m => Bool -> Output -> m Bool
+handleLog' noColor output = do
+  case output of
+    Output_Log m -> liftIO $ writeLogWith T.putStrLn noColor m
+    Output_LogRaw m -> liftIO $ do
+      writeLogWith T.putStr noColor m
+      hFlush stdout
+    Output_Overwrite xs -> liftIO $ putStrs $ "\r" : xs
+    Output_ClearLine -> liftIO $ do
+      -- Go to the first column and clear the whole line
+      putStrs ["\r"]
+      clearLine
+  return $ isOverwrite output
   where
     -- putStr xs, and flush at the end.
     putStrs :: [String] -> IO ()
