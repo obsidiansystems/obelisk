@@ -29,7 +29,7 @@ import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), failWith, putLog, withSpinner)
+import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils (cp)
 --TODO: Make this module resilient to random exceptions
@@ -71,13 +71,14 @@ initProject source = do
   --TODO: We should probably handoff to the impl here
   skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
   withSpinner "Copying project skeleton" $ do
-    liftIO $ cp --TODO: Make this package depend on nix-prefetch-url properly
-      [ "-r"
-      , "--no-preserve=mode"
-      , "-T"
-      , skeleton </> "."
-      , "."
-      ]
+    callProcessAndLogOutput Notice $
+      cp --TODO: Make this package depend on nix-prefetch-url properly
+        [ "-r"
+        , "--no-preserve=mode"
+        , "-T"
+        , skeleton </> "."
+        , "."
+        ]
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns

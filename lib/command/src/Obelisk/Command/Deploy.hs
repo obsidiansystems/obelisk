@@ -18,29 +18,32 @@ import System.Posix.Files
 import System.Process
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (failWith)
+import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith)
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
-deployInit :: ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> IO ()
+deployInit :: MonadObelisk m => ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> m ()
 deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
-  createDirectoryIfMissing True deployDir
-  hasConfigDir <- doesDirectoryExist configDir
+  hasConfigDir <- liftIO $ do
+    createDirectoryIfMissing True deployDir
+    doesDirectoryExist configDir
   when hasConfigDir $ do
-    cp
-      [ "-r"
-      , "-T"
-      , configDir
-      , deployDir </> "config"
-      ]
-  keyExists <- doesFileExist sshKeyPath
-  when keyExists $ do
-    target <- makeAbsolute sshKeyPath
-    createSymbolicLink target (deployDir </> "ssh_key")
-  createThunk (deployDir </> "src") thunkPtr
-  writeFile (deployDir </> "backend_hosts") $ unlines hostnames
-  initGit deployDir
+    callProcessAndLogOutput Notice $
+      cp
+        [ "-r"
+        , "-T"
+        , configDir
+        , deployDir </> "config"
+        ]
+  liftIO $ do
+    keyExists <- doesFileExist sshKeyPath
+    when keyExists $ do
+      target <- makeAbsolute sshKeyPath
+      createSymbolicLink target (deployDir </> "ssh_key")
+    createThunk (deployDir </> "src") thunkPtr
+    writeFile (deployDir </> "backend_hosts") $ unlines hostnames
+    initGit deployDir
 
 deployPush :: MonadObelisk m => FilePath -> m ()
 deployPush deployPath = do

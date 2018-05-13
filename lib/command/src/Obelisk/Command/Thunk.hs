@@ -71,7 +71,7 @@ import System.Process (StdStream (CreatePipe), callProcess, createProcess, proc,
 import Development.Placeholders
 import Obelisk.App (MonadObelisk)
 import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
-import Obelisk.Command.Utils (callProcessNixShell, checkGitCleanStatus, cp)
+import Obelisk.Command.Utils (checkGitCleanStatus, cp, procWithPackages)
 
 --TODO: Support symlinked thunk data
 data ThunkData
@@ -472,36 +472,35 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
         Nothing -> fail "Cannot determine clone URI for thunk source"
         Just c -> return $ T.unpack $ getUrl c
       withSpinner ("Retrieving thunk " <> T.pack thunkName <> " from GitHub") $ do
-        callProcessAndLogOutput Notice (proc "hub" ["clone", "-n", githubURI, tmpRepo])
-      let obGitDir = tmpRepo </> ".git" </> "obelisk"
-      --If this directory already exists then something is weird and we should fail
-      liftIO $ createDirectory obGitDir
-      withSpinner ("Copying thunk " <> T.pack thunkName <> " to " <> T.pack thunkDir) $ do
-        liftIO $ cp
-          [ "-r"
-          , "-T"
-          , thunkDir </> "."
-          , obGitDir </> "orig-thunk"
-          ]
-      let checkoutOptions = concat
+        callProcessAndLogOutput Notice $
+          proc "hub" ["clone", "-n", githubURI, tmpRepo]
+        let obGitDir = tmpRepo </> ".git" </> "obelisk"
+        --If this directory already exists then something is weird and we should fail
+        liftIO $ createDirectory obGitDir
+        callProcessAndLogOutput Notice $
+          cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
+      withSpinner ("Preparing thunk in " <> T.pack thunkDir) $ do
+        -- Checkout
+        putLog Notice $ "Checking out " <> T.pack (show $ maybe "" untagName $ _gitHubSource_branch s)
+        callProcessAndLogOutput Debug $
+          proc "hub" $ concat
             [ ["-C", tmpRepo]
             , pure "checkout"
             , maybe [] (\n -> ["-B", T.unpack (untagName n)]) (_gitHubSource_branch s)
             , pure $ Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr
             ]
-      liftIO $ do
-        callProcess "hub" checkoutOptions
+        -- Set upstream branch
         forM_ (_gitHubSource_branch s) $ \branch ->
-          callProcess "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
-        callProcess "rm"
-          [ "-r"
-          , thunkDir
-          ]
-        callProcessNixShell ["coreutils"] "mv"
-          [ "-T"
-          , tmpRepo
-          , thunkDir
-          ]
+          callProcessAndLogOutput Debug $
+            proc "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
+        callProcessAndLogOutput Notice $
+          proc "rm" ["-r", thunkDir]
+        callProcessAndLogOutput Notice $
+          procWithPackages ["coreutils"] "mv"
+            [ "-T"
+            , tmpRepo
+            , thunkDir
+            ]
     ThunkSource_Git _s -> do
       $notImplemented
 

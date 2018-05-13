@@ -28,7 +28,8 @@ import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
 import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
-import System.Process
+import System.Process (CreateProcess, StdStream (CreatePipe), cmdspec, createProcess, std_err, std_out,
+                       waitForProcess)
 
 import Obelisk.CLI.Logging (Output, Severity (..), failWith, putLogRaw)
 
@@ -67,7 +68,7 @@ withProcess process action = do
     ExitSuccess -> return ()
     ExitFailure code -> do
       -- Log an error. We also fail immediately; however we should probably let the caller control that.
-      failWith $ T.pack $ "Process " <> show process <> " failed with exit code: " <> show code
+      failWith $ T.pack $ show (cmdspec process) <> " failed with exit code: " <> show code
   return (out, err)  -- Return the handles
 
 -- | Read from an input stream and log its contents

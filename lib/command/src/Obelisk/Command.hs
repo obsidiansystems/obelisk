@@ -241,7 +241,7 @@ ob = \case
       let deployDir = _deployInitOpts_ouputDir deployOpts
           sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
-      liftIO $ deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
+      deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
     DeployCommand_Push -> deployPush "."
     DeployCommand_Update -> deployUpdate "."
   ObCommand_Run -> inNixShell' $ static run
