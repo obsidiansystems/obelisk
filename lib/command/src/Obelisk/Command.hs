@@ -188,9 +188,9 @@ main = do
   -- We are not passing `logLevel` as cli argument (--verbose) because run-static-io does not
   -- pass along the cli arguments to recursive obelisks.
   logLevel <- maybe Notice read <$> lookupEnv "LOGLEVEL"
-  noSpinner <- not <$> isInteractiveTerm
-  loggingConfig <- LoggingConfig logLevel <$> newMVar False
-  let obeliskConfig = Obelisk noSpinner loggingConfig
+  notInteractive <- not <$> isInteractiveTerm
+  loggingConfig <- LoggingConfig logLevel notInteractive <$> newMVar False
+  let obeliskConfig = Obelisk notInteractive loggingConfig
   runObelisk obeliskConfig $ ObeliskT main'
 
 main' :: MonadObelisk m => m ()

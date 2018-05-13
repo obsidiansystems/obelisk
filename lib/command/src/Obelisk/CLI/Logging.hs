@@ -29,6 +29,7 @@ import Control.Monad.Log (MonadLog, Severity (..), WithSeverity (..), logMessage
 
 data LoggingConfig = LoggingConfig
   { _loggingConfig_level :: Severity
+  , _loggingConfig_noColor :: Bool  -- Disallow coloured output
   , _loggingConfig_lock :: MVar Bool  -- Whether the last message was an Overwrite output
   }
 
@@ -51,25 +52,24 @@ getSeverity = \case
   _ -> Nothing
 
 handleLog :: MonadIO m => LoggingConfig -> Output -> m ()
-handleLog c output = do
-  let lock = _loggingConfig_lock c
+handleLog (LoggingConfig level noColor lock) output = do
   liftIO $ modifyMVar_ lock $ \wasOverwriting -> do
     case getSeverity output of
-      Nothing -> handleLog' output
+      Nothing -> handleLog' noColor output
       Just sev -> do
         -- Discard unless severity is above configured log level
-        unless (sev > _loggingConfig_level c) $ do
+        unless (sev > level) $ do
           -- If the last output was an overwrite (with cursor on same line), first clear it,
-          when wasOverwriting $ handleLog' Output_ClearLine
+          when wasOverwriting $ handleLog' noColor Output_ClearLine
           -- ... then actually write the log.
-          handleLog' output
+          handleLog' noColor output
     return $ isOverwrite output
 
-handleLog' :: MonadIO m => Output -> m ()
-handleLog' = \case
-  Output_Log m -> liftIO $ writeLogWith T.putStrLn m
+handleLog' :: MonadIO m => Bool -> Output -> m ()
+handleLog' noColor = \case
+  Output_Log m -> liftIO $ writeLogWith T.putStrLn noColor m
   Output_LogRaw m -> liftIO $ do
-    writeLogWith T.putStr m
+    writeLogWith T.putStr noColor m
     hFlush stdout
   Output_Overwrite xs -> liftIO $ putStrs $ "\r" : xs
   Output_ClearLine -> liftIO $ do
@@ -95,16 +95,16 @@ failWith s = do
   putLog Alert s
   liftIO $ exitWith $ ExitFailure 2
 
--- | Write log to stdout with colors
--- TODO: Disable colours when not on interactive terminal
-writeLogWith :: (MonadIO m, MonadMask m) => (Text -> IO ()) -> WithSeverity Text -> m ()
-writeLogWith f (WithSeverity severity s) = case sevColor severity of
+-- | Write log to stdout, with colors (unless `noColor`)
+writeLogWith :: (MonadIO m, MonadMask m) => (Text -> IO ()) -> Bool -> WithSeverity Text -> m ()
+writeLogWith f noColor (WithSeverity severity s) = case sevColor severity of
   Just setColor -> bracket_ setColor reset $ liftIO (T.putStr s)
   Nothing -> liftIO $ f s
   where
     -- We must reset *before* the newline, else the cursor won't be reset.
     reset = liftIO $ setSGR [Reset] >> f ""
     sevColor sev = if
+      | noColor -> Nothing
       | sev <= Error -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Red]
       | sev <= Warning -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Yellow]
       | otherwise -> Nothing

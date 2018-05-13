@@ -26,15 +26,15 @@ import Obelisk.App (MonadObelisk, _obelisk_logging, _obelisk_noSpinner)
 -- Obelisk, and can be made a library of its own.
 
 withSpinner :: MonadObelisk m => Text -> m a -> m a
-withSpinner s a = do
+withSpinner s action = do
   conf <- ask
   case _obelisk_noSpinner conf of
-    True -> a
-    False -> withSpinner' (_obelisk_logging conf) s a
+    True -> putLog Notice s >> action
+    False -> withSpinner' (_obelisk_logging conf) s action
 
 cliDemo :: MonadObelisk m => m ()
 cliDemo = do
-  putLog Notice "We will now log a warning, and then start a spinner"
+  putLog Notice "This demo will showcase the CLI library functionality"
   withSpinner "Running some long-running task" $ do
     liftIO $ threadDelay 1000000
     putLog Error "Some user error while spinning"
@@ -48,6 +48,6 @@ cliDemo = do
     output <- readProcessAndLogStderr Notice $ proc "ls" ["-l", "/"]
     putLog Notice $ "Output was: " <> T.pack output
     liftIO $ threadDelay 1000000
-    _ <- readProcessAndLogStderr Notice $ proc "ls" ["-l", "/does-not-exist"]
+    callProcessAndLogOutput Notice $ proc "ls" ["-l", "/does-not-exist"]
     liftIO $ threadDelay 1000000
     failWith "Something dangerous happened"
