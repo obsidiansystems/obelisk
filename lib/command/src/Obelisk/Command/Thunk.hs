@@ -552,7 +552,7 @@ getThunkPtr thunkDir upstream = do
     remotes <- liftIO $ lines <$> readProcess "hub" [ "-C", thunkDir, "remote" ] ""
     --Check that the upstream specified actually exists
     case L.find (== upstream) remotes of
-      Nothing -> failWith $ T.pack $ "thunk pack: upstream " <> upstream <> " does not exist"
+      Nothing -> failWith $ T.pack $ "thunk pack: upstream " <> upstream <> " does not exist. Available upstreams are " <> L.intercalate ", " remotes
       Just _ -> return ()
     -- iterate over cartesian product
     forM_ repoHeads $ \hd -> do

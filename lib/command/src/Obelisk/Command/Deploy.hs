@@ -4,17 +4,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Deploy where
 
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Catch (finally)
 import Control.Monad.IO.Class (liftIO)
+import Data.Attoparsec.ByteString.Char8 as A
+import qualified Data.ByteString.Char8 as BC8
 import Data.Default
 import Data.Maybe
 import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
+import System.Exit (ExitCode (..))
 import System.FilePath
-import System.Posix.Files
 import System.Process
 
 import Obelisk.App (MonadObelisk)
@@ -36,18 +39,19 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
         , configDir
         , deployDir </> "config"
         ]
+  keyExists <- liftIO $ doesFileExist sshKeyPath
+  when keyExists $ do
+    let localKey = deployDir </> "ssh_key"
+    callProcessAndLogOutput (Notice, Error) $
+      cp [sshKeyPath, localKey]
+    liftIO $ setPermissions localKey $ setOwnerWritable True $ setOwnerReadable True emptyPermissions
   liftIO $ do
-    keyExists <- doesFileExist sshKeyPath
-    when keyExists $ do
-      target <- makeAbsolute sshKeyPath
-      createSymbolicLink target (deployDir </> "ssh_key")
     createThunk (deployDir </> "src") thunkPtr
     writeFile (deployDir </> "backend_hosts") $ unlines hostnames
     initGit deployDir
 
 deployPush :: MonadObelisk m => FilePath -> m ()
 deployPush deployPath = do
-  liftIO $ callProcess "ssh-add" [deployPath </> "ssh_key"]
   host <- liftIO $ fmap (T.unpack . T.strip) $ T.readFile $ deployPath </> "backend_hosts"
   let srcPath = deployPath </> "src"
       build = do
@@ -61,9 +65,8 @@ deployPush deployPath = do
           }
         return $ listToMaybe $ lines buildOutput
   result <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed _) -> do
-      unpackThunk srcPath
-      build `finally` packThunk srcPath "origin" -- get upstream
+    Right (ThunkData_Packed _) ->
+      build
     Right (ThunkData_Checkout _) -> do
       liftIO (checkGitCleanStatus srcPath) >>= \case
         True -> do
@@ -75,19 +78,42 @@ deployPush deployPath = do
           return Nothing
     _ -> return Nothing
   liftIO $ forM_ result $ \res -> do
-    callProcess "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", res]
-    callProcess "ssh"
-      [ "root@" <> host
-      , unwords
-          [ "nix-env -p /nix/var/nix/profiles/system --set " <> res
-          , "&&"
-          , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
-          ]
-      ]
-    isClean <- liftIO $ checkGitCleanStatus deployPath
-    when (not isClean) $ liftIO $ do
+    let deployAndSwitch outputPath sshAgentEnv = do
+          callProcess' (Just sshAgentEnv) "ssh-add" [deployPath </> "ssh_key"]
+          callProcess' (Just sshAgentEnv) "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+          callProcess' (Just sshAgentEnv) "ssh"
+            [ "root@" <> host
+            , unwords
+                [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
+                , "&&"
+                , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+                ]
+            ]
+    sshAgentEnv <- sshAgent
+    deployAndSwitch res sshAgentEnv `finally` callProcess' (Just sshAgentEnv) "ssh-agent" ["-k"]
+    isClean <- checkGitCleanStatus deployPath
+    when (not isClean) $ do
       callProcess "git" ["-C", deployPath, "add", "--update"]
       callProcess "git" ["-C", deployPath, "commit", "-m", "New deployment"]
+  where
+    callProcess' e cmd args = do
+      let p = (proc cmd args) { delegate_ctlc = True, env = e }
+      exit_code <- withCreateProcess p $ \_ _ _ ph -> waitForProcess ph
+      case exit_code of
+        ExitSuccess -> return ()
+        ExitFailure r -> fail $ "callProcess'" <> "(exit: " <> show r <> ")"
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
+
+sshAgent :: IO [(String, String)]
+sshAgent = do
+  output <- BC8.pack <$> readProcess "ssh-agent" ["-c"] mempty
+  return $ fromMaybe mempty $ A.maybeResult $ A.parse (A.many' p) output
+  where
+    p = do
+      key <- A.string "setenv" >> A.skipSpace >> A.takeWhile (not . isSpace)
+      val <- A.skipSpace >> A.takeWhile (/= ';')
+      _ <- A.string ";" >> A.endOfLine <|> void (A.string ";")
+      return (BC8.unpack key, BC8.unpack val)
+

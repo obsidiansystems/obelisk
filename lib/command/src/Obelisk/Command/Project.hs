@@ -79,6 +79,10 @@ initProject source = do
         , skeleton </> "."
         , "."
         ]
+  liftIO $ do
+    let configDir = "config"
+    createDirectoryIfMissing False configDir
+    mapM_ (createDirectoryIfMissing False . (configDir </>)) ["backend", "common", "frontend"]
 
 --TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns

@@ -116,7 +116,7 @@ deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
   <$> strArgument (action "deploy-dir" <> metavar "DEPLOYDIR" <> help "Path to a directory that it will create")
   <*> strOption (long "ssh-key" <> metavar "SSHKEY" <> help "Path to an ssh key that it will symlink to")
   <*> some (strOption (long "hostname" <> metavar "HOSTNAME" <> help "hostname of the deployment target"))
-  <*> strOption (long "remote" <> metavar "REMOTE" <> help "git remote to use for the src thunk")
+  <*> strOption (long "upstream" <> value "origin" <> metavar "REMOTE" <> help "git remote to use for the src thunk" <> showDefault)
 
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
