@@ -14,7 +14,7 @@ module Obelisk.Command.Project
 
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.State
+import Control.Monad.State
 import Data.Bits
 import Data.Function (on)
 import Data.Monoid
@@ -53,12 +53,19 @@ data InitSource
    | InitSource_Branch (Name Branch)
    | InitSource_Symlink FilePath
 
+-- | Path to obelisk directory in given path
+toObeliskDir :: FilePath -> FilePath
+toObeliskDir p = p </> ".obelisk"
+
+-- | Path to impl file in given path
+implFile :: FilePath -> FilePath
+implFile p = toObeliskDir p </> "impl"
+
 -- | Create a new project rooted in the current directory
 initProject :: MonadObelisk m => InitSource -> m ()
 initProject source = do
-  let obDir = ".obelisk"
-      implDir = obDir </> "impl"
-  liftIO $ createDirectory obDir
+  let implDir = implFile "."
+  liftIO $ createDirectory $ toObeliskDir "."
   case source of
     InitSource_Default -> liftIO $ createThunkWithLatest implDir obeliskSource
     InitSource_Branch branch -> liftIO $ createThunkWithLatest implDir $ obeliskSourceWithBranch branch
@@ -84,22 +91,24 @@ initProject source = do
     createDirectoryIfMissing False configDir
     mapM_ (createDirectoryIfMissing False . (configDir </>)) ["backend", "common", "frontend"]
 
---TODO: Handle errors
 --TODO: Allow the user to ignore our security concerns
 -- | Find the Obelisk implementation for the project at the given path
 findProjectObeliskCommand :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectObeliskCommand target = do
   myUid <- liftIO getRealUserID
   targetStat <- liftIO $ getFileStatus target
-  (result, insecurePaths) <- liftIO $ flip runStateT [] $ do
-    walkToProjectRoot target targetStat myUid >>= \case
-      Nothing -> return Nothing
-      Just projectRoot -> do
+  (result, insecurePaths) <- flip runStateT [] $ walkToProjectRoot target targetStat myUid >>= \case
+    Nothing -> pure Nothing
+    Just projectRoot -> liftIO (doesFileExist $ implFile projectRoot) >>= \case
+      False -> do
+        putLog Warning $ "Found obelisk directory in " <> T.pack projectRoot <> " but the implementation (impl) file is missing"
+        pure Nothing
+      True -> do
         walkToImplDir projectRoot myUid -- For security check
         return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
-      obeliskCommandPkg <- nixBuildAttrWithCache (projDir </> ".obelisk" </> "impl") "command"
+      obeliskCommandPkg <- nixBuildAttrWithCache (implFile projDir) "command"
       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
@@ -126,7 +135,9 @@ withProjectRoot target f = findProjectRoot target >>= \case
 -- | Walk from the current directory to the containing project's root directory,
 -- if there is one, accumulating potentially insecure directories that were
 -- traversed in the process.  Return the project root directory, if found.
-walkToProjectRoot :: FilePath -> FileStatus -> UserID -> StateT [FilePath] IO (Maybe FilePath)
+walkToProjectRoot
+  :: (MonadState [FilePath] m, MonadIO m)
+  => FilePath -> FileStatus -> UserID -> m (Maybe FilePath)
 walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
   -- It's not a directory, so it can't be a project
   False -> do
@@ -135,7 +146,7 @@ walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \ca
     walkToProjectRoot dir dirStat myUid
   True -> do
     when (not $ isWritableOnlyBy thisStat myUid) $ modify (this:)
-    liftIO (doesDirectoryExist (this </> ".obelisk")) >>= \case
+    liftIO (doesDirectoryExist $ toObeliskDir this) >>= \case
       True -> return $ Just this
       False -> do
         let next = this </> ".." -- Use ".." instead of chopping off path segments, so that if the current directory is moved during the traversal, the traversal stays consistent
@@ -149,9 +160,9 @@ walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \ca
 -- | Walk from the given project root directory to its Obelisk implementation
 -- directory, accumulating potentially insecure directories that were traversed
 -- in the process.
-walkToImplDir :: FilePath -> UserID -> StateT [FilePath] IO ()
+walkToImplDir :: (MonadState [FilePath] m, MonadIO m) => FilePath -> UserID -> m ()
 walkToImplDir projectRoot myUid = do
-  let obDir = projectRoot </> ".obelisk"
+  let obDir = toObeliskDir projectRoot
   obDirStat <- liftIO $ getFileStatus obDir
   when (not $ isWritableOnlyBy obDirStat myUid) $ modify (obDir:)
   let implThunk = obDir </> "impl"
