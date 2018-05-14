@@ -15,7 +15,6 @@ import qualified Data.Text.IO as T
 import System.Directory
 import System.Exit (ExitCode(..))
 import System.FilePath
-import System.Posix.Files
 import System.Process
 
 import Obelisk.Command.Nix
@@ -35,8 +34,9 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
       ]
   keyExists <- doesFileExist sshKeyPath
   when keyExists $ do
-    target <- makeAbsolute sshKeyPath
-    createSymbolicLink target (deployDir </> "ssh_key")
+    let localKey = deployDir </> "ssh_key"
+    cp [sshKeyPath, localKey]
+    setPermissions localKey $ setOwnerWritable True $ setOwnerReadable True emptyPermissions
   createThunk (deployDir </> "src") thunkPtr
   writeFile (deployDir </> "backend_hosts") $ unlines hostnames
   initGit deployDir
