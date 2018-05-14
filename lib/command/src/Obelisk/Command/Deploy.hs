@@ -56,10 +56,8 @@ deployPush deployPath = do
           }
         return $ listToMaybe $ lines $ buildOutput
   result <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed _) -> do
-      unpackThunk srcPath
-      result <- build `finally` packThunk srcPath "origin" -- get upstream
-      return result
+    Right (ThunkData_Packed _) ->
+      build
     Right (ThunkData_Checkout _) -> do
       checkGitCleanStatus srcPath >>= \case
         True -> do
