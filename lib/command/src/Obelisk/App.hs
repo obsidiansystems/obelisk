@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE StandaloneDeriving #-}
 module Obelisk.App where
 
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
@@ -19,11 +18,7 @@ data Obelisk = Obelisk
 newtype ObeliskT m a = ObeliskT
   { unObeliskT :: ReaderT Obelisk (LoggingT Output m) a
   }
-  deriving (Functor, Applicative, Monad, MonadIO)
-
-deriving instance MonadThrow m => MonadThrow (ObeliskT m)
-deriving instance MonadCatch m => MonadCatch (ObeliskT m)
-deriving instance MonadMask m => MonadMask (ObeliskT m)
+  deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask)
 
 runObelisk :: MonadIO m => Obelisk -> ObeliskT m a -> m a
 runObelisk c =
