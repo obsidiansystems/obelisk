@@ -2,14 +2,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command.Deploy where
 
+import Control.Applicative
 import Control.Exception
 import Control.Monad
+import qualified Data.ByteString.Char8 as BC8
+import Data.Attoparsec.ByteString.Char8 as A
 import Data.Default
 import Data.Maybe
 import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
+import System.Exit (ExitCode(..))
 import System.FilePath
 import System.Posix.Files
 import System.Process
@@ -39,7 +43,6 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
 
 deployPush :: FilePath -> IO ()
 deployPush deployPath = do
-  callProcess "ssh-add" [deployPath </> "ssh_key"]
   host <- fmap (T.unpack . T.strip) $ T.readFile $ deployPath </> "backend_hosts"
   let srcPath = deployPath </> "src"
       build = do
@@ -68,20 +71,42 @@ deployPush deployPath = do
           return Nothing
     _ -> return Nothing
   forM_ result $ \res -> do
-    callProcess "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", res]
-    callProcess "ssh"
-      [ "root@" <> host
-      , unwords
-          [ "nix-env -p /nix/var/nix/profiles/system --set " <> res
-          , "&&"
-          , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
-          ]
-      ]
+    let deployAndSwitch outputPath sshAgentEnv = do
+          callProcess' (Just sshAgentEnv) "ssh-add" [deployPath </> "ssh_key"]
+          callProcess' (Just sshAgentEnv) "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+          callProcess' (Just sshAgentEnv) "ssh"
+            [ "root@" <> host
+            , unwords
+                [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
+                , "&&"
+                , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+                ]
+            ]
+    sshAgentEnv <- sshAgent
+    deployAndSwitch res sshAgentEnv `finally` callProcess' (Just sshAgentEnv) "ssh-agent" ["-k"]
     isClean <- checkGitCleanStatus deployPath
     when (not isClean) $ do
       callProcess "git" ["-C", deployPath, "add", "--update"]
       callProcess "git" ["-C", deployPath, "commit", "-m", "New deployment"]
+  where
+    callProcess' e cmd args = do
+      let p = (proc cmd args) { delegate_ctlc = True, env = e }
+      exit_code <- withCreateProcess p $ \_ _ _ ph -> waitForProcess ph
+      case exit_code of
+        ExitSuccess -> return ()
+        ExitFailure r -> fail $ "callProcess'" <> "(exit: " <> show r <> ")"
 
 deployUpdate :: FilePath -> IO ()
 deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
+
+sshAgent :: IO [(String, String)]
+sshAgent = do
+  output <- BC8.pack <$> readProcess "ssh-agent" ["-c"] mempty
+  return $ fromMaybe mempty $ A.maybeResult $ A.parse (A.many' p) output
+  where
+    p = do
+      key <- A.string "setenv" >> A.skipSpace >> A.takeWhile (not . isSpace)
+      val <- A.skipSpace >> A.takeWhile (/= ';')
+      _ <- A.string ";" >> A.endOfLine <|> void (A.string ";")
+      return (BC8.unpack key, BC8.unpack val)
 

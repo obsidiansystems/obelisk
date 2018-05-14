@@ -10,6 +10,7 @@ library
     , ansi-terminal
     , Cabal
     , aeson-pretty
+    , attoparsec
     , base
     , base16-bytestring
     , binary
