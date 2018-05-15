@@ -89,3 +89,13 @@ ob deploy push
 `ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. It will also configure Nginx so that the public port 80 proxies to the running app.
 
 At this point you are done. Your app will be accessible at `http://${HOSTNAME}`!
+
+### Deploying an updated version
+
+If you'd like to deploy an updated version (with new commits) of your Obelisk app: simply go to the configuration directory, update the source thunk and push:
+
+```
+cd ~/code/myapp-deploy
+ob deploy update
+ob deploy push
+```
