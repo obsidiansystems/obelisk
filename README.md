@@ -53,3 +53,39 @@ To increase developer productivity it is highly recommended to make use of the
 will compile and refresh itself showing you the latest possible syntax or type errors
 as well as any other ghc warnings whenever files within their respective directories
 are saved and updated.
+
+## Deploying
+
+In this section we will demonstrate how to deploy your Obelisk app to an Amazon EC2 instance.
+
+First create a new EC2 instance:
+
+1. Go to your AWS console and click "Launch Instance"
+1. Go to the "Community AMIs" section and search for `NixOS 17.09`; then pick the latest AMI.
+1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
+1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
+1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80.
+
+At this stage your instance should be booting and become accessible shortly. Note down the hostname of your instance. It should look like this:
+
+```
+INSTANCE_HOSTNAME=ec2-??-??-??-??.ca-central-1.compute.amazonaws.com
+```
+
+Now go to your Obelisk project directory (`~/code/myapp`), and initialize a deployment config (`~/code/myapp-deploy`):
+
+```
+cd ~/code/myapp
+ob deploy init --ssh-key ~/myaws.pem --hostname ${INSTANCE_HOSTNAME} ~/code/myapp-deploy
+```
+
+Then go to that created deployment configuration directory, and initiate the deployment:
+
+```
+cd ~/code/myapp-deploy
+ob deploy push
+```
+
+`ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. It will also configure Nginx so that the public port 80 proxies to the running app.
+
+At this point you are done. Your app will be accessible at `http://${HOSTNAME}`!
