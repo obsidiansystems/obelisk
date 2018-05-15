@@ -144,7 +144,7 @@ data DeployCommand
   deriving Show
 
 data DeployInitOpts = DeployInitOpts
-  { _deployInitOpts_ouputDir :: FilePath
+  { _deployInitOpts_outputDir :: FilePath
   , _deployInitOpts_sshKey :: FilePath
   , _deployInitOpts_hostname :: [String]
   , _deployInitOpts_remote :: String
@@ -269,7 +269,7 @@ ob = \case
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
           getThunkPtr root (_deployInitOpts_remote deployOpts)
-      let deployDir = _deployInitOpts_ouputDir deployOpts
+      let deployDir = _deployInitOpts_outputDir deployOpts
           sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
