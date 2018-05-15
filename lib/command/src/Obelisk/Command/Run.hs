@@ -6,6 +6,7 @@ import qualified Control.Exception as E
 import Control.Monad
 import Data.Either
 import Data.List
+import Control.Monad.Reader (ask)
 import Data.Maybe
 import Control.Monad.IO.Class (liftIO)
 import Data.Monoid
@@ -23,7 +24,7 @@ import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (callCommand)
 
-import Obelisk.App (ObeliskT)
+import Obelisk.App (MonadObelisk, ObeliskT, runObelisk)
 import Obelisk.CLI (putLog, failWith, Severity(..))
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
@@ -31,7 +32,7 @@ run :: ObeliskT IO ()
 run = do
   freePort <- liftIO getFreePort
   pkgs <- liftIO getLocalPkgs
-  (pkgDirErrs, hsSrcDirs) <- liftIO $ fmap partitionEithers $ forM pkgs $ \pkg -> do
+  (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
     let cabalFp = pkg </> pkg <.> "cabal"
     xs <- parseHsSrcDir cabalFp
     return $ case xs of
@@ -66,20 +67,25 @@ run = do
 getLocalPkgs :: IO [FilePath]
 getLocalPkgs = return ["backend", "common", "frontend"]
 
-parseHsSrcDir :: FilePath -- ^ package cabal file path
-              -> IO (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
+parseHsSrcDir 
+  :: MonadObelisk m
+  => FilePath -- ^ package cabal file path
+  -> m (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
 parseHsSrcDir cabalFp = do
-  exists <- doesFileExist cabalFp
+  exists <- liftIO $ doesFileExist cabalFp
   if exists
     then do
-      withUTF8FileContents cabalFp $ \cabal -> do
+      c <- ask
+      liftIO $ withUTF8FileContents cabalFp $ \cabal -> runObelisk c $ do
       case parseGenericPackageDescription cabal of
         ParseOk warnings gpkg -> do
-          mapM_ print warnings
+          mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
           return $ do
             (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
             pure $ fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
-        ParseFailed _ -> return Nothing
+        ParseFailed e -> do 
+          putLog Error $ T.pack $ "Failed to parse cabal file: " <> show e
+          return Nothing
     else return Nothing
 
 -- | Dev
