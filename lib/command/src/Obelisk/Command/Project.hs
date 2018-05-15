@@ -23,13 +23,13 @@ import System.Directory
 import System.FilePath
 import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
-import System.Process (CreateProcess, createProcess_, cwd, proc, waitForProcess)
+import System.Process (CreateProcess, cwd, proc, waitForProcess)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
+import Obelisk.CLI (Severity (..), callProcessAndLogOutput, createProcess_, failWith, putLog, withSpinner)
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils (cp)
 --TODO: Make this module resilient to random exceptions
@@ -186,7 +186,7 @@ inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> String -> m ()
 projectShell root isPure shellName command = do
-  (_, _, _, ph) <- liftIO $ createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
      [ "--pure" | isPure ] <>
      [ "-A"
      , "shells." <> shellName
