@@ -91,7 +91,7 @@ data ObInternal
    | ObInternal_CLIDemo
    deriving Show
 
-inNixShell' :: MonadObelisk m => StaticPtr (IO ()) -> m ()
+inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
   projectShell root False "ghc" cmd
@@ -284,9 +284,11 @@ ob = \case
   ObCommand_Repl component -> runRepl component
   ObCommand_Watch component -> watch component
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> liftIO  (unsafeLookupStaticPtr @(IO ()) k) >>= \case
+    ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
-      Just p -> liftIO $ deRefStaticPtr p
+      Just p -> do
+        c <- ask
+        liftIO $ runObelisk c $ deRefStaticPtr p
     ObInternal_CLIDemo -> cliDemo
 
 --TODO: Clean up all the magic strings throughout this codebase
