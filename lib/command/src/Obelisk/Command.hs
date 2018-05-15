@@ -7,7 +7,6 @@
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command where
 
-import Control.Concurrent (newMVar)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask)
@@ -29,8 +28,7 @@ import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
 
 import Obelisk.App
-import Obelisk.CLI (LoggingConfig (LoggingConfig, _loggingConfig_level), Severity (..), cliDemo, failWith,
-                    putLog)
+import Obelisk.CLI (Severity (..), cliDemo, failWith, getLogLevel, newLoggingConfig, putLog)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
@@ -209,12 +207,12 @@ isInteractiveTerm = do
 
 mkObeliskConfig :: IO Obelisk
 mkObeliskConfig = do
-  logLevel <- getLogLevel <$> getObArgs
   notInteractive <- not <$> isInteractiveTerm
-  loggingConfig <- LoggingConfig logLevel notInteractive <$> newMVar False
+  logLevel <- toLogLevel <$> getObArgs
+  loggingConfig <- newLoggingConfig logLevel notInteractive
   return $ Obelisk notInteractive loggingConfig
   where
-    getLogLevel = bool Notice Debug . _args_verbose
+    toLogLevel = bool Notice Debug . _args_verbose
 
 getObArgs :: IO Args
 getObArgs = getArgs >>= handleParseResult . execParserPure parserPrefs argsInfo
@@ -227,11 +225,12 @@ main' = do
   c <- ask
   obPath <- liftIO getExecutablePath
   obArgs <- liftIO getObArgs
+  logLevel <- liftIO $ getLogLevel $ _obelisk_logging c
   putLog Debug $ T.pack $ unwords
     [ "Starting Obelisk <" <> obPath <> ">"
     , "args=" <> show obArgs
     , "noSpinner=" <> show (_obelisk_noSpinner c)
-    , "logging-level=" <> show (_loggingConfig_level $ _obelisk_logging c)
+    , "logging-level=" <> show logLevel
     ]
 
   --TODO: We'd like to actually use the parser to determine whether to hand off,
