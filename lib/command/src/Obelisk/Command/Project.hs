@@ -58,13 +58,13 @@ toObeliskDir :: FilePath -> FilePath
 toObeliskDir p = p </> ".obelisk"
 
 -- | Path to impl file in given path
-implFile :: FilePath -> FilePath
-implFile p = toObeliskDir p </> "impl"
+toImplDir :: FilePath -> FilePath
+toImplDir p = toObeliskDir p </> "impl"
 
 -- | Create a new project rooted in the current directory
 initProject :: MonadObelisk m => InitSource -> m ()
 initProject source = do
-  let implDir = implFile "."
+  let implDir = toImplDir "."
   liftIO $ createDirectory $ toObeliskDir "."
   case source of
     InitSource_Default -> liftIO $ createThunkWithLatest implDir obeliskSource
@@ -99,7 +99,7 @@ findProjectObeliskCommand target = do
   targetStat <- liftIO $ getFileStatus target
   (result, insecurePaths) <- flip runStateT [] $ walkToProjectRoot target targetStat myUid >>= \case
     Nothing -> pure Nothing
-    Just projectRoot -> liftIO (doesFileExist $ implFile projectRoot) >>= \case
+    Just projectRoot -> liftIO (doesDirectoryExist $ toImplDir projectRoot) >>= \case
       False -> do
         putLog Warning $ "Found obelisk directory in " <> T.pack projectRoot <> " but the implementation (impl) file is missing"
         pure Nothing
@@ -108,7 +108,7 @@ findProjectObeliskCommand target = do
         return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
-      obeliskCommandPkg <- nixBuildAttrWithCache (implFile projDir) "command"
+      obeliskCommandPkg <- nixBuildAttrWithCache (toImplDir projDir) "command"
       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
