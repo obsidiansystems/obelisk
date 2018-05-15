@@ -1,49 +1,58 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Deploy where
 
 import Control.Applicative
-import Control.Exception
 import Control.Monad
-import qualified Data.ByteString.Char8 as BC8
+import Control.Monad.Catch (finally)
+import Control.Monad.IO.Class (liftIO)
 import Data.Attoparsec.ByteString.Char8 as A
+import qualified Data.ByteString.Char8 as BC8
 import Data.Default
 import Data.Maybe
 import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
-import System.Exit (ExitCode(..))
+import System.Exit (ExitCode (..))
 import System.FilePath
 import System.Process
 
+import Obelisk.App (MonadObelisk)
+import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith)
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
-deployInit :: ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> IO ()
+deployInit :: MonadObelisk m => ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> m ()
 deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
-  createDirectoryIfMissing True deployDir
-  hasConfigDir <- doesDirectoryExist configDir
+  hasConfigDir <- liftIO $ do
+    createDirectoryIfMissing True deployDir
+    doesDirectoryExist configDir
   when hasConfigDir $ do
-    cp
-      [ "-r"
-      , "-T"
-      , configDir
-      , deployDir </> "config"
-      ]
-  keyExists <- doesFileExist sshKeyPath
+    callProcessAndLogOutput (Notice, Error) $
+      cp
+        [ "-r"
+        , "-T"
+        , configDir
+        , deployDir </> "config"
+        ]
+  keyExists <- liftIO $ doesFileExist sshKeyPath
   when keyExists $ do
     let localKey = deployDir </> "ssh_key"
-    cp [sshKeyPath, localKey]
-    setPermissions localKey $ setOwnerWritable True $ setOwnerReadable True emptyPermissions
-  createThunk (deployDir </> "src") thunkPtr
-  writeFile (deployDir </> "backend_hosts") $ unlines hostnames
-  initGit deployDir
+    callProcessAndLogOutput (Notice, Error) $
+      cp [sshKeyPath, localKey]
+    liftIO $ setPermissions localKey $ setOwnerWritable True $ setOwnerReadable True emptyPermissions
+  liftIO $ do
+    createThunk (deployDir </> "src") thunkPtr
+    writeFile (deployDir </> "backend_hosts") $ unlines hostnames
+    initGit deployDir
 
-deployPush :: FilePath -> IO ()
+deployPush :: MonadObelisk m => FilePath -> m ()
 deployPush deployPath = do
-  host <- fmap (T.unpack . T.strip) $ T.readFile $ deployPath </> "backend_hosts"
+  host <- liftIO $ fmap (T.unpack . T.strip) $ T.readFile $ deployPath </> "backend_hosts"
   let srcPath = deployPath </> "src"
       build = do
         buildOutput <- nixBuild $ def
@@ -54,21 +63,21 @@ deployPush deployPath = do
           , _nixBuildConfig_outLink = OutLink_None
           , _nixBuildConfig_args = pure $ Arg "hostName" host
           }
-        return $ listToMaybe $ lines $ buildOutput
+        return $ listToMaybe $ lines buildOutput
   result <- readThunk srcPath >>= \case
     Right (ThunkData_Packed _) ->
       build
     Right (ThunkData_Checkout _) -> do
-      checkGitCleanStatus srcPath >>= \case
+      liftIO (checkGitCleanStatus srcPath) >>= \case
         True -> do
           result <- build
           packThunk srcPath "origin" -- get upstream
           return result
         False -> do
-          _ <- fail $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
+          _ <- failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
           return Nothing
     _ -> return Nothing
-  forM_ result $ \res -> do
+  liftIO $ forM_ result $ \res -> do
     let deployAndSwitch outputPath sshAgentEnv = do
           callProcess' (Just sshAgentEnv) "ssh-add" [deployPath </> "ssh_key"]
           callProcess' (Just sshAgentEnv) "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
@@ -94,7 +103,7 @@ deployPush deployPath = do
         ExitSuccess -> return ()
         ExitFailure r -> fail $ "callProcess'" <> "(exit: " <> show r <> ")"
 
-deployUpdate :: FilePath -> IO ()
+deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
 
 sshAgent :: IO [(String, String)]

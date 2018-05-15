@@ -21,7 +21,9 @@ library
     , filepath
     , github
     , hit
-    , questioner
+    , io-streams
+    , exceptions
+    , logging-effect
     , mtl
     , network
     , network-uri
@@ -35,9 +37,13 @@ library
     , unix
     , yaml
   exposed-modules:
+    Obelisk.App
+    Obelisk.CLI
+    Obelisk.CLI.Logging
+    Obelisk.CLI.Process
+    Obelisk.CLI.Spinner
     Obelisk.Command
     Obelisk.Command.Deploy
-    Obelisk.Command.CLI
     Obelisk.Command.Nix
     Obelisk.Command.Project
     Obelisk.Command.Repl

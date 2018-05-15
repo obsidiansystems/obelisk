@@ -1,10 +1,16 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StaticPointers #-}
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command where
 
+import Control.Concurrent (newMVar)
 import Control.Monad
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (ask)
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
@@ -16,9 +22,12 @@ import GHC.StaticPtr
 import Options.Applicative
 import System.Environment
 import System.FilePath
+import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
 
-import Obelisk.Command.CLI (failWith, putWarning)
+import Obelisk.App
+import Obelisk.CLI (LoggingConfig (LoggingConfig, _loggingConfig_level), Severity (..), cliDemo, failWith,
+                    putLog)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
@@ -67,10 +76,11 @@ data ObCommand
 
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
+   | ObInternal_CLIDemo
 
-inNixShell' :: StaticPtr (IO ()) -> IO ()
+inNixShell' :: MonadObelisk m => StaticPtr (IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
-  progName <- getExecutablePath
+  progName <- liftIO getExecutablePath
   projectShell root False "ghc" $ unwords --TODO: shell escape
     [ progName
     , "internal"
@@ -123,6 +133,7 @@ data DeployInitOpts = DeployInitOpts
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
   [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
+  , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
 
 --TODO: Result should provide normalised path and also original user input for error reporting.
@@ -164,24 +175,51 @@ parserPrefs = defaultPrefs
   { prefShowHelpOnEmpty = True
   }
 
+-- | Are we on a terminal with active user interaction?
+isInteractiveTerm :: IO Bool
+isInteractiveTerm = do
+  isTerm <- hIsTerminalDevice stdout
+  -- Running in bash/fish/zsh completion
+  inShellCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
+  return $ isTerm && not inShellCompletion
+
 main :: IO ()
 main = do
-  myArgs <- getArgs
+  -- We are not passing `logLevel` as cli argument (--verbose) because run-static-io does not
+  -- pass along the cli arguments to recursive obelisks.
+  logLevel <- maybe Notice read <$> lookupEnv "LOGLEVEL"
+  notInteractive <- not <$> isInteractiveTerm
+  loggingConfig <- LoggingConfig logLevel notInteractive <$> newMVar False
+  let obeliskConfig = Obelisk notInteractive loggingConfig
+  runObelisk obeliskConfig $ ObeliskT main'
+
+main' :: MonadObelisk m => m ()
+main' = do
+  c <- ask
+  myPath <- liftIO $ fmap T.pack getExecutablePath
+  putLog Debug $ T.unwords
+    [ "Starting Obelisk <" <> myPath <> ">"
+    , "noSpinner=" <> T.pack (show $ _obelisk_noSpinner c)
+    , "logging-level=" <> T.pack (show $ _loggingConfig_level $ _obelisk_logging c)
+    ]
+
+  myArgs <- liftIO getArgs
   --TODO: We'd like to actually use the parser to determine whether to hand off,
   --but in the case where this implementation of 'ob' doesn't support all
   --arguments being passed along, this could fail.  For now, we don't bother
   --with optparse-applicative until we've done the handoff.
   let go as = do
-        Args noHandoffPassed cmd <- handleParseResult (execParserPure parserPrefs argsInfo as)
-        case noHandoffPassed of
+        args' <- liftIO $ handleParseResult (execParserPure parserPrefs argsInfo as)
+        case _args_noHandOffPassed args' of
           False -> return ()
-          True -> putWarning "--no-handoff should only be passed once and as the first argument; ignoring"
-        ob cmd
+          True -> putLog Warning "--no-handoff should only be passed once and as the first argument; ignoring"
+        ob $ _args_command args'
       handoffAndGo as = findProjectObeliskCommand "." >>= \case
         Nothing -> go as -- If not in a project, just run ourselves
         Just impl -> do
           -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
-          executeFile impl False ("--no-handoff" : myArgs) Nothing
+          putLog Debug $ "Handing off to " <> T.pack impl
+          liftIO $ executeFile impl False ("--no-handoff" : myArgs) Nothing
   case myArgs of
     "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
     a:as -- Otherwise bash completion would always hand-off even if the user isn't trying to
@@ -190,7 +228,7 @@ main = do
       | otherwise -> handoffAndGo (a:as)
     as -> handoffAndGo as
 
-ob :: ObCommand -> IO ()
+ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
   ObCommand_Init source -> initProject source
   ObCommand_Deploy dc -> case dc of
@@ -216,17 +254,17 @@ ob = \case
   ObCommand_Repl component -> runRepl component
   ObCommand_Watch component -> watch component
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> unsafeLookupStaticPtr @(IO ()) k >>= \case
+    ObInternal_RunStaticIO k -> liftIO  (unsafeLookupStaticPtr @(IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
-      Just p -> deRefStaticPtr p
+      Just p -> liftIO $ deRefStaticPtr p
+    ObInternal_CLIDemo -> cliDemo
+
 --TODO: Clean up all the magic strings throughout this codebase
 
 encodeStaticKey :: StaticKey -> String
 encodeStaticKey = T.unpack . decodeUtf8 . Base16.encode . LBS.toStrict . Binary.encode
 
--- TODO: This function should use `failWith` instead of `fail` so as to be consistent with the way obelisk
--- outputs in the rest of the codebase. However `failWith` returns `IO a`, so that involves revisiting
--- this function and thinking of how best to raise errors from pure (non-IO) functions.
+-- TODO: Use failWith in place of fail to be consistent.
 decodeStaticKey :: String -> Either String StaticKey
 decodeStaticKey s = case Base16.decode $ encodeUtf8 $ T.pack s of
   (b, "") -> case Binary.decodeOrFail $ LBS.fromStrict b of

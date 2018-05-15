@@ -1,4 +1,5 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Nix
@@ -9,15 +10,13 @@ module Obelisk.Command.Nix
   , Arg (..)
   ) where
 
-import qualified Data.ByteString.Lazy as LBS
 import Data.Default
 import Data.Monoid ((<>))
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import System.Exit (ExitCode (ExitSuccess))
-import System.Process (StdStream (CreatePipe), createProcess, proc, std_err, std_out, waitForProcess)
+import System.Process (proc)
 
-import Obelisk.Command.CLI (failWith, withSpinner)
+import Obelisk.App (MonadObelisk)
+import Obelisk.CLI (Severity (..), readProcessAndLogStderr, withSpinner)
 
 -- | Where to put nix-build output
 data OutLink
@@ -54,7 +53,7 @@ data NixBuildConfig = NixBuildConfig
 instance Default NixBuildConfig where
   def = NixBuildConfig def def mempty
 
-nixBuild :: NixBuildConfig -> IO FilePath
+nixBuild :: MonadObelisk m => NixBuildConfig -> m FilePath
 nixBuild cfg = do
   let args = mconcat
         [ [_target_path $ _nixBuildConfig_target cfg]
@@ -67,16 +66,6 @@ nixBuild cfg = do
             OutLink_None -> ["--no-out-link"]
             OutLink_IndirectRoot outLink -> ["--out-link", outLink]
         ]
-  (_, Just out, Just err, p) <- createProcess (proc "nix-build" args)
-    { std_out = CreatePipe
-    , std_err = CreatePipe
-    }
-  let msg = "Running nix-build [" <> _target_path (_nixBuildConfig_target cfg) <> "] ..."
-  withSpinner msg Nothing $ waitForProcess p >>= \case
-    ExitSuccess -> return ()
-    _ -> do
-      -- FIXME: We should interleave `out` and `err` in their original order?
-      LBS.putStr =<< LBS.hGetContents out
-      LBS.putStr =<< LBS.hGetContents err
-      failWith "nix-build failed"
-  T.unpack . T.strip <$> T.hGetContents out
+  let msg = T.pack $ "Running nix-build (" <> _target_path (_nixBuildConfig_target cfg) <> ")"
+  withSpinner msg $ do
+    readProcessAndLogStderr Debug (proc "nix-build" args)
