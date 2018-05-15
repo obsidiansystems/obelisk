@@ -18,7 +18,7 @@ data Obelisk = Obelisk
 newtype ObeliskT m a = ObeliskT
   { unObeliskT :: ReaderT Obelisk (LoggingT Output m) a
   }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask)
+  deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadLog Output)
 
 runObelisk :: MonadIO m => Obelisk -> ObeliskT m a -> m a
 runObelisk c =

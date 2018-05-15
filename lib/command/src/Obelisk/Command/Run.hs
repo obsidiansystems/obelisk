@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Obelisk.Command.Run where
 
 import qualified Control.Exception as E
@@ -6,7 +7,9 @@ import Control.Monad
 import Data.Either
 import Data.List
 import Data.Maybe
+import Control.Monad.IO.Class (liftIO)
 import Data.Monoid
+import qualified Data.Text as T
 import Data.List.NonEmpty as NE
 import Distribution.Utils.Generic (withUTF8FileContents)
 import Distribution.PackageDescription.Parse (parseGenericPackageDescription, ParseResult(..))
@@ -20,20 +23,24 @@ import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (callCommand)
 
-run :: IO ()
+import Obelisk.App (ObeliskT)
+import Obelisk.CLI (putLog, failWith, Severity(..))
+
+-- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
+run :: ObeliskT IO ()
 run = do
-  freePort <- getFreePort
-  pkgs <- getLocalPkgs
-  (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
+  freePort <- liftIO getFreePort
+  pkgs <- liftIO getLocalPkgs
+  (pkgDirErrs, hsSrcDirs) <- liftIO $ fmap partitionEithers $ forM pkgs $ \pkg -> do
     let cabalFp = pkg </> pkg <.> "cabal"
     xs <- parseHsSrcDir cabalFp
     return $ case xs of
       Nothing -> Left pkg
       Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
   when (null hsSrcDirs) $
-    fail $ "No valid pkgs found in " <> intercalate ", " pkgs
+    failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
   when (not (null pkgDirErrs)) $
-    putStrLn $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
+    putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
   let dotGhci = unlines
         [ ":set args --quiet --port " <> show freePort
         , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
@@ -50,8 +57,9 @@ run = do
         ]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
-    writeFile dotGhciPath dotGhci
-    runDev dotGhciPath $ Just testCmd
+    liftIO $ do 
+      writeFile dotGhciPath dotGhci
+      runDev dotGhciPath $ Just testCmd
 
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
