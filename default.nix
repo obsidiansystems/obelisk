@@ -126,15 +126,22 @@ rec {
     touch "$out"
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
+  ghcjsExterns = ./ghcjs.externs.js;
   serverExe = backend: frontend: assets: config:
-    pkgs.runCommand "serverExe" {} ''
+    pkgs.runCommand "serverExe" { buildInputs = [ pkgs.closurecompiler ]; } ''
       mkdir $out
       set -eux
       ln -s "${backend}"/bin/backend $out/backend
-      ln -s ${frontend}/bin/frontend.jsexe $out/frontend.jsexe
       ln -s "${assets}" $out/static
       ln -s "${config}" $out/config
+
+      mkdir $out/frontend.jsexe
+      cd $out/frontend.jsexe
+      ln -s "${frontend}/bin/frontend.jsexe/all.js" all.unminified.js
+      closure-compiler --externs "${ghcjsExterns}" -O ADVANCED --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+      echo "//# sourceMappingURL=all.js.map" >> all.js
     '';
+
   server = exe: hostName:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
