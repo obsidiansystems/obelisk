@@ -12,9 +12,11 @@ import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (ask)
 import qualified Data.Binary as Binary
+import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
 import Data.List
+import Data.Maybe (catMaybes)
 import Data.Monoid
 import qualified Data.Text as T
 import Data.Text.Encoding
@@ -39,17 +41,25 @@ data Args = Args
   -- ^ This flag is actually handled outside of the optparse-applicative parser, but we detect whether
   -- it has gotten through in order to notify the user that it should only be passed once and as the very
   -- first argument
+  , _args_verbose :: Bool
   , _args_command :: ObCommand
   }
+  deriving Show
 
 args :: Parser Args
-args = Args <$> noHandoff <*> obCommand
+args = Args <$> noHandoff <*> verbose <*> obCommand
 
 noHandoff :: Parser Bool
 noHandoff = flag False True $ mconcat
   [ long "no-handoff"
   , help "Do not hand off execution to project-specific implementation of this command"
   , hidden
+  ]
+
+verbose :: Parser Bool
+verbose = flag False True $ mconcat
+  [ long "verbose"
+  , help "Be more verbose"
   ]
 
 argsInfo :: ParserInfo Args
@@ -73,21 +83,28 @@ data ObCommand
    | ObCommand_Repl FilePath
    | ObCommand_Watch FilePath
    | ObCommand_Internal ObInternal
+   deriving Show
 
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
    | ObInternal_CLIDemo
+   deriving Show
 
 inNixShell' :: MonadObelisk m => StaticPtr (IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
-  progName <- liftIO getExecutablePath
-  projectShell root False "ghc" $ unwords --TODO: shell escape
-    [ progName
-    , "--no-handoff"
-    , "internal"
-    , "run-static-io"
-    , encodeStaticKey $ staticKey p
-    ]
+  cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
+  projectShell root False "ghc" cmd
+  where
+    mkCmd = do
+      obArgs <- getObArgs
+      progName <- getExecutablePath
+      return $ progName : catMaybes
+        [ Just "--no-handoff"
+        , bool Nothing (Just "--verbose") $ _args_verbose obArgs
+        , Just "internal"
+        , Just "run-static-io"
+        , Just $ encodeStaticKey $ staticKey p
+        ]
 
 obCommand :: Parser ObCommand
 obCommand = hsubparser
@@ -96,8 +113,8 @@ obCommand = hsubparser
       , command "deploy" $ info (ObCommand_Deploy <$> deployCommand) $ progDesc "Prepare a deployment for an Obelisk project"
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-      , command "repl" $ info (ObCommand_Repl <$> (strArgument (action "directory"))) $ progDesc "Open an interactive interpreter"
-      , command "watch" $ info (ObCommand_Watch <$> (strArgument (action "directory")))$ progDesc "Watch directory for changes and update interactive interpreter"
+      , command "repl" $ info (ObCommand_Repl <$> strArgument (action "directory")) $ progDesc "Open an interactive interpreter"
+      , command "watch" $ info (ObCommand_Watch <$> strArgument (action "directory"))$ progDesc "Watch directory for changes and update interactive interpreter"
       ])
   <|> subparser
     (mconcat
@@ -123,6 +140,7 @@ data DeployCommand
   = DeployCommand_Init DeployInitOpts
   | DeployCommand_Push
   | DeployCommand_Update
+  deriving Show
 
 data DeployInitOpts = DeployInitOpts
   { _deployInitOpts_ouputDir :: FilePath
@@ -130,6 +148,7 @@ data DeployInitOpts = DeployInitOpts
   , _deployInitOpts_hostname :: [String]
   , _deployInitOpts_remote :: String
   }
+  deriving Show
 
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
@@ -149,11 +168,13 @@ data ThunkPackOpts = ThunkPackOpts
   { _thunkPackOpts_directory :: FilePath
   , _thunkPackOpts_upstream :: String
   }
+  deriving Show
 
 data ThunkCommand
    = ThunkCommand_Update [FilePath]
    | ThunkCommand_Unpack [FilePath]
    | ThunkCommand_Pack [ThunkPackOpts]
+  deriving Show
 
 thunkPackOpts :: Parser ThunkPackOpts
 thunkPackOpts = (ThunkPackOpts <$> thunkDirectoryParser <*>) . strOption $ mconcat
@@ -184,31 +205,38 @@ isInteractiveTerm = do
   inShellCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
   return $ isTerm && not inShellCompletion
 
-main :: IO ()
-main = do
-  -- We are not passing `logLevel` as cli argument (--verbose) because run-static-io does not
-  -- pass along the cli arguments to recursive obelisks.
-  logLevel <- maybe Notice read <$> lookupEnv "LOGLEVEL"
+mkObeliskConfig :: IO Obelisk
+mkObeliskConfig = do
+  logLevel <- getLogLevel <$> getObArgs
   notInteractive <- not <$> isInteractiveTerm
   loggingConfig <- LoggingConfig logLevel notInteractive <$> newMVar False
-  let obeliskConfig = Obelisk notInteractive loggingConfig
-  runObelisk obeliskConfig $ ObeliskT main'
+  return $ Obelisk notInteractive loggingConfig
+  where
+    getLogLevel = bool Notice Debug . _args_verbose
+
+getObArgs :: IO Args
+getObArgs = getArgs >>= handleParseResult . execParserPure parserPrefs argsInfo
+
+main :: IO ()
+main = mkObeliskConfig >>= (`runObelisk` ObeliskT main')
 
 main' :: MonadObelisk m => m ()
 main' = do
   c <- ask
-  myPath <- liftIO $ fmap T.pack getExecutablePath
-  putLog Debug $ T.unwords
-    [ "Starting Obelisk <" <> myPath <> ">"
-    , "noSpinner=" <> T.pack (show $ _obelisk_noSpinner c)
-    , "logging-level=" <> T.pack (show $ _loggingConfig_level $ _obelisk_logging c)
+  obPath <- liftIO getExecutablePath
+  obArgs <- liftIO getObArgs
+  putLog Debug $ T.pack $ unwords
+    [ "Starting Obelisk <" <> obPath <> ">"
+    , "args=" <> show obArgs
+    , "noSpinner=" <> show (_obelisk_noSpinner c)
+    , "logging-level=" <> show (_loggingConfig_level $ _obelisk_logging c)
     ]
 
-  myArgs <- liftIO getArgs
   --TODO: We'd like to actually use the parser to determine whether to hand off,
   --but in the case where this implementation of 'ob' doesn't support all
   --arguments being passed along, this could fail.  For now, we don't bother
   --with optparse-applicative until we've done the handoff.
+  myArgs <- liftIO getArgs
   let go as = do
         args' <- liftIO $ handleParseResult (execParserPure parserPrefs argsInfo as)
         case _args_noHandOffPassed args' of
