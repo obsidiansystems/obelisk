@@ -59,6 +59,7 @@ noHandoff = flag False True $ mconcat
 verbose :: Parser Bool
 verbose = flag False True $ mconcat
   [ long "verbose"
+  , short 'v'
   , help "Be more verbose"
   ]
 
