@@ -83,6 +83,7 @@ inNixShell' p = withProjectRoot "." $ \root -> do
   progName <- liftIO getExecutablePath
   projectShell root False "ghc" $ unwords --TODO: shell escape
     [ progName
+    , "--no-handoff"
     , "internal"
     , "run-static-io"
     , encodeStaticKey $ staticKey p
