@@ -161,7 +161,7 @@ rec {
         ];
         networking = { inherit hostName; };
         systemd.services.backend = {
-          wantedBy = [ "multi-user-target" ];
+          wantedBy = [ "multi-user.target" ];
           after = [ "network.target" ];
           restartIfChanged = true;
           script = ''
