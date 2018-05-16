@@ -59,7 +59,7 @@ run = do
 getLocalPkgs :: IO [FilePath]
 getLocalPkgs = return ["backend", "common", "frontend"]
 
-parseHsSrcDir 
+parseHsSrcDir
   :: MonadObelisk m
   => FilePath -- ^ package cabal file path
   -> m (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
