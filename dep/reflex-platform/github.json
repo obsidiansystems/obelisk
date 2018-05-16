@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "develop",
-  "rev": "f70d210a59a2817293d3b6c3d960b5710aae5c03",
-  "sha256": "0hm4im0865j1vxdqhy987dp2v0wcqy5xfx2nzxq625slnsf458p1"
+  "branch": "expose-ghcjs-externs-js",
+  "rev": "0e2bf510ea89cdb916e3db91d695602ed8aa8f7b",
+  "sha256": "11yg0c6fd0cfh17n1mp64l40mb5cqr13g8190q0b66nwqswlqyx9"
 }
