@@ -87,7 +87,6 @@ withProcess
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
 withProcess process f = do
   let procTitle = T.pack $ show $ cmdspec process
-  putLog Debug $ "Starting process: " <> procTitle
   (_, Just out, Just err, p) <- createProcess $ process
     { std_out = CreatePipe
     , std_err = CreatePipe
