@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Obelisk.Widget.Run where
+module Obelisk.Run where
 
 import Control.Concurrent
 import Control.Exception

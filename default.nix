@@ -78,7 +78,7 @@ let #TODO: Upstream
       obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
       obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
       obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
-      obelisk-run-frontend = self.callCabal2nix "obelisk-run-frontend" (cleanSource ./lib/run-frontend) {};
+      obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
       obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
       obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
       obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
@@ -214,7 +214,7 @@ rec {
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
                     ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
-                    frontend = if self.ghc.isGhcjs or false then super.frontend.override { obelisk-run-frontend = null; } else super.frontend;
+                    frontend = if self.ghc.isGhcjs or false then super.frontend.override { obelisk-run = null; } else super.frontend;
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
                   ghcDevPackages = ["obelisk-run-frontend"];

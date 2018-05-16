@@ -11,7 +11,7 @@ library
                , static
                , text
   if !impl(ghcjs)
-    build-depends: obelisk-run-frontend
+    build-depends: obelisk-run
 
   exposed-modules:
     Frontend

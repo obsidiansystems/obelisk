@@ -47,7 +47,7 @@ run = do
         , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
         , ":set -XScopedTypeVariables"
         , ":add Backend Frontend"
-        , ":module + System.IO Control.Exception Control.Concurrent Obelisk.Widget.Run Frontend Backend"
+        , ":module + System.IO Control.Exception Control.Concurrent Obelisk.Run Frontend Backend"
         ]
       testCmd = unlines
         [ "let handleBackendErr (_ :: SomeException) = hPutStrLn stderr \"backend stopped; make a change to your code to reload\""
