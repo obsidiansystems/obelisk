@@ -11,6 +11,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Attoparsec.ByteString.Char8 as A
 import qualified Data.ByteString.Char8 as BC8
 import Data.Default
+import Data.List (sort)
 import Data.Maybe
 import Data.Monoid
 import qualified Data.Text as T
@@ -52,7 +53,8 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
 
 deployPush :: MonadObelisk m => FilePath -> m ()
 deployPush deployPath = do
-  host <- liftIO $ fmap (T.unpack . T.strip) $ T.readFile $ deployPath </> "backend_hosts"
+  let backendHosts = deployPath </> "backend_hosts"
+  host <- liftIO $ fmap (T.unpack . T.strip) $ T.readFile backendHosts
   let srcPath = deployPath </> "src"
       build = do
         buildOutput <- nixBuild $ def
@@ -78,13 +80,17 @@ deployPush deployPath = do
           return Nothing
     _ -> return Nothing
   forM_ result $ \res -> do
-    let deployAndSwitch outputPath sshAgentEnv = do
+    let knownHostsPath = deployPath </> "backend_known_hosts"
+        sshOpts = ["-o", "UserKnownHostsFile=" <> knownHostsPath, "-o", "StrictHostKeyChecking=yes"]
+        deployAndSwitch outputPath sshAgentEnv = do
           withSpinner "Adding ssh key" $ do
             callProcess' sshAgentEnv "ssh-add" [deployPath </> "ssh_key"]
+          liftIO $ writeFile knownHostsPath . sortLines =<< sshKeyScan backendHosts
           withSpinner "Uploading closure" $ do
-            callProcess' sshAgentEnv "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+            let nixSshEnv = ("NIX_SSHOPTS", unwords sshOpts) : sshAgentEnv
+            callProcess' nixSshEnv "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
           withSpinner "Switching to new configuration" $ do
-            callProcess' sshAgentEnv "ssh"
+            callProcess' sshAgentEnv "ssh" $ sshOpts <>
               [ "root@" <> host
               , unwords
                   [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
@@ -121,3 +127,8 @@ sshAgent = do
       _ <- A.string ";" >> A.endOfLine <|> void (A.string ";")
       return (BC8.unpack key, BC8.unpack val)
 
+sshKeyScan :: String -> IO String
+sshKeyScan hostsPath = readProcess "ssh-keyscan" ["-f", hostsPath] mempty
+
+sortLines :: String -> String
+sortLines = unlines . sort . lines
