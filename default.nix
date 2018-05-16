@@ -64,6 +64,21 @@ let #TODO: Upstream
 
     fixUpstreamPkgs = self: super: {
       heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
+      modern-uri =
+        let src = pkgs.fetchFromGitHub {
+              owner = "mrkkrp";
+              repo = "modern-uri";
+              rev = "21064285deb284cb3328094c69c34f9f67919cc9";
+              sha256 = "0vddw8r9sb31h1fz1anzxrs9p3a3p8ygpxlj398z5j47wmr86cmi";
+            };
+        in (overrideCabal (self.callCabal2nix "modern-uri" src {}) (drv: {
+             doCheck = false;
+             postPatch = (drv.postPatch or "") + ''
+               substituteInPlace Text/URI/Types.hs \
+                 --replace "instance Arbitrary (NonEmpty (RText 'PathPiece)) where" "" \
+                 --replace "  arbitrary = (:|) <$> arbitrary <*> arbitrary" ""
+             '';
+           })).override { megaparsec = super.megaparsec_6_1_1; };
       network-transport = self.callHackage "network-transport" "0.5.2" {};
       network-transport-tcp = self.callHackage "network-transport-tcp" "0.6.0" {};
     };

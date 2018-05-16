@@ -14,8 +14,10 @@ library
     , http-reverse-proxy
     , jsaddle
     , jsaddle-warp
+    , lens
+    , modern-uri
     , network
-    , network-uri
+    , obelisk-executable-config
     , process
     , reflex-dom
     , streaming-commons

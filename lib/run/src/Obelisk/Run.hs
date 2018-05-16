@@ -5,26 +5,32 @@ module Obelisk.Run where
 
 import Control.Concurrent
 import Control.Exception
+import Control.Lens ((^?), _Right, _Just)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import Data.List (uncons)
+import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
+import qualified Data.Text as T
 import Language.Javascript.JSaddle.WebSockets
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Network.HTTP.Client (defaultManagerSettings, newManager, Manager)
 import qualified Network.HTTP.ReverseProxy as RP
 import Network.Socket
-import Network.URI
 import Network.Wai (Application)
 import Network.Wai.Handler.Warp
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Network.Wai.Handler.Warp.Internal (settingsPort, settingsHost)
+import Obelisk.ExecutableConfig (get)
 import Reflex.Dom.Core
 import System.Environment
 import System.IO
 import System.Process
+import Text.URI (URI)
+import qualified Text.URI as URI
+import Text.URI.Lens
 
 run :: Int -- ^ Port to run the backend
     -> IO () -- ^ Backend
@@ -37,16 +43,26 @@ run port backend frontend = do
   runWidget conf frontend
   killThread backendTid
 
+getConfigRoute :: IO (Maybe URI)
+getConfigRoute = do
+  mroute <- get "common/route"
+  return $ URI.mkURI =<< mroute
+
+defAppUri :: URI
+defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
+
 runWidget :: RunConfig -> Widget () () -> IO ()
 runWidget conf w = do
-  let redirectHost = _runConfig_redirectHost conf
+  uri <- fromMaybe defAppUri <$> getConfigRoute
+  let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
+      redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
       beforeMainLoop = do
-        putStrLn $ "Frontend running on " <> showUrl "127.0.0.1" (_runConfig_port conf)
-      settings = setBeforeMainLoop beforeMainLoop (setPort (_runConfig_port conf) (setTimeout 3600 defaultSettings))
+        putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
+      settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
       logErr p = putStrLn $ unwords [ "Port", show p, "is in use."]
   bracket
-    (bindPortTCPRetry settings (logErr (_runConfig_port conf)) (_runConfig_retryTimeout conf))
+    (bindPortTCPRetry settings (logErr port) (_runConfig_retryTimeout conf))
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
@@ -81,12 +97,6 @@ parseSsPid = do
   _ <- A.count 5 $ A.takeWhile (not . A.isSpace) *> A.skipSpace
   _ <- A.skipWhile (/= ':') >> A.string ":((" >> A.skipWhile (/= ',')
   A.string ",pid=" *> A.decimal
-
-showUrl :: String -> Int -> String
-showUrl host port = show nullURI
-  { uriScheme = "http:"
-  , uriAuthority = Just $ URIAuth "" host $ ":" ++ show port
-  }
 
 fallbackProxy :: ByteString -> Int -> Manager -> Application
 fallbackProxy host port = RP.waiProxyTo handleRequest RP.defaultOnExc
