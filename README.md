@@ -22,6 +22,8 @@
 1. Install `ob`: `nix-env -f obelisk -iA command`.
    Alternatively, if you prefer not to install to your user nix environment, you can
    enter a shell with the `ob` command available: `nix-shell -A shell`.
+   After running `ob init` this becomes `nix-shell .obelisk/impl -A shell`
+   for subsequent shells (since `ob init` overwrites `default.nix`).
 
 ## Building
 Build the frontend by running
