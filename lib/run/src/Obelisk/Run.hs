@@ -60,9 +60,8 @@ runWidget conf w = do
       beforeMainLoop = do
         putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
-      logErr p = putStrLn $ unwords [ "Port", show p, "is in use."]
   bracket
-    (bindPortTCPRetry settings (logErr port) (_runConfig_retryTimeout conf))
+    (bindPortTCPRetry settings (logPortBindErr port) (_runConfig_retryTimeout conf))
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
@@ -71,19 +70,18 @@ runWidget conf w = do
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
-                 -> IO () -- ^ Action to run the first time an exception is caught
+                 -> (IOError -> IO ()) -- ^ Action to run the first time an exception is caught
                  -> Int
                  -> IO Socket
-bindPortTCPRetry settings m n = catch (bindPortTCP (settingsPort settings) (settingsHost settings)) $ \(_ :: IOError) -> do
-  m
+bindPortTCPRetry settings m n = catch (bindPortTCP (settingsPort settings) (settingsHost settings)) $ \(e :: IOError) -> do
+  m e
   threadDelay $ 1000000 * n
-  bindPortTCPRetry settings (return ()) n
+  bindPortTCPRetry settings (\_ -> pure ()) n
 
--- TODO
-logPortBindErr :: Int -> IO ()
-logPortBindErr p = getProcessIdForPort p >>= \case
-  Nothing -> return ()
-  Just _ -> return ()
+logPortBindErr :: Int -> IOError -> IO ()
+logPortBindErr p e = getProcessIdForPort p >>= \case
+  Nothing -> putStrLn $ "runWidget: " <> show e
+  Just pid -> putStrLn $ unwords [ "Port", show p, "is being used by process ID", show pid <> ".", "Please kill that process or change the port in config/common/route."]
 
 getProcessIdForPort :: Int -> IO (Maybe Int)
 getProcessIdForPort port = do
