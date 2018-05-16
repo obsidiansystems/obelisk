@@ -21,8 +21,21 @@ import Network.Wai (Application)
 import Network.Wai.Handler.Warp
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Network.Wai.Handler.Warp.Internal (settingsPort, settingsHost)
-import System.Process
 import Reflex.Dom.Core
+import System.Environment
+import System.IO
+import System.Process
+
+run :: Int -- ^ Port to run the backend
+    -> IO () -- ^ Backend
+    -> Widget () () -- ^ Frontend widget
+    -> IO ()
+run port backend frontend = do
+  let handleBackendErr (_ :: SomeException) = hPutStrLn stderr "backend stopped; make a change to your code to reload"
+  backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] backend
+  let conf = defRunConfig { _runConfig_redirectPort = port }
+  runWidget conf frontend
+  killThread backendTid
 
 runWidget :: RunConfig -> Widget () () -> IO ()
 runWidget conf w = do

@@ -43,19 +43,11 @@ run = do
   when (not (null pkgDirErrs)) $
     putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
   let dotGhci = unlines
-        [ ":set args --quiet --port " <> show freePort
-        , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
-        , ":set -XScopedTypeVariables"
+        [ ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
         , ":add Backend Frontend"
-        , ":module + System.IO Control.Exception Control.Concurrent Obelisk.Run Frontend Backend"
+        , ":module + Obelisk.Run Frontend Backend"
         ]
-      testCmd = unlines
-        [ "let handleBackendErr (_ :: SomeException) = hPutStrLn stderr \"backend stopped; make a change to your code to reload\""
-        , "backendTid <- forkIO $ handle handleBackendErr backend"
-        , "let conf = defRunConfig { _runConfig_redirectPort = " <> show freePort <> "}"
-        , "runWidget conf frontend"
-        , "killThread backendTid"
-        ]
+      testCmd = unwords ["Obelisk.Run.run", show freePort , "backend", "frontend"]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
     liftIO $ do 
