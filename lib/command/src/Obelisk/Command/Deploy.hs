@@ -17,6 +17,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
 import System.FilePath
+import System.Posix.Env (getEnvironment)
 import System.Process (delegate_ctlc, env, proc, readProcess)
 
 import Obelisk.App (MonadObelisk)
@@ -79,11 +80,11 @@ deployPush deployPath = do
   forM_ result $ \res -> do
     let deployAndSwitch outputPath sshAgentEnv = do
           withSpinner "Adding ssh key" $ do
-            callProcess' (Just sshAgentEnv) "ssh-add" [deployPath </> "ssh_key"]
+            callProcess' sshAgentEnv "ssh-add" [deployPath </> "ssh_key"]
           withSpinner "Uploading closure" $ do
-            callProcess' (Just sshAgentEnv) "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+            callProcess' sshAgentEnv "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
           withSpinner "Switching to new configuration" $ do
-            callProcess' (Just sshAgentEnv) "ssh"
+            callProcess' sshAgentEnv "ssh"
               [ "root@" <> host
               , unwords
                   [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
@@ -92,7 +93,7 @@ deployPush deployPath = do
                   ]
               ]
     sshAgentEnv <- liftIO sshAgent
-    deployAndSwitch res sshAgentEnv `finally` callProcess' (Just sshAgentEnv) "ssh-agent" ["-k"]
+    deployAndSwitch res sshAgentEnv `finally` callProcess' sshAgentEnv "ssh-agent" ["-k"]
     isClean <- liftIO $ checkGitCleanStatus deployPath
     when (not isClean) $ do
       withSpinner "Commiting changes to Git" $ do
@@ -102,7 +103,8 @@ deployPush deployPath = do
           ["-C", deployPath, "commit", "-m", "New deployment"]
   where
     callProcess' e cmd args = do
-      let p = (proc cmd args) { delegate_ctlc = True, env = e }
+      currentEnv <- liftIO getEnvironment
+      let p = (proc cmd args) { delegate_ctlc = True, env = Just $ e <> currentEnv }
       callProcessAndLogOutput (Notice, Notice) p
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
