@@ -11,6 +11,8 @@
 module Obelisk.CLI.Process
   ( readProcessAndLogStderr
   , callProcessAndLogOutput
+  , createProcess
+  , createProcess_
   ) where
 
 import Control.Applicative (liftA2)
@@ -30,8 +32,9 @@ import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
 import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
-import System.Process (CreateProcess, StdStream (CreatePipe), cmdspec, createProcess, std_err, std_out,
+import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmdspec, std_err, std_out,
                        waitForProcess)
+import qualified System.Process as Process
 
 import Obelisk.CLI.Logging (Output, Severity (..), failWith, putLog, putLogRaw)
 
@@ -62,13 +65,29 @@ callProcessAndLogOutput (sev_out, sev_err) process = do
   where
     combineStream s1 s2 = concurrentMerge [s1, s2]
 
+-- | Like `System.Process.createProcess` but also logs (debug) the process being run
+createProcess
+  :: (MonadIO m, MonadLog Output m)
+  => CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
+createProcess p = do
+  putLog Debug $ "Creating process: " <> T.pack (show p)
+  liftIO $ Process.createProcess p
+
+-- | Like `System.Process.createProcess_` but also logs (debug) the process being run
+createProcess_
+  :: (MonadIO m, MonadLog Output m)
+  => String -> CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
+createProcess_ name p = do
+  putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (show p)
+  liftIO $ Process.createProcess p
+
+
 withProcess
   :: (MonadIO m, MonadMask m, MonadLog Output m)
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
 withProcess process f = do
   let procTitle = T.pack $ show $ cmdspec process
-  putLog Debug $ "Starting process: " <> procTitle
-  (_, Just out, Just err, p) <- liftIO $ createProcess $ process
+  (_, Just out, Just err, p) <- createProcess $ process
     { std_out = CreatePipe
     , std_err = CreatePipe
     }

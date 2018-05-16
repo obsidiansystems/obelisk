@@ -64,6 +64,21 @@ let #TODO: Upstream
 
     fixUpstreamPkgs = self: super: {
       heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
+      modern-uri =
+        let src = pkgs.fetchFromGitHub {
+              owner = "mrkkrp";
+              repo = "modern-uri";
+              rev = "21064285deb284cb3328094c69c34f9f67919cc9";
+              sha256 = "0vddw8r9sb31h1fz1anzxrs9p3a3p8ygpxlj398z5j47wmr86cmi";
+            };
+        in (overrideCabal (self.callCabal2nix "modern-uri" src {}) (drv: {
+             doCheck = false;
+             postPatch = (drv.postPatch or "") + ''
+               substituteInPlace Text/URI/Types.hs \
+                 --replace "instance Arbitrary (NonEmpty (RText 'PathPiece)) where" "" \
+                 --replace "  arbitrary = (:|) <$> arbitrary <*> arbitrary" ""
+             '';
+           })).override { megaparsec = super.megaparsec_6_1_1; };
       network-transport = self.callHackage "network-transport" "0.5.2" {};
       network-transport-tcp = self.callHackage "network-transport-tcp" "0.6.0" {};
     };
@@ -73,12 +88,16 @@ let #TODO: Upstream
       baseName == "cabal.project.local"
     ));
 
+    executableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
+
     addLibs = self: super: {
       obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
       obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
       obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
       obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
-      obelisk-run-frontend = self.callCabal2nix "obelisk-run-frontend" (cleanSource ./lib/run-frontend) {};
+      obelisk-executable-config = executableConfig.haskellPackage self;
+      obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
+      obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
       obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
       obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
       obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
@@ -95,7 +114,7 @@ rec {
   shell = nixpkgs.stdenv.mkDerivation {
     name = "obelisk-shell";
     src = null;
-    nativeBuildInputs = [command];
+    nativeBuildInputs = [pkgs.openssh command];
   };
 
   selftest = pkgs.writeScript "selftest" ''
@@ -221,7 +240,7 @@ rec {
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
                     ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
-                    frontend = if self.ghc.isGhcjs or false then super.frontend.override { obelisk-run-frontend = null; } else super.frontend;
+                    frontend = if self.ghc.isGhcjs or false then super.frontend.override { obelisk-run = null; } else super.frontend;
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
                   ghcDevPackages = ["obelisk-run-frontend"];

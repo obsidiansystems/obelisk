@@ -54,18 +54,18 @@ instance Default NixBuildConfig where
   def = NixBuildConfig def def mempty
 
 nixBuild :: MonadObelisk m => NixBuildConfig -> m FilePath
-nixBuild cfg = do
-  let args = mconcat
-        [ [_target_path $ _nixBuildConfig_target cfg]
-        , case _target_attr $ _nixBuildConfig_target cfg of
-            Nothing -> []
-            Just attr -> ["-A", attr]
-        , mconcat [["--argstr", k, v] | Arg k v <- _nixBuildConfig_args cfg]
-        , case _nixBuildConfig_outLink cfg of
-            OutLink_Default -> []
-            OutLink_None -> ["--no-out-link"]
-            OutLink_IndirectRoot outLink -> ["--out-link", outLink]
-        ]
-  let msg = T.pack $ "Running nix-build (" <> _target_path (_nixBuildConfig_target cfg) <> ")"
-  withSpinner msg $ do
-    readProcessAndLogStderr Debug (proc "nix-build" args)
+nixBuild cfg = withSpinner msg $ do
+  readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
+    [[path], attrArg, args, outLink]
+  where
+    path = _target_path $ _nixBuildConfig_target cfg
+    attr = _target_attr $ _nixBuildConfig_target cfg
+    attrArg = case attr of
+      Nothing -> []
+      Just a -> ["-A", a]
+    args = mconcat [["--argstr", k, v] | Arg k v <- _nixBuildConfig_args cfg]
+    outLink = case _nixBuildConfig_outLink cfg of
+      OutLink_Default -> []
+      OutLink_None -> ["--no-out-link"]
+      OutLink_IndirectRoot l -> ["--out-link", l]
+    msg = T.pack $ "Running nix-build on " <> path <> maybe "" (\a -> " [" <> a <> "]") attr

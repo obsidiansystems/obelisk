@@ -1,4 +1,4 @@
-name: obelisk-run-frontend
+name: obelisk-run
 version: 0.1
 license: BSD3
 build-type: Simple
@@ -14,8 +14,10 @@ library
     , http-reverse-proxy
     , jsaddle
     , jsaddle-warp
+    , lens
+    , modern-uri
     , network
-    , network-uri
+    , obelisk-executable-config
     , process
     , reflex-dom
     , streaming-commons
@@ -24,5 +26,5 @@ library
     , warp
     , websockets
   exposed-modules:
-      Obelisk.Widget.Run
+      Obelisk.Run
   ghc-options: -Wall

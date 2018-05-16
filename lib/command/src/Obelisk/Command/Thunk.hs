@@ -12,6 +12,7 @@ module Obelisk.Command.Thunk
   , ThunkRev (..)
   , ThunkSource (..)
   , ThunkData (..)
+  , ReadThunkError (..)
   , GitHubSource (..)
   , getLatestRev
   , updateThunkToLatest
@@ -345,8 +346,9 @@ updateThunkToLatest target = do
 -- This tool will only ever produce the newest one when it writes a thunk.
 gitHubStandaloneLoaders :: NonEmpty Text
 gitHubStandaloneLoaders =
-  gitHubStandaloneLoaderV2 :|
-  [ gitHubStandaloneLoaderV1
+  gitHubStandaloneLoaderV3 :|
+  [ gitHubStandaloneLoaderV2
+  , gitHubStandaloneLoaderV1
   ]
 
 gitHubStandaloneLoaderV1 :: Text
@@ -363,6 +365,26 @@ gitHubStandaloneLoaderV2 = T.unlines
   , "       private = json.private or false;"
   , "     }"
   , "))"
+  ]
+
+gitHubStandaloneLoaderV3 :: Text
+gitHubStandaloneLoaderV3 = T.unlines
+  [ "# DO NOT HAND-EDIT THIS FILE"
+  , "let"
+  , "  fetch = { private ? false, ... }@args: if private && builtins.hasAttr \"fetchGit\" builtins"
+  , "    then fetchFromGitHubPrivate args"
+  , "    else (import <nixpkgs> {}).fetchFromGitHub (builtins.removeAttrs args [\"branch\"]);"
+  , "  fetchFromGitHubPrivate ="
+  , "    { owner, repo, rev, branch ? null, name ? null, sha256 ? null, private ? false"
+  , "    , fetchSubmodules ? false, githubBase ? \"github.com\", ..."
+  , "    }: assert !fetchSubmodules;"
+  , "      builtins.fetchGit ({"
+  , "        url = \"ssh://git@${githubBase}/${owner}/${repo}.git\";"
+  , "        inherit rev;"
+  , "      }"
+  , "      // (if branch == null then {} else { ref = branch; })"
+  , "      // (if name == null then {} else { inherit name; }));"
+  , "in import (fetch (builtins.fromJSON (builtins.readFile ./github.json)))"
   ]
 
 plainGitStandaloneLoaders :: NonEmpty Text

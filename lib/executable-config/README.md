@@ -9,7 +9,7 @@ Obelisk.ExecutableConfig serves two related purposes:
 
 ## File Location
 
-ExecutableConfig expects your configuration files to be placed in `./exe-config`.
+ExecutableConfig expects your configuration files to be placed in `./config`.
 
 ## Supported Platforms
 
@@ -28,7 +28,7 @@ ExecutableConfig expects your configuration files to be placed in `./exe-config`
 
 There is currently no `inject` function for `jsaddle-warp`-based frontends.
 
-`get` is a Haskell function that simply reads the configuration files from `./exe-config`.
+`get` is a Haskell function that simply reads the configuration files from `./config`.
 
 ### Web backend + GHCJS
 
@@ -36,7 +36,7 @@ There is currently no `inject` function for `jsaddle-warp`-based frontends.
 
 `inject` is a Haskell function that produces a snippet of HTML that must be appended to the `<head>` of the page that the backend serves (i.e., the entry point for the GHCJS application).
 
-`get` is a Haskell function that reads the configuration files from `./exe-config`.
+`get` is a Haskell function that reads the configuration files from `./config`.
 
 #### GHCJS
 

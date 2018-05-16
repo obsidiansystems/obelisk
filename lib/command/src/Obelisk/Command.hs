@@ -22,6 +22,7 @@ import qualified Data.Text as T
 import Data.Text.Encoding
 import GHC.StaticPtr
 import Options.Applicative
+import System.Directory
 import System.Environment
 import System.FilePath
 import System.IO (hIsTerminalDevice, stdout)
@@ -91,7 +92,7 @@ data ObInternal
    | ObInternal_CLIDemo
    deriving Show
 
-inNixShell' :: MonadObelisk m => StaticPtr (IO ()) -> m ()
+inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
   projectShell root False "ghc" cmd
@@ -263,14 +264,21 @@ ob = \case
   ObCommand_Init source -> initProject source
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
+      let deployDir = _deployInitOpts_outputDir deployOpts
+      r <- liftIO $ canonicalizePath root
+      rootEqualsTarget <- liftIO $ equalFilePath r <$> canonicalizePath deployDir
+      when rootEqualsTarget $
+        failWith $ "Deploy directory " <> T.pack deployDir <> " should not be the same as project root."
       thunkPtr <- readThunk root >>= \case
-        Left err -> failWith $ T.pack $ "thunk pack: " <> show err
+        Left err -> failWith $ case err of
+          ReadThunkError_WrongContents _ _ ->
+            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
+          _ -> "thunk read: " <> T.pack (show err)
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
           getThunkPtr root (_deployInitOpts_remote deployOpts)
-      let deployDir = _deployInitOpts_outputDir deployOpts
-          sshKeyPath = _deployInitOpts_sshKey deployOpts
+      let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
     DeployCommand_Push -> deployPush "."
@@ -284,9 +292,11 @@ ob = \case
   ObCommand_Repl component -> runRepl component
   ObCommand_Watch component -> watch component
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> liftIO  (unsafeLookupStaticPtr @(IO ()) k) >>= \case
+    ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
-      Just p -> liftIO $ deRefStaticPtr p
+      Just p -> do
+        c <- ask
+        liftIO $ runObelisk c $ deRefStaticPtr p
     ObInternal_CLIDemo -> cliDemo
 
 --TODO: Clean up all the magic strings throughout this codebase

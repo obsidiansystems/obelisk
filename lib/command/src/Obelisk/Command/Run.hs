@@ -1,12 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Obelisk.Command.Run where
 
 import qualified Control.Exception as E
 import Control.Monad
 import Data.Either
 import Data.List
+import Control.Monad.Reader (ask)
 import Data.Maybe
+import Control.Monad.IO.Class (liftIO)
 import Data.Monoid
+import qualified Data.Text as T
 import Data.List.NonEmpty as NE
 import Distribution.Utils.Generic (withUTF8FileContents)
 import Distribution.PackageDescription.Parse (parseGenericPackageDescription, ParseResult(..))
@@ -20,10 +24,14 @@ import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (callCommand)
 
-run :: IO ()
+import Obelisk.App (MonadObelisk, ObeliskT, runObelisk)
+import Obelisk.CLI (putLog, failWith, Severity(..))
+
+-- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
+run :: ObeliskT IO ()
 run = do
-  freePort <- getFreePort
-  pkgs <- getLocalPkgs
+  freePort <- liftIO getFreePort
+  pkgs <- liftIO getLocalPkgs
   (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
     let cabalFp = pkg </> pkg <.> "cabal"
     xs <- parseHsSrcDir cabalFp
@@ -31,47 +39,45 @@ run = do
       Nothing -> Left pkg
       Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
   when (null hsSrcDirs) $
-    fail $ "No valid pkgs found in " <> intercalate ", " pkgs
+    failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
   when (not (null pkgDirErrs)) $
-    putStrLn $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
+    putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
   let dotGhci = unlines
-        [ ":set args --quiet --port " <> show freePort
-        , ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
-        , ":set -XScopedTypeVariables"
+        [ ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
         , ":add Backend Frontend"
-        , ":module + System.IO Control.Exception Control.Concurrent Obelisk.Widget.Run Frontend Backend"
+        , ":module + Obelisk.Run Frontend Backend"
         ]
-      testCmd = unlines
-        [ "let handleBackendErr (_ :: SomeException) = hPutStrLn stderr \"backend stopped; make a change to your code to reload\""
-        , "backendTid <- forkIO $ handle handleBackendErr backend"
-        , "let conf = defRunConfig { _runConfig_redirectPort = " <> show freePort <> "}"
-        , "runWidget conf frontend"
-        , "killThread backendTid"
-        ]
+      testCmd = unwords ["Obelisk.Run.run", show freePort , "backend", "frontend"]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
-    writeFile dotGhciPath dotGhci
-    runDev dotGhciPath $ Just testCmd
+    liftIO $ do 
+      writeFile dotGhciPath dotGhci
+      runDev dotGhciPath $ Just testCmd
 
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
 getLocalPkgs :: IO [FilePath]
 getLocalPkgs = return ["backend", "common", "frontend"]
 
-parseHsSrcDir :: FilePath -- ^ package cabal file path
-              -> IO (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
+parseHsSrcDir
+  :: MonadObelisk m
+  => FilePath -- ^ package cabal file path
+  -> m (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
 parseHsSrcDir cabalFp = do
-  exists <- doesFileExist cabalFp
+  exists <- liftIO $ doesFileExist cabalFp
   if exists
     then do
-      withUTF8FileContents cabalFp $ \cabal -> do
+      c <- ask
+      liftIO $ withUTF8FileContents cabalFp $ \cabal -> runObelisk c $ do
       case parseGenericPackageDescription cabal of
         ParseOk warnings gpkg -> do
-          mapM_ print warnings
+          mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
           return $ do
             (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
             pure $ fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
-        ParseFailed _ -> return Nothing
+        ParseFailed e -> do 
+          putLog Error $ T.pack $ "Failed to parse cabal file: " <> show e
+          return Nothing
     else return Nothing
 
 -- | Dev
@@ -81,6 +87,7 @@ runDev dotGhci mcmd = callCommand $ unwords $ "ghcid" : ghcidOpts
     ghcidOpts =
       [ "-W"
       , "--command='ghci -ghci-script " <> dotGhci <> "' "
+      , "--reload=config"
       ] <> maybeToList (flip fmap mcmd $ \cmd -> " --test=$'" <> cmd <> "'")
 
 getFreePort :: IO PortNumber

@@ -16,12 +16,11 @@ import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
-import System.Exit (ExitCode (..))
 import System.FilePath
-import System.Process
+import System.Process (delegate_ctlc, env, proc, readProcess)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith)
+import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, withSpinner)
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
@@ -77,31 +76,34 @@ deployPush deployPath = do
           _ <- failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
           return Nothing
     _ -> return Nothing
-  liftIO $ forM_ result $ \res -> do
+  forM_ result $ \res -> do
     let deployAndSwitch outputPath sshAgentEnv = do
-          callProcess' (Just sshAgentEnv) "ssh-add" [deployPath </> "ssh_key"]
-          callProcess' (Just sshAgentEnv) "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
-          callProcess' (Just sshAgentEnv) "ssh"
-            [ "root@" <> host
-            , unwords
-                [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
-                , "&&"
-                , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
-                ]
-            ]
-    sshAgentEnv <- sshAgent
+          withSpinner "Adding ssh key" $ do
+            callProcess' (Just sshAgentEnv) "ssh-add" [deployPath </> "ssh_key"]
+          withSpinner "Uploading closure" $ do
+            callProcess' (Just sshAgentEnv) "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+          withSpinner "Switching to new configuration" $ do
+            callProcess' (Just sshAgentEnv) "ssh"
+              [ "root@" <> host
+              , unwords
+                  [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
+                  , "&&"
+                  , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+                  ]
+              ]
+    sshAgentEnv <- liftIO sshAgent
     deployAndSwitch res sshAgentEnv `finally` callProcess' (Just sshAgentEnv) "ssh-agent" ["-k"]
-    isClean <- checkGitCleanStatus deployPath
+    isClean <- liftIO $ checkGitCleanStatus deployPath
     when (not isClean) $ do
-      callProcess "git" ["-C", deployPath, "add", "--update"]
-      callProcess "git" ["-C", deployPath, "commit", "-m", "New deployment"]
+      withSpinner "Commiting changes to Git" $ do
+        callProcessAndLogOutput (Debug, Error) $ proc "git"
+          ["-C", deployPath, "add", "--update"]
+        callProcessAndLogOutput (Debug, Error) $ proc "git"
+          ["-C", deployPath, "commit", "-m", "New deployment"]
   where
     callProcess' e cmd args = do
       let p = (proc cmd args) { delegate_ctlc = True, env = e }
-      exit_code <- withCreateProcess p $ \_ _ _ ph -> waitForProcess ph
-      case exit_code of
-        ExitSuccess -> return ()
-        ExitFailure r -> fail $ "callProcess'" <> "(exit: " <> show r <> ")"
+      callProcessAndLogOutput (Notice, Notice) p
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"

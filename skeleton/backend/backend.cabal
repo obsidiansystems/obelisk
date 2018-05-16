@@ -18,4 +18,9 @@ executable backend
   build-depends: base
                , backend
                , common
+               , lens
+               , modern-uri
                , obelisk-backend
+               , obelisk-executable-config
+               , obelisk-executable-config-inject
+               , text

@@ -11,7 +11,7 @@ import System.FilePath ((</>))
 
 inject :: FilePath -> IO ByteString
 inject item = do
-  f <- BS.readFile $ "exe-config" </> item
+  f <- BS.readFile $ "config" </> item
   fmap snd $ renderStatic $
     elAttr "script" ("type" =: "text/plain" <> "id" =: ("config-" <> T.pack item)) $
       text $ T.decodeUtf8 f
