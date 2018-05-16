@@ -12,6 +12,7 @@ module Obelisk.Command.Thunk
   , ThunkRev (..)
   , ThunkSource (..)
   , ThunkData (..)
+  , ReadThunkError (..)
   , GitHubSource (..)
   , getLatestRev
   , updateThunkToLatest

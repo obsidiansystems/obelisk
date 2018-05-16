@@ -22,6 +22,7 @@ import qualified Data.Text as T
 import Data.Text.Encoding
 import GHC.StaticPtr
 import Options.Applicative
+import System.Directory
 import System.Environment
 import System.FilePath
 import System.IO (hIsTerminalDevice, stdout)
@@ -263,14 +264,21 @@ ob = \case
   ObCommand_Init source -> initProject source
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
+      let deployDir = _deployInitOpts_ouputDir deployOpts
+      r <- liftIO $ canonicalizePath root
+      rootEqualsTarget <- liftIO $ equalFilePath r <$> canonicalizePath deployDir
+      when rootEqualsTarget $
+        failWith $ "Deploy directory " <> T.pack deployDir <> " should not be the same as project root."
       thunkPtr <- readThunk root >>= \case
-        Left err -> failWith $ T.pack $ "thunk pack: " <> show err
+        Left err -> failWith $ case err of
+          ReadThunkError_WrongContents _ _ ->
+            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
+          _ -> "thunk read: " <> T.pack (show err)
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
           getThunkPtr root (_deployInitOpts_remote deployOpts)
-      let deployDir = _deployInitOpts_ouputDir deployOpts
-          sshKeyPath = _deployInitOpts_sshKey deployOpts
+      let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
     DeployCommand_Push -> deployPush "."
