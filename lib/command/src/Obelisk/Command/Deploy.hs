@@ -98,7 +98,7 @@ deployPush deployPath = do
     when (not isClean) $ do
       withSpinner "Commiting changes to Git" $ do
         callProcessAndLogOutput (Debug, Error) $ proc "git"
-          ["-C", deployPath, "add", "--update"]
+          ["-C", deployPath, "add", "."]
         callProcessAndLogOutput (Debug, Error) $ proc "git"
           ["-C", deployPath, "commit", "-m", "New deployment"]
   where
