@@ -73,11 +73,15 @@ let #TODO: Upstream
       baseName == "cabal.project.local"
     ));
 
+    executableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
+
     addLibs = self: super: {
       obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
       obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
       obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
       obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
+      obelisk-executable-config = executableConfig.haskellPackage self;
+      obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
       obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
       obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
       obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};

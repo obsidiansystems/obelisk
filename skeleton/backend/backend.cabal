@@ -19,3 +19,7 @@ executable backend
                , backend
                , common
                , obelisk-backend
+               , obelisk-executable-config
+               , obelisk-executable-config-inject
+               , text
+               , uri-bytestring
