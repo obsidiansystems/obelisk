@@ -95,10 +95,11 @@ deployPush deployPath = do
     deployAndSwitch res sshAgentEnv `finally` callProcess' (Just sshAgentEnv) "ssh-agent" ["-k"]
     isClean <- liftIO $ checkGitCleanStatus deployPath
     when (not isClean) $ do
-      callProcessAndLogOutput (Debug, Error) $ proc "git"
-        ["-C", deployPath, "add", "--update"]
-      callProcessAndLogOutput (Debug, Error) $ proc "git"
-        ["-C", deployPath, "commit", "-m", "New deployment"]
+      withSpinner "Commiting changes to Git" $ do
+        callProcessAndLogOutput (Debug, Error) $ proc "git"
+          ["-C", deployPath, "add", "--update"]
+        callProcessAndLogOutput (Debug, Error) $ proc "git"
+          ["-C", deployPath, "commit", "-m", "New deployment"]
   where
     callProcess' e cmd args = do
       let p = (proc cmd args) { delegate_ctlc = True, env = e }
