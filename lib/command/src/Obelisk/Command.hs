@@ -145,7 +145,7 @@ data DeployCommand
   deriving Show
 
 data DeployInitOpts = DeployInitOpts
-  { _deployInitOpts_ouputDir :: FilePath
+  { _deployInitOpts_outputDir :: FilePath
   , _deployInitOpts_sshKey :: FilePath
   , _deployInitOpts_hostname :: [String]
   , _deployInitOpts_remote :: String
@@ -264,7 +264,7 @@ ob = \case
   ObCommand_Init source -> initProject source
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
-      let deployDir = _deployInitOpts_ouputDir deployOpts
+      let deployDir = _deployInitOpts_outputDir deployOpts
       r <- liftIO $ canonicalizePath root
       rootEqualsTarget <- liftIO $ equalFilePath r <$> canonicalizePath deployDir
       when rootEqualsTarget $
