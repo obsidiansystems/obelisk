@@ -145,7 +145,6 @@ rec {
     touch "$out"
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
-  ghcjsExterns = ./ghcjs.externs.js;
   serverExe = backend: frontend: assets: config:
     pkgs.runCommand "serverExe" { buildInputs = [ pkgs.closurecompiler ]; } ''
       mkdir $out
@@ -157,7 +156,7 @@ rec {
       mkdir $out/frontend.jsexe
       cd $out/frontend.jsexe
       ln -s "${frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-      closure-compiler --externs "${ghcjsExterns}" -O ADVANCED --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+      closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
       echo "//# sourceMappingURL=all.js.map" >> all.js
     '';
 
