@@ -114,7 +114,7 @@ rec {
   shell = nixpkgs.stdenv.mkDerivation {
     name = "obelisk-shell";
     src = null;
-    nativeBuildInputs = [command];
+    nativeBuildInputs = [pkgs.openssh command];
   };
 
   selftest = pkgs.writeScript "selftest" ''
