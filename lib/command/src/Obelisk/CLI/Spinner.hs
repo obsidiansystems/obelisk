@@ -4,44 +4,36 @@
 -- | Provides a simple CLI spinner that interoperates cleanly with the rest of the logging output.
 module Obelisk.CLI.Spinner (withSpinner') where
 
-import Control.Applicative (liftA2)
-import Control.Concurrent (forkIO, killThread, threadDelay)
+import Control.Concurrent (killThread, threadDelay)
 import Control.Monad (forM_, (>=>))
 import Control.Monad.Catch (MonadMask, mask, onException)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Log (MonadLog, logMessage, runLoggingT)
+import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.Reader (MonadIO)
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Console.ANSI (Color (Cyan, Green, Red), ColorIntensity (Vivid), ConsoleLayer (Foreground),
                             SGR (Reset, SetColor), setSGRCode)
 
-import Obelisk.CLI.Logging (LoggingConfig, Output (..), Severity (Debug, Warning), handleLog, putLog,
-                            setLogLevelIfKeyPressed)
+import Obelisk.CLI.Logging (LoggingConfig, Output (..), allowUserToMakeLoggingVerbose, forkML)
 
 -- | Run an action with a CLI spinner.
 withSpinner'
   :: (MonadIO m, MonadMask m, MonadLog Output m)
   => LoggingConfig -> Text -> m a -> m a
-withSpinner' conf s = bracket' (liftA2 (,) run makeVerbose) cleanup . const
+withSpinner' conf s = bracket' (sequence [run, forkML conf $ allowUserToMakeLoggingVerbose conf enquiryCode]) cleanup . const
   where
-    run = fork $ do
+    run = forkML conf $ do
       runSpinner spinner $ \c -> do
         logMessage $ Output_Overwrite [c, " ", T.unpack s]
-    makeVerbose = fork $ do
-      setLogLevelIfKeyPressed conf enquiryCode Debug $ do
-        putLog Warning $ "Ctrl+e pressed; making output verbose (-v)"
-    cleanup failed (runThread, toggleThread) = do
-      liftIO $ mapM_ killThread [runThread, toggleThread]
+    cleanup failed tids = do
+      liftIO $ mapM_ killThread tids
       logMessage Output_ClearLine
       let mark = if failed
             then withColor Red "✖"
             else withColor Green "✔"
       logMessage $ Output_Overwrite [mark, " ", T.unpack s, "\n"]
     spinner = coloredSpinner defaultSpinnerTheme
-    -- TODO: Can we obviate passing LoggingConfig just to use forkIO?
-    fork = liftIO . forkIO . flip runLoggingT (handleLog conf)
-
 
 -- | A spinner is simply an infinite list of strings that supplant each other in a delayed loop, creating the
 -- animation of a "spinner".
