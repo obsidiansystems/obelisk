@@ -4,36 +4,36 @@
 -- | Provides a simple CLI spinner that interoperates cleanly with the rest of the logging output.
 module Obelisk.CLI.Spinner (withSpinner') where
 
-import Control.Concurrent (forkIO, killThread, threadDelay)
+import Control.Concurrent (killThread, threadDelay)
 import Control.Monad (forM_, (>=>))
 import Control.Monad.Catch (MonadMask, mask, onException)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Log (MonadLog, logMessage, runLoggingT)
+import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.Reader (MonadIO)
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Console.ANSI (Color (Cyan, Green, Red), ColorIntensity (Vivid), ConsoleLayer (Foreground),
                             SGR (Reset, SetColor), setSGRCode)
 
-import Obelisk.CLI.Logging (LoggingConfig, Output (..), handleLog)
+import Obelisk.CLI.Logging (LoggingConfig, Output (..), allowUserToMakeLoggingVerbose, forkML)
 
 -- | Run an action with a CLI spinner.
 withSpinner'
   :: (MonadIO m, MonadMask m, MonadLog Output m)
   => LoggingConfig -> Text -> m a -> m a
-withSpinner' conf s = bracket' run cleanup . const
+withSpinner' conf s = bracket' (sequence [run, forkML conf $ allowUserToMakeLoggingVerbose conf enquiryCode]) cleanup . const
   where
-    -- TODO: Can we obviate passing LoggingConfig just to use forkIO?
-    run = liftIO $ forkIO $ flip runLoggingT (handleLog conf) $ do
-      runSpinner (coloredSpinner defaultSpinnerTheme) $ \c -> do
+    run = forkML conf $ do
+      runSpinner spinner $ \c -> do
         logMessage $ Output_Overwrite [c, " ", T.unpack s]
-    cleanup failed tid = do
-      liftIO $ killThread tid
+    cleanup failed tids = do
+      liftIO $ mapM_ killThread tids
       logMessage Output_ClearLine
       let mark = if failed
             then withColor Red "✖"
             else withColor Green "✔"
       logMessage $ Output_Overwrite [mark, " ", T.unpack s, "\n"]
+    spinner = coloredSpinner defaultSpinnerTheme
 
 -- | A spinner is simply an infinite list of strings that supplant each other in a delayed loop, creating the
 -- animation of a "spinner".
@@ -75,3 +75,6 @@ withColor color s = mconcat
   , setSGRCode [Reset]
   ]
 
+-- | Code for https://en.wikipedia.org/wiki/Enquiry_character
+enquiryCode :: String
+enquiryCode = "\ENQ"
