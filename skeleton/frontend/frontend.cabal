@@ -28,3 +28,5 @@ executable frontend
                , frontend
   --TODO: Make these ghc-options optional
   ghc-options: -threaded
+  if os(darwin)
+     ghc-options: -dynamic
