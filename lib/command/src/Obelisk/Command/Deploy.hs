@@ -11,7 +11,6 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Attoparsec.ByteString.Char8 as A
 import qualified Data.ByteString.Char8 as BC8
 import Data.Default
-import Data.List (sort)
 import Data.Maybe
 import Data.Monoid
 import qualified Data.Text as T
@@ -23,6 +22,7 @@ import System.Process (delegate_ctlc, env, proc, readProcess)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, withSpinner)
+import Obelisk.CLI.Logging
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
@@ -46,9 +46,12 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
     callProcessAndLogOutput (Notice, Error) $
       cp [sshKeyPath, localKey]
     liftIO $ setPermissions localKey $ setOwnerWritable True $ setOwnerReadable True emptyPermissions
+    liftIO $ writeFile (deployDir </> "backend_hosts") $ unlines hostnames
+    forM_ hostnames $ \hostname -> do
+      putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
+      verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
   liftIO $ do
     createThunk (deployDir </> "src") thunkPtr
-    writeFile (deployDir </> "backend_hosts") $ unlines hostnames
     initGit deployDir
 
 deployPush :: MonadObelisk m => FilePath -> m ()
@@ -85,7 +88,6 @@ deployPush deployPath = do
         deployAndSwitch outputPath sshAgentEnv = do
           withSpinner "Adding ssh key" $ do
             callProcess' sshAgentEnv "ssh-add" [deployPath </> "ssh_key"]
-          liftIO $ writeFile knownHostsPath . sortLines =<< sshKeyScan backendHosts
           withSpinner "Uploading closure" $ do
             let nixSshEnv = ("NIX_SSHOPTS", unwords sshOpts) : sshAgentEnv
             callProcess' nixSshEnv "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
@@ -127,8 +129,12 @@ sshAgent = do
       _ <- A.string ";" >> A.endOfLine <|> void (A.string ";")
       return (BC8.unpack key, BC8.unpack val)
 
-sshKeyScan :: String -> IO String
-sshKeyScan hostsPath = readProcess "ssh-keyscan" ["-f", hostsPath] mempty
-
-sortLines :: String -> String
-sortLines = unlines . sort . lines
+verifyHostKey :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
+verifyHostKey knownHostsPath keyPath hostName =
+  callProcessAndLogOutput (Notice, Warning) $ proc "ssh"
+    [ "-o", "UserKnownHostsFile=" <> knownHostsPath
+    , "-o", "StrictHostKeyChecking=ask"
+    , "-i", keyPath
+    , "root@" <> hostName
+    , "exit"
+    ]
