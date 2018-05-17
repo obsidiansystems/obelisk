@@ -43,6 +43,13 @@ main = do
         it "can build ghcjs.frontend" $ inProj $ do
           run "nix-build" ["--no-out-link", "-A", "ghcjs.frontend"]
 
+        forM_ ["ghc", "ghcjs"] $ \compiler -> do
+          let
+            shell = "shells." <> compiler
+            inShell cmd = run "nix-shell" $ ["-A", fromString shell, "--run", cmd]
+          it ("can enter "    <> shell) $ inProj $ inShell "exit"
+          it ("can build in " <> shell) $ inProj $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
+
         it "can use ob run" $ inProj $ handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
           runHandle "ob" ["run"] $ \stdout -> do
             (_, firstUri) <- obRun httpManager stdout
