@@ -12,7 +12,7 @@ import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.Reader (MonadIO)
 import Control.Monad.IO.Class
 import Data.IORef
-import Data.List (intercalate, delete)
+import Data.List (delete)
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Console.ANSI (Color (Cyan, Green, Red), ColorIntensity (Vivid), ConsoleLayer (Foreground),
