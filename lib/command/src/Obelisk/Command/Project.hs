@@ -66,18 +66,19 @@ toImplDir p = toObeliskDir p </> "impl"
 initProject :: MonadObelisk m => InitSource -> m ()
 initProject source = do
   let implDir = toImplDir "."
-  liftIO $ createDirectory $ toObeliskDir "."
-  case source of
-    InitSource_Default -> liftIO $ createThunkWithLatest implDir obeliskSource
-    InitSource_Branch branch -> liftIO $ createThunkWithLatest implDir $ obeliskSourceWithBranch branch
-    InitSource_Symlink path -> do
-      let symlinkPath = if isAbsolute path
-            then path
-            else ".." </> path
-      liftIO $ createSymbolicLink symlinkPath implDir
-  _ <- nixBuildAttrWithCache implDir "command"
-  --TODO: We should probably handoff to the impl here
-  skeleton <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
+  skeleton <- withSpinner "Setting up obelisk" $ do
+    liftIO $ createDirectory $ toObeliskDir "."
+    case source of
+      InitSource_Default -> liftIO $ createThunkWithLatest implDir obeliskSource
+      InitSource_Branch branch -> liftIO $ createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+      InitSource_Symlink path -> do
+        let symlinkPath = if isAbsolute path
+              then path
+              else ".." </> path
+        liftIO $ createSymbolicLink symlinkPath implDir
+    _ <- nixBuildAttrWithCache implDir "command"
+    --TODO: We should probably handoff to the impl here
+    nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
   withSpinner "Copying project skeleton" $ do
     callProcessAndLogOutput (Notice, Error) $
       cp --TODO: Make this package depend on nix-prefetch-url properly
