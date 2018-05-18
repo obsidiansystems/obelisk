@@ -125,30 +125,34 @@ This should copy over and install the application on your device (if you see a  
 
 The previous section would have generated a debug version of the app. In order to build a release version you will need to sign your app. Obelisk can automatically sign the app during build if you provide it with your keystore file in `default.nix`.
 
-First, if you do not already have a keystore, create it as follows (for more information, see the [Android documentation](https://developer.android.com/studio/publish/app-signing#signing-manually):
+First, if you do not already have a keystore, create it as follows (for more information, see the [Android documentation](https://developer.android.com/studio/publish/app-signing#signing-manually)):
 
 ```
 nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias
 ```
 
-(Besure to give an appropriate keystore filename and alias string above.)
+(Besure to give an appropriate keystore filename and key alias string above.)
 
-The `keytool` command will prompt for some details, including a keystore password and a key password (we will use these passwords further below). It will now have created a `myandroidkey.jks` file under the current directory. Move that to somewhere safe, and note down its full path.
+The `keytool` command will ask you for some details, including a keystore password and a key password (we will use these passwords further below). It will now have created a `myandroidkey.jks` file under the current directory. Move that to somewhere safe, and note down its full path.
 
 Now edit your project's `default.nix` and tell Obelisk of your app's keystore file. Your `default.nix` should look like this after the edit:
 
 ```nix
+  ...
+  android.applicationId = "com.example.myapp";
+  android.displayName = "My App";
   android.releaseKey = 
     { storeFile = /path/to/myandroidkey.jks;  
       storePassword = "abcd1234";
       keyAlias = "myandroidalias";
       keyPassword = "abcd1234";
     };
+  ...
 ```
 
 ##### Build a release version
 
-After having configured signing for your app, you may proceed to build a release version of the app. This is no different to how you build it, so consult the section [Android](#Android) for exact instructions on building and deploying to your device.
+After having configured signing for your app, you may proceed to build a release version of the app. This is no different to how you build the non-release version, so consult the section [Android](#android) further above for exact instructions on building and deploying to your device.
 
 
 
