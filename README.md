@@ -113,7 +113,7 @@ Until Obelisk will be able to automate this workflow via single command you are 
 
 Now deploy the built apk file to your Android device:
 
-1. Enable *USB debugging* in your Android device
+1. Enable *USB debugging* in your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options))
 1. Connect the device using USB
 1. Run the deploy script: `result-android/bin/deploy`
 
