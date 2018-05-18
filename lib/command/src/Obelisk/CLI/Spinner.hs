@@ -54,7 +54,7 @@ withSpinner' conf s = bracket' start cleanup . const
 
 -- | How nested spinner logs should be displayed
 concatStack :: String -> [Text] -> String
-concatStack mark = foldr flatten "" . zip (mark : repeat arrow) . fmap T.unpack
+concatStack mark = drop 1 . foldr flatten "" . zip (mark : repeat arrow) . fmap T.unpack
   where flatten (m, s) acc = unwords [acc, m, s]
         arrow = withColor Cyan "▶"
 
