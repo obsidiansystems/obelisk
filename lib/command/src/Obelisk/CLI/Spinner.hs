@@ -37,24 +37,26 @@ withSpinner' conf s = bracket' start cleanup . const
       if wasEmpty
         then do -- Fork a thread to manage output of anything on the stack
           tid <- forkML conf $ runSpinner spinner $ \c -> do
-            logs <- liftIO $ concatStack <$> readIORef stack
-            logMessage $ Output_Overwrite [c, " ", logs]
+            logs <- liftIO $ concatStack c <$> readIORef stack
+            logMessage $ Output_Overwrite [logs]
           pure [tid]
         else pure []
     cleanup failed tids = do
       liftIO $ mapM_ killThread tids
-      -- Delete this log from the spinner stack
-      logs <- liftIO $ atomicModifyIORef' stack $ \old -> (delete s old, concatStack old)
       logMessage Output_ClearLine
       let mark = if failed
             then withColor Red "✖"
             else withColor Green "✔"
-      logMessage $ Output_Overwrite [mark, " ", logs, "\n"]
+      -- Delete this log from the spinner stack
+      logs <- liftIO $ atomicModifyIORef' stack $ \old -> (delete s old, concatStack mark old)
+      logMessage $ Output_Overwrite [logs, "\n"]
     spinner = coloredSpinner defaultSpinnerTheme
 
 -- | How nested spinner logs should be displayed
-concatStack :: [Text] -> String
-concatStack = intercalate (withColor Cyan " ▶ ") . fmap T.unpack . reverse
+concatStack :: String -> [Text] -> String
+concatStack mark = foldr flatten "" . zip (mark : repeat arrow) . fmap T.unpack
+  where flatten (m, s) acc = unwords [acc, m, s]
+        arrow = withColor Cyan "▶"
 
 -- | A spinner is simply an infinite list of strings that supplant each other in a delayed loop, creating the
 -- animation of a "spinner".
