@@ -10,6 +10,7 @@ import Control.Monad.Catch (finally)
 import Control.Monad.IO.Class (liftIO)
 import Data.Attoparsec.ByteString.Char8 as A
 import qualified Data.ByteString.Char8 as BC8
+import Data.Bits
 import Data.Default
 import Data.Maybe
 import Data.Monoid
@@ -17,6 +18,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
 import System.FilePath
+import System.Posix.Files
 import System.Posix.Env (getEnvironment)
 import System.Process (delegate_ctlc, env, proc, readProcess)
 
@@ -45,7 +47,7 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
     let localKey = deployDir </> "ssh_key"
     callProcessAndLogOutput (Notice, Error) $
       cp [sshKeyPath, localKey]
-    liftIO $ setPermissions localKey $ setOwnerWritable True $ setOwnerReadable True emptyPermissions
+    liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
     liftIO $ writeFile (deployDir </> "backend_hosts") $ unlines hostnames
     forM_ hostnames $ \hostname -> do
       putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
