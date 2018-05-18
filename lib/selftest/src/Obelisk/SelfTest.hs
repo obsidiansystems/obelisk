@@ -2,9 +2,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.SelfTest where
 
-import Control.Monad.IO.Class
 import Control.Exception (throw)
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.Function (fix)
 import Data.Semigroup ((<>))
 import Data.String
@@ -15,7 +15,8 @@ import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
 import Shelly
 import System.Environment
-import System.Exit (ExitCode(..))
+import System.Exit (ExitCode (..))
+import System.Info
 import System.IO (Handle)
 import System.IO.Temp
 import System.Timeout
@@ -42,6 +43,10 @@ main = do
           run "nix-build" ["--no-out-link", "-A", "ghc.backend"]
         it "can build ghcjs.frontend" $ inProj $ do
           run "nix-build" ["--no-out-link", "-A", "ghcjs.frontend"]
+
+        if (os == "darwin")
+          then it "can build ios"     $ inProj $ run "nix-build" $ ["--no-out-link", "-A", "ios.frontend"    ]
+          else it "can build android" $ inProj $ run "nix-build" $ ["--no-out-link", "-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
