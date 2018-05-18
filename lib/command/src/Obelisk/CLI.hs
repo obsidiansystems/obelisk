@@ -33,9 +33,20 @@ withSpinner s action = do
     False -> withSpinner' (_obelisk_logging conf) s action
 
 cliDemo :: MonadObelisk m => m ()
-cliDemo = do
+cliDemo = withSpinner "CLI Demo" $ do
   putLog Notice "This demo will showcase the CLI library functionality"
   withSpinner "Running some long-running task" $ do
+    delay
+    withSpinner "Nested task" $ do
+      delay
+      putLog Notice "In nested task"
+      withSpinner "Inbetween" $ do
+        withSpinner "Nested task" $ do
+          delay
+          putLog Notice "This task has the same name and still works"
+        delay
+      delay
+      putLog Error "Top nested task finished"
     delay
     putLog Error "Some user error while spinning"
     delay

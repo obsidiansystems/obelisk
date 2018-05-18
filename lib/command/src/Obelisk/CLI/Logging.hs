@@ -42,6 +42,7 @@ data LoggingConfig = LoggingConfig
   , _loggingConfig_noColor :: Bool  -- Disallow coloured output
   , _loggingConfig_lock :: MVar Bool  -- Whether the last message was an Overwrite output
   , _loggingConfig_tipDisplayed :: IORef Bool  -- Whether the user tip (to make verbose) was already displayed
+  , _loggingConfig_stack :: IORef [Text] -- Stack of logs from nested spinners
   }
 
 newLoggingConfig :: Severity -> Bool -> IO LoggingConfig
@@ -49,7 +50,8 @@ newLoggingConfig sev noColor = do
   level <- newIORef sev
   lock <- newMVar False
   tipDisplayed <- newIORef False
-  return $ LoggingConfig level noColor lock tipDisplayed
+  stack <- newIORef []
+  return $ LoggingConfig level noColor lock tipDisplayed stack
 
 verboseLogLevel :: Severity
 verboseLogLevel = Debug
