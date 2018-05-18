@@ -105,23 +105,50 @@ ob deploy push
 
 ### Android 
 
-Until Obelisk will be able to automate this processing via single command you are recommended to build android apps manually as follows.
+Until Obelisk will be able to automate this workflow via single command you are recommended to build android apps manually as follows.
 
 1. In your project's `default.nix` set a suitable value for `android.applicationId` and `android.displayName`.
 1. Run `nix-build -A android.frontend -o result-android` to build the Android app.
-1. You should see the apk file at `result-android/android-app-debug.apk`
+1. A debug version of the app should be generated at `result-android/android-app-debug.apk`
 
-Now deploy the built apk file to your Android device. To do this,
+Now deploy the built apk file to your Android device:
 
 1. Enable *USB debugging* in your Android device
 1. Connect the device using USB
 1. Run the deploy script: `result-android/bin/deploy`
 
-This should copy over and install the application on your device. The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
+This should copy over and install the application on your device (if you see a  "*signatures do not match* error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 
 #### Releasing to Play Store
 
-The previous section would have generated a debug version of the app. In order to build a release version:
+##### Configure signing
 
-1. TODO
- 
+The previous section would have generated a debug version of the app. In order to build a release version you will need to sign your app. Obelisk can automatically sign the app during build if you provide it with your keystore file in `default.nix`.
+
+First, if you do not already have a keystore, create it as follows (for more information, see the [Android documentation](https://developer.android.com/studio/publish/app-signing#signing-manually):
+
+```
+nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias
+```
+
+(Besure to give an appropriate keystore filename and alias string above.)
+
+The `keytool` command will prompt for some details, including a keystore password and a key password (we will use these passwords further below). It will now have created a `myandroidkey.jks` file under the current directory. Move that to somewhere safe, and note down its full path.
+
+Now edit your project's `default.nix` and tell Obelisk of your app's keystore file. Your `default.nix` should look like this after the edit:
+
+```nix
+  android.releaseKey = 
+    { storeFile = /path/to/myandroidkey.jks;  
+      storePassword = "abcd1234";
+      keyAlias = "myandroidalias";
+      keyPassword = "abcd1234";
+    };
+```
+
+##### Build a release version
+
+After having configured signing for your app, you may proceed to build a release version of the app. This is no different to how you build it, so consult the section [Android](#Android) for exact instructions on building and deploying to your device.
+
+
+
