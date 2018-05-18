@@ -12,11 +12,11 @@ import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.Reader (MonadIO)
 import Control.Monad.IO.Class
 import Data.IORef
+import Data.List (intercalate, delete)
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Console.ANSI (Color (Cyan, Green, Red), ColorIntensity (Vivid), ConsoleLayer (Foreground),
                             SGR (Reset, SetColor), setSGRCode)
-import Data.List (delete)
 
 import Obelisk.CLI.Logging (LoggingConfig(..), Output (..), allowUserToMakeLoggingVerbose, forkML)
 
@@ -38,23 +38,23 @@ withSpinner' conf s = bracket' start cleanup . const
         then do -- Fork a thread to manage output of anything on the stack
           tid <- forkML conf $ runSpinner spinner $ \c -> do
             logs <- liftIO $ concatStack <$> readIORef stack
-            logMessage $ Output_Overwrite [c, " ", T.unpack logs]
+            logMessage $ Output_Overwrite [c, " ", logs]
           pure [tid]
         else pure []
     cleanup failed tids = do
       liftIO $ mapM_ killThread tids
       -- Delete this log from the spinner stack
-      liftIO $ modifyIORef' stack $ delete s
+      logs <- liftIO $ atomicModifyIORef' stack $ \old -> (delete s old, concatStack old)
       logMessage Output_ClearLine
       let mark = if failed
             then withColor Red "✖"
             else withColor Green "✔"
-      logMessage $ Output_Overwrite [mark, " ", T.unpack s, "\n"]
+      logMessage $ Output_Overwrite [mark, " ", logs, "\n"]
     spinner = coloredSpinner defaultSpinnerTheme
 
 -- | How nested spinner logs should be displayed
-concatStack :: [Text] -> Text
-concatStack = T.intercalate " |> " . reverse
+concatStack :: [Text] -> String
+concatStack = intercalate (withColor Cyan " ▶ ") . fmap T.unpack . reverse
 
 -- | A spinner is simply an infinite list of strings that supplant each other in a delayed loop, creating the
 -- animation of a "spinner".
