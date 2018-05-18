@@ -254,10 +254,9 @@ rec {
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
                     ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
-                    frontend = if self.ghc.isGhcjs or false then super.frontend.override { obelisk-run = null; } else super.frontend;
+                    ${backendName} = addBuildDepend super.${backendName} self.obelisk-run;
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
-                  ghcDevPackages = ["obelisk-run-frontend"];
               in {
                 overrides = totalOverrides;
                 packages = combinedPackages;
