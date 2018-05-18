@@ -35,7 +35,7 @@ import System.Exit (ExitCode (ExitFailure), exitWith)
 import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stdin, stdout)
 
 import Control.Monad.Log (LoggingT, MonadLog, Severity (..), WithSeverity (..), logMessage, runLoggingT)
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef, atomicModifyIORef')
 
 data LoggingConfig = LoggingConfig
   { _loggingConfig_level :: IORef Severity  -- We are capable of changing the log level at runtime
@@ -157,12 +157,10 @@ allowUserToMakeLoggingVerbose conf keyCode = bracket showTip (liftIO . killThrea
     setLogLevel conf verboseLogLevel
   where
     showTip = forkML conf $ unlessVerbose $ do
-      tipDisplayed <- liftIO $ readIORef $ _loggingConfig_tipDisplayed conf
-      unless tipDisplayed $ do
-        liftIO $ threadDelay $ 3*1000000  -- Only show tip for actions taking too long (3 seconds or more)
-        unlessVerbose $ do -- Check again in case the user had pressed Ctrl+e recently
-          putLog Notice $ "Tip: Press Ctrl+e to display full output"
-          liftIO $ writeIORef (_loggingConfig_tipDisplayed conf) True
+      liftIO $ threadDelay $ 3*1000000  -- Only show tip for actions taking too long (3 seconds or more)
+      tipDisplayed <- liftIO $ atomicModifyIORef' (_loggingConfig_tipDisplayed conf) $ (,) True
+      unless tipDisplayed $ unlessVerbose $ do -- Check again in case the user had pressed Ctrl+e recently
+        putLog Notice $ "Tip: Press Ctrl+e to display full output"
     unlessVerbose f = do
       l <- getLogLevel conf
       unless (l == verboseLogLevel) f
