@@ -100,3 +100,28 @@ cd ~/code/myapp-deploy
 ob deploy update
 ob deploy push
 ```
+
+## Building for mobile
+
+### Android 
+
+Until Obelisk will be able to automate this processing via single command you are recommended to build android apps manually as follows.
+
+1. In your project's `default.nix` set a suitable value for `android.applicationId` and `android.displayName`.
+1. Run `nix-build -A android.frontend -o result-android` to build the Android app.
+1. You should see the apk file at `result-android/android-app-debug.apk`
+
+Now deploy the built apk file to your Android device. To do this,
+
+1. Enable *USB debugging* in your Android device
+1. Connect the device using USB
+1. Run the deploy script: `result-android/bin/deploy`
+
+This should copy over and install the application on your device. The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
+
+#### Releasing to Play Store
+
+The previous section would have generated a debug version of the app. In order to build a release version:
+
+1. TODO
+ 
