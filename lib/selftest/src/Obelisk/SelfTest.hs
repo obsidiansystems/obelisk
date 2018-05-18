@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.SelfTest where
 
-import Control.Exception (throw)
+import Control.Exception (Exception, throw)
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Function (fix)
@@ -19,7 +19,7 @@ import Shelly
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.Info
-import System.IO (Handle)
+import System.IO (Handle, hClose)
 import System.IO.Temp
 import System.Timeout
 import Test.Hspec
@@ -71,33 +71,55 @@ main = do
           uu <- update
           liftIO $ assertEqual "" u uu
 
-        it "has thunk pack and unpack inverses" $ inProj $ do
-          let pack   = run_ "ob" ["thunk", "pack",   thunk] *> hash
-              unpack = run_ "ob" ["thunk", "unpack", thunk] *> hash
+        describe "ob thunk pack/unpack" $ do
+          let pack   = run "ob" ["thunk", "pack",   thunk] *> hash
+              unpack = run "ob" ["thunk", "unpack", thunk] *> hash
 
-          e    <- hash
-          eu   <- unpack
-          eup  <- pack
-          eupu <- unpack
-          _    <- pack
+          it "has thunk pack and unpack inverses" $ inProj $ do
+            e    <- hash
+            eu   <- unpack
+            eup  <- pack
+            eupu <- unpack
+            _    <- pack
+            liftIO $ do
+              assertEqual "" e  eup
+              assertEqual "" eu eupu
+              assertBool  "" (e /= eu)
 
-          liftIO $ do
-            assertEqual "" e  eup
-            assertEqual "" eu eupu
-            assertBool "" (e /= eu)
+          it "can pack and unpack plain git repos" $ do
+            withSystemTempDirectory "git-repo" $ \dir -> shelly @IO $ silently $ do
+              let repo = toTextIgnore $ dir </> ("repo" :: String)
+              origHash <- run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo] *> hashDir repo
 
-        it "can pack and unpack plain git repos" $ do
-          withSystemTempDirectory "git-repo" $ \dir -> shelly @IO $ silently $ do
-            let repo = toTextIgnore $ dir </> ("repo" :: String)
-            origHash <- run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo] *> hashDir repo
+              run_ "ob" ["thunk", "pack", repo]
+              packedFiles <- Set.fromList <$> ls (repo </> ("" :: String))
+              liftIO $ assertEqual "" packedFiles $
+                Set.fromList $ (repo </>) <$> ["default.nix", "git.json", ".attr-cache" :: String]
 
-            run_ "ob" ["thunk", "pack", repo]
-            packedFiles <- Set.fromList <$> ls (repo </> ("" :: String))
-            liftIO $ assertEqual "" packedFiles $
-              Set.fromList $ (repo </>) <$> ["default.nix", "git.json", ".attr-cache" :: String]
+              unpackHash <- run_ "ob" ["thunk", "unpack", repo] *> hashDir repo
+              liftIO $ assertEqual "" origHash unpackHash
 
-            unpackHash <- run_ "ob" ["thunk", "unpack", repo] *> hashDir repo
-            liftIO $ assertEqual "" origHash unpackHash
+          it "aborts thunk pack when there are uncommitted files" $ inProj $ do
+            withTempFile (T.unpack $ toTextIgnore $ blankProject </> thunk) "test-file" $ \file handle -> do
+              let try_sh :: Exception e => Sh a -> Sh (Either e a)
+                  try_sh a = catch_sh (a >>= pure . Right) (pure . Left)
+                  ensureThunkPackFails = try_sh pack >>= \case
+                    Left (RunFailed _ _ status _) | status /= 0 -> pure ()
+                    _ -> fail "ob thunk unpack succeeded when it should have failed"
+              -- Untracked files
+              ensureThunkPackFails
+              run "git" ["add", T.pack file]
+              -- Uncommitted files (staged)
+              ensureThunkPackFails
+              run "git" ["commit", "-m", "test commit"]
+              -- Non-pushed commits in any branch
+              ensureThunkPackFails
+              -- Uncommitted files (unstaged)
+              liftIO $ T.hPutStrLn handle "test file" >> hClose handle
+              ensureThunkPackFails
+              -- Existing stashes
+              run "git" ["stash"]
+              ensureThunkPackFails
 
         it "can use ob run" $ inProj $ handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
           runHandle "ob" ["run"] $ \stdout -> do
