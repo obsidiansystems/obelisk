@@ -20,6 +20,7 @@ import System.IO (Handle)
 import System.IO.Temp
 import System.Timeout
 import Test.Hspec
+import Test.HUnit.Base
 
 data ObRunState
   = ObRunState_Init
@@ -36,8 +37,14 @@ main = do
       describe "blank initialized project" $ do
         let inProj :: Sh a -> IO ()
             inProj = void . shelly . silently . chdir (fromString blankProject)
+            thunk  = ".obelisk/impl"
+
+            -- See https://github.com/obsidiansystems/obelisk/pull/92#issuecomment-390226735
+            hash   = silently $ run "sh" ["-c", "cd " <> thunk <> " && find . | grep -v '^./.git' | grep -v '/.attr-cache' | grep -v '^.$' | xargs -n 1 -I % -- sh -c 'echo `nix-hash %` %'"]
+
         it "can be created" $ inProj $ do
-          run "ob" ["init", "--symlink", T.pack obeliskImpl]
+          run "ob" ["init"]
+
         it "can build ghc.backend" $ inProj $ do
           run "nix-build" ["--no-out-link", "-A", "ghc.backend"]
         it "can build ghcjs.frontend" $ inProj $ do
@@ -49,6 +56,27 @@ main = do
             inShell cmd = run "nix-shell" $ ["-A", fromString shell, "--run", cmd]
           it ("can enter "    <> shell) $ inProj $ inShell "exit"
           it ("can build in " <> shell) $ inProj $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
+
+        it "has idempotent thunk update" $ inProj $ do
+          let update = run "ob" ["thunk", "update", thunk] *> hash
+          u  <- update
+          uu <- update
+          liftIO $ assertEqual "" u uu
+
+        it "has thunk pack and unpack inverses" $ inProj $ do
+          let pack   = run "ob" ["thunk", "pack",   thunk] *> hash
+              unpack = run "ob" ["thunk", "unpack", thunk] *> hash
+
+          e    <- hash
+          eu   <- unpack
+          eup  <- pack
+          eupu <- unpack
+          _    <- pack
+
+          liftIO $ do
+            assertEqual "" e  eup
+            assertEqual "" eu eupu
+            assertBool  "" (e /= eu)
 
         it "can use ob run" $ inProj $ handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
           runHandle "ob" ["run"] $ \stdout -> do
