@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 -- | Provides a simple CLI spinner that interoperates cleanly with the rest of the logging output.
@@ -8,17 +7,17 @@ module Obelisk.CLI.Spinner (withSpinner') where
 import Control.Concurrent (killThread, threadDelay)
 import Control.Monad (forM_, (>=>))
 import Control.Monad.Catch (MonadMask, mask, onException)
+import Control.Monad.IO.Class
 import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.Reader (MonadIO)
-import Control.Monad.IO.Class
 import Data.IORef
 import Data.List (delete)
 import Data.Text (Text)
 import qualified Data.Text as T
-import System.Console.ANSI (Color (Cyan, Green, Red), ColorIntensity (Vivid), ConsoleLayer (Foreground),
+import System.Console.ANSI (Color (Blue, Cyan, Green, Red), ColorIntensity (Vivid), ConsoleLayer (Foreground),
                             SGR (Reset, SetColor), setSGRCode)
 
-import Obelisk.CLI.Logging (LoggingConfig(..), Output (..), allowUserToMakeLoggingVerbose, forkML)
+import Obelisk.CLI.Logging (LoggingConfig (..), Output (..), allowUserToMakeLoggingVerbose, forkML)
 
 -- | Run an action with a CLI spinner.
 withSpinner'
@@ -56,7 +55,7 @@ withSpinner' conf s = bracket' start cleanup . const
 concatStack :: String -> [Text] -> String
 concatStack mark = drop 1 . foldr flatten "" . zip (mark : repeat arrow) . fmap T.unpack
   where flatten (m, s) acc = unwords [acc, m, s]
-        arrow = withColor Cyan "▶"
+        arrow = withColor Blue "⇾"
 
 -- | A spinner is simply an infinite list of strings that supplant each other in a delayed loop, creating the
 -- animation of a "spinner".
