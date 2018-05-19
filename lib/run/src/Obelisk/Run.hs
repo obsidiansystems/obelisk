@@ -5,7 +5,7 @@ module Obelisk.Run where
 
 import Control.Concurrent
 import Control.Exception
-import Control.Lens ((^?), _Right, _Just)
+import Control.Lens ((^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -14,15 +14,15 @@ import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
 import qualified Data.Text as T
-import Language.Javascript.JSaddle.WebSockets
 import Language.Javascript.JSaddle.Run (syncPoint)
-import Network.HTTP.Client (defaultManagerSettings, newManager, Manager)
+import Language.Javascript.JSaddle.WebSockets
+import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
 import qualified Network.HTTP.ReverseProxy as RP
 import Network.Socket
 import Network.Wai (Application)
 import Network.Wai.Handler.Warp
+import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets.Connection (defaultConnectionOptions)
-import Network.Wai.Handler.Warp.Internal (settingsPort, settingsHost)
 import Obelisk.ExecutableConfig (get)
 import Reflex.Dom.Core
 import System.Environment
@@ -34,7 +34,7 @@ import Text.URI.Lens
 
 run :: Int -- ^ Port to run the backend
     -> IO () -- ^ Backend
-    -> Widget () () -- ^ Frontend widget
+    -> (Widget () (), Widget () ()) -- ^ Frontend widget (head, body)
     -> IO ()
 run port backend frontend = do
   let handleBackendErr (_ :: SomeException) = hPutStrLn stderr "backend stopped; make a change to your code to reload"
@@ -52,8 +52,8 @@ getConfigRoute = do
 defAppUri :: URI
 defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 
-runWidget :: RunConfig -> Widget () () -> IO ()
-runWidget conf w = do
+runWidget :: RunConfig -> (Widget () (), Widget () ()) -> IO ()
+runWidget conf (h, b) = do
   uri <- fromMaybe defAppUri <$> getConfigRoute
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
@@ -66,7 +66,10 @@ runWidget conf w = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- jsaddleWithAppOr defaultConnectionOptions (mainWidget' w >> syncPoint) (fallbackProxy redirectHost redirectPort man)
+        app <- jsaddleWithAppOr
+          defaultConnectionOptions
+          (mainWidgetWithHead' (const h, const b) >> syncPoint)
+          (fallbackProxy redirectHost redirectPort man)
         runSettingsSocket settings skt app)
 
 -- | like 'bindPortTCP' but reconnects on exception
