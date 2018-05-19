@@ -88,6 +88,9 @@ main = do
           it ("can enter "    <> shell) $ inProj $ inShell "exit"
           it ("can build in " <> shell) $ inProj $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
+        it "can build reflex project" $ inProj $ do
+          run "nix-build" []
+
         it "has idempotent thunk update" $ inProj $ do
           let update = run "ob" ["thunk", "update", thunk] >> commitAll
           u  <- update
