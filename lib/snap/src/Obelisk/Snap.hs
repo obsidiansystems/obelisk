@@ -4,7 +4,8 @@
 
 module Obelisk.Snap where
 
-import Obelisk.Asset.Serve
+import Obelisk.Asset.Serve.Snap
+import Obelisk.Snap.Extras
 
 import Snap
 
@@ -13,7 +14,6 @@ import Data.ByteString (ByteString)
 import Data.Default
 import Data.Maybe
 import Data.Monoid
-import Data.String
 import Data.Text (Text)
 import qualified Data.Text as T
 import Diagrams.Prelude (Diagram, renderDia, mkWidth)
@@ -83,16 +83,16 @@ frontendJsAssetsPath (AppConfig { _appConfig_jsexe = jsexe }) = "frontendJs.asse
 -- Helper funtion used in 'serveAppAt', writes a lazy bytestring to the body of Http response
 serveStaticIndex :: MonadSnap m => AppConfig m -> m ()
 serveStaticIndex cfg = do
-	-- Decode, pack, and append asset target to file path
+  -- Decode, pack, and append asset target to file path
   appJsPath <- liftIO $ getAssetPath (frontendJsAssetsPath cfg) "/all.js"
-	-- extract initial body from 'AppConfig' or return empty string
+  -- extract initial body from 'AppConfig' or return empty string
   initialBody <- fromMaybe (return "") $ _appConfig_initialBody cfg
-	-- extract inital head from 'AppConfig' or return empty string
+  -- extract inital head from 'AppConfig' or return empty string
   let initialHead = fromMaybe "" $ _appConfig_initialHead cfg
-	-- extract initial styles from 'AppConfig' or return empty string
+  -- extract initial styles from 'AppConfig' or return empty string
   let initialStyles = fromMaybe "" $ _appConfig_initialStyles cfg
 
-	-- Render and write html head and body to response
+  -- Render and write html head and body to response
   writeLBS $ renderBS $ doctypehtml_ $ do
     head_ $ do
       meta_ [charset_ "utf-8"] -- meta-data charset description
@@ -103,7 +103,7 @@ serveStaticIndex cfg = do
     body_ $ do -- <body>
       toHtmlRaw initialBody -- HtmlT monad wrapper
       script_ [type_ "text/javascript", src_ (maybe "/all.js" T.pack appJsPath), defer_ "defer"] ("" :: String)
-			-- create <script> element
+      -- create <script> element
       return ()
 
 {- | Takes an AppConfig monad and uses it to generate & write Lazy ByteString
