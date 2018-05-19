@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 module Obelisk.SelfTest where
 
 import Control.Exception (throw)
@@ -7,6 +8,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.Function (fix)
 import Data.Semigroup ((<>))
+import qualified Data.Set as Set
 import Data.String
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -41,7 +43,8 @@ main = do
             thunk  = ".obelisk/impl"
 
             -- See https://github.com/obsidiansystems/obelisk/pull/92#issuecomment-390226735
-            hash   = silently $ run "sh" ["-c", "cd " <> thunk <> " && find . | grep -v '^./.git' | grep -v '/.attr-cache' | grep -v '^.$' | xargs -n 1 -I % -- sh -c 'echo `nix-hash %` %'"]
+            hashDir dir   = silently $ run "sh" ["-c", "cd " <> dir <> " && find . | grep -v '^./.git' | grep -v '/.attr-cache' | grep -v '^.$' | xargs -n 1 -I % -- sh -c 'echo `nix-hash %` %'"]
+            hash = hashDir thunk
 
         it "can be created" $ inProj $ do
           run "ob" ["init"]
@@ -51,14 +54,14 @@ main = do
         it "can build ghcjs.frontend" $ inProj $ do
           run "nix-build" ["--no-out-link", "-A", "ghcjs.frontend"]
 
-        if (os == "darwin")
-          then it "can build ios"     $ inProj $ run "nix-build" $ ["--no-out-link", "-A", "ios.frontend"    ]
-          else it "can build android" $ inProj $ run "nix-build" $ ["--no-out-link", "-A", "android.frontend"]
+        if os == "darwin"
+          then it "can build ios"     $ inProj $ run "nix-build" ["--no-out-link", "-A", "ios.frontend"    ]
+          else it "can build android" $ inProj $ run "nix-build" ["--no-out-link", "-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
             shell = "shells." <> compiler
-            inShell cmd = run "nix-shell" $ ["-A", fromString shell, "--run", cmd]
+            inShell cmd = run "nix-shell" ["-A", fromString shell, "--run", cmd]
           it ("can enter "    <> shell) $ inProj $ inShell "exit"
           it ("can build in " <> shell) $ inProj $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
@@ -69,8 +72,8 @@ main = do
           liftIO $ assertEqual "" u uu
 
         it "has thunk pack and unpack inverses" $ inProj $ do
-          let pack   = run "ob" ["thunk", "pack",   thunk] *> hash
-              unpack = run "ob" ["thunk", "unpack", thunk] *> hash
+          let pack   = run_ "ob" ["thunk", "pack",   thunk] *> hash
+              unpack = run_ "ob" ["thunk", "unpack", thunk] *> hash
 
           e    <- hash
           eu   <- unpack
@@ -81,7 +84,20 @@ main = do
           liftIO $ do
             assertEqual "" e  eup
             assertEqual "" eu eupu
-            assertBool  "" (e /= eu)
+            assertBool "" (e /= eu)
+
+        it "can pack and unpack plain git repos" $ do
+          withSystemTempDirectory "git-repo" $ \dir -> shelly @IO $ silently $ do
+            let repo = toTextIgnore $ dir </> ("repo" :: String)
+            origHash <- run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo] *> hashDir repo
+
+            run_ "ob" ["thunk", "pack", repo]
+            packedFiles <- Set.fromList <$> ls (repo </> ("" :: String))
+            liftIO $ assertEqual "" packedFiles $
+              Set.fromList $ (repo </>) <$> ["default.nix", "git.json", ".attr-cache" :: String]
+
+            unpackHash <- run_ "ob" ["thunk", "unpack", repo] *> hashDir repo
+            liftIO $ assertEqual "" origHash unpackHash
 
         it "can use ob run" $ inProj $ handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
           runHandle "ob" ["run"] $ \stdout -> do

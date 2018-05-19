@@ -10,6 +10,7 @@ library
   hs-source-dirs: src
   build-depends:
       base
+    , containers
     , hspec
     , http-client
     , http-types
