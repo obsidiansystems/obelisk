@@ -1,3 +1,11 @@
+# Table of contents
+- [Installation](#installation)
+- [Building](#building)
+- [Deploying](#deploying)
+- [Mobile](#mobile)
+  - [iOS](#ios)
+  - [Android](#android)
+
 ## Installation
 1. Set up nix caches
     1. Add this to `/etc/nixos/configuration.nix`:
@@ -101,8 +109,8 @@ ob deploy update
 ob deploy push
 ```
 
-## Building for mobile
-Until Obelisk will be able to automate this workflow via single command you are recommended to build mobile apps manually as follows.
+## Mobile
+Until Obelisk offers a `ob deploy` equivalent for mobile apps, you are recommended to do it manually as follows.
 
 ### iOS
 
