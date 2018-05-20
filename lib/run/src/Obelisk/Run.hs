@@ -41,12 +41,11 @@ run :: Int -- ^ Port to run the backend
     -> (StaticWidget () (), Widget () ()) -- ^ Frontend widget (head, body)
     -> IO ()
 run port backend frontend = do
-  let handleBackendErr (_ :: SomeException) = hPutStrLn stderr "backend stopped; make a change to your code to reload"
+  let handleBackendErr (_ :: IOException) = hPutStrLn stderr "backend stopped; make a change to your code to reload"
   backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] backend
   putStrLn $ "Backend running on port " <> show port
   let conf = defRunConfig { _runConfig_redirectPort = port }
-  runWidget conf frontend
-  killThread backendTid
+  runWidget conf frontend `finally` killThread backendTid
 
 getConfigRoute :: IO (Maybe URI)
 getConfigRoute = do
