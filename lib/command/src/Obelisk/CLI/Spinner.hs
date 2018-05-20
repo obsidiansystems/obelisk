@@ -7,33 +7,55 @@ module Obelisk.CLI.Spinner (withSpinner') where
 import Control.Concurrent (killThread, threadDelay)
 import Control.Monad (forM_, (>=>))
 import Control.Monad.Catch (MonadMask, mask, onException)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class
 import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.Reader (MonadIO)
+import Data.IORef
+import Data.List (delete)
 import Data.Text (Text)
 import qualified Data.Text as T
-import System.Console.ANSI (Color (Cyan, Green, Red), ColorIntensity (Vivid), ConsoleLayer (Foreground),
+import System.Console.ANSI (Color (Blue, Cyan, Green, Red), ColorIntensity (Vivid), ConsoleLayer (Foreground),
                             SGR (Reset, SetColor), setSGRCode)
 
-import Obelisk.CLI.Logging (LoggingConfig, Output (..), allowUserToMakeLoggingVerbose, forkML)
+import Obelisk.CLI.Logging (LoggingConfig (..), Output (..), allowUserToMakeLoggingVerbose, forkML)
 
 -- | Run an action with a CLI spinner.
 withSpinner'
   :: (MonadIO m, MonadMask m, MonadLog Output m)
   => LoggingConfig -> Text -> m a -> m a
-withSpinner' conf s = bracket' (sequence [run, forkML conf $ allowUserToMakeLoggingVerbose conf enquiryCode]) cleanup . const
+withSpinner' conf s = bracket' start cleanup . const
   where
-    run = forkML conf $ do
-      runSpinner spinner $ \c -> do
-        logMessage $ Output_Overwrite [c, " ", T.unpack s]
+    start = do
+      tids <- run
+      tid <- forkML conf $ allowUserToMakeLoggingVerbose conf enquiryCode
+      pure $ tid : tids
+    stack = _loggingConfig_stack conf
+    run = do
+      -- Add this log to the spinner stack
+      wasEmpty <- liftIO $ atomicModifyIORef' stack $ \old -> (s : old, null old)
+      if wasEmpty
+        then do -- Fork a thread to manage output of anything on the stack
+          tid <- forkML conf $ runSpinner spinner $ \c -> do
+            logs <- liftIO $ concatStack c <$> readIORef stack
+            logMessage $ Output_Overwrite [logs]
+          pure [tid]
+        else pure []
     cleanup failed tids = do
       liftIO $ mapM_ killThread tids
       logMessage Output_ClearLine
       let mark = if failed
             then withColor Red "✖"
             else withColor Green "✔"
-      logMessage $ Output_Overwrite [mark, " ", T.unpack s, "\n"]
+      -- Delete this log from the spinner stack
+      logs <- liftIO $ atomicModifyIORef' stack $ \old -> (delete s old, concatStack mark old)
+      logMessage $ Output_Overwrite [logs, "\n"]
     spinner = coloredSpinner defaultSpinnerTheme
+
+-- | How nested spinner logs should be displayed
+concatStack :: String -> [Text] -> String
+concatStack mark = drop 1 . foldr flatten "" . zip (mark : repeat arrow) . fmap T.unpack
+  where flatten (m, s) acc = unwords [acc, m, s]
+        arrow = withColor Blue "⇾"
 
 -- | A spinner is simply an infinite list of strings that supplant each other in a delayed loop, creating the
 -- animation of a "spinner".
