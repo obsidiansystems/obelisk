@@ -2,7 +2,6 @@
 **/.cabal-sandbox
 **/cabal.sandbox.config
 result
-result-android
 *.o
 *.hi
 
