@@ -1,18 +1,19 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE DataKinds #-}
 module Frontend where
 
-import Reflex.Dom
-
 import qualified Data.Text as T
+import Reflex.Dom.Core
 
-import Static
 import Common.Api
+import Static
 
-frontend :: Widget x ()
-frontend = do
-  text "Welcome to Obelisk!"
-  el "p" $ text $ T.pack commonStuff
-  elAttr "img" ("src" =: static @"obelisk.jpg") blank
-
+frontend :: (StaticWidget x (), Widget x ())
+frontend = (head', body)
+  where
+    head' = el "title" $ text "Obelisk Minimal Example"
+    body = do
+      text "Welcome to Obelisk!"
+      el "p" $ text $ T.pack commonStuff
+      elAttr "img" ("src" =: static @"obelisk.jpg") blank

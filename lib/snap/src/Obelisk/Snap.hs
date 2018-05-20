@@ -4,44 +4,31 @@
 
 module Obelisk.Snap where
 
-import Obelisk.Asset.Serve
+import Obelisk.Asset.Serve.Snap
+import Obelisk.Snap.Extras
 
 import Snap
 
 import Control.Lens
 import Data.ByteString (ByteString)
 import Data.Default
-import Data.Maybe
 import Data.Monoid
-import Data.String
-import Data.Text (Text)
 import qualified Data.Text as T
-import Diagrams.Prelude (Diagram, renderDia, mkWidth)
-import Diagrams.Backend.SVG
-import qualified Graphics.Svg as SVG
-import Graphics.Svg.Attributes
 import Lucid
 import System.FilePath
-import Text.RawString.QQ
 import Control.Monad.IO.Class
 
 -- Data type for web app configuration
 data AppConfig m
-   = AppConfig { _appConfig_logo :: Diagram SVG
-               , _appConfig_extraHeadMarkup :: Html ()
-               , _appConfig_initialStyles :: Maybe Text
-               , _appConfig_initialBody :: Maybe (m ByteString)
-               , _appConfig_initialHead :: Maybe ByteString
+   = AppConfig { _appConfig_initialBody :: m ByteString
+               , _appConfig_initialHead :: ByteString
                , _appConfig_serveJsexe :: Bool
                , _appConfig_jsexe :: FilePath
                }
 
 -- Default instance for app configuration
-instance Default (AppConfig m) where
-  def = AppConfig { _appConfig_logo = mempty
-                  , _appConfig_extraHeadMarkup = mempty
-                  , _appConfig_initialStyles = mempty
-                  , _appConfig_initialBody = Nothing
+instance Monad m => Default (AppConfig m) where
+  def = AppConfig { _appConfig_initialBody = return mempty
                   , _appConfig_initialHead = mempty
                   , _appConfig_serveJsexe = True
                   , _appConfig_jsexe = "frontend.jsexe"
@@ -83,28 +70,18 @@ frontendJsAssetsPath (AppConfig { _appConfig_jsexe = jsexe }) = "frontendJs.asse
 -- Helper funtion used in 'serveAppAt', writes a lazy bytestring to the body of Http response
 serveStaticIndex :: MonadSnap m => AppConfig m -> m ()
 serveStaticIndex cfg = do
-	-- Decode, pack, and append asset target to file path
+  -- Decode, pack, and append asset target to file path
   appJsPath <- liftIO $ getAssetPath (frontendJsAssetsPath cfg) "/all.js"
-	-- extract initial body from 'AppConfig' or return empty string
-  initialBody <- fromMaybe (return "") $ _appConfig_initialBody cfg
-	-- extract inital head from 'AppConfig' or return empty string
-  let initialHead = fromMaybe "" $ _appConfig_initialHead cfg
-	-- extract initial styles from 'AppConfig' or return empty string
-  let initialStyles = fromMaybe "" $ _appConfig_initialStyles cfg
-
-	-- Render and write html head and body to response
+  initialBody <- _appConfig_initialBody cfg
+  -- Render and write html head and body to response
   writeLBS $ renderBS $ doctypehtml_ $ do
     head_ $ do
       meta_ [charset_ "utf-8"] -- meta-data charset description
       meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"] -- meta-data viewport description
-      _appConfig_extraHeadMarkup cfg -- any additional <head> html from 'AppConfig' type
-      toHtmlRaw initialHead -- HtmlT monad wrapper
-      style_ initialStyles -- generate style element/attribute
+      toHtmlRaw $ _appConfig_initialHead cfg
     body_ $ do -- <body>
       toHtmlRaw initialBody -- HtmlT monad wrapper
-      script_ [type_ "text/javascript", src_ (maybe "/all.js" T.pack appJsPath), defer_ "defer"] ("" :: String)
-			-- create <script> element
-      return ()
+      script_ [type_ "application/javascript", src_ (maybe "/all.js" T.pack appJsPath), defer_ "defer"] ("" :: String)
 
 {- | Takes an AppConfig monad and uses it to generate & write Lazy ByteString
  to the body of the https response. This one comes with hard coded values
@@ -116,43 +93,7 @@ serveIndex cfg = do
     head_ $ do
       meta_ [charset_ "utf-8"]
       meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
-      _appConfig_extraHeadMarkup cfg
-      style_ [r|
-        #preload-logo {
-            position: fixed;
-            left: 25%;
-            top: 25%;
-            width: 50%;
-            height: 50%;
-            -webkit-animation: fadein 2s; /* Safari, Chrome and Opera > 12.1 */
-               -moz-animation: fadein 2s; /* Firefox < 16 */
-                -ms-animation: fadein 2s; /* Internet Explorer */
-                 -o-animation: fadein 2s; /* Opera < 12.1 */
-                    animation: fadein 2s;
-        }
-        @keyframes fadein {
-            from { opacity: 0; }
-            to   { opacity: 1; }
-        }
-        /* Firefox < 16 */
-        @-moz-keyframes fadein {
-            from { opacity: 0; }
-            to   { opacity: 1; }
-        }
-        /* Safari, Chrome and Opera > 12.1 */
-        @-webkit-keyframes fadein {
-            from { opacity: 0; }
-            to   { opacity: 1; }
-        }
-        /* Internet Explorer */
-        @-ms-keyframes fadein {
-            from { opacity: 0; }
-            to   { opacity: 1; }
-        }
-      |]
     body_ $ do
-      let svgOpts = SVGOptions (mkWidth 400) Nothing "preload-logo-" [bindAttr Id_ "preload-logo"] False
-      toHtml $ SVG.renderBS $ renderDia SVG svgOpts $ _appConfig_logo cfg
-      script_ [type_ "text/javascript", src_ (maybe "/all.js" T.pack appJsPath), defer_ "defer"] ("" :: String)
+      script_ [type_ "application/javascript", src_ (maybe "/all.js" T.pack appJsPath), defer_ "defer"] ("" :: String)
 
 makeLenses ''AppConfig

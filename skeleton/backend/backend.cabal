@@ -9,6 +9,7 @@ library
     buildable: False
   build-depends: base
                , common
+               , frontend
                , obelisk-backend
   exposed-modules:
     Backend
@@ -22,6 +23,7 @@ executable backend
   build-depends: base
                , backend
                , common
+               , frontend
                , lens
                , modern-uri
                , obelisk-backend

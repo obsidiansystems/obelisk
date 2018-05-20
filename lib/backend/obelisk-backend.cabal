@@ -6,9 +6,12 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base,
-                 snap,
-                 snap-server,
+                 bytestring,
                  data-default,
+                 lens,
                  obelisk-asset-serve-snap,
-                 bytestring
+                 obelisk-snap,
+                 reflex-dom,
+                 snap,
+                 snap-server
   exposed-modules: Obelisk.Backend

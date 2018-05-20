@@ -5,24 +5,28 @@ module Obelisk.Run where
 
 import Control.Concurrent
 import Control.Exception
-import Control.Lens ((^?), _Right, _Just)
+import Control.Lens ((^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Lazy.Char8 as BSLC
 import Data.List (uncons)
 import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
 import qualified Data.Text as T
-import Language.Javascript.JSaddle.WebSockets
 import Language.Javascript.JSaddle.Run (syncPoint)
-import Network.HTTP.Client (defaultManagerSettings, newManager, Manager)
+import Language.Javascript.JSaddle.WebSockets
+import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
 import qualified Network.HTTP.ReverseProxy as RP
+import qualified Network.HTTP.Types as H
 import Network.Socket
 import Network.Wai (Application)
+import qualified Network.Wai as W
 import Network.Wai.Handler.Warp
+import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
+import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
-import Network.Wai.Handler.Warp.Internal (settingsPort, settingsHost)
 import Obelisk.ExecutableConfig (get)
 import Reflex.Dom.Core
 import System.Environment
@@ -34,7 +38,7 @@ import Text.URI.Lens
 
 run :: Int -- ^ Port to run the backend
     -> IO () -- ^ Backend
-    -> Widget () () -- ^ Frontend widget
+    -> (StaticWidget () (), Widget () ()) -- ^ Frontend widget (head, body)
     -> IO ()
 run port backend frontend = do
   let handleBackendErr (_ :: SomeException) = hPutStrLn stderr "backend stopped; make a change to your code to reload"
@@ -52,8 +56,8 @@ getConfigRoute = do
 defAppUri :: URI
 defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 
-runWidget :: RunConfig -> Widget () () -> IO ()
-runWidget conf w = do
+runWidget :: RunConfig -> (StaticWidget () (), Widget () ()) -> IO ()
+runWidget conf (h, b) = do
   uri <- fromMaybe defAppUri <$> getConfigRoute
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
@@ -66,8 +70,25 @@ runWidget conf w = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- jsaddleWithAppOr defaultConnectionOptions (mainWidget' w >> syncPoint) (fallbackProxy redirectHost redirectPort man)
+        app <- obeliskApp defaultConnectionOptions h b (fallbackProxy redirectHost redirectPort man)
         runSettingsSocket settings skt app)
+
+obeliskApp :: ConnectionOptions -> StaticWidget () () -> Widget () () -> Application -> IO Application
+obeliskApp opts h b backend = do
+  html <- BSLC.fromStrict <$> indexHtml h
+  let entryPoint = mainWidget' b >> syncPoint
+  jsaddleOr opts entryPoint $ \req sendResponse -> case (W.requestMethod req, W.pathInfo req) of
+    ("GET", []) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
+    ("GET", ["jsaddle.js"]) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs False
+    _ -> backend req sendResponse
+
+indexHtml :: StaticWidget () () -> IO ByteString
+indexHtml h = do
+  ((), bs) <- renderStatic $ el "html" $ do
+    el "head" $ h
+    el "body" $ return ()
+    elAttr "script" ("src" =: "/jsaddle.js") $ return ()
+  return $ "<!DOCTYPE html>" <> bs
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
