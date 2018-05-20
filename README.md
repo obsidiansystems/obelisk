@@ -102,10 +102,63 @@ ob deploy push
 ```
 
 ## Building for mobile
+Until Obelisk will be able to automate this workflow via single command you are recommended to build mobile apps manually as follows.
 
-### Android 
+### iOS
 
-Until Obelisk will be able to automate this workflow via single command you are recommended to build android apps manually as follows.
+#### First time setup
+Development on iOS requires a computer running macOS and an iOS developer account.
+
+##### iPhone
+1. Connect the iPhone on which you'd like to run builds - this will open up iTunes.
+1. Click accept to authorize on both the computer and the iPhone.
+
+##### Xcode
+1. Install XCode 8.2 (contains iOS SDK 11.2)
+1. Open XCode once so that it runs its post install tool setup.
+
+You can verify that you have the correct version by running
+```
+xcodebuild -showsdks
+```
+
+##### Certificates
+Now you need to inform Apple of your development devices and permissions by
+adding credentials to the correct provisioning profile via the Apple Developer
+portal.
+
+1. Open up XCode and go to Preferences - Accounts. Select the organization
+Member role, click Manage Certificates, and add an iOS Development
+certificate.
+1. Go to [developer portal - devices](https://developer.apple.com/account/ios/device/) and add your device.
+To find your device's UDID, select it in iTunes and click the serial number.
+1. Go to [developer portal - development profiles](https://developer.apple.com/account/ios/profile/limited).
+Create a development profile and add your certificate and device.
+Click "Generate" and then download and open the profile.
+
+#### Building
+1. In your project's `default.nix` set values for `ios.bundleIdentifier` and `ios.bundleName`.
+Ensure that `bundleIdentifier` matches the App ID of the development profile, or that you are using a wildcard profile.
+1. Run `nix-build -A ios.frontend -o result-ios` to build the app. Find it at `result-ios/frontend.app`
+
+#### Deploying
+1. Connect the registered iPhone.
+1. Find your Apple Team ID in the [developer portal](https://developer.apple.com/account/#/membership).
+1. Run the deploy command with the Team ID as argument, e.g.
+```
+ios-result/bin/deploy XXXXXXXXXX
+# or in debug mode:
+ios-result/bin/deploy -d XXXXXXXXXX
+```
+
+#### Debugging
+It's also possible to inspect iOS WkWebView apps once they are installed in the iPhone:
+1. On the desktop, go to Safari > Preferences > Advanced and enable Develop menu.
+1. On the iPhone go to Settings > Safari > Advanced and enable Web Inspector.
+1. Open the app on the iPhone while it is connected to the desktop.
+1. In the desktop's Safari Develop menu, you should see your iPhone. Select the screen under the name of the app.
+
+### Android
 
 1. In your project's `default.nix` set a suitable value for `android.applicationId` and `android.displayName`.
 1. Run `nix-build -A android.frontend -o result-android` to build the Android app.
@@ -153,6 +206,3 @@ Now edit your project's `default.nix` and tell Obelisk of your app's keystore fi
 ##### Build a release version
 
 After having configured signing for your app, you may proceed to build a release version of the app. This is no different to how you build the non-release version, so consult the section [Android](#android) further above for exact instructions on building and deploying to your device.
-
-
-
