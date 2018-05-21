@@ -178,7 +178,7 @@ Now deploy the built apk file to your Android device:
 1. Connect the device using USB (be sure to confirm any security prompts on the device)
 1. Run the deploy script: `result-android/bin/deploy`
 
-This should copy over and install the application on your device (if you see a  "*signatures do not match* error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
+This should copy over and install the application on your device (if you see a  "*signatures do not match*" error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 
 #### Releasing to Play Store
 
@@ -189,7 +189,7 @@ The previous section would have generated a debug version of the app. In order t
 First, if you do not already have a keystore, create it as follows (for more information, see the [Android documentation](https://developer.android.com/studio/publish/app-signing#signing-manually)):
 
 ```
-nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias
+nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
 ```
 
 (Besure to give an appropriate keystore filename and key alias string above.)
