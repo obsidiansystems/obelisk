@@ -1,7 +1,8 @@
 { system ? builtins.currentSystem
 , profiling ? false
+, iosSdkVersion ? "10.2"
 }:
-let reflex-platform = import ./dep/reflex-platform { inherit system; };
+let reflex-platform = import ./dep/reflex-platform { inherit system iosSdkVersion; };
     inherit (reflex-platform) hackGet;
     pkgs = reflex-platform.nixpkgs;
 in with pkgs.haskell.lib; with pkgs.lib;
