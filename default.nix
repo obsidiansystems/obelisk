@@ -178,20 +178,14 @@ rec {
   server = exe: hostName:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
-        https = import (pkgs.fetchFromGitHub {
-            owner = "obsidiansystems";
-            repo = "obelisk-https";
-            rev = "999e36b4ab14cbe31be6815cdbc3a1223a7b4617";
-            sha256 = "0qxi7hg751ikkp4r5j7d706gjrsl26lzlrnh905havij10plcg1l";
-            private = true;
-          } + "/module.nix") {} {
-            backendPort = 8000; # TODO read from config
-            # sslConfig = {
-            #   hostName = "example.com";
-            #   adminEmail = "webmaster@example.com";
-            #   subdomains = [ "www" ];
-            # };
-          };
+        https = (import lib/https {}).module {
+          backendPort = 8000; # TODO read from config
+          # sslConfig = {
+          #   hostName = "example.com";
+          #   adminEmail = "webmaster@example.com";
+          #   subdomains = [ "www" ];
+          # };
+        };
     in nixos {
       inherit system;
       configuration = args: {
