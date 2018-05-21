@@ -24,6 +24,7 @@ import System.IO.Temp
 import System.Timeout
 import Test.Hspec
 import Test.HUnit.Base
+import System.Process (readProcessWithExitCode)
 
 data ObRunState
   = ObRunState_Init
@@ -92,34 +93,18 @@ main = do
               origHash <- run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo] *> hashDir repo
 
               run_ "ob" ["thunk", "pack", repo]
-              packedFiles <- Set.fromList <$> ls (repo </> ("" :: String))
+              packedFiles <- Set.fromList <$> ls (fromText repo)
               liftIO $ assertEqual "" packedFiles $
                 Set.fromList $ (repo </>) <$> ["default.nix", "git.json", ".attr-cache" :: String]
 
               unpackHash <- run_ "ob" ["thunk", "unpack", repo] *> hashDir repo
               liftIO $ assertEqual "" origHash unpackHash
 
+              testThunkPack $ fromText repo
+
           it "aborts thunk pack when there are uncommitted files" $ inProj $ do
-            withTempFile (T.unpack $ toTextIgnore $ blankProject </> thunk) "test-file" $ \file handle -> do
-              let try_sh :: Exception e => Sh a -> Sh (Either e a)
-                  try_sh a = catch_sh (a >>= pure . Right) (pure . Left)
-                  ensureThunkPackFails = try_sh pack >>= \case
-                    Left (RunFailed _ _ status _) | status /= 0 -> pure ()
-                    _ -> fail "ob thunk pack succeeded when it should have failed"
-              -- Untracked files
-              ensureThunkPackFails
-              run "git" ["add", T.pack file]
-              -- Uncommitted files (staged)
-              ensureThunkPackFails
-              run "git" ["commit", "-m", "test commit"]
-              -- Non-pushed commits in any branch
-              ensureThunkPackFails
-              -- Uncommitted files (unstaged)
-              liftIO $ T.hPutStrLn handle "test file" >> hClose handle
-              ensureThunkPackFails
-              -- Existing stashes
-              run "git" ["stash"]
-              ensureThunkPackFails
+            unpack
+            testThunkPack (blankProject </> thunk)
 
         it "can use ob run" $ inProj $ handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
           runHandle "ob" ["run"] $ \stdout -> do
@@ -132,6 +117,32 @@ main = do
             if runningUri /= newUri
             then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
             else exit 0
+
+testThunkPack :: Shelly.FilePath -> Sh ()
+testThunkPack path = withTempFile (T.unpack $ toTextIgnore path) "test-file" $ \file handle -> do
+  let try_sh :: Exception e => Sh a -> Sh (Either e a)
+      try_sh a = catch_sh (a >>= pure . Right) (pure . Left)
+      pack' = readProcessWithExitCode "ob" ["thunk", "pack", T.unpack $ toTextIgnore path] ""
+      ensureThunkPackFails err = liftIO $ pack' >>= \case
+        (code, out, _err)
+          | code == ExitSuccess -> fail "ob thunk pack succeeded when it should have failed"
+          | err `T.isInfixOf` T.pack out -> pure ()
+          | otherwise -> fail $ "ob thunk pack failed for an unexpected reason: " <> show out
+      git = chdir path . run "git"
+  -- Untracked files
+  ensureThunkPackFails "unsaved modifications"
+  git ["add", T.pack file]
+  -- Uncommitted files (staged)
+  ensureThunkPackFails "unsaved modifications"
+  git ["commit", "-m", "test commit"]
+  -- Non-pushed commits in any branch
+  ensureThunkPackFails "not been pushed"
+  -- Uncommitted files (unstaged)
+  liftIO $ T.hPutStrLn handle "test file" >> hClose handle
+  ensureThunkPackFails "unsaved modifications"
+  -- Existing stashes
+  git ["stash"]
+  ensureThunkPackFails "has stashes"
 
 -- | Blocks until a non-empty line is available
 hGetLineSkipBlanks :: MonadIO m => Handle -> m Text
