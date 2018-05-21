@@ -105,7 +105,7 @@ main = do
                   try_sh a = catch_sh (a >>= pure . Right) (pure . Left)
                   ensureThunkPackFails = try_sh pack >>= \case
                     Left (RunFailed _ _ status _) | status /= 0 -> pure ()
-                    _ -> fail "ob thunk unpack succeeded when it should have failed"
+                    _ -> fail "ob thunk pack succeeded when it should have failed"
               -- Untracked files
               ensureThunkPackFails
               run "git" ["add", T.pack file]
