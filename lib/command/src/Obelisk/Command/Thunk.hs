@@ -346,8 +346,8 @@ updateThunkToLatest target = do
 -- This tool will only ever produce the newest one when it writes a thunk.
 gitHubStandaloneLoaders :: NonEmpty Text
 gitHubStandaloneLoaders =
-  gitHubStandaloneLoaderV3 :|
-  [ gitHubStandaloneLoaderV2
+  gitHubStandaloneLoaderV2 :|
+  [ gitHubStandaloneLoaderV3
   , gitHubStandaloneLoaderV1
   ]
 
