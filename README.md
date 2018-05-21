@@ -1,4 +1,5 @@
 ## Installation
+1. Install or update to nix 2.x
 1. Set up nix caches
     1. Add this to `/etc/nixos/configuration.nix`:
         ```
