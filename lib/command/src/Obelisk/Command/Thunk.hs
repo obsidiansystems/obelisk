@@ -467,11 +467,19 @@ gitHubStandaloneLoaderV3 = T.unlines
 plainGitStandaloneLoaders :: NonEmpty Text
 plainGitStandaloneLoaders =
   plainGitStandaloneLoaderV1 :|
-  [
+  [ plainGitStandaloneLoaderV2
   ]
 
 plainGitStandaloneLoaderV1 :: Text
 plainGitStandaloneLoaderV1 = T.unlines
+  [ "# DO NOT HAND-EDIT THIS FILE"
+  , "let fetchGit = {url, rev, ref ? null, branch ? null, sha256 ? null, fetchSubmodules ? null}:"
+  , "  assert !fetchSubmodules; (import <nixpkgs> {}).fetchgit { inherit url rev sha256; };"
+  , "in import (fetchGit (builtins.fromJSON (builtins.readFile ./git.json)))"
+  ]
+
+plainGitStandaloneLoaderV2 :: Text
+plainGitStandaloneLoaderV2 = T.unlines
   [ "# DO NOT HAND-EDIT THIS FILE"
   , "let fetchGit = {url, rev, ref ? null, branch ? null, sha256 ? null, fetchSubmodules ? null}:"
   , "  if builtins.hasAttr \"fetchGit\" builtins"
