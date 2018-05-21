@@ -284,6 +284,7 @@ rec {
          { server = { hostName }:
              let exe = serverExe projectOut.ghc.backend projectOut.ghcjs.frontend assets.symlinked configPath;
              in server exe hostName;
+           obelisk = import (base + "/.obelisk/impl") {};
          };
   haskellPackageSets = {
     ghc = reflex-platform.ghc.override {

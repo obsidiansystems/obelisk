@@ -10,6 +10,9 @@ module Obelisk.Command.Project
   , inProjectShell
   , inImpureProjectShell
   , projectShell
+
+  , toObeliskDir
+  , toImplDir
   ) where
 
 import Control.Monad

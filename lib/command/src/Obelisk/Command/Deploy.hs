@@ -26,6 +26,7 @@ import Obelisk.App (MonadObelisk)
 import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, withSpinner)
 import Obelisk.CLI.Logging
 import Obelisk.Command.Nix
+import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
@@ -54,7 +55,14 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
       verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
   liftIO $ do
     createThunk (deployDir </> "src") thunkPtr
+    liftIO $ setupObeliskImpl deployDir
     initGit deployDir
+
+setupObeliskImpl :: FilePath -> IO ()
+setupObeliskImpl deployDir = do
+  let implDir = toImplDir deployDir
+  createDirectoryIfMissing True implDir
+  writeFile (implDir </> "default.nix") "(import ../../src {}).obelisk"
 
 deployPush :: MonadObelisk m => FilePath -> m ()
 deployPush deployPath = do
