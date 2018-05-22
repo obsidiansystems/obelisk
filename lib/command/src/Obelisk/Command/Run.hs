@@ -50,7 +50,7 @@ run = do
       testCmd = unwords ["Obelisk.Run.run", show freePort , "backend", "frontend"]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
-    liftIO $ do 
+    liftIO $ do
       writeFile dotGhciPath dotGhci
       runDev dotGhciPath $ Just testCmd
 
