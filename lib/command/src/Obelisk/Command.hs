@@ -26,6 +26,7 @@ import System.Environment
 import System.FilePath
 import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
+import System.Process (callCommand)
 
 import Obelisk.App
 import Obelisk.CLI (Severity (..), cliDemo, failWith, getLogLevel, newLoggingConfig, putLog)
@@ -126,8 +127,14 @@ deployCommand :: Parser DeployCommand
 deployCommand = hsubparser $ mconcat
   [ command "init" $ info deployInitCommand $ progDesc "Initialize a deployment configuration directory"
   , command "push" $ info (pure DeployCommand_Push) mempty
+  , command "test" $ info (DeployCommand_Test <$> argument (maybeReader readPlatform) (completeWith ["android"])) $ progDesc "Test your obelisk project from a mobile platform. [Only android supported]"
   , command "update" $ info (pure DeployCommand_Update) $ progDesc "Update the deployment's src thunk to latest"
   ]
+
+readPlatform :: String -> Maybe Platform
+readPlatform = \case
+  "android" -> Just Android
+  _ -> Nothing
 
 deployInitCommand :: Parser DeployCommand
 deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
@@ -136,9 +143,13 @@ deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
   <*> some (strOption (long "hostname" <> metavar "HOSTNAME" <> help "hostname of the deployment target"))
   <*> strOption (long "upstream" <> value "origin" <> metavar "REMOTE" <> help "git remote to use for the src thunk" <> showDefault)
 
+data Platform = Android
+  deriving (Show)
+
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
   | DeployCommand_Push
+  | DeployCommand_Test Platform
   | DeployCommand_Update
   deriving Show
 
@@ -281,6 +292,12 @@ ob = \case
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
     DeployCommand_Push -> deployPush "."
+    DeployCommand_Test Android -> withProjectRoot "." $ \root -> do
+      let srcDir = root </> "src"
+      exists <- liftIO $ doesDirectoryExist srcDir
+      unless exists $ failWith "ob test should be run inside of a deploy directory"
+      result <- nixBuildAttrWithCache srcDir "android.frontend"
+      liftIO $ callCommand $ result </> "bin" </> "deploy"
     DeployCommand_Update -> deployUpdate "."
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
