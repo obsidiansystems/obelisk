@@ -24,6 +24,7 @@ module Obelisk.Command.Thunk
   , packThunk
   , readThunk
   , getThunkPtr
+  , getThunkPtr'
   ) where
 
 import Control.Applicative
@@ -546,8 +547,11 @@ packThunk thunkDir upstream = readThunk thunkDir >>= \case
       liftIO $ createThunk thunkDir thunkPtr
 
 getThunkPtr :: MonadObelisk m => FilePath -> String -> m ThunkPtr
-getThunkPtr thunkDir upstream = do
-    liftIO (checkGitCleanStatus thunkDir) >>= \case
+getThunkPtr = getThunkPtr' True
+
+getThunkPtr' :: MonadObelisk m => Bool -> FilePath -> String -> m ThunkPtr
+getThunkPtr' checkClean thunkDir upstream = do
+    when checkClean $ liftIO (checkGitCleanStatus thunkDir) >>= \case
       False -> do
         statusDebug <- liftIO $ fmap (T.strip . T.pack) $ readProcess "hub"
           [ "-C", thunkDir, "status", "--ignored" ] ""
@@ -558,7 +562,7 @@ getThunkPtr thunkDir upstream = do
 
     -- Check whether there are any stashes
     stashOutput <- liftIO $ fmap T.pack $ readProcess "hub" [ "-C", thunkDir, "stash", "list" ] ""
-    case T.null stashOutput of
+    when checkClean $ case T.null stashOutput of
       False -> do
         failWith $ T.unlines $
           [ "thunk pack: thunk checkout has stashes"
@@ -577,7 +581,7 @@ getThunkPtr thunkDir upstream = do
       Nothing -> failWith $ T.pack $ "thunk pack: upstream " <> upstream <> " does not exist. Available upstreams are " <> L.intercalate ", " remotes
       Just _ -> return ()
     -- iterate over cartesian product
-    forM_ repoHeads $ \hd -> do
+    when checkClean $ forM_ repoHeads $ \hd -> do
       [localRev] <- liftIO $ lines <$> readProcess "hub" [ "-C", thunkDir, "rev-parse", hd ] ""
       forM_ remotes $ \rm -> do
         --TODO: The error you get if a branch isn't pushed anywhere could be made more user friendly

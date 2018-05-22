@@ -276,7 +276,7 @@ ob = \case
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr root (_deployInitOpts_remote deployOpts)
+          getThunkPtr' False root (_deployInitOpts_remote deployOpts)
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
