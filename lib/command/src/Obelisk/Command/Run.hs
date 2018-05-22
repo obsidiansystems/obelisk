@@ -1,13 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Obelisk.Command.Run where
 
-import qualified Control.Exception as E
+import Control.Exception (bracket)
 import Control.Monad
 import Data.Either
 import Data.List
-import Control.Monad.Reader (ask)
+import Control.Monad.Reader (MonadIO, ask)
 import Data.Maybe
 import Control.Monad.IO.Class (liftIO)
 import Data.Monoid
@@ -34,8 +35,7 @@ run = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
-    let testCmd = unwords ["Obelisk.Run.run", show freePort, "backend", "frontend"]
-    runGhcid dotGhciPath $ Just testCmd
+    runGhcid dotGhciPath $ Just $ unwords ["Obelisk.Run.run", show freePort, "backend", "frontend"]
 
 runRepl :: MonadObelisk m => m ()
 runRepl = do
@@ -45,8 +45,8 @@ runRepl = do
 
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
-getLocalPkgs :: MonadObelisk m => m [FilePath]
-getLocalPkgs = return ["backend", "common", "frontend"]
+getLocalPkgs :: Applicative f => f [FilePath]
+getLocalPkgs = pure ["backend", "common", "frontend"]
 
 parseHsSrcDir
   :: MonadObelisk m
@@ -78,14 +78,15 @@ withGhciScript
 withGhciScript pkgs f = do
   (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
     let cabalFp = pkg </> pkg <.> "cabal"
-    xs <- parseHsSrcDir cabalFp
-    return $ case xs of
+    flip fmap (parseHsSrcDir cabalFp) $ \case
       Nothing -> Left pkg
       Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
+
   when (null hsSrcDirs) $
     failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
   unless (null pkgDirErrs) $
     putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
+
   let dotGhci = unlines
         [ ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
         , ":add Backend Frontend"
@@ -119,10 +120,10 @@ runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
       ] <> testCmd
     testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'")
 
-getFreePort :: MonadObelisk m => m PortNumber
+getFreePort :: MonadIO m => m PortNumber
 getFreePort = liftIO $ withSocketsDo $ do
   addr:_ <- getAddrInfo (Just defaultHints) (Just "127.0.0.1") (Just "0")
-  E.bracket (open addr) close socketPort
+  bracket (open addr) close socketPort
   where
     open addr = do
       sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
