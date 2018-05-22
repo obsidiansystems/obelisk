@@ -150,7 +150,7 @@ writeLogWith f noColor (WithSeverity severity s)
   | otherwise = liftIO $ f s
   where
     -- We must reset *before* outputting the newline (if any), otherwise the cursor won't be reset.
-    reset = liftIO $ setSGR [Reset] >> f ""
+    reset = setSGR [Reset] >> f ""
     put sgr = liftIO $ bracket_ (setSGR sgr) reset $ T.putStr s
 
 -- | Allow the user to immediately switch to verbose logging upon pressing a particular key.
