@@ -152,11 +152,19 @@ Ensure that `bundleIdentifier` matches the App ID of the development profile, or
 #### Deploying
 1. Connect the registered iPhone.
 1. Find your Apple Team ID in the [developer portal](https://developer.apple.com/account/#/membership).
-1. Run the deploy command with the Team ID as argument, e.g.
+1. Run the deploy command with your Team ID:
 ```
-ios-result/bin/deploy XXXXXXXXXX
-# or in debug mode:
-ios-result/bin/deploy -d XXXXXXXXXX
+ios-result/bin/deploy [TEAM_ID]
+# or in debug mode via lldb:
+ios-result/bin/deploy [TEAM_ID] -d
+```
+
+#### Packaging
+1. Go to [developer portal - distribution profiles](https://developer.apple.com/account/ios/profile/production).
+Create and download a distribution profile.
+1. Run the package script with your TEAM ID and your distribution profile to create a `.ipa`:
+```
+ios-result/bin/package [TEAM_ID] /path/to/output/.ipa /path/to/profile/file
 ```
 
 #### Debugging
