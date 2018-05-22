@@ -42,36 +42,25 @@
    After running `ob init` this becomes `nix-shell .obelisk/impl -A shell`
    for subsequent shells (since `ob init` overwrites `default.nix`).
 
-## Building
-Build the frontend by running
+## Developing an Obelisk project
 
-```bash
-nix-build -A ghcjs.frontend --out-link frontend-js
+Obelisk leverages ghcid to provide a live-reloading server that handles both frontend and backend. To run your Obelisk app and monitor the source for changes:
+
+```
+ob run
 ```
 
-Now you can try running the backend in GHCi by running
+Now go to http://localhost:8000 (or the port specified in `config/common/route`) to access your app.
 
-```bash
-ob repl backend
+Every time you change the Haskell sources file in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen the compilation errors and warnings if any.
+
+You may also run a GHCi repl for your Obelisk app as follows:
+
 ```
-and then typing
-
-```bash
-backend
+ob repl
 ```
 
-at the GHCi prompt.
-
-Point your web browser at [localhost:8000](localhost:8000) and everything should work.
-
-Feel free to edit the frontend and backend directories as you see fit.
-
-## Developer Tools
-To increase developer productivity it is highly recommended to make use of the
-`ob watch` command. This will open a live repl that
-will compile and refresh itself showing you the latest possible syntax or type errors
-as well as any other ghc warnings whenever files within their respective directories
-are saved and updated.
+From `ob repl` you can import modules from your frontend, common and backend.
 
 ## Deploying
 
