@@ -8,6 +8,7 @@ library
   build-depends: base
                , common
                , reflex-dom
+               , obelisk-frontend
                , static
                , text
   exposed-modules:
@@ -20,6 +21,7 @@ executable frontend
   build-depends: base
                , common
                , reflex-dom
+               , obelisk-frontend
                , static
                , text
                , frontend

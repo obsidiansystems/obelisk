@@ -1,0 +1,9 @@
+name: obelisk-frontend
+version: 0.1
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  hs-source-dirs: src
+  build-depends: base, bytestring, reflex-dom, jsaddle
+  exposed-modules: Obelisk.Frontend

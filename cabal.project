@@ -1,0 +1,9 @@
+packages:
+  lib/frontend/
+  lib/backend/
+  lib/command/
+  lib/run/
+  lib/asset/serve-snap
+  lib/snap-extras
+  lib/executable-config/inject
+  lib/executable-config/lookup
