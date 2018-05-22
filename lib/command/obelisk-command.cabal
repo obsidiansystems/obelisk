@@ -48,7 +48,6 @@ library
     Obelisk.Command.Deploy
     Obelisk.Command.Nix
     Obelisk.Command.Project
-    Obelisk.Command.Repl
     Obelisk.Command.Run
     Obelisk.Command.Thunk
     Obelisk.Command.Utils
