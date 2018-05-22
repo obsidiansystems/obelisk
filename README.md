@@ -122,10 +122,17 @@ Development on iOS requires a computer running macOS and an iOS developer accoun
 1. Click accept to authorize on both the computer and the iPhone.
 
 ##### Xcode
-1. Install XCode 8.2 (contains iOS SDK 11.2)
-1. Open XCode once so that it runs its post install tool setup.
+1. Install Xcode 8.2 (contains iOS SDK 10.2).
+These versions will work out of the box but iOS SDKs prior to 11.3 should also work. You can choose another installed version in `default.nix`
+More recent Xcodes should also work, as long as one of the SDKs mentioned above has been used.
+To add another SDK to your current Xcode, [download](https://developer.apple.com/download/more/) the corresponding Xcode, extract it and copy its SDK folder next to the installed one, e.g.
+```
+open -W Xcode_9.2.xip
+sudo cp -R Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS11.2.sdk
+```
+1. Open Xcode once so that it runs its post install tool setup.
 
-You can verify that you have the correct version by running
+You can verify that you have correct versions by running
 ```
 xcodebuild -showsdks
 ```
