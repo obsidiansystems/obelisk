@@ -13,6 +13,8 @@ module Obelisk.CLI.Process
   , callProcessAndLogOutput
   , createProcess
   , createProcess_
+  , callProcess
+  , callCommand
   ) where
 
 import Control.Applicative (liftA2)
@@ -81,6 +83,21 @@ createProcess_ name p = do
   putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (show p)
   liftIO $ Process.createProcess p
 
+-- | Like `System.Process.callProcess` but also logs (debug) the process being run
+callProcess
+  :: (MonadIO m, MonadLog Output m)
+  => String -> [String] -> m ()
+callProcess exe args = do
+  putLog Debug $ "Calling process " <> T.pack exe <> " with args: " <> T.pack (show args)
+  liftIO $ Process.callProcess exe args
+
+-- | Like `System.Process.callCommand` but also logs (debug) the command being run
+callCommand
+  :: (MonadIO m, MonadLog Output m)
+  => String -> m ()
+callCommand cmd = do
+  putLog Debug $ "Calling command " <> T.pack cmd
+  liftIO $ Process.callCommand cmd
 
 withProcess
   :: (MonadIO m, MonadMask m, MonadLog Output m)
