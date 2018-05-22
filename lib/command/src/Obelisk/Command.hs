@@ -73,7 +73,7 @@ initSource :: Parser InitSource
 initSource = foldl1 (<|>)
   [ pure InitSource_Default
   , InitSource_Branch <$> strOption (long "branch" <> metavar "BRANCH")
-  , InitSource_Symlink <$> strOption (long "symlink" <> metavar "PATH")
+  , InitSource_Symlink <$> strOption (long "symlink" <> action "file" <> metavar "PATH")
   ]
 
 data ObCommand
