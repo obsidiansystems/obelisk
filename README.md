@@ -52,7 +52,7 @@ ob run
 
 Now go to http://localhost:8000 (or the port specified in `config/common/route`) to access your app.
 
-Every time you change the Haskell sources file in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen the compilation errors and warnings if any.
+Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
 
 ## Deploying
 
