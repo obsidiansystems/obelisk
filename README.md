@@ -1,12 +1,15 @@
-# Table of contents
-- [Installation](#installation)
+# Obelisk
+
+Obelisk provides an easy way to develop and deploy your [Reflex](https://github.com/reflex-frp/reflex) project as web apps and as mobile apps.
+
+- [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
 - [Deploying](#deploying)
 - [Mobile](#mobile)
   - [iOS](#ios)
   - [Android](#android)
 
-## Installation
+## Installing Obelisk
 1. Install or update to nix 2.x
 1. Set up nix caches
     1. Add this to `/etc/nixos/configuration.nix`:
