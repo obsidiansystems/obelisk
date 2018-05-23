@@ -151,15 +151,6 @@ rec {
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
-  indexHtml = pkgs.writeText "index.html" ''
-    <!DOCTYPE html>
-    <html>
-      <head></head>
-      <body></body>
-      <script language="javascript" src="all.js" defer></script>
-    </html>
-  '';
-
   serverExe = backend: frontend: assets: config:
     pkgs.runCommand "serverExe" { buildInputs = [ pkgs.closurecompiler ]; } ''
       mkdir $out
@@ -169,7 +160,6 @@ rec {
       ln -s "${config}" $out/config
 
       mkdir $out/frontend.jsexe
-      ln -s "${indexHtml}" $out/frontend.jsexe/index.html
       cd $out/frontend.jsexe
       ln -s "${frontend}/bin/frontend.jsexe/all.js" all.unminified.js
       closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
