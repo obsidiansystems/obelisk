@@ -32,6 +32,7 @@ library
     , modern-uri
     , monad-loops
     , mtl
+    , megaparsec
     , network
     , network-uri
     , optparse-applicative
