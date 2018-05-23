@@ -1,6 +1,6 @@
 # Table of contents
 - [Installation](#installation)
-- [Building](#building)
+- [Developing an Obelisk project](#developing-an-obelisk-project)
 - [Deploying](#deploying)
 - [Mobile](#mobile)
   - [iOS](#ios)
