@@ -14,7 +14,7 @@
         nix.binaryCaches = [ "https://nixcache.reflex-frp.org" ];
         nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
-1. Install `ob`: `nix-env -f obelisk -iA command`.
+1. Install `ob`: `git clone git@github.com:obsidiansystems/obelisk && nix-env -f obelisk -iA command`.
    Alternatively, if you prefer not to install to your user nix environment, you can
    enter a shell with the `ob` command available: `nix-shell -A shell`.
    After running `ob init` this becomes `nix-shell .obelisk/impl -A shell`
@@ -38,7 +38,7 @@
         sudo launchctl start org.nixos.nix-daemon
         ```
     1. `nix-env -i hub` OR `nix-env -iA nixos.gitAndTools.hub`
-    1. `hub clone obsidiansystems/obelisk`
+    1. `hub clone yourusername/yourproject`
       * NOTE: you must authenticate with hub at least once, because the `ob` command uses `hub` for authentication
       #TODO: Make ob do this itself (either invoke hub automatically or not depend on hub)
 
