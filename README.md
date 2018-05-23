@@ -54,14 +54,6 @@ Now go to http://localhost:8000 (or the port specified in `config/common/route`)
 
 Every time you change the Haskell sources file in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen the compilation errors and warnings if any.
 
-You may also run a GHCi repl for your Obelisk app as follows:
-
-```
-ob repl
-```
-
-From `ob repl` you can import modules from your frontend, common and backend.
-
 ## Deploying
 
 In this section we will demonstrate how to deploy your Obelisk app to an Amazon EC2 instance.
