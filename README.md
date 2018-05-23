@@ -14,6 +14,11 @@
         nix.binaryCaches = [ "https://nixcache.reflex-frp.org" ];
         nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
+1. Install `ob`: `nix-env -f obelisk -iA command`.
+   Alternatively, if you prefer not to install to your user nix environment, you can
+   enter a shell with the `ob` command available: `nix-shell -A shell`.
+   After running `ob init` this becomes `nix-shell .obelisk/impl -A shell`
+   for subsequent shells (since `ob init` overwrites `default.nix`).
 1. Get set up to access private repositories
     1. [Get set up to connect to GitHub with SSH](https://help.github.com/articles/connecting-to-github-with-ssh/)
     1. [Create a GitHub personal access token](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/)
@@ -36,11 +41,6 @@
     1. `hub clone obsidiansystems/obelisk`
       * NOTE: you must authenticate with hub at least once, because the `ob` command uses `hub` for authentication
       #TODO: Make ob do this itself (either invoke hub automatically or not depend on hub)
-1. Install `ob`: `nix-env -f obelisk -iA command`.
-   Alternatively, if you prefer not to install to your user nix environment, you can
-   enter a shell with the `ob` command available: `nix-shell -A shell`.
-   After running `ob init` this becomes `nix-shell .obelisk/impl -A shell`
-   for subsequent shells (since `ob init` overwrites `default.nix`).
 
 ## Developing an Obelisk project
 
