@@ -44,6 +44,12 @@
 
 ## Developing an Obelisk project
 
+To create a new Obelisk project, go to an empty directory and run:
+
+```
+ob init
+```
+
 Obelisk leverages ghcid to provide a live-reloading server that handles both frontend and backend. To run your Obelisk app and monitor the source for changes:
 
 ```
