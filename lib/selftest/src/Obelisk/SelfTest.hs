@@ -40,10 +40,10 @@ main = do
   withSystemTempDirectory "blank-project" $ \blankProject ->
     hspec $ do
       let shelly_ = void . shelly . silently
-      describe "ob init" $ do
-        let inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
-            inTmp f = shelly_ . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
+          inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
+          inTmp f = shelly_ . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
 
+      describe "ob init" $ do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
@@ -51,6 +51,14 @@ main = do
         it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
           errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
+
+      describe "ob run" $ do
+        it "works in root directory" $ inTmp $ \_ -> do
+          run "ob" ["init"]
+          testObRunInDir Nothing httpManager
+        it "works in sub directory" $ inTmp $ \_ -> do
+          run "ob" ["init"]
+          testObRunInDir (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
         it "can build obelisk command"  $ shelly_ $ run "nix-build" ["-A", "command" , obeliskImpl]
@@ -138,21 +146,18 @@ main = do
             unpack
             testThunkPack (blankProject </> thunk)
 
-        describe "ob run" $ do
-          it "works in root directory" $ inProj $ testObRun httpManager
-          it "works in sub directory" $ inProj $ chdir "frontend" $ testObRun httpManager
-
-testObRun :: HTTP.Manager -> Sh ()
-testObRun httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+-- | Run `ob run` in the given directory (maximum of one level deep)
+testObRunInDir :: Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
+testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" . uri =<< liftIO getFreePort -- Use a free port initially
-  runHandle "ob" ["run"] $ \stdout -> do
+  maybe id chdir mdir $ runHandle "ob" ["run"] $ \stdout -> do
     freePort <- liftIO getFreePort
     (_, firstUri) <- handleObRunStdout httpManager stdout
     let newUri = uri freePort
     when (firstUri == newUri) $ errorExit $
       "Startup URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
-    alterRouteTo newUri stdout
+    maybe id (\_ -> chdir "..") mdir $ alterRouteTo newUri stdout
     (_, runningUri) <- handleObRunStdout httpManager stdout
     if runningUri /= newUri
     then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
