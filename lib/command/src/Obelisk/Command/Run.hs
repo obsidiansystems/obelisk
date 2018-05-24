@@ -89,7 +89,7 @@ runDev dotGhci mcmd = callCommand $ unwords $ "ghcid" : ghcidOpts
       , "--command='ghci -ghci-script " <> dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
-      ] <> maybeToList (flip fmap mcmd $ \cmd -> " --test=$'" <> cmd <> "'")
+      ] <> maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'")
 
 getFreePort :: IO PortNumber
 getFreePort = withSocketsDo $ do
