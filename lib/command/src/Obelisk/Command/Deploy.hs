@@ -9,8 +9,8 @@ import Control.Monad
 import Control.Monad.Catch (finally)
 import Control.Monad.IO.Class (liftIO)
 import Data.Attoparsec.ByteString.Char8 as A
-import qualified Data.ByteString.Char8 as BC8
 import Data.Bits
+import qualified Data.ByteString.Char8 as BC8
 import Data.Default
 import Data.Maybe
 import Data.Monoid
@@ -18,8 +18,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
 import System.FilePath
-import System.Posix.Files
 import System.Posix.Env (getEnvironment)
+import System.Posix.Files
 import System.Process (delegate_ctlc, env, proc, readProcess)
 
 import Obelisk.App (MonadObelisk)
@@ -29,6 +29,7 @@ import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
+import Obelisk.ExecutableConfig.Core (CommonRoute, getRoutePort, readObeliskConfig)
 
 deployInit :: MonadObelisk m => ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> m ()
 deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
@@ -63,9 +64,20 @@ setupObeliskImpl deployDir = do
   createDirectoryIfMissing True implDir
   writeFile (implDir </> "default.nix") "(import ../../src {}).obelisk"
 
+-- | Verify configuration files and return the config values.
+deployVerify :: MonadObelisk m => FilePath -> m CommonRoute
+deployVerify deployPath = do
+  readObeliskConfig deployPath >>= \case
+    Left e -> failWith $ T.pack $ "common/route: " <> show e
+    Right v -> putLog Debug (T.pack $ "common/route: verified") >> pure v
+
 deployPush :: MonadObelisk m => FilePath -> m ()
 deployPush deployPath = do
   let backendHosts = deployPath </> "backend_hosts"
+  route <- deployVerify deployPath
+  let (Just port) = getRoutePort route
+  putLog Debug $ T.pack $ "Deploying with route: " <> show route
+
   host <- liftIO $ fmap (T.unpack . T.strip) $ T.readFile backendHosts
   let srcPath = deployPath </> "src"
       build = do
@@ -75,7 +87,10 @@ deployPush deployPath = do
             , _target_attr = Just "server"
             }
           , _nixBuildConfig_outLink = OutLink_None
-          , _nixBuildConfig_args = pure $ Arg "hostName" host
+          , _nixBuildConfig_args =
+            [ Arg "hostName" host
+            , Arg "backendPort" $ show port
+            ]
           }
         return $ listToMaybe $ lines buildOutput
   result <- readThunk srcPath >>= \case

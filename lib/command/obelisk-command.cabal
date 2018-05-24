@@ -38,6 +38,7 @@ library
     , transformers
     , unix
     , yaml
+    , obelisk-executable-config-core
   exposed-modules:
     Obelisk.App
     Obelisk.CLI

@@ -1,11 +1,11 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Run where
 
 import Control.Concurrent
 import Control.Exception
-import Control.Lens ((^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -15,8 +15,6 @@ import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
 import qualified Data.Text as T
-import Language.Javascript.JSaddle.Run (syncPoint)
-import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
 import qualified Network.HTTP.ReverseProxy as RP
 import qualified Network.HTTP.Types as H
@@ -27,14 +25,16 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
-import Obelisk.ExecutableConfig (get)
-import Reflex.Dom.Core
 import System.Environment
 import System.IO
 import System.Process
-import Text.URI (URI)
 import qualified Text.URI as URI
-import Text.URI.Lens
+
+import Language.Javascript.JSaddle.Run (syncPoint)
+import Language.Javascript.JSaddle.WebSockets
+import Reflex.Dom.Core
+
+import Obelisk.ExecutableConfig.Core
 
 run :: Int -- ^ Port to run the backend
     -> IO () -- ^ Backend
@@ -47,18 +47,15 @@ run port backend frontend = do
   let conf = defRunConfig { _runConfig_redirectPort = port }
   runWidget conf frontend `finally` killThread backendTid
 
-getConfigRoute :: IO (Maybe URI)
-getConfigRoute = do
-  mroute <- get "common/route"
-  return $ URI.mkURI =<< mroute
+defAppUri :: CommonRoute
+defAppUri = CommonRoute $ fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 
-defAppUri :: URI
-defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
-
+-- | Run the frontend widget via warp server at the configured route (common/route)
 runWidget :: RunConfig -> (StaticWidget () (), Widget () ()) -> IO ()
 runWidget conf (h, b) = do
-  uri <- fromMaybe defAppUri <$> getConfigRoute
-  let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
+  route <- either (const defAppUri) id <$> readObeliskConfig mempty
+  let CommonRoute uri = route
+      port = fromIntegral $ fromMaybe 80 $ getRoutePort route
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
       beforeMainLoop = do

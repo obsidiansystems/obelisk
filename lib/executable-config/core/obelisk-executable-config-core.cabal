@@ -1,0 +1,21 @@
+name: obelisk-executable-config-core
+version: 0.1
+license: BSD3
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  hs-source-dirs: src
+
+  build-depends:
+    base,
+    bytestring,
+    exceptions,
+    filepath,
+    lens,
+    modern-uri,
+    mtl,
+    text,
+    transformers
+
+  exposed-modules: Obelisk.ExecutableConfig.Core

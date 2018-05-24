@@ -10,6 +10,8 @@ library
       attoparsec
     , base
     , bytestring
+    , exceptions
+    , filepath
     , http-client
     , http-reverse-proxy
     , http-types
@@ -17,8 +19,9 @@ library
     , jsaddle-warp
     , lens
     , modern-uri
+    , mtl
     , network
-    , obelisk-executable-config
+    , obelisk-executable-config-core
     , process
     , reflex-dom
     , streaming-commons

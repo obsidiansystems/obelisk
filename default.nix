@@ -97,6 +97,7 @@ let #TODO: Upstream
       obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
       obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
       obelisk-executable-config = executableConfig.haskellPackage self;
+      obelisk-executable-config-core = executableConfig.obelisk-executable-config-core self;
       obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
       obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
       obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
@@ -166,11 +167,11 @@ rec {
       echo "//# sourceMappingURL=all.js.map" >> all.js
     '';
 
-  server = exe: hostName:
+  server = exe: hostName: backendPort:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
         https = (import lib/https {}).module {
-          backendPort = 8000; # TODO read from config
+          inherit backendPort;
           # sslConfig = {
           #   hostName = "example.com";
           #   adminEmail = "webmaster@example.com";
@@ -272,9 +273,9 @@ rec {
               };
           in mkProject (projectDefinition args));
     in projectOut //
-         { server = { hostName }:
+         { server = { hostName, backendPort }:
              let exe = serverExe projectOut.ghc.backend projectOut.ghcjs.frontend assets.symlinked configPath;
-             in server exe hostName;
+             in server exe hostName backendPort;
            obelisk = import (base + "/.obelisk/impl") {};
          };
   haskellPackageSets = {

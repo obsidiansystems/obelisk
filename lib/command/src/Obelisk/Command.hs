@@ -129,6 +129,7 @@ deployCommand = hsubparser $ mconcat
   , command "push" $ info (pure DeployCommand_Push) mempty
   , command "test" $ info (DeployCommand_Test <$> argument (maybeReader readPlatform) (completeWith ["android"])) $ progDesc "Test your obelisk project from a mobile platform. [Only android supported]"
   , command "update" $ info (pure DeployCommand_Update) $ progDesc "Update the deployment's src thunk to latest"
+  , command "verify" $ info (pure DeployCommand_Verify) mempty
   ]
 
 readPlatform :: String -> Maybe Platform
@@ -149,6 +150,7 @@ data Platform = Android
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
   | DeployCommand_Push
+  | DeployCommand_Verify
   | DeployCommand_Test Platform
   | DeployCommand_Update
   deriving Show
@@ -294,6 +296,7 @@ ob = \case
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
     DeployCommand_Push -> deployPush "."
+    DeployCommand_Verify -> void $ deployVerify "."
     DeployCommand_Test Android -> withProjectRoot "." $ \root -> do
       let srcDir = root </> "src"
       exists <- liftIO $ doesDirectoryExist srcDir

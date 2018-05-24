@@ -17,6 +17,7 @@ let injectConfig = config: assets: nixpkgs.runCommand "inject-config" {} ''
     '';
 in with nixpkgs.haskell.lib; {
   haskellPackage = self: self.callPackage (filterGitSource ./lookup) {};
+  obelisk-executable-config-core = self: self.callCabal2nix "obelisk-executable-config-core" (filterGitSource ./core) {};
   platforms = {
     android = {
       # Inject the given config directory into an android assets folder
