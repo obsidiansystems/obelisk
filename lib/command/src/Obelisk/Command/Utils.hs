@@ -9,8 +9,9 @@ module Obelisk.Command.Utils where
 import Control.Applicative hiding (many)
 import Control.Monad.Except
 import Data.Bool (bool)
-import qualified Text.Megaparsec.Char.Lexer as L
+import qualified Text.Megaparsec.Char.Lexer as ML
 import Data.Bifunctor
+import qualified Data.List as L
 import Data.Char
 import Data.Either
 import Data.Semigroup ((<>))
@@ -106,6 +107,21 @@ gitLsRemoteHEAD repository = runExceptT $ do
     Nothing -> fail $ "gitLsRemoteHead: Did not find " <> T.unpack (showGitRef symref) <> " in the refs of " <> repository
     Just commitId -> return (commitId, M.lookup symref refs)
 
+gitLsRemoteRef :: String -> GitRef -> IO (Either String (CommitId, Maybe GitRef))
+gitLsRemoteRef repository ref = runExceptT $ do
+  xs <- ExceptT $ gitLsRemote repository ref
+  case ref of
+    GitRef_Head -> do
+      let (commits, refs) = bimap M.fromList M.fromList $ partitionEithers $ flip fmap xs $ \case
+            (r, Left commitId) -> Left (r, commitId)
+            (r, Right symref) -> Right (r, symref)
+      case M.lookup ref commits of
+        Nothing -> fail $ "gitLsRemoteHead: Did not find " <> T.unpack (showGitRef ref) <> " in the refs of " <> repository
+        Just commitId -> return (commitId, M.lookup ref refs)
+    _ -> case L.lookup ref xs of
+      Just (Left a) -> return (a, Nothing)
+      _ -> fail $ "gitLsRemoteHead: Did not find " <> T.unpack (showGitRef ref) <> " in the refs of " <> repository
+
 gitLsRemote :: String -> GitRef -> IO (Either String [(GitRef, LsRemoteResult)])
 gitLsRemote repository ref = do
   res <- P.readProcess "git" ["ls-remote", "--symref", repository, T.unpack $ showGitRef ref] mempty
@@ -113,7 +129,7 @@ gitLsRemote repository ref = do
   return $ first (MP.parseErrorPretty' t) $ MP.runParser (many parseLsRemote) "" t
 
 lexeme :: Parsec Void Text a -> Parsec Void Text a
-lexeme = L.lexeme space
+lexeme = ML.lexeme space
 
 -- $ git ls-remote --symref git@github.com:obsidiansystems/obelisk.git HEAD
 -- ref: refs/heads/master	HEAD

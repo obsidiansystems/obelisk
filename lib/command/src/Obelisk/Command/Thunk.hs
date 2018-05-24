@@ -27,6 +27,8 @@ module Obelisk.Command.Thunk
   , updateThunk
   , getThunkPtr
   , getThunkPtr'
+  , parseGitUri
+  , uriThunkPtr
   ) where
 
 import Control.Applicative
@@ -749,59 +751,78 @@ getThunkPtr' checkClean thunkDir upstream = do
  where
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
-  isGithubThunk u
-    | Just uriAuth <- uriAuthority u
-    = case uriScheme u of
-         "ssh:" -> uriAuth == URIAuth "git@" "github.com" ""
-         s -> s `L.elem` [ "git:", "https:", "http:" ] -- "http:" just redirects to "https:"
-           && uriRegName uriAuth == "github.com"
-    | otherwise = False
-  githubThunkPtr u commit' branch' = do
-    ["/", owner', repo'] <- return $ splitDirectories (uriPath u)
-    let owner = N (T.pack owner')
-        dropGitExtension r = fromMaybe r $ T.stripSuffix ".git" r
-        repo = N $ dropGitExtension $ T.pack repo'
-        commit = N commit'
-        branch = N <$> branch'
-    mauth <- liftIO $ getHubAuth "github.com"
-    repoResult <- liftIO $ executeRequestMaybe mauth $ repositoryR owner repo
-    repoIsPrivate <- either (liftIO . throwIO) (return . repoPrivate) repoResult
-    archiveResult <- liftIO $ executeRequestMaybe mauth $
-      archiveForR owner repo ArchiveFormatTarball (Just (untagName commit))
-    archiveUri <- either (liftIO . throwIO) return archiveResult
-    hash <- getNixSha256ForUriUnpacked archiveUri
-    return $ ThunkPtr
-      { _thunkPtr_rev = ThunkRev
-        { _thunkRev_commit = commitNameToRef commit
-        , _thunkRev_nixSha256 = hash
-        }
-      , _thunkPtr_source = ThunkSource_GitHub $ GitHubSource
-        { _gitHubSource_owner = owner
-        , _gitHubSource_repo = repo
-        , _gitHubSource_branch = branch
-        , _gitHubSource_private = repoIsPrivate
-        }
+
+isGithubThunk :: URI -> Bool
+isGithubThunk u
+  | Just uriAuth <- uriAuthority u
+  = case uriScheme u of
+       "ssh:" -> uriAuth == URIAuth "git@" "github.com" ""
+       s -> s `L.elem` [ "git:", "https:", "http:" ] -- "http:" just redirects to "https:"
+         && uriRegName uriAuth == "github.com"
+  | otherwise = False
+
+githubThunkPtr :: MonadObelisk m => URI -> Text -> Maybe Text -> m ThunkPtr
+githubThunkPtr u commit' branch' = do
+  ["/", owner', repo'] <- return $ splitDirectories (uriPath u)
+  let owner = N (T.pack owner')
+      repo = N (T.pack (dropExtension repo'))
+      commit = N commit'
+      branch = N <$> branch'
+  mauth <- liftIO $ getHubAuth "github.com"
+  repoResult <- liftIO $ executeRequestMaybe mauth $ repositoryR owner repo
+  repoIsPrivate <- either (liftIO . throwIO) (return . repoPrivate) repoResult
+  archiveResult <- liftIO $ executeRequestMaybe mauth $
+    archiveForR owner repo ArchiveFormatTarball (Just (untagName commit))
+  archiveUri <- either (liftIO . throwIO) return archiveResult
+  hash <- getNixSha256ForUriUnpacked archiveUri
+  return $ ThunkPtr
+    { _thunkPtr_rev = ThunkRev
+      { _thunkRev_commit = commitNameToRef commit
+      , _thunkRev_nixSha256 = hash
       }
-  gitThunkPtr u commit branch' = do
-    let protocols = ["https:", "ssh:", "git:"]
-    unless (T.toLower (T.pack $ uriScheme u) `elem` protocols) $
-      failWith $ "thunk pack: obelisk currently only supports "
-        <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
-    hash <- nixPrefetchGit u commit False
-    branch <- case branch' of
-      Nothing -> failWith "thunk pack: git thunks must track a branch"
-      Just b -> pure $ N b
-    pure $ ThunkPtr
-      { _thunkPtr_rev = ThunkRev
-        { _thunkRev_commit = commitNameToRef (N commit)
-        , _thunkRev_nixSha256 = hash
-        }
-      , _thunkPtr_source = ThunkSource_Git $ GitSource
-        { _gitSource_url = u
-        , _gitSource_branch = branch
-        , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
-        }
+    , _thunkPtr_source = ThunkSource_GitHub $ GitHubSource
+      { _gitHubSource_owner = owner
+      , _gitHubSource_repo = repo
+      , _gitHubSource_branch = branch
+      , _gitHubSource_private = repoIsPrivate
       }
+    }
+
+gitThunkPtr :: MonadObelisk m => URI -> Text -> Maybe Text -> m ThunkPtr
+gitThunkPtr u commit branch' = do
+  let protocols = ["https:", "ssh:", "git:"]
+  unless (T.toLower (T.pack $ uriScheme u) `elem` protocols) $
+    failWith $ "thunk pack: obelisk currently only supports "
+      <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
+  hash <- nixPrefetchGit u commit False
+  branch <- case branch' of
+    Nothing -> failWith "thunk pack: git thunks must track a branch"
+    Just b -> pure $ N b
+  pure $ ThunkPtr
+    { _thunkPtr_rev = ThunkRev
+      { _thunkRev_commit = commitNameToRef (N commit)
+      , _thunkRev_nixSha256 = hash
+      }
+    , _thunkPtr_source = ThunkSource_Git $ GitSource
+      { _gitSource_url = u
+      , _gitSource_branch = branch
+      , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
+      }
+    }
+
+uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
+uriThunkPtr uri mbranch = do
+  let ref = maybe GitRef_Head GitRef_Branch mbranch
+  (commit, mref) <- do
+    res <- liftIO $ gitLsRemoteRef (show uri) ref
+    return $ either fail id res
+  let branch = case (ref, mref) of
+        (GitRef_Head, Just (GitRef_Branch b)) -> Just b
+        (GitRef_Branch b, _) -> Just b
+        _ -> Nothing
+  if isGithubThunk uri
+    then githubThunkPtr uri commit branch
+    else gitThunkPtr uri commit branch
 
 parseGitUri :: Text -> Maybe URI
 parseGitUri x = parseURIReference (T.unpack x) <|> parseSshShorthand x
