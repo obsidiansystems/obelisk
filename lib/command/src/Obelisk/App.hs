@@ -1,31 +1,55 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Obelisk.App where
 
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
-import Control.Monad.Log (LoggingT, MonadLog, runLoggingT)
-import Control.Monad.Reader (MonadIO, MonadReader, ReaderT, runReaderT)
+import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
+import Control.Monad.Trans.Class (lift)
+import UnliftIO (MonadUnliftIO, UnliftIO (..), askUnliftIO, withUnliftIO)
 
-import Obelisk.CLI.Logging (LoggingConfig, Output, handleLog)
+import Obelisk.CLI (Cli, CliConfig, CliT, HasCliConfig, getCliConfig, runCli)
 
-data Obelisk = Obelisk
-  { _obelisk_noSpinner :: Bool  -- Used to disable the spinner.
-  , _obelisk_logging :: LoggingConfig
+newtype Obelisk = Obelisk
+  { _obelisk_cliConfig :: CliConfig
   }
 
 newtype ObeliskT m a = ObeliskT
-  { unObeliskT :: ReaderT Obelisk (LoggingT Output m) a
+  { unObeliskT :: ReaderT Obelisk (CliT m) a
   }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadReader Obelisk, MonadLog Output)
+  deriving
+    ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask
+    , HasObelisk, HasCliConfig)
+
+deriving instance Monad m => Cli (ObeliskT m)
+
+class HasObelisk m where
+  getObelisk :: m Obelisk
+
+instance Monad m => HasObelisk (ReaderT Obelisk m) where
+  getObelisk = ask
+
+instance HasCliConfig m => HasCliConfig (ReaderT Obelisk m) where
+  getCliConfig = lift getCliConfig
+
+instance MonadUnliftIO m => MonadUnliftIO (ObeliskT m) where
+  askUnliftIO = ObeliskT $ withUnliftIO $ \u ->
+    return (UnliftIO (unliftIO u . unObeliskT))
 
 runObelisk :: MonadIO m => Obelisk -> ObeliskT m a -> m a
 runObelisk c =
-    flip runLoggingT loggingConfig
+    runCli (_obelisk_cliConfig c)
   . flip runReaderT c
   . unObeliskT
-  where
-    loggingConfig = handleLog $ _obelisk_logging c
 
-type MonadObelisk m = (MonadReader Obelisk m, MonadIO m, MonadMask m, MonadLog Output m)
+type MonadObelisk m =
+  ( Cli m
+  , HasCliConfig m
+  , HasObelisk m
+  , MonadUnliftIO m
+  , MonadMask m
+  )
