@@ -115,21 +115,24 @@ Until Obelisk offers a `ob deploy` equivalent for mobile apps, you are recommend
 
 #### First time setup
 Development on iOS requires a computer running macOS and an iOS developer account.
+Your account must also belong to an Apple Developer Team, if you want to access developer portal links (otherwise they'll redirect to your account page).
 
 ##### iPhone
 1. Connect the iPhone on which you'd like to run builds - this will open up iTunes.
 1. Click accept to authorize on both the computer and the iPhone.
 
 ##### Xcode
-1. Install Xcode 8.2 (contains iOS SDK 10.2).
+Install Xcode 8.2 (contains iOS SDK 10.2) and open it so that it runs its post install tool setup.
+
 These versions will work out of the box but iOS SDKs prior to 11.3 should also work. You can choose another installed version in `default.nix`
+
 More recent Xcodes should also work, as long as one of the SDKs mentioned above has been used.
-To add another SDK to your current Xcode, [download](https://developer.apple.com/download/more/) the corresponding Xcode, extract it and copy its SDK folder next to the installed one, e.g.
+To add another SDK to your current Xcode, [download](https://developer.apple.com/download/more/) the corresponding Xcode, extract it and copy its SDK folder next to the installed one, e.g. 
 ```
 open -W Xcode_9.2.xip
 sudo cp -R Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS11.2.sdk
 ```
-1. Open Xcode once so that it runs its post install tool setup.
+
 
 You can verify that you have correct versions by running
 ```
@@ -137,9 +140,8 @@ xcodebuild -showsdks
 ```
 
 ##### Certificates
-Now you need to inform Apple of your development devices and permissions by
-adding credentials to the correct provisioning profile via the Apple Developer
-portal.
+To deploy and/or package apps, you'll need to inform Apple of your development devices and permissions by
+adding credentials to the correct provisioning profile via the Apple Developer portal. 
 
 1. Open up XCode and go to Preferences - Accounts. Select the organization
 Member role, click Manage Certificates, and add an iOS Development
