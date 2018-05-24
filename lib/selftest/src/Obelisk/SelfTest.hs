@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.SelfTest where
 
-import Control.Exception (Exception, throw)
+import Control.Exception (Exception, throw, bracket)
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Function (fix)
@@ -15,6 +15,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
+import qualified Network.Socket as Socket
 import Shelly
 import System.Environment
 import System.Exit (ExitCode (..))
@@ -143,11 +144,14 @@ main = do
 
 testObRun :: HTTP.Manager -> Sh ()
 testObRun httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+  let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
+  writefile "config/common/route" . uri =<< liftIO getFreePort -- Use a free port initially
   runHandle "ob" ["run"] $ \stdout -> do
+    freePort <- liftIO getFreePort
     (_, firstUri) <- handleObRunStdout httpManager stdout
-    let newUri = "http://localhost:8080/" -- trailing slash required for comparison
+    let newUri = uri freePort
     when (firstUri == newUri) $ errorExit $
-      "Default URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
+      "Startup URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
     alterRouteTo newUri stdout
     (_, runningUri) <- handleObRunStdout httpManager stdout
     if runningUri /= newUri
@@ -224,3 +228,13 @@ obRunCheck httpManager stdout backendPort frontendUri = do
   liftIO (timeout 1000000 $ T.hGetLine stdout) >>= \case
     Just t | "127.0.0.1" `T.isPrefixOf` t -> pure () -- Backend request logged
     x -> errorExit $ "Couldn't get backend request log: " <> T.pack (show x)
+
+getFreePort :: IO Socket.PortNumber
+getFreePort = Socket.withSocketsDo $ do
+  addr:_ <- Socket.getAddrInfo (Just Socket.defaultHints) (Just "127.0.0.1") (Just "0")
+  bracket (open addr) Socket.close Socket.socketPort
+  where
+    open addr = do
+      sock <- Socket.socket (Socket.addrFamily addr) (Socket.addrSocketType addr) (Socket.addrProtocol addr)
+      Socket.bind sock (Socket.addrAddress addr)
+      pure sock
