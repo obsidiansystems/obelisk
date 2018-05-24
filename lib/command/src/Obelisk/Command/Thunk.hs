@@ -5,7 +5,8 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Obelisk.Command.Thunk
   ( ThunkPtr (..)
@@ -28,15 +29,18 @@ module Obelisk.Command.Thunk
   ) where
 
 import Control.Applicative
-import Control.Exception (displayException, throwIO)
+import Control.Exception (displayException, throwIO, try)
 import Control.Monad
 import Control.Monad.Catch (handle)
 import Control.Monad.Except
-import Data.Aeson (decode, (.=))
+import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.ByteString.Lazy.Char8 as LBSC
 import Data.Default
+import Data.Either.Combinators (rightToMaybe)
 import Data.Foldable
 import Data.Git.Ref (Ref)
 import qualified Data.Git.Ref as Ref
@@ -61,19 +65,16 @@ import GitHub.Endpoints.Repos.Contents (archiveForR)
 import Network.URI
 import Obelisk.Command.Nix
 import System.Directory
-import System.Exit
 import System.FilePath
-import System.IO
 import System.IO.Error
 import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
-import System.Process (StdStream (CreatePipe), callProcess, createProcess, proc, readProcess, std_err,
-                       std_out, waitForProcess)
+import System.Process (proc)
 
-import Development.Placeholders
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
-import Obelisk.Command.Utils (checkGitCleanStatus, cp, procWithPackages)
+import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, putLog, readProcessAndLogStderr,
+                    withExitFailMessage, withSpinner)
+import Obelisk.Command.Utils (checkGitCleanStatus, cp, git, procWithPackages)
 
 --TODO: Support symlinked thunk data
 data ThunkData
@@ -117,8 +118,7 @@ data GitHubSource = GitHubSource
 
 data GitSource = GitSource
   { _gitSource_url :: URI
-  --TODO: Is it ok to use the types from the GitHub api bindings?
-  , _gitSource_branch :: Maybe (Name Branch)
+  , _gitSource_branch :: Name Branch
   , _gitSource_fetchSubmodules :: Bool
   }
   deriving (Show, Eq, Ord)
@@ -127,51 +127,81 @@ commitNameToRef :: Name Commit -> Ref
 commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 
 -- TODO: Use spinner here.
-getNixSha256ForUriUnpacked :: URI -> IO NixSha256
-getNixSha256ForUriUnpacked uri = do
-  --TODO: Make this package depend on nix-prefetch-url properly
-  let cmd = proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
-  (_, Just out, Just err, p) <- createProcess cmd
-    { std_out = CreatePipe
-    , std_err = CreatePipe
-    }
-  --TODO: Deal with errors here; usually they're HTTP errors
-  waitForProcess p >>= \case
-    ExitSuccess -> return ()
-    _ -> do
-     hPutStrLn stdout =<< hGetContents out
-     hPutStrLn stderr =<< hGetContents err
-     --TODO: actual error
-     fail "nix-prefetch-url"
-  T.strip <$> T.hGetContents out
+getNixSha256ForUriUnpacked :: MonadObelisk m => URI -> m NixSha256
+getNixSha256ForUriUnpacked uri =
+  withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> T.pack (show uri)) $ do
+    fmap T.pack $ readProcessAndLogStderr Debug $
+      procWithPackages ["nix-prefetch-scripts"] "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
+
+nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
+nixPrefetchGit uri rev fetchSubmodules =
+  withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> T.pack (show uri) <> " at " <> rev) $ do
+    out <- readProcessAndLogStderr Debug $
+      procWithPackages ["nix-prefetch-git"] "nix-prefetch-git" $ filter (/="")
+        [ "--url", show uri
+        , "--rev", T.unpack rev
+        , if fetchSubmodules then "--fetch-submodules" else ""
+        , "--quiet"
+        ]
+
+    case parseMaybe (Aeson..: "sha256") =<< Aeson.decode (LBSC.pack out) of
+      Nothing -> failWith $ "nix-prefetch-git: unrecognized output " <> T.pack out
+      Just x -> pure x
+
+getLatestGitRev :: MonadObelisk m => GitSource -> m ThunkRev
+getLatestGitRev s = withSystemTempDirectory "git-clone" $ \tmpDir -> do
+  withExitFailMessage ("Unable to determine latest git revision for branch " <> branch) $ do
+    out <- fmap T.pack $ readProcessAndLogStderr Debug $ git tmpDir
+      [ ["clone", "--no-checkout", show $ _gitSource_url s] -- Might be able to use --bare here instead to go faster.
+      , ["log", T.unpack branch, "--max-count=1", "--format=%H"]
+      ]
+
+    case T.strip <$> safeLast (T.lines out) of
+      Nothing -> failWith $ "Unable to parse git log: " <> out
+      Just rev -> do
+        putLog Debug $ "Latest commit in " <> branch <> " is " <> rev
+        sha <- nixPrefetchGit (_gitSource_url s) rev (_gitSource_fetchSubmodules s)
+        putLog Debug $ "Nix sha256 is " <> sha
+        pure $ ThunkRev
+          { _thunkRev_commit = Ref.fromHexString $ T.unpack rev
+          , _thunkRev_nixSha256 = sha
+          }
+  where
+    remote :: Text = "origin"
+    branch :: Text = remote <> "/" <> untagName (_gitSource_branch s)
+
+    safeLast [] = Nothing
+    safeLast xs = Just $ last xs
 
 -- | Get the latest revision available from the given source
-getLatestRev :: ThunkSource -> IO ThunkRev
+getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
 getLatestRev = \case
   ThunkSource_GitHub s -> do
-    auth <- getHubAuth "github.com"
-    commitsResult <- executeRequestMaybe auth $ commitsWithOptionsForR
+    auth <- liftIO $ getHubAuth "github.com"
+    commitsResult <- liftIO $ executeRequestMaybe auth $ commitsWithOptionsForR
       (_gitHubSource_owner s)
       (_gitHubSource_repo s)
       (FetchAtLeast 1)
       $ case _gitHubSource_branch s of
           Nothing -> []
           Just b -> [CommitQuerySha $ untagName b]
-    commitInfos <- either throwIO return commitsResult
+    commitInfos <- either (liftIO . throwIO) return commitsResult
     commitInfo : _ <- return $ toList commitInfos
     let commit = commitSha commitInfo
-    Right archiveUri <- executeRequestMaybe auth $ archiveForR (_gitHubSource_owner s) (_gitHubSource_repo s) ArchiveFormatTarball $ Just $ untagName commit
+    putLog Debug $ "Latest commit is " <> untagName commit
+    Right archiveUri <- liftIO $ executeRequestMaybe auth $ archiveForR (_gitHubSource_owner s) (_gitHubSource_repo s) ArchiveFormatTarball $ Just $ untagName commit
     nixSha256 <- getNixSha256ForUriUnpacked archiveUri
+    putLog Debug $ "Nix sha256 is " <> nixSha256
     return $ ThunkRev
       { _thunkRev_commit = commitNameToRef commit
       , _thunkRev_nixSha256 = nixSha256
       }
-  ThunkSource_Git _s -> do
-    $notImplemented
+  ThunkSource_Git s -> getLatestGitRev s
 
 --TODO: Pretty print these
 data ReadThunkError
-   = ReadThunkError_WrongContents (Set String) (Set String)
+   = ReadThunkError_UnrecognizedFiles
+   | ReadThunkError_AmbiguousFiles
    | ReadThunkError_UnrecognizedLoader Text
    | ReadThunkError_UnparseablePtr LBS.ByteString
    deriving (Show)
@@ -189,70 +219,111 @@ readThunk thunkDir = do
         False -> return $ return Nothing
     False -> liftIO $ fmap ThunkData_Packed <$> readPackedThunk thunkDir
 
+data ThunkType = ThunkType
+  { _thunkType_loader :: FilePath
+  , _thunkType_json :: FilePath
+  , _thunkType_optional :: Set FilePath
+  , _thunkType_loaderVersions :: NonEmpty Text
+  , _thunkType_parser :: Aeson.Object -> Aeson.Parser ThunkPtr
+  }
+
+gitHubThunkType :: ThunkType
+gitHubThunkType = ThunkType
+  { _thunkType_loader = "default.nix"
+  , _thunkType_json = "github.json"
+  , _thunkType_optional = Set.fromList [".attr-cache"]
+  , _thunkType_loaderVersions = gitHubStandaloneLoaders
+  , _thunkType_parser = parseThunkPtr $ \v ->
+      ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v
+  }
+
+gitThunkType :: ThunkType
+gitThunkType = ThunkType
+  { _thunkType_loader = "default.nix"
+  , _thunkType_json = "git.json"
+  , _thunkType_optional = Set.fromList [".attr-cache"]
+  , _thunkType_loaderVersions = plainGitStandaloneLoaders
+  , _thunkType_parser = parseThunkPtr $ fmap ThunkSource_Git . parseGitSource
+  }
+
+thunkTypes :: [ThunkType]
+thunkTypes = [gitThunkType, gitHubThunkType]
+
+findThunkType :: [ThunkType] -> FilePath -> IO (Either ReadThunkError ThunkType)
+findThunkType types thunkDir = do
+  matches <- fmap catMaybes $ forM types $ \thunkType -> do
+    let
+      expectedContents = Set.fromList $ (thunkDir </>) <$>
+        [ _thunkType_loader thunkType
+        , _thunkType_json thunkType
+        ]
+      optionalContents = Set.map (thunkDir </>) (_thunkType_optional thunkType)
+
+    -- Ensure that there aren't any other files in the thunk
+    -- NB: System.Directory.listDirectory returns the contents without the directory path
+    files <- liftIO $ Set.fromList . fmap (thunkDir </>) <$> listDirectory thunkDir
+    let unexpectedContents = files `Set.difference` (expectedContents `Set.union` optionalContents)
+        missingContents = expectedContents `Set.difference` files
+    pure $ if Set.null unexpectedContents && Set.null missingContents
+      then Just thunkType
+      else Nothing
+
+  pure $ case matches of
+    [singleMatch] -> Right singleMatch
+    [] -> Left ReadThunkError_UnrecognizedFiles
+    _ -> Left ReadThunkError_AmbiguousFiles
+
 -- | Read a thunk and validate that it is exactly a packed thunk.
 -- If additional data is present, fail.
 readPackedThunk :: FilePath -> IO (Either ReadThunkError ThunkPtr)
 readPackedThunk thunkDir = runExceptT $ do
-  let thunkLoader = thunkDir </> "default.nix"
-      githubJson = thunkDir </> "github.json"
-      attrCache = thunkDir </> ".attr-cache"
-      expectedContents = Set.fromList $
-        [ githubJson
-        , thunkLoader
-        ]
-      optionalContents = Set.fromList $
-        [ attrCache
-        ]
-
-  -- Ensure that there aren't any other files in the thunk
-  -- NB: System.Directory.listDirectory returns the contents without the directory path
-  files <- liftIO $ Set.fromList . fmap (thunkDir </>) <$> listDirectory thunkDir
-  let unexpectedContents = files `Set.difference` (expectedContents `Set.union` optionalContents)
-      missingContents = expectedContents `Set.difference` files
-  unless (Set.null unexpectedContents && Set.null missingContents) $ do
-    throwError $ ReadThunkError_WrongContents unexpectedContents missingContents
-
+  thunkType <- ExceptT $ findThunkType thunkTypes thunkDir
   -- Ensure that we recognize the thunk loader
-  loader <- liftIO $ T.readFile thunkLoader
-  unless (loader `elem` gitHubStandaloneLoaders) $ do
+  loader <- liftIO $ T.readFile $ thunkDir </> _thunkType_loader thunkType
+  unless (loader `elem` _thunkType_loaderVersions thunkType) $ do
     throwError $ ReadThunkError_UnrecognizedLoader loader
 
-  txt <- liftIO $ LBS.readFile githubJson
-  let parseThunk v = do
-        rev <- v Aeson..: "rev"
-        sha256 <- v Aeson..: "sha256"
-        src <- parseGitHubSource v
-           <|> parseGitSource v
-        return $ ThunkPtr
-          { _thunkPtr_rev = ThunkRev
-            { _thunkRev_commit = Ref.fromHexString rev
-            , _thunkRev_nixSha256 = sha256
-            }
-          , _thunkPtr_source = src
-          }
-      parseGitHubSource v = do
-        owner <- v Aeson..: "owner"
-        repo <- v Aeson..: "repo"
-        branch <- v Aeson..:! "branch"
-        mPrivate <- v Aeson..:! "private"
-        return $ ThunkSource_GitHub $ GitHubSource
-          { _gitHubSource_owner = owner
-          , _gitHubSource_repo = repo
-          , _gitHubSource_branch = branch
-          , _gitHubSource_private = fromMaybe False mPrivate
-          }
-      parseGitSource v = do
-        Just url <- parseURI <$> v Aeson..: "url"
-        branch <- v Aeson..:! "branch"
-        fetchSubmodules <- v Aeson..: "fetchSubmodules"
-        return $ ThunkSource_Git $ GitSource
-          { _gitSource_url = url
-          , _gitSource_branch = branch
-          , _gitSource_fetchSubmodules = fetchSubmodules
-          }
-  case parseMaybe parseThunk =<< decode txt of
+  txt <- liftIO $ LBS.readFile $ thunkDir </> _thunkType_json thunkType
+  case parseMaybe (_thunkType_parser thunkType) =<< Aeson.decode txt of
     Nothing -> throwError $ ReadThunkError_UnparseablePtr txt
     Just ptr -> return ptr
+
+parseThunkPtr :: (Aeson.Object -> Aeson.Parser ThunkSource) -> Aeson.Object -> Aeson.Parser ThunkPtr
+parseThunkPtr parseSrc v = do
+  rev <- v Aeson..: "rev"
+  sha256 <- v Aeson..: "sha256"
+  src <- parseSrc v
+  pure $ ThunkPtr
+    { _thunkPtr_rev = ThunkRev
+      { _thunkRev_commit = Ref.fromHexString rev
+      , _thunkRev_nixSha256 = sha256
+      }
+    , _thunkPtr_source = src
+    }
+
+parseGitHubSource :: Aeson.Object -> Aeson.Parser GitHubSource
+parseGitHubSource v = do
+  owner <- v Aeson..: "owner"
+  repo <- v Aeson..: "repo"
+  branch <- v Aeson..:! "branch"
+  mPrivate <- v Aeson..:! "private"
+  pure $ GitHubSource
+    { _gitHubSource_owner = owner
+    , _gitHubSource_repo = repo
+    , _gitHubSource_branch = branch
+    , _gitHubSource_private = fromMaybe False mPrivate
+    }
+
+parseGitSource :: Aeson.Object -> Aeson.Parser GitSource
+parseGitSource v = do
+  Just url <- parseGitUri <$> v Aeson..: "url"
+  branch <- v Aeson..: "branch"
+  fetchSubmodules <- v Aeson..:! "fetchSubmodules"
+  pure $ GitSource
+    { _gitSource_url = url
+    , _gitSource_branch = branch
+    , _gitSource_fetchSubmodules = fromMaybe False fetchSubmodules
+    }
 
 overwriteThunk :: MonadObelisk m => FilePath -> ThunkPtr -> m ()
 overwriteThunk target thunk = do
@@ -288,6 +359,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     --TODO: Is this safe? read/show is jank for `URI`
     [ Just $ "url" .= show (_gitSource_url s)
     , Just $ "rev" .= Ref.toHexString (_thunkRev_commit rev)
+    , Just $ "branch" .= _gitSource_branch s
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
     , Just $ "fetchSubmodules" .= _gitSource_fetchSubmodules s
     ]
@@ -315,13 +387,17 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     , confTrailingNewline = True
     }
 
-createThunk :: FilePath -> ThunkPtr -> IO ()
-createThunk target thunk = do
+createThunk :: MonadIO m => FilePath -> ThunkPtr -> m ()
+createThunk target thunk = liftIO $ do
   createDirectoryIfMissing True (target </> ".attr-cache")
   T.writeFile (target </> "default.nix") (thunkPtrLoader thunk)
-  LBS.writeFile (target </> "github.json") (encodeThunkPtrData thunk)
+  let
+    jsonFileName = case _thunkPtr_source thunk of
+      ThunkSource_GitHub _ -> "github"
+      ThunkSource_Git _ -> "git"
+  LBS.writeFile (target </> jsonFileName <.> "json") (encodeThunkPtrData thunk)
 
-createThunkWithLatest :: FilePath -> ThunkSource -> IO ()
+createThunkWithLatest :: MonadObelisk m => FilePath -> ThunkSource -> m ()
 createThunkWithLatest target s = do
   rev <- getLatestRev s
   createThunk target $ ThunkPtr
@@ -330,14 +406,14 @@ createThunkWithLatest target s = do
     }
 
 updateThunkToLatest :: MonadObelisk m => FilePath -> m ()
-updateThunkToLatest target = do
+updateThunkToLatest target = withSpinner ("Updating thunk " <> T.pack target <> " to latest") $ do
   (overwrite, ptr) <- readThunk target >>= \case
     Left err -> failWith $ T.pack $ "thunk update: " <> show err
     Right c -> case c of
       ThunkData_Packed t -> return (target, t)
       ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
   let src = _thunkPtr_source ptr
-  rev <- liftIO $ getLatestRev src
+  rev <- getLatestRev src
   overwriteThunk overwrite $ ThunkPtr
     { _thunkPtr_source = src
     , _thunkPtr_rev = rev
@@ -396,8 +472,16 @@ plainGitStandaloneLoaders =
 
 plainGitStandaloneLoaderV1 :: Text
 plainGitStandaloneLoaderV1 = T.unlines
-  [ $notImplemented
+  [ "# DO NOT HAND-EDIT THIS FILE"
+  , "let fetchGit = {url, rev, ref ? null, branch ? null, sha256 ? null, fetchSubmodules ? null}:"
+  , "  if builtins.hasAttr \"fetchGit\" builtins"
+  , "    then builtins.fetchGit ({ inherit url rev; } // (if branch == null then {} else { ref = branch; }))"
+  , "    else abort \"Plain Git repositories are only supported on nix 2.0 or higher.\";"
+  , "in import (fetchGit (builtins.fromJSON (builtins.readFile ./git.json)))"
   ]
+
+thunkFileNames :: [FilePath]
+thunkFileNames = ["default.nix", "github.json", "git.json"]
 
 -- | Look for authentication info from the 'hub' command
 getHubAuth
@@ -438,8 +522,10 @@ nixBuildThunkAttrWithCache thunkDir attr = do
         | otherwise = putLog Error (T.pack $ displayException e) >> return Nothing
       cacheDir = thunkDir </> ".attr-cache"
       cachePath = cacheDir </> attr <.> "out"
-  liftIO $ createDirectoryIfMissing False cacheDir
-  latestChange <- liftIO $ maximum <$> mapM (getModificationTime . (thunkDir </>)) ["default.nix", "github.json"]
+  latestChange <- liftIO $ do
+    createDirectoryIfMissing False cacheDir
+    let getModificationTimeMaybe = fmap rightToMaybe . try @IOError . getModificationTime
+    maximum . catMaybes <$> mapM (getModificationTimeMaybe . (thunkDir </>)) thunkFileNames
   cacheHit <- handle cacheErrHandler $ do
     cacheTime <- liftIO $ posixSecondsToUTCTime . realToFrac . modificationTime <$> getSymbolicLinkStatus cachePath
     return $ if latestChange <= cacheTime
@@ -484,84 +570,98 @@ unpackThunk
   => FilePath
   -> m ()
 unpackThunk thunkDir = readThunk thunkDir >>= \case
-  Left err -> failWith $ "thunk unpack: " <> (T.pack $ show err)
+  Left err -> failWith $ "thunk unpack: " <> T.pack (show err)
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right (ThunkData_Checkout _) -> failWith "thunk unpack: thunk is already unpacked"
-  Right (ThunkData_Packed tptr) -> case _thunkPtr_source tptr of
-    ThunkSource_GitHub s | (thunkParent, thunkName) <- splitFileName thunkDir -> withTempDirectory thunkParent thunkName $ \tmpRepo -> do
-      mauth <- liftIO $ getHubAuth "github.com"
-      repoResult <- liftIO $ executeRequestMaybe mauth $ repositoryR (_gitHubSource_owner s) (_gitHubSource_repo s)
-      githubURI <- liftIO $ either throwIO (return . repoSshUrl) repoResult >>= \case
-        Nothing -> fail "Cannot determine clone URI for thunk source"
-        Just c -> return $ T.unpack $ getUrl c
-      withSpinner ("Retrieving thunk " <> T.pack thunkName <> " from GitHub") $ do
-        callProcessAndLogOutput (Notice, Notice) $
-          proc "hub" ["clone", "-n", githubURI, tmpRepo]
-        let obGitDir = tmpRepo </> ".git" </> "obelisk"
-        --If this directory already exists then something is weird and we should fail
-        liftIO $ createDirectory obGitDir
-        callProcessAndLogOutput (Notice, Error) $
-          cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
-      withSpinner ("Preparing thunk in " <> T.pack thunkDir) $ do
-        -- Checkout
-        putLog Notice $ "Checking out " <> T.pack (show $ maybe "" untagName $ _gitHubSource_branch s)
-        callProcessAndLogOutput (Notice, Notice) $
-          proc "hub" $ concat
-            [ ["-C", tmpRepo]
-            , pure "checkout"
-            , maybe [] (\n -> ["-B", T.unpack (untagName n)]) (_gitHubSource_branch s)
-            , pure $ Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr
-            ]
-        -- Set upstream branch
-        forM_ (_gitHubSource_branch s) $ \branch ->
-          callProcessAndLogOutput (Notice, Error) $
-            proc "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
-        callProcessAndLogOutput (Notice, Error) $
-          proc "rm" ["-r", thunkDir]
-        callProcessAndLogOutput (Notice, Error) $
-          procWithPackages ["coreutils"] "mv"
-            [ "-T"
-            , tmpRepo
-            , thunkDir
-            ]
-    ThunkSource_Git _s -> do
-      $notImplemented
+  Right (ThunkData_Packed tptr) -> do
+    let (thunkParent, thunkName) = splitFileName thunkDir
+    withTempDirectory thunkParent thunkName $ \tmpRepo -> do
+      let obGitDir = tmpRepo </> ".git" </> "obelisk"
+      case _thunkPtr_source tptr of
+        ThunkSource_GitHub s -> do
+          mauth <- liftIO $ getHubAuth "github.com"
+          repoResult <- liftIO $ executeRequestMaybe mauth $ repositoryR (_gitHubSource_owner s) (_gitHubSource_repo s)
+          githubURI <- either (liftIO . throwIO) (return . repoSshUrl) repoResult >>= \case
+            Nothing -> failWith "Cannot determine clone URI for thunk source"
+            Just c -> return $ T.unpack $ getUrl c
+
+          withSpinner ("Retrieving thunk " <> T.pack thunkName <> " from GitHub") $ do
+            callProcessAndLogOutput (Notice, Notice) $
+              proc "hub" ["clone", "-n", githubURI, tmpRepo]
+            --If this directory already exists then something is weird and we should fail
+            liftIO $ createDirectory obGitDir
+            callProcessAndLogOutput (Notice, Error) $
+              cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
+
+          withSpinner ("Preparing thunk in " <> T.pack thunkDir) $ do
+            -- Checkout
+            putLog Notice $ "Checking out " <> T.pack (show $ maybe "" untagName $ _gitHubSource_branch s)
+            callProcessAndLogOutput (Notice, Notice) $
+              proc "hub" $ concat
+                [ ["-C", tmpRepo]
+                , pure "checkout"
+                , maybe [] (\n -> ["-B", T.unpack (untagName n)]) (_gitHubSource_branch s)
+                , pure $ Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr
+                ]
+            -- Set upstream branch
+            forM_ (_gitHubSource_branch s) $ \branch ->
+              callProcessAndLogOutput (Notice, Error) $
+                proc "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
+            callProcessAndLogOutput (Notice, Error) $
+              proc "rm" ["-r", thunkDir]
+            callProcessAndLogOutput (Notice, Error) $
+              procWithPackages ["coreutils"] "mv" ["-T", tmpRepo, thunkDir]
+
+        ThunkSource_Git s -> do
+          withSpinner ("Retreiving thunk " <> T.pack thunkName <> " from Git repo") $
+            callProcessAndLogOutput (Notice, Notice) $ git tmpRepo
+              [ ["clone", if _gitSource_fetchSubmodules s then "--recursive" else "", show (_gitSource_url s)]
+              , ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
+              , if _gitSource_fetchSubmodules s then ["submodule", "update", "--recursive"] else []
+              , ["branch", "-u", "origin/" <> T.unpack (untagName $ _gitSource_branch s)]
+              ]
+
+          withSpinner ("Preparing thunk in " <> T.pack thunkDir) $ do
+            liftIO $ createDirectory obGitDir
+            callProcessAndLogOutput (Notice, Error) $
+              cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
+            callProcessAndLogOutput (Notice, Error) $
+              proc "rm" ["-r", thunkDir]
+            callProcessAndLogOutput (Notice, Error) $
+              procWithPackages ["coreutils"] "mv" ["-T", tmpRepo, thunkDir]
 
 --TODO: add force mode to pack even if changes are present
 --TODO: add a rollback mode to pack to the original thunk
 packThunk
   :: MonadObelisk m
   => FilePath
-  -> String
+  -> Text
   -> m ()
 packThunk thunkDir upstream = readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
-    thunkPtr <- getThunkPtr thunkDir upstream
-    liftIO $ callProcess "rm"
-      [ "-rf"
-      , thunkDir
-      ]
-    withSpinner ("Packing thunk " <> T.pack thunkDir) $
+    withSpinner ("Packing thunk " <> T.pack thunkDir) $ do
+      thunkPtr <- getThunkPtr thunkDir upstream
+      callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
 
-getThunkPtr :: MonadObelisk m => FilePath -> String -> m ThunkPtr
+getThunkPtr :: MonadObelisk m => FilePath -> Text -> m ThunkPtr
 getThunkPtr = getThunkPtr' True
 
-getThunkPtr' :: MonadObelisk m => Bool -> FilePath -> String -> m ThunkPtr
+getThunkPtr' :: MonadObelisk m => Bool -> FilePath -> Text -> m ThunkPtr
 getThunkPtr' checkClean thunkDir upstream = do
-    when checkClean $ liftIO (checkGitCleanStatus thunkDir) >>= \case
+    when checkClean $ checkGitCleanStatus thunkDir >>= \case
       False -> do
-        statusDebug <- liftIO $ fmap (T.strip . T.pack) $ readProcess "hub"
-          [ "-C", thunkDir, "status", "--ignored" ] ""
+        statusDebug <- fmap T.pack $ readProcessAndLogStderr Notice $
+          git thunkDir [["status", "--ignored"]]
         putLog Warning "cannot proceed with unsaved working copy (git status):"
         putLog Notice statusDebug
         failWith "thunk pack: thunk checkout contains unsaved modifications"
       True -> return ()
 
     -- Check whether there are any stashes
-    stashOutput <- liftIO $ fmap T.pack $ readProcess "hub" [ "-C", thunkDir, "stash", "list" ] ""
+    stashOutput <- readGitProcess thunkDir ["stash", "list"]
     when checkClean $ case T.null stashOutput of
       False -> do
         failWith $ T.unlines $
@@ -571,60 +671,45 @@ getThunkPtr' checkClean thunkDir upstream = do
       True -> return ()
 
     --Check whether all local heads are pushed
-    repoHeads <- liftIO $ lines <$> readProcess "hub"
-      [ "-C", thunkDir
-      , "for-each-ref", "--format=%(refname:short)", "refs/heads/"
-      ] ""
-    remotes <- liftIO $ lines <$> readProcess "hub" [ "-C", thunkDir, "remote" ] ""
+    repoHeads <- T.lines <$> readGitProcess thunkDir ["for-each-ref", "--format=%(refname:short)", "refs/heads/"]
+    remotes <- T.lines <$> readGitProcess thunkDir ["remote"]
     --Check that the upstream specified actually exists
     case L.find (== upstream) remotes of
-      Nothing -> failWith $ T.pack $ "thunk pack: upstream " <> upstream <> " does not exist. Available upstreams are " <> L.intercalate ", " remotes
+      Nothing -> failWith $ "thunk pack: upstream " <> upstream <> " does not exist. Available upstreams are " <> T.intercalate ", " remotes
       Just _ -> return ()
     -- iterate over cartesian product
     when checkClean $ forM_ repoHeads $ \hd -> do
-      [localRev] <- liftIO $ lines <$> readProcess "hub" [ "-C", thunkDir, "rev-parse", hd ] ""
+      [localRev] <- T.lines <$> readGitProcess thunkDir ["rev-parse", T.unpack hd]
       forM_ remotes $ \rm -> do
         --TODO: The error you get if a branch isn't pushed anywhere could be made more user friendly
-        [remoteMergeRev] <- liftIO $ lines <$> readProcess "hub"
-          [ "-C", thunkDir
-          , "merge-base"
-          , localRev
-          , "remotes/" <> rm <> "/" <> hd
-          ] ""
+        [remoteMergeRev] <- fmap T.lines $ readGitProcess thunkDir
+          ["merge-base", T.unpack localRev, "remotes/" <> T.unpack rm <> "/" <> T.unpack hd]
         case remoteMergeRev == localRev of
-          False -> failWith $ T.pack $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
+          False -> failWith $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
           True -> return ()
 
     --We assume it's safe to pack the thunk at this point
-    [remoteUri'] <- liftIO $ lines <$> readProcess "hub"
-       [ "-C", thunkDir
-       , "config", "--get", "remote." <> upstream <> ".url"
-       ] ""
+    [remoteUri'] <- fmap T.lines $ readGitProcess thunkDir ["config", "--get", "remote." <> T.unpack upstream <> ".url"]
 
     let uriParseFailure = "Could not identify git remote: " <> remoteUri'
-        mRemoteUri = parseURIReference remoteUri'
-                <|> parseSshShorthand remoteUri'
+        mRemoteUri = parseGitUri remoteUri'
     case mRemoteUri of
-      Nothing -> failWith $ T.pack uriParseFailure
-      Just remoteUri -> liftIO $ do
-        refs <- fmap (refsToTuples . words) . lines <$> readProcess "hub"
-          [ "-C"
-          , thunkDir
-          , "show-ref"
-          , "--head" ] ""
+      Nothing -> failWith uriParseFailure
+      Just remoteUri -> do
+        refs <- fmap (map (refsToTuples . T.words) . T.lines) $ readGitProcess thunkDir ["show-ref", "--head"]
         -- safe because exactly one hash is associated with HEAD
         let Just currentHead = fst <$> L.find ((== "HEAD") . snd) refs
             remoteHeads = Map.fromList $ catMaybes $ fmap
-              (\(x,y) -> (,) x <$> L.stripPrefix ("refs/remotes/" <> upstream <> "/") y)
+              (\(x,y) -> (,) x <$> T.stripPrefix ("refs/remotes/" <> upstream <> "/") y)
               refs
             localHeads = Map.fromList $ catMaybes $ fmap
-              (\(x,y) -> (,) x <$> L.stripPrefix "refs/heads/" y)
+              (\(x,y) -> (,) x <$> T.stripPrefix "refs/heads/" y)
               refs
             currentUpstreamBranch = Map.lookup currentHead remoteHeads
                                 <|> Map.lookup currentHead localHeads
-        if
-          | isGithubThunk remoteUri -> githubThunkPtr remoteUri currentHead currentUpstreamBranch
-          | otherwise -> gitThunkPtr remoteUri currentHead currentUpstreamBranch
+        if isGithubThunk remoteUri
+          then githubThunkPtr remoteUri currentHead currentUpstreamBranch
+          else gitThunkPtr remoteUri currentHead currentUpstreamBranch
  where
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
@@ -639,14 +724,14 @@ getThunkPtr' checkClean thunkDir upstream = do
     ["/", owner', repo'] <- return $ splitDirectories (uriPath u)
     let owner = N (T.pack owner')
         repo = N (T.pack (dropExtension repo'))
-        commit = N (T.pack commit')
-        branch = N . T.pack <$> branch'
-    mauth <- getHubAuth "github.com"
-    repoResult <- executeRequestMaybe mauth $ repositoryR owner repo
-    repoIsPrivate <- either throwIO (return . repoPrivate) repoResult
-    archiveResult <- executeRequestMaybe mauth $
+        commit = N commit'
+        branch = N <$> branch'
+    mauth <- liftIO $ getHubAuth "github.com"
+    repoResult <- liftIO $ executeRequestMaybe mauth $ repositoryR owner repo
+    repoIsPrivate <- either (liftIO . throwIO) (return . repoPrivate) repoResult
+    archiveResult <- liftIO $ executeRequestMaybe mauth $
       archiveForR owner repo ArchiveFormatTarball (Just (untagName commit))
-    archiveUri <- either throwIO return archiveResult
+    archiveUri <- either (liftIO . throwIO) return archiveResult
     hash <- getNixSha256ForUriUnpacked archiveUri
     return $ ThunkPtr
       { _thunkPtr_rev = ThunkRev
@@ -660,22 +745,45 @@ getThunkPtr' checkClean thunkDir upstream = do
         , _gitHubSource_private = repoIsPrivate
         }
       }
-  gitThunkPtr u _commit' _branch' = do
-   case uriScheme u of
-     "https:" -> return ()
-     "git:" -> return ()
-     _ -> fail "thunk pack: obelisk currently only supports https and git protocols for non-GitHub remotes"
-   $notImplemented
-  parseSshShorthand uri' = do
-    -- This is what git does to check that the remote
-    -- is not a local file path when parsing shorthand.
-    -- Last referenced from here:
-    -- https://github.com/git/git/blob/95ec6b1b3393eb6e26da40c565520a8db9796e9f/connect.c#L712
-    let uri = T.pack uri'
-        (authAndHostname, colonAndPath) = T.break (== ':') uri
-        properUri = "ssh://" <> authAndHostname <> "/" <> T.drop 1 colonAndPath
-    -- Shorthand is valid iff a colon is present and it occurs before the first slash
-    -- This check is used to disambiguate a filepath containing a colon from shorthand
-    guard $ isNothing (T.findIndex (=='/') authAndHostname)
-         && not (T.null colonAndPath)
-    parseURI $ T.unpack properUri
+  gitThunkPtr u commit branch' = do
+    let protocols = ["https:", "ssh:", "git:"]
+    unless (T.toLower (T.pack $ uriScheme u) `elem` protocols) $
+      failWith $ "thunk pack: obelisk currently only supports "
+        <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
+    hash <- nixPrefetchGit u commit False
+    branch <- case branch' of
+      Nothing -> failWith "thunk pack: git thunks must track a branch"
+      Just b -> pure $ N b
+    pure $ ThunkPtr
+      { _thunkPtr_rev = ThunkRev
+        { _thunkRev_commit = commitNameToRef (N commit)
+        , _thunkRev_nixSha256 = hash
+        }
+      , _thunkPtr_source = ThunkSource_Git $ GitSource
+        { _gitSource_url = u
+        , _gitSource_branch = branch
+        , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
+        }
+      }
+
+parseGitUri :: Text -> Maybe URI
+parseGitUri x = parseURIReference (T.unpack x) <|> parseSshShorthand x
+
+parseSshShorthand :: Text -> Maybe URI
+parseSshShorthand uri = do
+  -- This is what git does to check that the remote
+  -- is not a local file path when parsing shorthand.
+  -- Last referenced from here:
+  -- https://github.com/git/git/blob/95ec6b1b3393eb6e26da40c565520a8db9796e9f/connect.c#L712
+  let
+    (authAndHostname, colonAndPath) = T.break (== ':') uri
+    properUri = "ssh://" <> authAndHostname <> "/" <> T.drop 1 colonAndPath
+  -- Shorthand is valid iff a colon is present and it occurs before the first slash
+  -- This check is used to disambiguate a filepath containing a colon from shorthand
+  guard $ isNothing (T.findIndex (=='/') authAndHostname)
+        && not (T.null colonAndPath)
+  parseURI $ T.unpack properUri
+
+
+readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
+readGitProcess repo args = fmap T.pack $ readProcessAndLogStderr Notice $ git repo [args]

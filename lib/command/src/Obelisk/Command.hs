@@ -281,13 +281,15 @@ ob = \case
         failWith $ "Deploy directory " <> T.pack deployDir <> " should not be the same as project root."
       thunkPtr <- readThunk root >>= \case
         Left err -> failWith $ case err of
-          ReadThunkError_WrongContents _ _ ->
+          ReadThunkError_AmbiguousFiles ->
+            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
+          ReadThunkError_UnrecognizedFiles ->
             "Project root " <> T.pack r <> " is not a git repository or valid thunk"
           _ -> "thunk read: " <> T.pack (show err)
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr' False root (_deployInitOpts_remote deployOpts)
+          getThunkPtr' False root (T.pack $ _deployInitOpts_remote deployOpts)
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
@@ -304,7 +306,7 @@ ob = \case
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
-    ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir upstream
+    ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir (T.pack upstream)
   ObCommand_Repl component -> runRepl component
   ObCommand_Watch component -> watch component
   ObCommand_Internal icmd -> case icmd of

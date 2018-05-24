@@ -72,8 +72,8 @@ initProject source = do
   skeleton <- withSpinner "Setting up obelisk" $ do
     liftIO $ createDirectory $ toObeliskDir "."
     case source of
-      InitSource_Default -> liftIO $ createThunkWithLatest implDir obeliskSource
-      InitSource_Branch branch -> liftIO $ createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+      InitSource_Default -> createThunkWithLatest implDir obeliskSource
+      InitSource_Branch branch -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
       InitSource_Symlink path -> do
         let symlinkPath = if isAbsolute path
               then path

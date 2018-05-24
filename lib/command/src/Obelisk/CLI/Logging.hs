@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- | Provides a logging handler that facilitates safe ouputting to terminal using MVar based locking.
 -- | Spinner.hs and Process.hs work on this guarantee.
 module Obelisk.CLI.Logging
@@ -17,12 +18,13 @@ module Obelisk.CLI.Logging
   , handleLog
   , getLogLevel
   , newLoggingConfig
+  , withExitFailMessage
   ) where
 
 import Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
 import Control.Concurrent.MVar (MVar, modifyMVar_, newMVar)
 import Control.Monad (unless, void, when)
-import Control.Monad.Catch (MonadMask, bracket, bracket_)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow, bracket, bracket_, catch, throwM)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Loops (iterateUntil)
 import Control.Monad.Reader (MonadIO)
@@ -31,7 +33,7 @@ import qualified Data.Text.IO as T
 import System.Console.ANSI (Color (Red, White, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (Reset, SetColor, SetConsoleIntensity), clearLine, setSGR)
-import System.Exit (ExitCode (ExitFailure), exitWith)
+import System.Exit (ExitCode (..), exitWith)
 import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stdin, stdout)
 
 import Control.Monad.Log (LoggingT, MonadLog, Severity (..), WithSeverity (..), logMessage, runLoggingT)
@@ -126,6 +128,16 @@ failWith :: (MonadIO m, MonadLog Output m) => Text -> m a
 failWith s = do
   putLog Alert s
   liftIO $ exitWith $ ExitFailure 2
+
+-- | Intercepts ExitFailure exceptions and logs the given alert before exiting.
+--
+-- This is useful when you want to provide contextual information to a deeper failure.
+withExitFailMessage :: (MonadIO m, MonadLog Output m, MonadCatch m, MonadThrow m) => Text -> m a -> m a
+withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
+  case e of
+    ExitFailure _ -> putLog Alert msg
+    ExitSuccess -> pure ()
+  throwM e
 
 -- | Write log to stdout, with colors (unless `noColor`)
 writeLogWith :: (MonadIO m, MonadMask m) => (Text -> IO ()) -> Bool -> WithSeverity Text -> m ()

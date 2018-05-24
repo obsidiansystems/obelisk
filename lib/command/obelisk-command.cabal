@@ -18,6 +18,7 @@ library
     , containers
     , data-default
     , directory
+    , either
     , filepath
     , github
     , hit

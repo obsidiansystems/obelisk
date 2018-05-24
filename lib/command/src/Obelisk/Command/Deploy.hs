@@ -53,10 +53,9 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
     forM_ hostnames $ \hostname -> do
       putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
       verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
-  liftIO $ do
-    createThunk (deployDir </> "src") thunkPtr
-    liftIO $ setupObeliskImpl deployDir
-    initGit deployDir
+  liftIO $ createThunk (deployDir </> "src") thunkPtr
+  liftIO $ setupObeliskImpl deployDir
+  initGit deployDir
 
 setupObeliskImpl :: FilePath -> IO ()
 setupObeliskImpl deployDir = do
@@ -83,7 +82,7 @@ deployPush deployPath = do
     Right (ThunkData_Packed _) ->
       build
     Right (ThunkData_Checkout _) -> do
-      liftIO (checkGitCleanStatus srcPath) >>= \case
+      checkGitCleanStatus srcPath >>= \case
         True -> do
           result <- build
           packThunk srcPath "origin" -- get upstream
@@ -112,7 +111,7 @@ deployPush deployPath = do
               ]
     sshAgentEnv <- liftIO sshAgent
     deployAndSwitch res sshAgentEnv `finally` callProcess' sshAgentEnv "ssh-agent" ["-k"]
-    isClean <- liftIO $ checkGitCleanStatus deployPath
+    isClean <- checkGitCleanStatus deployPath
     when (not isClean) $ do
       withSpinner "Commiting changes to Git" $ do
         callProcessAndLogOutput (Debug, Error) $ proc "git"
