@@ -9,7 +9,6 @@ module Obelisk.Command where
 
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (ask)
 import qualified Data.Binary as Binary
 import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
@@ -29,12 +28,14 @@ import System.Posix.Process (executeFile)
 import System.Process (callCommand)
 
 import Obelisk.App
-import Obelisk.CLI (Severity (..), cliDemo, failWith, getLogLevel, newLoggingConfig, putLog)
+import Obelisk.CLI (Severity (..), failWith, getLogLevel, newCliConfig, putLog)
+import Obelisk.CLI.Demo (cliDemo)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Repl
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
+
 
 data Args = Args
   { _args_noHandOffPassed :: Bool
@@ -220,8 +221,8 @@ mkObeliskConfig :: IO Obelisk
 mkObeliskConfig = do
   notInteractive <- not <$> isInteractiveTerm
   logLevel <- toLogLevel <$> getObArgs
-  loggingConfig <- newLoggingConfig logLevel notInteractive
-  return $ Obelisk notInteractive loggingConfig
+  cliConf <- newCliConfig logLevel notInteractive notInteractive
+  return $ Obelisk cliConf
   where
     toLogLevel = bool Notice Debug . _args_verbose
 
@@ -233,14 +234,12 @@ main = mkObeliskConfig >>= (`runObelisk` ObeliskT main')
 
 main' :: MonadObelisk m => m ()
 main' = do
-  c <- ask
   obPath <- liftIO getExecutablePath
   obArgs <- liftIO getObArgs
-  logLevel <- liftIO $ getLogLevel $ _obelisk_logging c
+  logLevel <- getLogLevel
   putLog Debug $ T.pack $ unwords
     [ "Starting Obelisk <" <> obPath <> ">"
     , "args=" <> show obArgs
-    , "noSpinner=" <> show (_obelisk_noSpinner c)
     , "logging-level=" <> show logLevel
     ]
 
@@ -313,7 +312,7 @@ ob = \case
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> do
-        c <- ask
+        c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
     ObInternal_CLIDemo -> cliDemo
 

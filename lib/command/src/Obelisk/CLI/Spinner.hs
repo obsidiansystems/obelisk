@@ -2,13 +2,12 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 -- | Provides a simple CLI spinner that interoperates cleanly with the rest of the logging output.
-module Obelisk.CLI.Spinner (withSpinner') where
+module Obelisk.CLI.Spinner (withSpinner) where
 
-import Control.Concurrent (killThread, threadDelay)
 import Control.Monad (forM_, (>=>))
 import Control.Monad.Catch (MonadMask, mask, onException)
 import Control.Monad.IO.Class
-import Control.Monad.Log (MonadLog, logMessage)
+import Control.Monad.Log (logMessage)
 import Control.Monad.Reader (MonadIO)
 import Data.IORef
 import Data.List (delete)
@@ -16,31 +15,35 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import System.Console.ANSI (Color (Blue, Cyan, Green, Red), ColorIntensity (Vivid), ConsoleLayer (Foreground),
                             SGR (Reset, SetColor), setSGRCode)
+import UnliftIO (MonadUnliftIO)
+import UnliftIO.Concurrent (forkIO, killThread, threadDelay)
 
-import Obelisk.CLI.Logging (LoggingConfig (..), Output (..), allowUserToMakeLoggingVerbose, forkML)
+import Obelisk.CLI.Logging (allowUserToMakeLoggingVerbose)
+import Obelisk.CLI.Types (Cli, CliConfig (..), HasCliConfig, Output (..), getCliConfig)
 
 -- | Run an action with a CLI spinner.
-withSpinner'
-  :: (MonadIO m, MonadMask m, MonadLog Output m)
-  => LoggingConfig -> Text -> m a -> m a
-withSpinner' conf s = bracket' start cleanup . const
+withSpinner
+  :: (MonadUnliftIO m, MonadMask m, Cli m, HasCliConfig m)
+  => Text -> m a -> m a
+withSpinner s = bracket' start cleanup . const
   where
     start = do
       tids <- run
-      tid <- forkML conf $ allowUserToMakeLoggingVerbose conf enquiryCode
+      tid <- forkIO $ allowUserToMakeLoggingVerbose enquiryCode
       pure $ tid : tids
-    stack = _loggingConfig_stack conf
     run = do
       -- Add this log to the spinner stack
+      stack <- _cliConfig_spinnerStack <$> getCliConfig
       wasEmpty <- liftIO $ atomicModifyIORef' stack $ \old -> (s : old, null old)
       if wasEmpty
         then do -- Fork a thread to manage output of anything on the stack
-          tid <- forkML conf $ runSpinner spinner $ \c -> do
+          tid <- forkIO $ runSpinner spinner $ \c -> do
             logs <- liftIO $ concatStack c <$> readIORef stack
             logMessage $ Output_Overwrite [logs]
           pure [tid]
         else pure []
     cleanup failed tids = do
+      stack <- _cliConfig_spinnerStack <$> getCliConfig
       liftIO $ mapM_ killThread tids
       logMessage Output_ClearLine
       let mark = if failed

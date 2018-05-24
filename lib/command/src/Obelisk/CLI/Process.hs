@@ -19,7 +19,6 @@ import Control.Applicative (liftA2)
 import Control.Monad (void, (<=<))
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Log (MonadLog)
 import Control.Monad.Reader (MonadIO)
 import qualified Data.ByteString.Char8 as BSC
 import Data.Function (fix)
@@ -32,15 +31,18 @@ import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
 import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
-import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmdspec, std_err, std_out,
-                       waitForProcess)
-import qualified System.Process as Process
+import UnliftIO (MonadUnliftIO)
+import UnliftIO.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmdspec, std_err, std_out,
+                         waitForProcess)
+import qualified UnliftIO.Process as Process
 
-import Obelisk.CLI.Logging (Output, Severity (..), failWith, putLog, putLogRaw)
+import Control.Monad.Log (Severity (..))
+import Obelisk.CLI.Logging (failWith, putLog, putLogRaw)
+import Obelisk.CLI.Types (Cli)
 
 -- | Like `System.Process.readProcess` but logs the stderr instead of letting the external process inherit it.
 readProcessAndLogStderr
-  :: (MonadIO m, MonadMask m, MonadLog Output m)
+  :: (MonadUnliftIO m, MonadMask m, Cli m)
   => Severity -> CreateProcess -> m String
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
@@ -55,7 +57,7 @@ readProcessAndLogStderr sev process = do
 -- are known to spit out diagnostic or informative messages in stderr, in which case it is advisable to call
 -- it with a non-Error severity for stderr, like `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
-  :: (MonadIO m, MonadMask m, MonadLog Output m)
+  :: (MonadUnliftIO m, MonadMask m, Cli m)
   => (Severity, Severity) -> CreateProcess -> m ()
 callProcessAndLogOutput (sev_out, sev_err) process = do
   void $ withProcess process $ \out err -> do
@@ -67,37 +69,38 @@ callProcessAndLogOutput (sev_out, sev_err) process = do
 
 -- | Like `System.Process.createProcess` but also logs (debug) the process being run
 createProcess
-  :: (MonadIO m, MonadLog Output m)
+  :: (MonadUnliftIO m, Cli m)
   => CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess p = do
   putLog Debug $ "Creating process: " <> T.pack (show p)
-  liftIO $ Process.createProcess p
+  Process.createProcess p
 
 -- | Like `System.Process.createProcess_` but also logs (debug) the process being run
 createProcess_
-  :: (MonadIO m, MonadLog Output m)
+  :: (MonadUnliftIO m, Cli m)
   => String -> CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess_ name p = do
   putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (show p)
-  liftIO $ Process.createProcess p
-
+  Process.createProcess p
 
 withProcess
-  :: (MonadIO m, MonadMask m, MonadLog Output m)
+  :: (MonadUnliftIO m, MonadMask m, Cli m)
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
-withProcess process f = do
+withProcess process f = do -- TODO: Use bracket.
   let procTitle = T.pack $ show $ cmdspec process
+  -- FIXME: Using `withCreateProcess` here leads to something operating illegally on closed handles.
   (_, Just out, Just err, p) <- createProcess $ process
-    { std_out = CreatePipe
-    , std_err = CreatePipe
-    }
+    { std_out = CreatePipe , std_err = CreatePipe }
+
   f out err  -- Pass the handles to the passed function
-  liftIO (waitForProcess p) >>= \case
+
+  waitForProcess p >>= \case
     ExitSuccess -> return ()
     ExitFailure code -> do
       -- Log an error. We also fail immediately; however we should probably let the caller control that.
       failWith $ procTitle <> " failed with exit code: " <> T.pack (show code)
   return (out, err)  -- Return the handles
+
 
 -- Create an input stream from the file handle, associating each item with the given severity.
 streamHandle :: Severity -> Handle -> IO (InputStream (Severity, BSC.ByteString))
@@ -105,7 +108,7 @@ streamHandle sev = Streams.map (sev,) <=< handleToInputStream
 
 -- | Read from an input stream and log its contents
 streamToLog
-  :: (MonadIO m, MonadMask m, MonadLog Output m)
+  :: (MonadIO m, MonadMask m, Cli m)
   => InputStream (Severity, BSC.ByteString) -> m ()
 streamToLog stream = fix $ \loop -> do
   liftIO (Streams.read stream) >>= \case
