@@ -49,7 +49,7 @@ obeliskSourceWithBranch branch = ThunkSource_GitHub $ GitHubSource
   { _gitHubSource_owner = "obsidiansystems"
   , _gitHubSource_repo = "obelisk"
   , _gitHubSource_branch = Just branch
-  , _gitHubSource_private = True
+  , _gitHubSource_private = False
   }
 
 data InitSource
