@@ -24,6 +24,7 @@ import Data.Monoid
 import qualified Data.Text as T
 import System.Directory
 import System.FilePath
+import System.IO.Temp
 import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process (CreateProcess, cwd, proc, waitForProcess)
@@ -67,10 +68,11 @@ toImplDir p = toObeliskDir p </> "impl"
 
 -- | Create a new project rooted in the current directory
 initProject :: MonadObelisk m => InitSource -> m ()
-initProject source = do
-  let implDir = toImplDir "."
+initProject source = withSystemTempDirectory "ob-init" $ \tmpDir -> do
+  let implDir = toImplDir tmpDir
+      obDir   = toObeliskDir tmpDir
   skeleton <- withSpinner "Setting up obelisk" $ do
-    liftIO $ createDirectory $ toObeliskDir "."
+    liftIO $ createDirectory obDir
     case source of
       InitSource_Default -> createThunkWithLatest implDir obeliskSource
       InitSource_Branch branch -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
@@ -81,7 +83,17 @@ initProject source = do
         liftIO $ createSymbolicLink symlinkPath implDir
     _ <- nixBuildAttrWithCache implDir "command"
     --TODO: We should probably handoff to the impl here
-    nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
+    skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
+
+    callProcessAndLogOutput (Notice, Error) $
+      cp
+        [ "-r"
+        , "--preserve=links"
+        , obDir
+        , toObeliskDir "."
+        ]
+    pure skel
+
   withSpinner "Copying project skeleton" $ do
     callProcessAndLogOutput (Notice, Error) $
       cp --TODO: Make this package depend on nix-prefetch-url properly
