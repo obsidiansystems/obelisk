@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Provides a logging handler that facilitates safe ouputting to terminal using MVar based locking.
@@ -28,7 +27,9 @@ import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow, bracket, bracket_
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Loops (iterateUntil)
 import Control.Monad.Reader (MonadIO)
+import Data.Semigroup ((<>))
 import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Console.ANSI (Color (Red, White, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
@@ -141,19 +142,16 @@ withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
 
 -- | Write log to stdout, with colors (unless `noColor`)
 writeLogWith :: (MonadIO m, MonadMask m) => (Text -> IO ()) -> Bool -> WithSeverity Text -> m ()
-writeLogWith f noColor (WithSeverity severity s) = case sevColor severity of
-  Just setColor -> bracket_ setColor reset $ liftIO (T.putStr s)
-  Nothing -> liftIO $ f s
+writeLogWith f noColor (WithSeverity severity s)
+  | noColor && severity <= Warning = liftIO $ f $ T.pack (show severity) <> ": " <> s
+  | not noColor && severity <= Error = put [SetColor Foreground Vivid Red]
+  | not noColor && severity <= Warning = put [SetColor Foreground Vivid Yellow]
+  | not noColor && severity >= Debug = put [SetColor Foreground Vivid White, SetConsoleIntensity FaintIntensity]
+  | otherwise = liftIO $ f s
   where
     -- We must reset *before* outputting the newline (if any), otherwise the cursor won't be reset.
-    reset = liftIO $ setSGR [Reset] >> f ""
-    sevColor sev = if
-      | noColor -> Nothing
-      | sev <= Error -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Red]
-      | sev <= Warning -> Just $ liftIO $ setSGR [SetColor Foreground Vivid Yellow]
-      | sev >= Debug -> Just $ liftIO $ setSGR [SetColor Foreground Vivid White, SetConsoleIntensity FaintIntensity]
-      | otherwise -> Nothing
-
+    reset = setSGR [Reset] >> f ""
+    put sgr = liftIO $ bracket_ (setSGR sgr) reset $ T.putStr s
 
 -- | Allow the user to immediately switch to verbose logging upon pressing a particular key.
 allowUserToMakeLoggingVerbose
