@@ -38,6 +38,19 @@ main = do
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
   withSystemTempDirectory "blank-project" $ \blankProject ->
     hspec $ do
+
+      describe "ob init" $ do
+        let inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
+            inTmp f = void . shelly . silently . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
+
+        it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
+        it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
+        it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", fromString obeliskImpl]
+
+        it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
+          errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
+          ls tmp >>= liftIO . assertEqual "" []
+
       describe "blank initialized project" $ do
         let inProj :: Sh a -> IO ()
             inProj = void . shelly . silently . chdir (fromString blankProject)
