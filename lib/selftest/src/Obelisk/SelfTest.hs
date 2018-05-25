@@ -137,17 +137,22 @@ main = do
             unpack
             testThunkPack (blankProject </> thunk)
 
-        it "can use ob run" $ inProj $ handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
-          runHandle "ob" ["run"] $ \stdout -> do
-            (_, firstUri) <- obRun httpManager stdout
-            let newUri = "http://localhost:8080/" -- trailing slash required for comparison
-            when (firstUri == newUri) $ errorExit $
-              "Default URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
-            alterRouteTo newUri stdout
-            (_, runningUri) <- obRun httpManager stdout
-            if runningUri /= newUri
-            then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
-            else exit 0
+        describe "ob run" $ do
+          it "works in root directory" $ inProj $ testObRun httpManager
+          it "works in sub directory" $ inProj $ chdir "frontend" $ testObRun httpManager
+
+testObRun :: HTTP.Manager -> Sh ()
+testObRun httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+  runHandle "ob" ["run"] $ \stdout -> do
+    (_, firstUri) <- handleObRunStdout httpManager stdout
+    let newUri = "http://localhost:8080/" -- trailing slash required for comparison
+    when (firstUri == newUri) $ errorExit $
+      "Default URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
+    alterRouteTo newUri stdout
+    (_, runningUri) <- handleObRunStdout httpManager stdout
+    if runningUri /= newUri
+    then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
+    else exit 0
 
 testThunkPack :: Shelly.FilePath -> Sh ()
 testThunkPack path = withTempFile (T.unpack $ toTextIgnore path) "test-file" $ \file handle -> do
@@ -193,8 +198,8 @@ alterRouteTo uri stdout = do
     "Reloading failed: " <> T.pack (show t)
 
 -- | Handle stdout of `ob run`: check that the frontend and backend servers are started correctly
-obRun :: HTTP.Manager -> Handle -> Sh (Text, Text)
-obRun httpManager stdout = flip fix ObRunState_Init $ \loop state -> do
+handleObRunStdout :: HTTP.Manager -> Handle -> Sh (Text, Text)
+handleObRunStdout httpManager stdout = flip fix ObRunState_Init $ \loop state -> do
   liftIO (T.hGetLine stdout) >>= \t -> case state of
     ObRunState_Init
       | "Running test..." `T.isPrefixOf` t -> loop ObRunState_Startup

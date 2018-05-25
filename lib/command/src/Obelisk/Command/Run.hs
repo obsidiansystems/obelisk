@@ -35,7 +35,7 @@ run = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
-    runGhcid dotGhciPath $ Just $ unwords ["Obelisk.Run.run", show freePort, "backend", "frontend"]
+    runGhcid dotGhciPath $ Just $ unwords ["main", show freePort]
 
 runRepl :: MonadObelisk m => m ()
 runRepl = do
@@ -89,8 +89,7 @@ withGhciScript pkgs f = do
 
   let dotGhci = unlines
         [ ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
-        , ":add Backend Frontend"
-        , ":module + Obelisk.Run Frontend Backend"
+        , ":load ./devel/Devel.hs" -- TODO more robust filepath
         ]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
