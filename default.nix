@@ -109,18 +109,14 @@ in
 with pkgs.lib;
 rec {
   inherit reflex-platform;
-  inherit (reflex-platform) nixpkgs;
+  inherit (reflex-platform) nixpkgs pinBuildInputs;
   path = reflex-platform.filterGit ./.;
   command = ghcObelisk.obelisk-command;
-  shell = nixpkgs.stdenv.mkDerivation {
-    name = "obelisk-shell";
-    src = null;
-    nativeBuildInputs = [
-      command
-      pkgs.openssh
-      pkgs.gitAndTools.hub
-    ];
-  };
+  shell = pinBuildInputs "obelisk-shell" ([
+    command
+    pkgs.openssh
+    pkgs.gitAndTools.hub
+  ]) [];
 
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
