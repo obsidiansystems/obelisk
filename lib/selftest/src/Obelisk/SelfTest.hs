@@ -45,7 +45,7 @@ main = do
 
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
-        it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", fromString obeliskImpl]
+        it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
 
         it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
           errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
