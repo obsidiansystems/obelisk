@@ -32,7 +32,6 @@ import Obelisk.CLI (Severity (..), failWith, getLogLevel, newCliConfig, putLog)
 import Obelisk.CLI.Demo (cliDemo)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
-import Obelisk.Command.Repl
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
 
@@ -82,8 +81,7 @@ data ObCommand
    | ObCommand_Deploy DeployCommand
    | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
-   | ObCommand_Repl FilePath
-   | ObCommand_Watch FilePath
+   | ObCommand_Repl
    | ObCommand_Internal ObInternal
    deriving Show
 
@@ -115,8 +113,7 @@ obCommand = hsubparser
       , command "deploy" $ info (ObCommand_Deploy <$> deployCommand) $ progDesc "Prepare a deployment for an Obelisk project"
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-      , command "repl" $ info (ObCommand_Repl <$> strArgument (action "directory")) $ progDesc "Open an interactive interpreter"
-      , command "watch" $ info (ObCommand_Watch <$> strArgument (action "directory"))$ progDesc "Watch directory for changes and update interactive interpreter"
+      , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
       ])
   <|> subparser
     (mconcat
@@ -306,8 +303,7 @@ ob = \case
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir (T.pack upstream)
-  ObCommand_Repl component -> runRepl component
-  ObCommand_Watch component -> watch component
+  ObCommand_Repl -> runRepl
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)

@@ -34,14 +34,14 @@ data ObRunState
 
 main :: IO ()
 main = do
-  obeliskImpl <- getEnv "OBELISK_IMPL"
+  obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
   withSystemTempDirectory "blank-project" $ \blankProject ->
     hspec $ do
-
+      let shelly_ = void . shelly . silently
       describe "ob init" $ do
         let inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
-            inTmp f = void . shelly . silently . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
+            inTmp f = shelly_ . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
 
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
@@ -51,17 +51,32 @@ main = do
           errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
+      describe "obelisk project" $ parallel $ do
+        it "can build obelisk command"  $ shelly_ $ run "nix-build" ["-A", "command" , obeliskImpl]
+        it "can build obelisk skeleton" $ shelly_ $ run "nix-build" ["-A", "skeleton", obeliskImpl]
+        it "can build obelisk shell"    $ shelly_ $ run "nix-build" ["-A", "shell",    obeliskImpl]
+        it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
+
       describe "blank initialized project" $ do
         let inProj :: Sh a -> IO ()
-            inProj = void . shelly . silently . chdir (fromString blankProject)
+            inProj = shelly_ . chdir (fromString blankProject)
             thunk  = ".obelisk/impl"
 
-            -- See https://github.com/obsidiansystems/obelisk/pull/92#issuecomment-390226735
-            hashDir dir   = silently $ run "sh" ["-c", "cd " <> dir <> " && find . | grep -v '^./.git' | grep -v '/.attr-cache' | grep -v '^.$' | xargs -n 1 -I % -- sh -c 'echo `nix-hash %` %'"]
-            hash = hashDir thunk
+            doubleQuotes s = "\"" <> s <> "\""
+            revParseHead = T.strip <$> run "git" ["rev-parse", "HEAD"]
+            commitAll = do
+              run "git" ["add", "."]
+              run "git" ["commit", "--allow-empty", "-m", doubleQuotes "checkpoint"]
+              revParseHead
+
+            diff a b = run "git" ["diff", a, b]
+            assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
+            assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
 
         it "can be created" $ inProj $ do
           run "ob" ["init"]
+          run "git" ["init"]
+          commitAll
 
         it "can build ghc.backend" $ inProj $ do
           run "nix-build" ["--no-out-link", "-A", "ghc.backend"]
@@ -80,38 +95,41 @@ main = do
           it ("can build in " <> shell) $ inProj $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
         it "has idempotent thunk update" $ inProj $ do
-          let update = run "ob" ["thunk", "update", thunk] *> hash
+          let update = run "ob" ["thunk", "update", thunk] >> commitAll
           u  <- update
           uu <- update
-          liftIO $ assertEqual "" u uu
+          assertRevEQ u uu
 
         describe "ob thunk pack/unpack" $ do
-          let pack   = run "ob" ["thunk", "pack",   thunk] *> hash
-              unpack = run "ob" ["thunk", "unpack", thunk] *> hash
+          let pack   = run "ob" ["thunk", "pack",   thunk] >> commitAll
+              unpack = run "ob" ["thunk", "unpack", thunk] >> commitAll
 
           it "has thunk pack and unpack inverses" $ inProj $ do
-            e    <- hash
+            e    <- commitAll
             eu   <- unpack
             eup  <- pack
             eupu <- unpack
             _    <- pack
-            liftIO $ do
-              assertEqual "" e  eup
-              assertEqual "" eu eupu
-              assertBool  "" (e /= eu)
+
+            assertRevEQ e  eup
+            assertRevEQ eu eupu
+            assertRevNE e  eu
 
           it "can pack and unpack plain git repos" $ do
             withSystemTempDirectory "git-repo" $ \dir -> shelly @IO $ silently $ do
               let repo = toTextIgnore $ dir </> ("repo" :: String)
-              origHash <- run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo] *> hashDir repo
+              run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo]
+              origHash <- chdir (fromText repo) revParseHead
 
               run_ "ob" ["thunk", "pack", repo]
               packedFiles <- Set.fromList <$> ls (fromText repo)
               liftIO $ assertEqual "" packedFiles $
                 Set.fromList $ (repo </>) <$> ["default.nix", "git.json", ".attr-cache" :: String]
 
-              unpackHash <- run_ "ob" ["thunk", "unpack", repo] *> hashDir repo
-              liftIO $ assertEqual "" origHash unpackHash
+              run_ "ob" ["thunk", "unpack", repo]
+              chdir (fromText repo) $ do
+                unpackHash <- revParseHead
+                assertRevEQ origHash unpackHash
 
               testThunkPack $ fromText repo
 

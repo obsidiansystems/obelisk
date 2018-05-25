@@ -30,6 +30,8 @@ module Obelisk.CLI
   , readProcessAndLogStderr
   , callProcessAndLogOutput
   , createProcess_
+  , callProcess
+  , callCommand
   ) where
 
 import Control.Monad.Log (Severity (..))

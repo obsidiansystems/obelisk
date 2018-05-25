@@ -1,9 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Run where
 
-import qualified Control.Exception as E
+import Control.Exception (bracket)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -23,42 +25,30 @@ import Network.Socket
 import System.Directory
 import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
-import System.Process (callCommand)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
-import Obelisk.CLI (CliT (..), HasCliConfig, Severity (..), failWith, getCliConfig, putLog, runCli)
+import Obelisk.CLI (CliT (..), HasCliConfig, Severity (..), callCommand, failWith, getCliConfig, putLog,
+                    runCli)
+import Obelisk.Command.Project (inProjectShell)
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
 run :: ObeliskT IO ()
 run = do
-  freePort <- liftIO getFreePort
-  pkgs <- liftIO getLocalPkgs
-  (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
-    let cabalFp = pkg </> pkg <.> "cabal"
-    xs <- parseHsSrcDir cabalFp
-    return $ case xs of
-      Nothing -> Left pkg
-      Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
-  when (null hsSrcDirs) $
-    failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
-  when (not (null pkgDirErrs)) $
-    putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
-  let dotGhci = unlines
-        [ ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
-        , ":add Backend Frontend"
-        , ":module + Obelisk.Run Frontend Backend"
-        ]
-      testCmd = unwords ["Obelisk.Run.run", show freePort , "backend", "frontend"]
-  withSystemTempDirectory "ob-ghci" $ \fp -> do
-    let dotGhciPath = fp </> ".ghci"
-    liftIO $ do
-      writeFile dotGhciPath dotGhci
-      runDev dotGhciPath $ Just testCmd
+  pkgs <- getLocalPkgs
+  withGhciScript pkgs $ \dotGhciPath -> do
+    freePort <- getFreePort
+    runGhcid dotGhciPath $ Just $ unwords ["Obelisk.Run.run", show freePort, "backend", "frontend"]
+
+runRepl :: MonadObelisk m => m ()
+runRepl = do
+  pkgs <- getLocalPkgs
+  withGhciScript pkgs $ \dotGhciPath -> do
+    runGhciRepl dotGhciPath
 
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
-getLocalPkgs :: IO [FilePath]
-getLocalPkgs = return ["backend", "common", "frontend"]
+getLocalPkgs :: Applicative f => f [FilePath]
+getLocalPkgs = pure ["backend", "common", "frontend"]
 
 parseHsSrcDir
   :: (MonadObelisk m)
@@ -85,21 +75,61 @@ withUTF8FileContentsM fp f = do
   c <- getCliConfig
   liftIO $ withUTF8FileContents fp $ runCli c . f
 
--- | Dev
-runDev :: FilePath -> Maybe String -> IO ()
-runDev dotGhci mcmd = callCommand $ unwords $ "ghcid" : ghcidOpts
+-- | Create ghci configuration to load the given packages
+withGhciScript
+  :: MonadObelisk m
+  => [FilePath] -- ^ List of packages to load into ghci
+  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporory .ghci
+  -> m ()
+withGhciScript pkgs f = do
+  (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
+    let cabalFp = pkg </> pkg <.> "cabal"
+    flip fmap (parseHsSrcDir cabalFp) $ \case
+      Nothing -> Left pkg
+      Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
+
+  when (null hsSrcDirs) $
+    failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
+  unless (null pkgDirErrs) $
+    putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
+
+  let dotGhci = unlines
+        [ ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
+        , ":add Backend Frontend"
+        , ":module + Obelisk.Run Frontend Backend"
+        ]
+  withSystemTempDirectory "ob-ghci" $ \fp -> do
+    let dotGhciPath = fp </> ".ghci"
+    liftIO $ writeFile dotGhciPath dotGhci
+    f dotGhciPath
+
+-- | Run ghci repl
+runGhciRepl
+  :: MonadObelisk m
+  => FilePath -- ^ Path to .ghci
+  -> m ()
+runGhciRepl dotGhci = inProjectShell "ghc" $ unwords $ "ghci" : ["-ghci-script", dotGhci]
+
+-- | Run ghcid
+runGhcid
+  :: MonadObelisk m
+  => FilePath -- ^ Path to .ghci
+  -> Maybe String -- ^ Optional command to run at every reload
+  -> m ()
+runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
   where
-    ghcidOpts =
+    opts =
       [ "-W"
       , "--command='ghci -ghci-script " <> dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
-      ] <> maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'")
+      ] <> testCmd
+    testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'")
 
-getFreePort :: IO PortNumber
-getFreePort = withSocketsDo $ do
+getFreePort :: MonadIO m => m PortNumber
+getFreePort = liftIO $ withSocketsDo $ do
   addr:_ <- getAddrInfo (Just defaultHints) (Just "127.0.0.1") (Just "0")
-  E.bracket (open addr) close socketPort
+  bracket (open addr) close socketPort
   where
     open addr = do
       sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)

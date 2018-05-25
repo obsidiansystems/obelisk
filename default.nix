@@ -19,16 +19,6 @@ let #TODO: Upstream
         then removeConfigureFlag drv' "--ghc-option=-optl=-dead_strip"
         else drv';
 
-    # Dependencies that should be on the PATH for obelisk when it runs. This does not affect PATH of end user.
-    commandRuntimeDeps = pkgs: with pkgs; [
-      coreutils
-      git
-      gitAndTools.hub
-      nix
-      nix-prefetch-git
-      openssh
-    ];
-
     addOptparseApplicativeCompletionScripts = exeName: pkg: overrideCabal pkg (drv: {
       postInstall = (drv.postInstall or "") + ''
         BASH_COMP_DIR="$out/share/bash-completion/completions"
@@ -118,18 +108,14 @@ in
 with pkgs.lib;
 rec {
   inherit reflex-platform;
-  inherit (reflex-platform) nixpkgs;
+  inherit (reflex-platform) nixpkgs pinBuildInputs;
   path = reflex-platform.filterGit ./.;
   command = ghcObelisk.obelisk-command;
-  shell = nixpkgs.stdenv.mkDerivation {
-    name = "obelisk-shell";
-    src = null;
-    nativeBuildInputs = [
-      command
-      pkgs.openssh
-      pkgs.gitAndTools.hub
-    ];
-  };
+  shell = pinBuildInputs "obelisk-shell" ([
+    command
+    pkgs.openssh
+    pkgs.gitAndTools.hub
+  ]) [];
 
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
