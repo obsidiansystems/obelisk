@@ -19,7 +19,9 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
         ```
 1. Install `ob`: `git clone git@github.com:obsidiansystems/obelisk && nix-env -f obelisk -iA command`.
    Alternatively, if you prefer not to install to your user nix environment, you can
-   enter a shell with the `ob` command available: `nix-shell`.
+   enter a shell with the `ob` command available: `nix-shell -A shell`.
+   After running `ob init` this becomes `nix-shell .obelisk/impl -A shell`
+   for subsequent shells (since `ob init` overwrites `default.nix`).
 1. Get set up to access private repositories
     1. [Get set up to connect to GitHub with SSH](https://help.github.com/articles/connecting-to-github-with-ssh/)
     1. [Create a GitHub personal access token](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/)
