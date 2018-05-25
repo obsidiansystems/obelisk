@@ -5,6 +5,7 @@
 with pkgs;
 
 {
+  inherit (self) command;
   tests = {
     #TODO: Doesn't work; see discussion in https://www.pivotaltracker.com/story/show/157265140
     ob-init = runCommand "ob-init" {
