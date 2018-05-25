@@ -34,14 +34,14 @@ data ObRunState
 
 main :: IO ()
 main = do
-  obeliskImpl <- getEnv "OBELISK_IMPL"
+  obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
   withSystemTempDirectory "blank-project" $ \blankProject ->
     hspec $ do
-
+      let shelly_ = void . shelly . silently
       describe "ob init" $ do
         let inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
-            inTmp f = void . shelly . silently . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
+            inTmp f = shelly_ . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
 
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
@@ -51,9 +51,15 @@ main = do
           errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
+      describe "obelisk project" $ parallel $ do
+        it "can build obelisk command"  $ shelly_ $ run "nix-build" ["-A", "command" , obeliskImpl]
+        it "can build obelisk skeleton" $ shelly_ $ run "nix-build" ["-A", "skeleton", obeliskImpl]
+        it "can build obelisk shell"    $ shelly_ $ run "nix-build" ["-A", "shell",    obeliskImpl]
+        it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
+
       describe "blank initialized project" $ do
         let inProj :: Sh a -> IO ()
-            inProj = void . shelly . silently . chdir (fromString blankProject)
+            inProj = shelly_ . chdir (fromString blankProject)
             thunk  = ".obelisk/impl"
 
             doubleQuotes s = "\"" <> s <> "\""
