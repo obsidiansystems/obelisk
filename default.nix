@@ -19,7 +19,6 @@ let #TODO: Upstream
         then removeConfigureFlag drv' "--ghc-option=-optl=-dead_strip"
         else drv';
 
-
     addOptparseApplicativeCompletionScripts = exeName: pkg: overrideCabal pkg (drv: {
       postInstall = (drv.postInstall or "") + ''
         BASH_COMP_DIR="$out/share/bash-completion/completions"

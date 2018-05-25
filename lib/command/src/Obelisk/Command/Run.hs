@@ -1,32 +1,34 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Run where
 
 import Control.Exception (bracket)
 import Control.Monad
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (MonadIO)
 import Data.Either
 import Data.List
-import Control.Monad.Reader (MonadIO, ask)
+import Data.List.NonEmpty as NE
 import Data.Maybe
-import Control.Monad.IO.Class (liftIO)
 import Data.Monoid
 import qualified Data.Text as T
-import Data.List.NonEmpty as NE
-import Distribution.Utils.Generic (withUTF8FileContents)
-import Distribution.PackageDescription.Parse (parseGenericPackageDescription, ParseResult(..))
+import Distribution.PackageDescription.Parse (ParseResult (..), parseGenericPackageDescription)
 import Distribution.Types.BuildInfo
 import Distribution.Types.CondTree
-import Distribution.Types.Library
 import Distribution.Types.GenericPackageDescription
+import Distribution.Types.Library
+import Distribution.Utils.Generic (withUTF8FileContents)
 import Network.Socket
 import System.Directory
 import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
 
-import Obelisk.App (MonadObelisk, ObeliskT, runObelisk)
-import Obelisk.CLI (callCommand, putLog, failWith, Severity(..))
+import Obelisk.App (MonadObelisk, ObeliskT)
+import Obelisk.CLI (CliT (..), HasCliConfig, Severity (..), callCommand, failWith, getCliConfig, putLog,
+                    runCli)
 import Obelisk.Command.Project (inProjectShell)
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
@@ -49,25 +51,29 @@ getLocalPkgs :: Applicative f => f [FilePath]
 getLocalPkgs = pure ["backend", "common", "frontend"]
 
 parseHsSrcDir
-  :: MonadObelisk m
+  :: (MonadObelisk m)
   => FilePath -- ^ package cabal file path
   -> m (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
 parseHsSrcDir cabalFp = do
   exists <- liftIO $ doesFileExist cabalFp
   if exists
     then do
-      c <- ask
-      liftIO $ withUTF8FileContents cabalFp $ \cabal -> runObelisk c $ do
-      case parseGenericPackageDescription cabal of
-        ParseOk warnings gpkg -> do
-          mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
-          return $ do
-            (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
-            pure $ fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
-        ParseFailed e -> do
-          putLog Error $ T.pack $ "Failed to parse cabal file: " <> show e
-          return Nothing
+      withUTF8FileContentsM cabalFp $ \cabal -> do
+        case parseGenericPackageDescription cabal of
+          ParseOk warnings gpkg -> do
+            mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
+            return $ do
+              (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
+              pure $ fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
+          ParseFailed e -> do
+            putLog Error $ T.pack $ "Failed to parse cabal file: " <> show e
+            return Nothing
     else return Nothing
+
+withUTF8FileContentsM :: (MonadIO m, HasCliConfig m) => FilePath -> (String -> CliT IO a) -> m a
+withUTF8FileContentsM fp f = do
+  c <- getCliConfig
+  liftIO $ withUTF8FileContents fp $ runCli c . f
 
 -- | Create ghci configuration to load the given packages
 withGhciScript

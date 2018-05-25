@@ -41,9 +41,7 @@ library
   exposed-modules:
     Obelisk.App
     Obelisk.CLI
-    Obelisk.CLI.Logging
-    Obelisk.CLI.Process
-    Obelisk.CLI.Spinner
+    Obelisk.CLI.Demo
     Obelisk.Command
     Obelisk.Command.Deploy
     Obelisk.Command.Nix
@@ -51,6 +49,11 @@ library
     Obelisk.Command.Run
     Obelisk.Command.Thunk
     Obelisk.Command.Utils
+  other-modules:
+    Obelisk.CLI.Logging
+    Obelisk.CLI.Process
+    Obelisk.CLI.Spinner
+    Obelisk.CLI.Types
   -- -fobject-code is so that the StaticPointers extension can work in ghci
   ghc-options: -Wall -fobject-code
 
