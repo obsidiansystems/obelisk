@@ -95,6 +95,7 @@ let #TODO: Upstream
       obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
       obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
       obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
+      obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
       obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
       obelisk-executable-config = executableConfig.haskellPackage self;
       obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
@@ -112,7 +113,11 @@ rec {
   inherit (reflex-platform) nixpkgs;
   path = reflex-platform.filterGit ./.;
   command = ghcObelisk.obelisk-command;
-  shell = nixpkgs.stdenv.mkDerivation {
+  backend = ghcObelisk.obelisk-backend;
+  frontend = ghcObelisk.obelisk-frontend;
+  run = ghcObelisk.obelisk-run;
+
+  shell = pkgs.stdenv.mkDerivation {
     name = "obelisk-shell";
     src = null;
     nativeBuildInputs = [
