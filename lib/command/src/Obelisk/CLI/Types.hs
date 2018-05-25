@@ -7,12 +7,10 @@ module Obelisk.CLI.Types where
 
 import Control.Concurrent.MVar (MVar)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
-import Control.Monad.Log (LoggingT (LoggingT), MonadLog, Severity (..), WithSeverity (..), runLoggingT)
+import Control.Monad.Log (LoggingT, MonadLog, Severity (..), WithSeverity (..))
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask)
 import Data.IORef (IORef)
 import Data.Text (Text)
-import UnliftIO (MonadUnliftIO, UnliftIO (..), askUnliftIO, withUnliftIO)
-
 
 data CliConfig = CliConfig
   { _cliConfig_logLevel :: IORef Severity  -- We are capable of changing the log level at runtime
@@ -46,12 +44,3 @@ class Monad m => HasCliConfig m where
 
 instance Monad m => HasCliConfig (CliT m) where
   getCliConfig = CliT ask
-
-instance MonadUnliftIO m => MonadUnliftIO (LoggingT Output m) where
-  askUnliftIO = LoggingT $ ReaderT $ \f ->
-    withUnliftIO $ \u ->
-      return (UnliftIO (unliftIO u . flip runLoggingT f))
-
-instance MonadUnliftIO m => MonadUnliftIO (CliT m) where
-  askUnliftIO = CliT $ withUnliftIO $ \u ->
-    return (UnliftIO (unliftIO u . unCliT))

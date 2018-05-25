@@ -10,7 +10,6 @@ module Obelisk.App where
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
-import UnliftIO (MonadUnliftIO, UnliftIO (..), askUnliftIO, withUnliftIO)
 
 import Obelisk.CLI (Cli, CliConfig, CliT, HasCliConfig, getCliConfig, runCli)
 
@@ -36,10 +35,6 @@ instance Monad m => HasObelisk (ReaderT Obelisk m) where
 instance HasCliConfig m => HasCliConfig (ReaderT Obelisk m) where
   getCliConfig = lift getCliConfig
 
-instance MonadUnliftIO m => MonadUnliftIO (ObeliskT m) where
-  askUnliftIO = ObeliskT $ withUnliftIO $ \u ->
-    return (UnliftIO (unliftIO u . unObeliskT))
-
 runObelisk :: MonadIO m => Obelisk -> ObeliskT m a -> m a
 runObelisk c =
     runCli (_obelisk_cliConfig c)
@@ -50,6 +45,6 @@ type MonadObelisk m =
   ( Cli m
   , HasCliConfig m
   , HasObelisk m
-  , MonadUnliftIO m
+  , MonadIO m
   , MonadMask m
   )

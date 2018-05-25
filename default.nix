@@ -19,12 +19,6 @@ let #TODO: Upstream
         then removeConfigureFlag drv' "--ghc-option=-optl=-dead_strip"
         else drv';
 
-    applyHpack = dir: pkgs.runCommand "applyHpack" {} ''
-      cp -r "${dir}" "$out"
-      chmod +w "$out"
-      cd $out && ${pkgs.haskellPackages.hpack}/bin/hpack
-    '';
-
     # Dependencies that should be on the PATH for obelisk when it runs. This does not affect PATH of end user.
     commandRuntimeDeps = pkgs: with pkgs; [
       coreutils
@@ -51,13 +45,6 @@ let #TODO: Upstream
       '';
     });
 
-    unliftioSrc = pkgs.fetchFromGitHub {
-      owner = "fpco";
-      repo = "unliftio";
-      rev = "bc822ac8aaacf9d008e9a6d5d9b79817f34b9c44";
-      sha256 = "1knzamqka92cgyrvq76pzbw02x0h8yw5gxv9n9m7vbdain31n8p0";
-    };
-
     # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
     ghcObelisk = reflex-platform.ghc.override {
       overrides = composeExtensions defaultHaskellOverrides (self: super: {
@@ -78,9 +65,6 @@ let #TODO: Upstream
           editedCabalFile = null;
         });
 
-        unliftio = self.callCabal2nix "unliftio" (applyHpack (unliftioSrc + /unliftio)) {};
-        unliftio-core = self.callCabal2nix "unliftio-core" (applyHpack (unliftioSrc + /unliftio-core)) {};
- 
         # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
         obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
 

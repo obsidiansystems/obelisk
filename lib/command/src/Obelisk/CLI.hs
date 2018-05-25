@@ -7,7 +7,7 @@ module Obelisk.CLI
   (
   -- .Types
     Cli
-  , CliT
+  , CliT(..)
   , runCli
   , CliConfig
   , HasCliConfig

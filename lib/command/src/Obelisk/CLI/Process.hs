@@ -31,10 +31,9 @@ import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
 import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
-import UnliftIO (MonadUnliftIO)
-import UnliftIO.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmdspec, std_err, std_out,
-                         waitForProcess)
-import qualified UnliftIO.Process as Process
+import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmdspec, std_err, std_out,
+                       waitForProcess)
+import qualified System.Process as Process
 
 import Control.Monad.Log (Severity (..))
 import Obelisk.CLI.Logging (failWith, putLog, putLogRaw)
@@ -42,7 +41,7 @@ import Obelisk.CLI.Types (Cli)
 
 -- | Like `System.Process.readProcess` but logs the stderr instead of letting the external process inherit it.
 readProcessAndLogStderr
-  :: (MonadUnliftIO m, MonadMask m, Cli m)
+  :: (MonadIO m, MonadMask m, Cli m)
   => Severity -> CreateProcess -> m String
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
@@ -57,7 +56,7 @@ readProcessAndLogStderr sev process = do
 -- are known to spit out diagnostic or informative messages in stderr, in which case it is advisable to call
 -- it with a non-Error severity for stderr, like `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
-  :: (MonadUnliftIO m, MonadMask m, Cli m)
+  :: (MonadIO m, MonadMask m, Cli m)
   => (Severity, Severity) -> CreateProcess -> m ()
 callProcessAndLogOutput (sev_out, sev_err) process = do
   void $ withProcess process $ \out err -> do
@@ -69,22 +68,22 @@ callProcessAndLogOutput (sev_out, sev_err) process = do
 
 -- | Like `System.Process.createProcess` but also logs (debug) the process being run
 createProcess
-  :: (MonadUnliftIO m, Cli m)
+  :: (MonadIO m, Cli m)
   => CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess p = do
   putLog Debug $ "Creating process: " <> T.pack (show p)
-  Process.createProcess p
+  liftIO $ Process.createProcess p
 
 -- | Like `System.Process.createProcess_` but also logs (debug) the process being run
 createProcess_
-  :: (MonadUnliftIO m, Cli m)
+  :: (MonadIO m, Cli m)
   => String -> CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess_ name p = do
   putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (show p)
-  Process.createProcess p
+  liftIO $ Process.createProcess p
 
 withProcess
-  :: (MonadUnliftIO m, MonadMask m, Cli m)
+  :: (MonadIO m, MonadMask m, Cli m)
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
 withProcess process f = do -- TODO: Use bracket.
   let procTitle = T.pack $ show $ cmdspec process
@@ -94,7 +93,7 @@ withProcess process f = do -- TODO: Use bracket.
 
   f out err  -- Pass the handles to the passed function
 
-  waitForProcess p >>= \case
+  liftIO (waitForProcess p) >>= \case
     ExitSuccess -> return ()
     ExitFailure code -> do
       -- Log an error. We also fail immediately; however we should probably let the caller control that.

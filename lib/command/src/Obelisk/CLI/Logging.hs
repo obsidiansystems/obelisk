@@ -9,6 +9,7 @@
 -- | Spinner.hs and Process.hs work on this guarantee.
 module Obelisk.CLI.Logging where
 
+import Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
 import Control.Concurrent.MVar (modifyMVar_, newMVar)
 import Control.Monad (unless, void, when)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow, bracket, bracket_, catch, throwM)
@@ -24,11 +25,9 @@ import System.Console.ANSI (Color (Red, White, Yellow), ColorIntensity (Vivid),
                             SGR (Reset, SetColor, SetConsoleIntensity), clearLine, setSGR)
 import System.Exit (ExitCode (..), exitWith)
 import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stdin, stdout)
-import UnliftIO.Concurrent (forkIO, killThread, threadDelay)
 
 import Control.Monad.Log (MonadLog, Severity (..), WithSeverity (..), logMessage, runLoggingT)
 import Data.IORef (atomicModifyIORef', newIORef, readIORef, writeIORef)
-import UnliftIO (MonadUnliftIO)
 
 import Obelisk.CLI.Types
 
@@ -147,7 +146,7 @@ writeLogWith f noColor (WithSeverity severity s)
 --
 -- Call this function in a thread, and kill it to turn off keystroke monitoring.
 allowUserToMakeLoggingVerbose
-  :: (MonadUnliftIO m, MonadMask m, Cli m, HasCliConfig m)
+  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
   => String  -- ^ The key to press in order to make logging verbose
   -> m ()
 allowUserToMakeLoggingVerbose keyCode = bracket showTip (liftIO . killThread) $ \_ -> do
@@ -157,7 +156,7 @@ allowUserToMakeLoggingVerbose keyCode = bracket showTip (liftIO . killThread) $ 
     putLog Warning "Ctrl+e pressed; making output verbose (-v)"
     setLogLevel verboseLogLevel
   where
-    showTip = forkIO $ unlessVerbose $ do
+    showTip = fork $ unlessVerbose $ do
       conf <- getCliConfig
       liftIO $ threadDelay $ 3*1000000  -- Only show tip for actions taking too long (3 seconds or more)
       tipDisplayed <- liftIO $ atomicModifyIORef' (_cliConfig_tipDisplayed conf) $ (,) True
@@ -179,3 +178,8 @@ getChars = reverse <$> f mempty
       hReady stdin >>= \case
         True -> f (x:xs)
         False -> return (x:xs)
+
+fork :: (HasCliConfig m, MonadIO m) => CliT IO () -> m ThreadId
+fork f = do
+  c <- getCliConfig
+  liftIO $ forkIO $ runCli c f

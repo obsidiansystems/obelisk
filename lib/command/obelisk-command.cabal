@@ -37,7 +37,6 @@ library
     , time
     , transformers
     , unix
-    , unliftio
     , yaml
   exposed-modules:
     Obelisk.App

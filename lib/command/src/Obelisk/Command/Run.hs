@@ -1,10 +1,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Run where
 
 import qualified Control.Exception as E
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (MonadIO)
 import Data.Either
 import Data.List
 import Data.List.NonEmpty as NE
@@ -22,10 +24,9 @@ import System.Directory
 import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (callCommand)
-import UnliftIO (MonadUnliftIO, withRunInIO)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
-import Obelisk.CLI (Severity (..), failWith, putLog)
+import Obelisk.CLI (CliT (..), HasCliConfig, Severity (..), failWith, getCliConfig, putLog, runCli)
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
 run :: ObeliskT IO ()
@@ -79,9 +80,10 @@ parseHsSrcDir cabalFp = do
             return Nothing
     else return Nothing
 
-withUTF8FileContentsM :: MonadUnliftIO m => FilePath -> (String -> m a) -> m a
-withUTF8FileContentsM fp f = withRunInIO $ \runInIO ->
-  withUTF8FileContents fp $ runInIO . f
+withUTF8FileContentsM :: (MonadIO m, HasCliConfig m) => FilePath -> (String -> CliT IO a) -> m a
+withUTF8FileContentsM fp f = do
+  c <- getCliConfig
+  liftIO $ withUTF8FileContents fp $ runCli c . f
 
 -- | Dev
 runDev :: FilePath -> Maybe String -> IO ()

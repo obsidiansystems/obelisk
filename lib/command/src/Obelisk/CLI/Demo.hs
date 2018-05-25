@@ -4,17 +4,17 @@ module Obelisk.CLI.Demo where
 
 import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader (MonadIO)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import System.Process (proc)
 
 import Control.Monad.Catch (MonadMask)
-import UnliftIO (MonadUnliftIO)
 
 import Obelisk.CLI
 
 cliDemo
-  :: (MonadUnliftIO m, MonadMask m, Cli m, HasCliConfig m)
+  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
   => m ()
 cliDemo = withSpinner "CLI Demo" $ do
   putLog Notice "This demo will showcase the CLI library functionality"
