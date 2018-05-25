@@ -16,6 +16,7 @@ library
     , http-types
     , HUnit
     , process
+    , network
     , shelly
     , temporary
     , text

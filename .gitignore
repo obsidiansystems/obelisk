@@ -12,4 +12,4 @@ dist-newstyle
 cabal.project.local
 .ghc.environment.*
 
-/**/ghcid-output.txt
+**/ghcid-output.txt

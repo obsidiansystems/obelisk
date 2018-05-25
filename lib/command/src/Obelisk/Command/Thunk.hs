@@ -137,7 +137,7 @@ nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
   withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> T.pack (show uri) <> " at " <> rev) $ do
     out <- readProcessAndLogStderr Debug $
-      procWithPackages ["nix-prefetch-git"] "nix-prefetch-git" $ filter (/="")
+      proc "nix-prefetch-git" $ filter (/="")
         [ "--url", show uri
         , "--rev", T.unpack rev
         , if fetchSubmodules then "--fetch-submodules" else ""
