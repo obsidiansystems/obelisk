@@ -12,23 +12,23 @@ module Obelisk.CLI.Logging where
 import Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
 import Control.Concurrent.MVar (modifyMVar_, newMVar)
 import Control.Monad (unless, void, when)
-import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow, bracket, bracket_, catch, throwM)
+import Control.Monad.Catch (MonadCatch, MonadMask, bracket, catch, throwM)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Log (Severity (..), WithSeverity (..), logMessage, runLoggingT)
 import Control.Monad.Loops (iterateUntil)
 import Control.Monad.Reader (MonadIO, ReaderT (..))
+import Data.IORef (atomicModifyIORef', newIORef, readIORef, writeIORef)
 import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Console.ANSI (Color (Red, White, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
-                            SGR (Reset, SetColor, SetConsoleIntensity), clearLine, setSGR)
+                            SGR (SetColor, SetConsoleIntensity), clearLine)
 import System.Exit (ExitCode (..), exitWith)
 import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stdin, stdout)
 
-import Control.Monad.Log (MonadLog, Severity (..), WithSeverity (..), logMessage, runLoggingT)
-import Data.IORef (atomicModifyIORef', newIORef, readIORef, writeIORef)
-
+import qualified Obelisk.CLI.TerminalString as TS
 import Obelisk.CLI.Types
 
 newCliConfig :: Severity -> Bool -> Bool -> IO CliConfig
@@ -89,12 +89,16 @@ handleLog' :: MonadIO m => Bool -> Output -> m Bool
 handleLog' noColor output = do
   case output of
     Output_Log m -> liftIO $ do
-      writeLogWith T.putStrLn noColor m
+      writeLog True noColor m
     Output_LogRaw m -> liftIO $ do
-      writeLogWith T.putStr noColor m
+      writeLog False noColor m
       hFlush stdout  -- Explicitly flush, as there is no newline
-    Output_Overwrite xs -> liftIO $ do
-      mapM_ putStr $ "\r" : xs
+    Output_Write ts -> liftIO $ do
+      T.putStrLn $ TS.render (not noColor) Nothing ts
+      hFlush stdout
+    Output_Overwrite ts -> liftIO $ do
+      width <- TS.getTerminalWidth
+      T.putStr $ "\r" <> (TS.render (not noColor) width ts)
       hFlush stdout
     Output_ClearLine -> liftIO $ do
       -- Go to the first column and clear the whole line
@@ -122,7 +126,7 @@ failWith s = do
 -- | Intercept ExitFailure exceptions and log the given alert before exiting.
 --
 -- This is useful when you want to provide contextual information to a deeper failure.
-withExitFailMessage :: (MonadIO m, MonadLog Output m, MonadCatch m, MonadThrow m) => Text -> m a -> m a
+withExitFailMessage :: (Cli m, MonadCatch m) => Text -> m a -> m a
 withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
   case e of
     ExitFailure _ -> putLog Alert msg
@@ -130,17 +134,18 @@ withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
   throwM e
 
 -- | Write log to stdout, with colors (unless `noColor`)
-writeLogWith :: (MonadIO m, MonadMask m) => (Text -> IO ()) -> Bool -> WithSeverity Text -> m ()
-writeLogWith f noColor (WithSeverity severity s)
-  | noColor && severity <= Warning = liftIO $ f $ T.pack (show severity) <> ": " <> s
-  | not noColor && severity <= Error = put [SetColor Foreground Vivid Red]
-  | not noColor && severity <= Warning = put [SetColor Foreground Vivid Yellow]
-  | not noColor && severity >= Debug = put [SetColor Foreground Vivid White, SetConsoleIntensity FaintIntensity]
-  | otherwise = liftIO $ f s
+writeLog:: (MonadIO m, MonadMask m) => Bool -> Bool -> WithSeverity Text -> m ()
+writeLog withNewLine noColor (WithSeverity severity s)
+  | noColor && severity <= Warning = liftIO $ putFn $ T.pack (show severity) <> ": " <> s
+  | not noColor && severity <= Error = TS.putStrWithSGR errorColors withNewLine s
+  | not noColor && severity <= Warning = TS.putStrWithSGR warningColors withNewLine s
+  | not noColor && severity >= Debug = TS.putStrWithSGR debugColors withNewLine s
+  | otherwise = liftIO $ putFn s
   where
-    -- We must reset *before* outputting the newline (if any), otherwise the cursor won't be reset.
-    reset = setSGR [Reset] >> f ""
-    put sgr = liftIO $ bracket_ (setSGR sgr) reset $ T.putStr s
+    putFn = if withNewLine then T.putStrLn else T.putStr
+    errorColors = [SetColor Foreground Vivid Red]
+    warningColors = [SetColor Foreground Vivid Yellow]
+    debugColors = [SetColor Foreground Vivid White, SetConsoleIntensity FaintIntensity]
 
 -- | Allow the user to immediately switch to verbose logging upon pressing a particular key.
 --
