@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.SelfTest where
 
-import Control.Exception (Exception, throw)
+import Control.Exception (Exception, throw, bracket)
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Function (fix)
@@ -15,6 +15,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
+import qualified Network.Socket as Socket
 import Shelly
 import System.Environment
 import System.Exit (ExitCode (..))
@@ -39,10 +40,10 @@ main = do
   withSystemTempDirectory "blank-project" $ \blankProject ->
     hspec $ do
       let shelly_ = void . shelly . silently
-      describe "ob init" $ do
-        let inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
-            inTmp f = shelly_ . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
+          inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
+          inTmp f = shelly_ . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
 
+      describe "ob init" $ do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
@@ -50,6 +51,14 @@ main = do
         it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
           errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
+
+      describe "ob run" $ do
+        it "works in root directory" $ inTmp $ \_ -> do
+          run "ob" ["init"]
+          testObRunInDir Nothing httpManager
+        it "works in sub directory" $ inTmp $ \_ -> do
+          run "ob" ["init"]
+          testObRunInDir (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
         it "can build obelisk command"  $ shelly_ $ run "nix-build" ["-A", "command" , obeliskImpl]
@@ -137,17 +146,22 @@ main = do
             unpack
             testThunkPack (blankProject </> thunk)
 
-        it "can use ob run" $ inProj $ handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
-          runHandle "ob" ["run"] $ \stdout -> do
-            (_, firstUri) <- obRun httpManager stdout
-            let newUri = "http://localhost:8080/" -- trailing slash required for comparison
-            when (firstUri == newUri) $ errorExit $
-              "Default URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
-            alterRouteTo newUri stdout
-            (_, runningUri) <- obRun httpManager stdout
-            if runningUri /= newUri
-            then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
-            else exit 0
+-- | Run `ob run` in the given directory (maximum of one level deep)
+testObRunInDir :: Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
+testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+  let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
+  writefile "config/common/route" . uri =<< liftIO getFreePort -- Use a free port initially
+  maybe id chdir mdir $ runHandle "ob" ["run"] $ \stdout -> do
+    freePort <- liftIO getFreePort
+    (_, firstUri) <- handleObRunStdout httpManager stdout
+    let newUri = uri freePort
+    when (firstUri == newUri) $ errorExit $
+      "Startup URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
+    maybe id (\_ -> chdir "..") mdir $ alterRouteTo newUri stdout
+    (_, runningUri) <- handleObRunStdout httpManager stdout
+    if runningUri /= newUri
+    then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
+    else exit 0
 
 testThunkPack :: Shelly.FilePath -> Sh ()
 testThunkPack path = withTempFile (T.unpack $ toTextIgnore path) "test-file" $ \file handle -> do
@@ -193,8 +207,8 @@ alterRouteTo uri stdout = do
     "Reloading failed: " <> T.pack (show t)
 
 -- | Handle stdout of `ob run`: check that the frontend and backend servers are started correctly
-obRun :: HTTP.Manager -> Handle -> Sh (Text, Text)
-obRun httpManager stdout = flip fix ObRunState_Init $ \loop state -> do
+handleObRunStdout :: HTTP.Manager -> Handle -> Sh (Text, Text)
+handleObRunStdout httpManager stdout = flip fix ObRunState_Init $ \loop state -> do
   liftIO (T.hGetLine stdout) >>= \t -> case state of
     ObRunState_Init
       | "Running test..." `T.isPrefixOf` t -> loop ObRunState_Startup
@@ -219,3 +233,13 @@ obRunCheck httpManager stdout backendPort frontendUri = do
   liftIO (timeout 1000000 $ T.hGetLine stdout) >>= \case
     Just t | "127.0.0.1" `T.isPrefixOf` t -> pure () -- Backend request logged
     x -> errorExit $ "Couldn't get backend request log: " <> T.pack (show x)
+
+getFreePort :: IO Socket.PortNumber
+getFreePort = Socket.withSocketsDo $ do
+  addr:_ <- Socket.getAddrInfo (Just Socket.defaultHints) (Just "127.0.0.1") (Just "0")
+  bracket (open addr) Socket.close Socket.socketPort
+  where
+    open addr = do
+      sock <- Socket.socket (Socket.addrFamily addr) (Socket.addrSocketType addr) (Socket.addrProtocol addr)
+      Socket.bind sock (Socket.addrAddress addr)
+      pure sock
