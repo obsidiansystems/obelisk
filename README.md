@@ -160,9 +160,9 @@ Ensure that `bundleIdentifier` matches the App ID of the development profile, or
 1. Find your Apple Team ID in the [developer portal](https://developer.apple.com/account/#/membership).
 1. Run the deploy command with your Team ID:
 ```
-ios-result/bin/deploy [TEAM_ID]
+result-ios/bin/deploy [TEAM_ID]
 # or in debug mode via lldb:
-ios-result/bin/deploy [TEAM_ID] -d
+result-ios/bin/deploy [TEAM_ID] -d
 ```
 
 #### Packaging
@@ -170,7 +170,7 @@ ios-result/bin/deploy [TEAM_ID] -d
 Create and download a distribution profile.
 1. Run the package script with your TEAM ID and your distribution profile to create a `.ipa`:
 ```
-ios-result/bin/package [TEAM_ID] /path/to/output/.ipa /path/to/profile/file
+result-ios/bin/package [TEAM_ID] /path/to/output/.ipa /path/to/profile/file
 ```
 
 #### Debugging
