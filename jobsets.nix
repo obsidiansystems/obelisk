@@ -1,7 +1,8 @@
 { prs }:
 
 let
-  pkgs = import ./nixpkgs {};
+  self = import ./. {};
+  pkgs = self.nixpkgs;
   mkFetchGithub = value: {
     inherit value;
     type = "git";
