@@ -46,7 +46,12 @@ let
       description = "#${num}: ${info.title}";
       inputs = {
         obelisk = {
-          value = "https://github.com/obsidiansystems/obelisk pull/${num}/merge";
+          #NOTE: This should really use "pull/${num}/merge"; however, GitHub's
+          #status checks only operate on PR heads.  This creates a race
+          #condition, which can currently only be solved by requiring PRs to be
+          #up to date before they're merged.  See
+          #https://github.com/isaacs/github/issues/1002
+          value = "https://github.com/obsidiansystems/obelisk pull/${num}/head";
           type = "git";
           emailresponsible = false;
         };
