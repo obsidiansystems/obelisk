@@ -497,9 +497,9 @@ getHubAuth
   -> IO (Maybe Auth)
 getHubAuth domain = do
   hubConfig <- getXdgDirectory XdgConfig "hub"
-  Yaml.decodeFile hubConfig >>= \case
-    Nothing -> return Nothing
-    Just v -> return $ flip parseMaybe v $ \v' -> do
+  Yaml.decodeFileEither hubConfig >>= \case
+    Left _ -> return Nothing
+    Right v -> return $ flip parseMaybe v $ \v' -> do
       Yaml.Array domainConfigs <- v' .: domain --TODO: Determine what multiple domainConfigs means
       [Yaml.Object domainConfig] <- return $ toList domainConfigs
       token <- domainConfig .: "oauth_token"
