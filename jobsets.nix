@@ -46,7 +46,7 @@ let
       description = "#${num}: ${info.title}";
       inputs = {
         obelisk = {
-          value = "https://github.com/${info.head.repo.owner.login}/${info.head.repo.name}.git ${info.head.ref}";
+          value = "https://github.com/obsidiansystems/obelisk pull/${num}/merge";
           type = "git";
           emailresponsible = false;
         };
