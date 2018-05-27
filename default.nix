@@ -150,7 +150,7 @@ rec {
     pkgs.runCommand "serverExe" { buildInputs = [ pkgs.closurecompiler ]; } ''
       mkdir $out
       set -eux
-      ln -s "${backend}"/bin/backend $out/backend
+      ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
       ln -s "${assets}" $out/static
       ln -s "${config}" $out/config
 
