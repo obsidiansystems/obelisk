@@ -10,8 +10,8 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
   - [Android](#android)
 
 ## Installing Obelisk
-1. [Install Nix](https://nixos.org/nix/)
-   Make sure you have version 2.0 or higher.  To check your current version, run `nix-env --version`.
+1. [Install Nix](https://nixos.org/nix/).
+    If you already have Nix installed, make sure you have version 2.0 or higher.  To check your current version, run `nix-env --version`.
 1. Set up nix caches
     1. If you are running NixOS, add this to `/etc/nixos/configuration.nix`:
         ```
