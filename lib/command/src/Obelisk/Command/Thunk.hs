@@ -731,7 +731,8 @@ getThunkPtr' checkClean thunkDir upstream = do
   githubThunkPtr u commit' branch' = do
     ["/", owner', repo'] <- return $ splitDirectories (uriPath u)
     let owner = N (T.pack owner')
-        repo = N (T.pack (dropExtension repo'))
+        dropGitExtension r = fromMaybe r $ T.stripSuffix ".git" r
+        repo = N $ dropGitExtension $ T.pack repo'
         commit = N commit'
         branch = N <$> branch'
     mauth <- liftIO $ getHubAuth "github.com"
