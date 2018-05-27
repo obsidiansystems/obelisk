@@ -10,40 +10,46 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
   - [Android](#android)
 
 ## Installing Obelisk
-1. Install or update to nix 2.x
+1. [Install Nix](https://nixos.org/nix/).
+    If you already have Nix installed, make sure you have version 2.0 or higher.  To check your current version, run `nix-env --version`.
 1. Set up nix caches
-    1. Add this to `/etc/nixos/configuration.nix`:
+    1. If you are running NixOS, add this to `/etc/nixos/configuration.nix`:
         ```
-        nix.binaryCaches = [ "https://nixcache.reflex-frp.org" ];
+        nix.binaryCaches = [ "https://cache.nixos.org/" "https://nixcache.reflex-frp.org" ];
         nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
-1. Install `ob`: `git clone git@github.com:obsidiansystems/obelisk && nix-env -f obelisk -iA command`.
-   Alternatively, if you prefer not to install to your user nix environment, you can
-   enter a shell with the `ob` command available: `nix-shell -A shell`.
-   After running `ob init` this becomes `nix-shell .obelisk/impl -A shell`
-   for subsequent shells (since `ob init` overwrites `default.nix`).
-1. Get set up to access private repositories
-    1. [Get set up to connect to GitHub with SSH](https://help.github.com/articles/connecting-to-github-with-ssh/)
-    1. [Create a GitHub personal access token](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/)
-    1. Set environment variables:
-       * NixOS: Add this to `/etc/nixos/configuration.nix`:
+    1. If you are using another operating system or linux distribution, ensure that these lines are present in `/etc/nix/nix.conf`:
         ```
-        nix.envVars = {
-          NIX_GITHUB_PRIVATE_USERNAME = "your-github-username";
-          NIX_GITHUB_PRIVATE_PASSWORD = "your-github-personal-access-token";
-        };
+        sandbox = true
+        substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
+        trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
         ```
-       * MacOS:
-        ```
-        sudo launchctl setenv NIX_GITHUB_PRIVATE_USERNAME "your-github-username"
-        sudo launchctl setenv NIX_GITHUB_PRIVATE_PASSWORD "your-github-personal-access"
-        sudo launchctl stop org.nixos.nix-daemon
-        sudo launchctl start org.nixos.nix-daemon
-        ```
-    1. `nix-env -i hub` OR `nix-env -iA nixos.gitAndTools.hub`
-    1. `hub clone yourusername/yourproject`
-      * NOTE: you must authenticate with hub at least once, because the `ob` command uses `hub` for authentication
-      #TODO: Make ob do this itself (either invoke hub automatically or not depend on hub)
+1. Install obelisk: `nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command`
+
+### Accessing private repositories
+To allow the Nix builder to access private git repositories, follow these steps:
+
+1. [Get set up to connect to GitHub with SSH](https://help.github.com/articles/connecting-to-github-with-ssh/)
+1. [Create a GitHub personal access token](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/)
+1. Set environment variables:
+   * NixOS: Add this to `/etc/nixos/configuration.nix`:
+    ```
+    nix.envVars = {
+      NIX_GITHUB_PRIVATE_USERNAME = "your-github-username";
+      NIX_GITHUB_PRIVATE_PASSWORD = "your-github-personal-access-token";
+    };
+    ```
+   * MacOS:
+    ```
+    sudo launchctl setenv NIX_GITHUB_PRIVATE_USERNAME "your-github-username"
+    sudo launchctl setenv NIX_GITHUB_PRIVATE_PASSWORD "your-github-personal-access"
+    sudo launchctl stop org.nixos.nix-daemon
+    sudo launchctl start org.nixos.nix-daemon
+    ```
+1. `nix-env -i hub` OR `nix-env -iA nixos.gitAndTools.hub`
+1. `hub clone yourusername/yourproject`
+  * NOTE: you must authenticate with hub at least once, because the `ob` command uses `hub` for authentication
+  #TODO: Make ob do this itself (either invoke hub automatically or not depend on hub)
 
 ## Developing an Obelisk project
 
