@@ -48,9 +48,13 @@ run port backend frontend = do
   runWidget conf frontend `finally` killThread backendTid
 
 getConfigRoute :: IO (Maybe URI)
-getConfigRoute = do
-  mroute <- get "common/route"
-  return $ URI.mkURI =<< mroute
+getConfigRoute = get "common/route" >>= \case
+  Just r -> case URI.mkURI $ fromMaybe r $ T.stripSuffix "\n" r of
+    Just route -> pure $ Just route
+    Nothing -> do
+      putStrLn $ "Route is invalid: " <> show r
+      pure Nothing
+  Nothing -> pure Nothing
 
 defAppUri :: URI
 defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"

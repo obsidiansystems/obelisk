@@ -11,10 +11,12 @@ library
   build-depends:
       base
     , containers
+    , directory
     , hspec
     , http-client
     , http-types
     , HUnit
+    , obelisk-run
     , process
     , network
     , shelly

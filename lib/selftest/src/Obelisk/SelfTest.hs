@@ -7,6 +7,7 @@ import Control.Exception (Exception, throw, bracket)
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Function (fix)
+import Data.Maybe (isJust)
 import Data.Semigroup ((<>))
 import qualified Data.Set as Set
 import Data.String
@@ -17,6 +18,7 @@ import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.Socket as Socket
 import Shelly
+import System.Directory (withCurrentDirectory)
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.Info
@@ -26,6 +28,8 @@ import System.Timeout
 import Test.Hspec
 import Test.HUnit.Base
 import System.Process (readProcessWithExitCode)
+
+import Obelisk.Run (getConfigRoute)
 
 data ObRunState
   = ObRunState_Init
@@ -51,6 +55,10 @@ main = do
         it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
           errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
+
+        it "produces a valid route config" $ inTmp $ \tmp -> do
+          run "ob" ["init"]
+          liftIO $ withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ getConfigRoute `shouldNotReturn` Nothing
 
       describe "ob run" $ do
         it "works in root directory" $ inTmp $ \_ -> do
