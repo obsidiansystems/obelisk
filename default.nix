@@ -146,8 +146,16 @@ rec {
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
+  compressedJs = frontend: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
+      mkdir $out
+      cd $out
+      ln -s "${justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
+      closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+      echo "//# sourceMappingURL=all.js.map" >> all.js
+  '';
+
   serverExe = backend: frontend: assets: config:
-    pkgs.runCommand "serverExe" { buildInputs = [ pkgs.closurecompiler ]; } ''
+    pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
@@ -155,10 +163,7 @@ rec {
       ln -s "${config}" $out/config
 
       mkdir $out/frontend.jsexe
-      cd $out/frontend.jsexe
-      ln -s "${justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-      closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
-      echo "//# sourceMappingURL=all.js.map" >> all.js
+      cp -r "${compressedJs frontend}" $out/frontend.jsexe
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
   server = exe: hostName:
