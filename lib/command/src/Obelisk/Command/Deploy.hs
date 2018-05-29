@@ -62,12 +62,13 @@ setupObeliskImpl deployDir = do
   createDirectoryIfMissing True implDir
   writeFile (implDir </> "default.nix") "(import ../../src {}).obelisk"
 
-deployPush :: MonadObelisk m => FilePath -> m ()
-deployPush deployPath = do
+deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
+deployPush deployPath getNixBuilders = do
   let backendHosts = deployPath </> "backend_hosts"
   host <- liftIO $ fmap (T.unpack . T.strip) $ T.readFile backendHosts
   let srcPath = deployPath </> "src"
       build = do
+        builders <- getNixBuilders
         buildOutput <- nixBuild $ def
           { _nixBuildConfig_target = Target
             { _target_path = srcPath
@@ -75,6 +76,7 @@ deployPush deployPath = do
             }
           , _nixBuildConfig_outLink = OutLink_None
           , _nixBuildConfig_args = pure $ Arg "hostName" host
+          , _nixBuildConfig_builders = builders
           }
         return $ listToMaybe $ lines buildOutput
   result <- readThunk srcPath >>= \case

@@ -11,6 +11,7 @@ module Obelisk.Command.Nix
   ) where
 
 import Data.Default
+import Data.List (intercalate)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import System.Process (proc)
@@ -48,15 +49,16 @@ data NixBuildConfig = NixBuildConfig
   { _nixBuildConfig_target :: Target
   , _nixBuildConfig_outLink :: OutLink
   , _nixBuildConfig_args :: [Arg]
+  , _nixBuildConfig_builders :: [String]
   }
 
 instance Default NixBuildConfig where
-  def = NixBuildConfig def def mempty
+  def = NixBuildConfig def def mempty mempty
 
 nixBuild :: MonadObelisk m => NixBuildConfig -> m FilePath
 nixBuild cfg = withSpinner msg $ do
   readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
-    [[path], attrArg, args, outLink]
+    [[path], attrArg, args, outLink, buildersArg]
   where
     path = _target_path $ _nixBuildConfig_target cfg
     attr = _target_attr $ _nixBuildConfig_target cfg
@@ -69,3 +71,6 @@ nixBuild cfg = withSpinner msg $ do
       OutLink_None -> ["--no-out-link"]
       OutLink_IndirectRoot l -> ["--out-link", l]
     msg = T.pack $ "Running nix-build on " <> path <> maybe "" (\a -> " [" <> a <> "]") attr
+    buildersArg = case _nixBuildConfig_builders cfg of
+      [] -> []
+      builders -> ["--builders", intercalate ";" builders]
