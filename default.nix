@@ -111,6 +111,7 @@ rec {
   inherit reflex-platform;
   inherit (reflex-platform) nixpkgs pinBuildInputs;
   path = reflex-platform.filterGit ./.;
+  obelisk = ghcObelisk;
   command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([
     command
