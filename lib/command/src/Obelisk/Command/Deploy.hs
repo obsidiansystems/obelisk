@@ -22,8 +22,8 @@ import System.Posix.Env (getEnvironment)
 import System.Posix.Files
 import System.Process (delegate_ctlc, env, proc, readProcess)
 
-import CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
 import Obelisk.App (MonadObelisk)
+import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk

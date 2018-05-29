@@ -1,4 +1,4 @@
-name: cliapp
+name: obelisk-cliapp
 version: 0.1
 license: BSD3
 build-type: Simple
@@ -21,12 +21,12 @@ library
     , time
     , transformers
   exposed-modules:
-    CliApp
-    CliApp.Demo
+    Obelisk.CliApp
+    Obelisk.CliApp.Demo
   other-modules:
-    CliApp.Logging
-    CliApp.Process
-    CliApp.Spinner
-    CliApp.TerminalString
-    CliApp.Types
+    Obelisk.CliApp.Logging
+    Obelisk.CliApp.Process
+    Obelisk.CliApp.Spinner
+    Obelisk.CliApp.TerminalString
+    Obelisk.CliApp.Types
   ghc-options: -Wall -fobject-code

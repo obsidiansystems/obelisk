@@ -71,9 +71,9 @@ import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
 import System.Process (proc)
 
-import CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, readProcessAndLogStderr,
-               withExitFailMessage, withSpinner)
 import Obelisk.App (MonadObelisk)
+import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, readProcessAndLogStderr,
+                       withExitFailMessage, withSpinner)
 import Obelisk.Command.Utils (checkGitCleanStatus, cp, git, procWithPackages)
 
 --TODO: Support symlinked thunk data

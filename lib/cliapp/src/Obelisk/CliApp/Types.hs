@@ -3,7 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module CliApp.Types where
+module Obelisk.CliApp.Types where
 
 import Control.Concurrent.MVar (MVar)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
@@ -12,7 +12,7 @@ import Control.Monad.Reader (MonadIO, ReaderT (..), ask)
 import Data.IORef (IORef)
 import Data.Text (Text)
 
-import CliApp.TerminalString (TerminalString)
+import Obelisk.CliApp.TerminalString (TerminalString)
 
 data CliConfig = CliConfig
   { _cliConfig_logLevel :: IORef Severity  -- We are capable of changing the log level at runtime

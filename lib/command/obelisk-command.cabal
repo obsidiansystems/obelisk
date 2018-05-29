@@ -15,7 +15,7 @@ library
     , base16-bytestring
     , binary
     , bytestring
-    , cliapp
+    , obelisk-cliapp
     , containers
     , data-default
     , directory
