@@ -497,9 +497,9 @@ getHubAuth
   -> IO (Maybe Auth)
 getHubAuth domain = do
   hubConfig <- getXdgDirectory XdgConfig "hub"
-  Yaml.decodeFile hubConfig >>= \case
-    Nothing -> return Nothing
-    Just v -> return $ flip parseMaybe v $ \v' -> do
+  Yaml.decodeFileEither hubConfig >>= \case
+    Left _ -> return Nothing
+    Right v -> return $ flip parseMaybe v $ \v' -> do
       Yaml.Array domainConfigs <- v' .: domain --TODO: Determine what multiple domainConfigs means
       [Yaml.Object domainConfig] <- return $ toList domainConfigs
       token <- domainConfig .: "oauth_token"
@@ -731,7 +731,8 @@ getThunkPtr' checkClean thunkDir upstream = do
   githubThunkPtr u commit' branch' = do
     ["/", owner', repo'] <- return $ splitDirectories (uriPath u)
     let owner = N (T.pack owner')
-        repo = N (T.pack (dropExtension repo'))
+        dropGitExtension r = fromMaybe r $ T.stripSuffix ".git" r
+        repo = N $ dropGitExtension $ T.pack repo'
         commit = N commit'
         branch = N <$> branch'
     mauth <- liftIO $ getHubAuth "github.com"

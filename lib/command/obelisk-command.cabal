@@ -33,6 +33,7 @@ library
     , placeholders
     , process
     , temporary
+    , terminal-size
     , text
     , time
     , transformers
@@ -54,6 +55,7 @@ library
     Obelisk.CLI.Logging
     Obelisk.CLI.Process
     Obelisk.CLI.Spinner
+    Obelisk.CLI.TerminalString
     Obelisk.CLI.Types
   -- -fobject-code is so that the StaticPointers extension can work in ghci
   ghc-options: -Wall -fobject-code

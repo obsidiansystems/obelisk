@@ -1,7 +1,8 @@
 { prs }:
 
 let
-  pkgs = import ./nixpkgs {};
+  self = import ./. {};
+  pkgs = self.nixpkgs;
   mkFetchGithub = value: {
     inherit value;
     type = "git";
@@ -45,7 +46,12 @@ let
       description = "#${num}: ${info.title}";
       inputs = {
         obelisk = {
-          value = "https://github.com/${info.head.repo.owner.login}/${info.head.repo.name}.git ${info.head.ref}";
+          #NOTE: This should really use "pull/${num}/merge"; however, GitHub's
+          #status checks only operate on PR heads.  This creates a race
+          #condition, which can currently only be solved by requiring PRs to be
+          #up to date before they're merged.  See
+          #https://github.com/isaacs/github/issues/1002
+          value = "https://github.com/obsidiansystems/obelisk pull/${num}/head";
           type = "git";
           emailresponsible = false;
         };
@@ -54,7 +60,7 @@ let
   };
   processedPrs = mapAttrs' makePr (builtins.fromJSON (builtins.readFile prs));
   jobsetsAttrs = processedPrs //
-    genAttrs ["develop"] branchJobset;
+    genAttrs ["master"] branchJobset;
 in {
   jobsets = pkgs.writeText "spec.json" (builtins.toJSON jobsetsAttrs);
 }

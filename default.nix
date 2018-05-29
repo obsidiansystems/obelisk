@@ -151,16 +151,16 @@ rec {
     pkgs.runCommand "serverExe" { buildInputs = [ pkgs.closurecompiler ]; } ''
       mkdir $out
       set -eux
-      ln -s "${backend}"/bin/backend $out/backend
+      ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
       ln -s "${assets}" $out/static
       ln -s "${config}" $out/config
 
       mkdir $out/frontend.jsexe
       cd $out/frontend.jsexe
-      ln -s "${frontend}/bin/frontend.jsexe/all.js" all.unminified.js
+      ln -s "${justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
       closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
       echo "//# sourceMappingURL=all.js.map" >> all.js
-    '';
+    ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
   server = exe: hostName: backendPort:
     let system = "x86_64-linux";
