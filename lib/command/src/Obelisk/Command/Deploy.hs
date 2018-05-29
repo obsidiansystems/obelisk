@@ -6,21 +6,21 @@ module Obelisk.Command.Deploy where
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Catch (finally)
 import Control.Monad.IO.Class (liftIO)
 import Data.Attoparsec.ByteString.Char8 as A
 import Data.Bits
 import qualified Data.ByteString.Char8 as BC8
 import Data.Default
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
+import System.Environment (getEnvironment)
 import System.FilePath
-import System.Posix.Env (getEnvironment)
 import System.Posix.Files
-import System.Process (callProcess, delegate_ctlc, env, proc, readProcess)
+import System.Process (delegate_ctlc, env, proc, readProcess)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
@@ -94,24 +94,24 @@ deployPush deployPath getNixBuilders = do
     _ -> return Nothing
   forM_ result $ \res -> do
     let knownHostsPath = deployPath </> "backend_known_hosts"
-        sshOpts = ["-o", "UserKnownHostsFile=" <> knownHostsPath, "-o", "StrictHostKeyChecking=yes"]
-        deployAndSwitch outputPath sshAgentEnv = do
-          withSpinner "Adding ssh key" $ do
-            callProcess' sshAgentEnv "ssh-add" [deployPath </> "ssh_key"]
+        sshOpts = sshArgs knownHostsPath (deployPath </> "ssh_key") False
+        deployAndSwitch outputPath = do
           withSpinner "Uploading closure" $ do
-            let nixSshEnv = ("NIX_SSHOPTS", unwords sshOpts) : sshAgentEnv
-            callProcess' nixSshEnv "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+            callProcess'
+              (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
+              "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+
           withSpinner "Switching to new configuration" $ do
-            callProcess' sshAgentEnv "ssh" $ sshOpts <>
-              [ "root@" <> host
-              , unwords
-                  [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
-                  , "&&"
-                  , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
-                  ]
-              ]
-    sshAgentEnv <- liftIO sshAgent
-    deployAndSwitch res sshAgentEnv `finally` callProcess' sshAgentEnv "ssh-agent" ["-k"]
+            callProcessAndLogOutput (Notice, Warning) $
+              proc "ssh" $ sshOpts <>
+                [ "root@" <> host
+                , unwords
+                    [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
+                    , "&&"
+                    , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+                    ]
+                ]
+    deployAndSwitch res
     isClean <- checkGitCleanStatus deployPath
     when (not isClean) $ do
       withSpinner "Commiting changes to Git" $ do
@@ -120,9 +120,9 @@ deployPush deployPath getNixBuilders = do
         callProcessAndLogOutput (Debug, Error) $ proc "git"
           ["-C", deployPath, "commit", "-m", "New deployment"]
   where
-    callProcess' e cmd args = do
-      currentEnv <- liftIO getEnvironment
-      let p = (proc cmd args) { delegate_ctlc = True, env = Just $ e <> currentEnv }
+    callProcess' envMap cmd args = do
+      processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
+      let p = (proc cmd args) { delegate_ctlc = True, env = Just processEnv }
       callProcessAndLogOutput (Notice, Notice) p
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
@@ -134,7 +134,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
   result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
-  liftIO $ callProcess (result </> "bin" </> "deploy") mobileArgs
+  callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
 
 sshAgent :: IO [(String, String)]
 sshAgent = do
@@ -149,10 +149,15 @@ sshAgent = do
 
 verifyHostKey :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
 verifyHostKey knownHostsPath keyPath hostName =
-  callProcessAndLogOutput (Notice, Warning) $ proc "ssh"
-    [ "-o", "UserKnownHostsFile=" <> knownHostsPath
-    , "-o", "StrictHostKeyChecking=ask"
-    , "-i", keyPath
-    , "root@" <> hostName
-    , "exit"
-    ]
+  callProcessAndLogOutput (Notice, Warning) $ proc "ssh" $
+    sshArgs knownHostsPath keyPath True <>
+      [ "root@" <> hostName
+      , "exit"
+      ]
+
+sshArgs :: FilePath -> FilePath -> Bool -> [String]
+sshArgs knownHostsPath keyPath askHostKeyCheck =
+  [ "-o", "UserKnownHostsFile=" <> knownHostsPath
+  , "-o", "StrictHostKeyChecking=" <> if askHostKeyCheck then "ask" else "yes"
+  , "-i", keyPath
+  ]
