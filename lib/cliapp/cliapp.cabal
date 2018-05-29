@@ -1,0 +1,32 @@
+name: cliapp
+version: 0.1
+license: BSD3
+build-type: Simple
+cabal-version: >=1.2
+
+library
+  hs-source-dirs: src
+  build-depends:
+      ansi-terminal
+    , base
+    , bytestring
+    , exceptions
+    , io-streams
+    , logging-effect
+    , monad-loops
+    , mtl
+    , process
+    , terminal-size
+    , text
+    , time
+    , transformers
+  exposed-modules:
+    CliApp
+    CliApp.Demo
+  other-modules:
+    CliApp.Logging
+    CliApp.Process
+    CliApp.Spinner
+    CliApp.TerminalString
+    CliApp.Types
+  ghc-options: -Wall -fobject-code

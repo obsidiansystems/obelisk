@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Obelisk.CLI.Demo where
+module CliApp.Demo where
 
 import Control.Concurrent (threadDelay)
 import Control.Monad.IO.Class (liftIO)
@@ -11,7 +11,7 @@ import System.Process (proc)
 
 import Control.Monad.Catch (MonadMask)
 
-import Obelisk.CLI
+import CliApp
 
 cliDemo
   :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
