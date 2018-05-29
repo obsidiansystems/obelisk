@@ -20,7 +20,6 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Default
 import Data.Monoid
 import qualified Data.Text as T
-import Lucid
 import Reflex.Dom
 import System.FilePath
 
@@ -98,15 +97,14 @@ mkIndexLBS
   :: MonadIO m
   => T.Text -> ReflexStaticContent -> m LBS.ByteString
 mkIndexLBS js static = liftIO $ do
-  rendered <- renderStaticContent static
-  pure $ renderBS $ doctypehtml_ $ do
-    head_ $ do
-      meta_ [charset_ "utf-8"] -- meta-data charset description
-      meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"] -- meta-data viewport description
-      toHtmlRaw $ _staticContent_head rendered
-    body_ $ do -- <body>
-      toHtmlRaw $ _staticContent_body rendered
-      script_ [type_ "application/javascript", src_ js, defer_ "defer"] ("" :: String)
-
+  ((), bs) <- renderStatic $ el "html" $ do
+    el "head" $ do
+      elAttr "meta" ("charset" =: "utf-8") blank
+      elAttr "meta" ("name" =: "viewport" <> "content" =: "width=device-width, initial-scale=1.0") blank
+      _staticContent_head static
+    el "body" $ do
+      _staticContent_body static
+      elAttr "script" ("type" =: "application/javascript" <> "src" =: js <> "defer" =: "defer") blank
+  return $ LBS.fromStrict $ "<!DOCTYPE html>" <> bs
 
 makeLenses ''AppConfig
