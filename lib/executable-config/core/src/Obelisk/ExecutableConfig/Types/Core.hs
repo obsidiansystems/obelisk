@@ -5,8 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
--- | TODO: Consider renaming 'Core' to 'Types'
-module Obelisk.ExecutableConfig.Core where
+module Obelisk.ExecutableConfig.Types.Core where
 
 import Control.Lens
 import Control.Monad ((<=<))
@@ -22,25 +21,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
-import Data.Typeable
-import GHC.Generics
 import System.FilePath
-import Text.URI (ParseException, URI, mkURI)
-import Text.URI.Lens
-
--- Config: common/route
-newtype Route = Route URI
-  deriving (Eq, Show, Ord, Generic)
-
-data MissingPort = MissingPort
-  deriving (Eq, Show, Typeable)
-
-instance Exception MissingPort
-
-getRoutePort :: Route -> Maybe Word
-getRoutePort (Route uri) = uri ^? uriAuthority . _Right . authPort . _Just
-
--- Prototype
 
 data CabalProject
   = CabalProject_Backend
@@ -64,20 +45,14 @@ data ConfigPath config = ConfigPath CabalProject FilePath
 getConfigPath :: ConfigPath config -> FilePath
 getConfigPath (ConfigPath cProj fp)= "config" </> cabalProjectName cProj </> fp
 
+-- | An Obelisk config file item
 class ObeliskConfig a where
   configPath :: ConfigPath a
   parseConfig :: MonadThrow m => BLS.ByteString -> m a
 
-instance ObeliskConfig Route where
-  configPath = ConfigPath CabalProject_Common "route"
-  parseConfig c = do
-    uri <- mkURI (T.decodeUtf8 $ BLS.toStrict c)
-    Route <$> validate uri
-    where
-      validate uri
-        = maybe (throwM MissingPort) (const $ pure uri) $
-          getRoutePort (Route uri)
-
+-- | Retrieve the specified config
+--
+-- Throws exceptions during retrieval if any.
 getConfig'
   :: forall m config. (MonadIO m, MonadThrow m, ObeliskConfig config)
   => FilePath
@@ -86,6 +61,9 @@ getConfig' root = liftIO $ BLS.readFile p >>= parseConfig
   where
     p = getConfigPath (configPath :: ConfigPath config)
 
+-- | Retrieve the specified config
+--
+-- Returns Either wrapping the underlying exception.
 getConfig
   :: forall m e config.
      (MonadIO m, Exception e, MonadCatch m, ObeliskConfig config)

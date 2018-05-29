@@ -34,7 +34,7 @@ import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Reflex.Dom.Core
 
-import Obelisk.ExecutableConfig.Core
+import Obelisk.ExecutableConfig.Types (Route (..), getConfig', getRoutePort)
 
 run :: Int -- ^ Port to run the backend
     -> IO () -- ^ Backend

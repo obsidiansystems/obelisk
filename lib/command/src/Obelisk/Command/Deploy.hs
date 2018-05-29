@@ -6,7 +6,7 @@ module Obelisk.Command.Deploy where
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Catch (finally)
+import Control.Monad.Catch (SomeException, finally)
 import Control.Monad.IO.Class (liftIO)
 import Data.Attoparsec.ByteString.Char8 as A
 import Data.Bits
@@ -29,7 +29,7 @@ import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
-import Obelisk.ExecutableConfig.Core (CommonRoute, getRoutePort, readObeliskConfig)
+import Obelisk.ExecutableConfig.Types (Route, getConfig, getRoutePort)
 
 deployInit :: MonadObelisk m => ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> m ()
 deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
@@ -65,10 +65,10 @@ setupObeliskImpl deployDir = do
   writeFile (implDir </> "default.nix") "(import ../../src {}).obelisk"
 
 -- | Verify configuration files and return the config values.
-deployVerify :: MonadObelisk m => FilePath -> m CommonRoute
+deployVerify :: MonadObelisk m => FilePath -> m Route
 deployVerify deployPath = do
-  readObeliskConfig deployPath >>= \case
-    Left e -> failWith $ T.pack $ "common/route: " <> show e
+  getConfig deployPath >>= \case
+    Left e -> failWith $ T.pack $ "common/route: " <> show (e :: SomeException)
     Right v -> putLog Debug (T.pack $ "common/route: verified") >> pure v
 
 deployPush :: MonadObelisk m => FilePath -> m ()

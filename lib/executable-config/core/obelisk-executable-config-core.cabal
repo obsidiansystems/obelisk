@@ -19,4 +19,8 @@ library
     text,
     transformers
 
-  exposed-modules: Obelisk.ExecutableConfig.Core
+  exposed-modules:
+    Obelisk.ExecutableConfig.Types
+  other-modules:
+    Obelisk.ExecutableConfig.Types.Core
+    Obelisk.ExecutableConfig.Types.Builtins
