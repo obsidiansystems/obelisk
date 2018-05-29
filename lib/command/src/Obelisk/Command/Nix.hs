@@ -56,7 +56,7 @@ instance Default NixBuildConfig where
 nixBuild :: MonadObelisk m => NixBuildConfig -> m FilePath
 nixBuild cfg = withSpinner msg $ do
   readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
-    [[path], attrArg, args, outLink]
+    [[path], attrArg, args, outLink, ["--sandbox"]]
   where
     path = _target_path $ _nixBuildConfig_target cfg
     attr = _target_attr $ _nixBuildConfig_target cfg
