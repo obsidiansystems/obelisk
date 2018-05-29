@@ -10,7 +10,7 @@ module Obelisk.ExecutableConfig.Core where
 
 import Control.Lens
 import Control.Monad ((<=<))
-import Control.Monad.Catch (MonadCatch, displayException, try)
+import Control.Monad.Catch (Exception, MonadCatch, MonadThrow, catch, displayException, throwM, try)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
 import Data.Aeson
@@ -22,6 +22,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
+import Data.Typeable
 import GHC.Generics
 import System.FilePath
 import Text.URI (ParseException, URI, mkURI)
@@ -31,16 +32,10 @@ import Text.URI.Lens
 newtype Route = Route URI
   deriving (Eq, Show, Ord, Generic)
 
-class ObeliskConfigOld a where
-  readObeliskConfig :: (MonadIO m, MonadCatch m) => FilePath -> m (Either String a)
+data MissingPort = MissingPort
+  deriving (Eq, Show, Typeable)
 
-instance ObeliskConfigOld Route where
-  readObeliskConfig p = fmap (validateRoute <=< bimap toErrorString Route) $ try $ liftIO $
-    mkURI =<< T.readFile routeFile
-    where
-      routeFile = p </> "config" </> "common" </> "route"
-      toErrorString = displayException :: ParseException -> String
-      validateRoute uri = maybe (Left "No port") (const $ Right uri) $ getRoutePort uri
+instance Exception MissingPort
 
 getRoutePort :: Route -> Maybe Word
 getRoutePort (Route uri) = uri ^? uriAuthority . _Right . authPort . _Just
@@ -71,19 +66,29 @@ getConfigPath (ConfigPath cProj fp)= "config" </> cabalProjectName cProj </> fp
 
 class ObeliskConfig a where
   configPath :: ConfigPath a
-  parseConfig :: BLS.ByteString -> Maybe a
+  parseConfig :: MonadThrow m => BLS.ByteString -> m a
 
 instance ObeliskConfig Route where
   configPath = ConfigPath CabalProject_Common "route"
-  parseConfig = fmap Route . mkURI . T.decodeUtf8 . BLS.toStrict
+  parseConfig c = do
+    uri <- mkURI (T.decodeUtf8 $ BLS.toStrict c)
+    Route <$> validate uri
+    where
+      validate uri
+        = maybe (throwM MissingPort) (const $ pure uri) $
+          getRoutePort (Route uri)
 
-getConfig
-  :: forall m config. (MonadIO m, ObeliskConfig config)
+getConfig'
+  :: forall m config. (MonadIO m, MonadThrow m, ObeliskConfig config)
   => FilePath
-  -> m (Maybe config)
-getConfig root = liftIO $ BLS.readFile p >>= return . parseConfig
+  -> m config
+getConfig' root = liftIO $ BLS.readFile p >>= parseConfig
   where
     p = getConfigPath (configPath :: ConfigPath config)
 
-getRouteConfig :: MonadIO m => FilePath -> m (Maybe Route)
-getRouteConfig root = getConfig root
+getConfig
+  :: forall m e config.
+     (MonadIO m, Exception e, MonadCatch m, ObeliskConfig config)
+  => FilePath
+  -> m (Either e config)
+getConfig root = try (getConfig' root)

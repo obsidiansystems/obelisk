@@ -5,7 +5,7 @@
 module Obelisk.Run where
 
 import Control.Concurrent
-import Control.Exception
+import Control.Exception (IOException, bracket, catch, finally, handle)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -47,14 +47,16 @@ run port backend frontend = do
   let conf = defRunConfig { _runConfig_redirectPort = port }
   runWidget conf frontend `finally` killThread backendTid
 
-defAppUri :: CommonRoute
-defAppUri = CommonRoute $ fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
+defAppUri :: Route
+defAppUri = Route $ fromMaybe (error "defAppUri") uri
+  where
+    uri = URI.mkURI "http://127.0.0.1:8000"
 
 -- | Run the frontend widget via warp server at the configured route (common/route)
 runWidget :: RunConfig -> (StaticWidget () (), Widget () ()) -> IO ()
 runWidget conf (h, b) = do
-  route <- either (const defAppUri) id <$> readObeliskConfig mempty
-  let CommonRoute uri = route
+  route <- getConfig' mempty
+  let Route uri = route
       port = fromIntegral $ fromMaybe 80 $ getRoutePort route
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
