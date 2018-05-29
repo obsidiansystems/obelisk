@@ -35,8 +35,8 @@ import Control.Monad.Catch (handle)
 import Control.Monad.Except
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.Types as Aeson
 import Data.Aeson.Encode.Pretty
+import qualified Data.Aeson.Types as Aeson
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBSC
 import Data.Default
@@ -71,9 +71,9 @@ import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
 import System.Process (proc)
 
+import CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, readProcessAndLogStderr,
+               withExitFailMessage, withSpinner)
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, putLog, readProcessAndLogStderr,
-                    withExitFailMessage, withSpinner)
 import Obelisk.Command.Utils (checkGitCleanStatus, cp, git, procWithPackages)
 
 --TODO: Support symlinked thunk data

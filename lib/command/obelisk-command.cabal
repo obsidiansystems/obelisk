@@ -15,6 +15,7 @@ library
     , base16-bytestring
     , binary
     , bytestring
+    , cliapp
     , containers
     , data-default
     , directory
@@ -41,8 +42,6 @@ library
     , yaml
   exposed-modules:
     Obelisk.App
-    Obelisk.CLI
-    Obelisk.CLI.Demo
     Obelisk.Command
     Obelisk.Command.Deploy
     Obelisk.Command.Nix
@@ -50,12 +49,6 @@ library
     Obelisk.Command.Run
     Obelisk.Command.Thunk
     Obelisk.Command.Utils
-  other-modules:
-    Obelisk.CLI.Logging
-    Obelisk.CLI.Process
-    Obelisk.CLI.Spinner
-    Obelisk.CLI.TerminalString
-    Obelisk.CLI.Types
   -- -fobject-code is so that the StaticPointers extension can work in ghci
   ghc-options: -Wall -fobject-code
 
