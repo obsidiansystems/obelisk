@@ -110,7 +110,9 @@ rec {
   inherit reflex-platform;
   inherit (reflex-platform) nixpkgs pinBuildInputs;
   path = reflex-platform.filterGit ./.;
+  backend = ghcObelisk.obelisk-backend;
   command = ghcObelisk.obelisk-command;
+  run = ghcObelisk.obelisk-run;
   shell = pinBuildInputs "obelisk-shell" ([
     command
     pkgs.openssh

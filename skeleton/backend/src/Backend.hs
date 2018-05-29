@@ -2,9 +2,13 @@ module Backend where
 
 import Common.Api
 import Frontend
-import qualified Obelisk.Backend as Ob
+import Obelisk.Backend as Ob
+
+staticContent :: ReflexStaticContent
+staticContent = StaticContent
+  { _staticContent_head = staticHead
+  , _staticContent_body = staticBody
+  }
 
 backend :: IO ()
-backend = Ob.backend Ob.def
-  { Ob._backendConfig_head = fst frontend
-  }
+backend = Ob.backend staticContent Ob.def

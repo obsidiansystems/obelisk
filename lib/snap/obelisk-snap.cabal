@@ -27,6 +27,7 @@ library
     obelisk-snap-extras,
     semigroups,
     raw-strings-qq,
+    reflex-dom,
     snap,
     snap-core,
     svg-builder,
