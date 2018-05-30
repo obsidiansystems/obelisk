@@ -46,7 +46,7 @@ containerExists :: MonadObelisk m => m Bool
 containerExists = withExitFailMessage needDockerMsg $ do
   containerNames <- fmap (map T.strip . T.lines . T.pack) $
     readProcessAndLogStderr Error $
-      proc "docker" ["container", "list", "--format", "{{.Names}}"]
+      proc "docker" ["container", "list", "--all", "--format", "{{.Names}}"]
   pure $ containerName `elem` containerNames
   where
     needDockerMsg = "This feature requires that you have Docker installed and the `docker` command available on your PATH. Please go https://docs.docker.com/ to install Docker and try this command again."
@@ -69,15 +69,15 @@ setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> con
     T.writeFile (stateDir </> "Dockerfile") dockerfile
 
   -- Create new SSH keys for this container
-  callProcessAndLogOutput (Notice, Warning) $
+  callProcessAndLogOutput (Debug, Error) $
     proc "rm" ["-f", stateDir </> sshKeyFileName, stateDir </> sshKeyFileName <.> "pub"]
-  callProcessAndLogOutput (Notice, Warning) $
+  callProcessAndLogOutput (Debug, Error) $
     proc "ssh-keygen" ["-t", "ed25519", "-f", stateDir </> sshKeyFileName, "-P", ""]
 
   -- Build the docker container (which uses the SSH keys in the 'ssh' folder)
-  containerId <- readProcessAndLogStderr Warning $
+  containerId <- readProcessAndLogStderr Error $
     proc "docker" ["build", stateDir, "--quiet"]
-  callProcessAndLogOutput (Notice, Warning) $ proc "docker"
+  callProcessAndLogOutput (Debug, Error) $ proc "docker"
     [ "run"
     , "--restart", "always"
     , "--detach"
