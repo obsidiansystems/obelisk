@@ -10,6 +10,7 @@ module Obelisk.App where
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
+import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 
 import Obelisk.CliApp (Cli, CliConfig, CliT, HasCliConfig, getCliConfig, runCli)
 
@@ -48,3 +49,6 @@ type MonadObelisk m =
   , MonadIO m
   , MonadMask m
   )
+
+getObeliskUserStateDir :: IO FilePath
+getObeliskUserStateDir = getXdgDirectory XdgData "obelisk"
