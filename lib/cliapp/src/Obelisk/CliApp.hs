@@ -3,7 +3,7 @@
 -- See Demo.hs for an example
 --
 -- This package should eventually be made its own library.
-module Obelisk.CLI
+module Obelisk.CliApp
   (
   -- .Types
     Cli
@@ -36,7 +36,7 @@ module Obelisk.CLI
 
 import Control.Monad.Log (Severity (..))
 
-import Obelisk.CLI.Logging
-import Obelisk.CLI.Process
-import Obelisk.CLI.Spinner
-import Obelisk.CLI.Types
+import Obelisk.CliApp.Logging
+import Obelisk.CliApp.Process
+import Obelisk.CliApp.Spinner
+import Obelisk.CliApp.Types

@@ -33,7 +33,7 @@ import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), callProcessAndLogOutput, createProcess_, failWith, putLog, withSpinner)
+import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, createProcess_, failWith, putLog, withSpinner)
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils (cp)
 --TODO: Make this module resilient to random exceptions

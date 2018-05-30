@@ -1,0 +1,32 @@
+name: obelisk-cliapp
+version: 0.1
+license: BSD3
+build-type: Simple
+cabal-version: >=1.2
+
+library
+  hs-source-dirs: src
+  build-depends:
+      ansi-terminal
+    , base
+    , bytestring
+    , exceptions
+    , io-streams
+    , logging-effect
+    , monad-loops
+    , mtl
+    , process
+    , terminal-size
+    , text
+    , time
+    , transformers
+  exposed-modules:
+    Obelisk.CliApp
+    Obelisk.CliApp.Demo
+  other-modules:
+    Obelisk.CliApp.Logging
+    Obelisk.CliApp.Process
+    Obelisk.CliApp.Spinner
+    Obelisk.CliApp.TerminalString
+    Obelisk.CliApp.Types
+  ghc-options: -Wall -fobject-code

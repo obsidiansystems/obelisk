@@ -23,8 +23,7 @@ import System.Posix.Files
 import System.Process (delegate_ctlc, env, proc, readProcess)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, withSpinner)
-import Obelisk.CLI.Logging
+import Obelisk.CliApp (Severity (..), callProcess, callProcessAndLogOutput, failWith, putLog, withSpinner)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
@@ -141,6 +140,14 @@ deployPush deployPath = do
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
+
+deployMobile :: MonadObelisk m => String -> [String] -> m ()
+deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
+  let srcDir = root </> "src"
+  exists <- liftIO $ doesDirectoryExist srcDir
+  unless exists $ failWith "ob test should be run inside of a deploy directory"
+  result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
+  callProcess (result </> "bin" </> "deploy") mobileArgs
 
 sshAgent :: IO [(String, String)]
 sshAgent = do
