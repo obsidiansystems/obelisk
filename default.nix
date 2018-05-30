@@ -2,9 +2,11 @@
 , profiling ? false
 , iosSdkVersion ? "10.2"
 }:
-let reflex-platform = import ./dep/reflex-platform { inherit system iosSdkVersion; };
-    inherit (reflex-platform) hackGet;
-    pkgs = reflex-platform.nixpkgs;
+let
+  getReflexPlatform = sys: import ./dep/reflex-platform { inherit iosSdkVersion; system = sys; };
+  reflex-platform = getReflexPlatform system;
+  inherit (reflex-platform) hackGet;
+  pkgs = reflex-platform.nixpkgs;
 in with pkgs.haskell.lib; with pkgs.lib;
 let #TODO: Upstream
     # Modify a Haskell package to add completion scripts for the given
@@ -220,7 +222,7 @@ rec {
   project = base: projectDefinition:
     let assets = processAssets { src = base + "/static"; };
         configPath = base + "/config";
-        projectOut = reflex-platform.project (args@{ nixpkgs, ... }:
+        projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
                           , packages ? {}
@@ -273,12 +275,12 @@ rec {
                 };
               };
           in mkProject (projectDefinition args));
-    in projectOut //
-         { server = { hostName }:
-             let exe = serverExe projectOut.ghc.backend projectOut.ghcjs.frontend assets.symlinked configPath;
-             in server exe hostName;
-           obelisk = import (base + "/.obelisk/impl") {};
-         };
+    in projectOut system // {
+      server = { hostName }:
+        let exe = serverExe (projectOut "x86_64-linux").ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
+        in server exe hostName;
+      obelisk = import (base + "/.obelisk/impl") {};
+    };
   haskellPackageSets = {
     ghc = reflex-platform.ghc.override {
       overrides = defaultHaskellOverrides;
