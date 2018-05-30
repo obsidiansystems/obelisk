@@ -45,7 +45,7 @@ containerName = "obelisk-docker-nix-builder"
 containerExists :: MonadObelisk m => m Bool
 containerExists = withExitFailMessage needDockerMsg $ do
   containerNames <- fmap (map T.strip . T.lines . T.pack) $
-    readProcessAndLogStderr Warning $
+    readProcessAndLogStderr Error $
       proc "docker" ["container", "list", "--format", "{{.Names}}"]
   pure $ containerName `elem` containerNames
   where
@@ -57,8 +57,9 @@ containerSshPort = 2222
 
 -- | Start the Docker container; assumes it already exists.
 startContainer :: MonadObelisk m => m ()
-startContainer = callProcessAndLogOutput (Notice, Warning) $
-  proc "docker" ["start", containerName]
+startContainer = withSpinner "Starting VM builder" $
+  callProcessAndLogOutput (Debug, Debug) $
+    proc "docker" ["start", containerName]
 
 -- | Creates the Docker container; assumes it does not exist.
 setupNixDocker :: MonadObelisk m => FilePath -> m ()

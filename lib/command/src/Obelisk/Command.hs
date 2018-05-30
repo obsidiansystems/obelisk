@@ -153,7 +153,7 @@ deployCommand cfg = hsubparser $ mconcat
         enabledByDefault = _argsConfig_enableVmBuilderByDefault cfg
         enabled = Just RemoteBuilder_ObeliskVM
         flagBase = "vm-builder"
-        flagDesc = "managed Linux virtual machine and allow builds to use it (requires Docker)"
+        flagDesc = "managed Linux virtual machine as a Nix remote builder (requires Docker)"
 
 
 deployInitOpts :: Parser DeployInitOpts
