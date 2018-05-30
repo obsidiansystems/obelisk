@@ -10,6 +10,7 @@ library
                , reflex-dom
                , static
                , text
+               , obelisk-executable-config-core
   exposed-modules:
     Frontend
   ghc-options: -Wall
@@ -23,6 +24,8 @@ executable frontend
                , static
                , text
                , frontend
+               , obelisk-executable-config-core
+               , obelisk-executable-config
   --TODO: Make these ghc-options optional
   ghc-options: -threaded
   if os(darwin)

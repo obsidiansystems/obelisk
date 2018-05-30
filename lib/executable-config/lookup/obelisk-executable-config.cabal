@@ -27,4 +27,5 @@ library
     bytestring,
     filepath,
     text,
-    transformers
+    transformers,
+    obelisk-executable-config-core

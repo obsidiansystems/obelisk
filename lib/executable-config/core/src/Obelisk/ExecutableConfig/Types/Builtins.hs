@@ -9,6 +9,7 @@ module Obelisk.ExecutableConfig.Types.Builtins where
 
 import Control.Monad.Catch (Exception, throwM)
 import qualified Data.ByteString.Lazy as BLS
+import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Typeable
 import GHC.Generics
@@ -40,3 +41,4 @@ instance ObeliskConfig Route where
       validate uri
         = maybe (throwM MissingPort) (const $ pure uri) $
           getRoutePort (Route uri)
+  configToText = T.pack . show

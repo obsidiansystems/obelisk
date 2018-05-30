@@ -12,6 +12,7 @@ library
     filepath,
     reflex-dom,
     text,
-    transformers
+    transformers,
+    obelisk-executable-config-core
 
   exposed-modules: Obelisk.ExecutableConfig.Inject

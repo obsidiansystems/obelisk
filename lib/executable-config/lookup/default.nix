@@ -1,5 +1,6 @@
 { hostPlatform, ghc
 , mkDerivation, base, bytestring, filepath, stdenv, text, transformers
+, obelisk-executable-config-core
 , android-activity ? null, jsaddle-wkwebview ? null, ghcjs-dom ? null
 }:
 let isAndroid = hostPlatform.libc == "bionic";
@@ -10,7 +11,7 @@ in mkDerivation {
   version = "0.1";
   src = ./.;
   libraryHaskellDepends = [
-    base bytestring filepath text transformers
+    base bytestring filepath text transformers obelisk-executable-config-core
   ] ++ (if isAndroid then [
     android-activity
   ] else if isIOS then [

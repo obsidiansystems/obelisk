@@ -6,6 +6,7 @@ module Obelisk.ExecutableConfig.Types
   , ObeliskConfig(..)
   , getConfig
   , getConfig'
+  , getConfigPath
 
   -- Builtins
   , Route(..)

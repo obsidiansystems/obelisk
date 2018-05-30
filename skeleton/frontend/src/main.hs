@@ -1,5 +1,9 @@
-import Reflex.Dom
 import Frontend
+import Reflex.Dom
+
+import Obelisk.ExecutableConfig (get)
 
 main :: IO ()
-main = mainWidget $ snd frontend
+main = do
+  route <- get
+  mainWidget $ snd $ frontend route

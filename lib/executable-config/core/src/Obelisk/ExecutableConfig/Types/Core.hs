@@ -49,6 +49,7 @@ getConfigPath (ConfigPath cProj fp)= "config" </> cabalProjectName cProj </> fp
 class ObeliskConfig a where
   configPath :: ConfigPath a
   parseConfig :: MonadThrow m => BLS.ByteString -> m a
+  configToText :: a -> Text
 
 -- | Retrieve the specified config
 --
