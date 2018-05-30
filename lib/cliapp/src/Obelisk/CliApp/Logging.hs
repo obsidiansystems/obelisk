@@ -7,7 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Provides a logging handler that facilitates safe ouputting to terminal using MVar based locking.
 -- | Spinner.hs and Process.hs work on this guarantee.
-module Obelisk.CLI.Logging where
+module Obelisk.CliApp.Logging where
 
 import Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
 import Control.Concurrent.MVar (modifyMVar_, newMVar)
@@ -28,8 +28,8 @@ import System.Console.ANSI (Color (Red, White, Yellow), ColorIntensity (Vivid),
 import System.Exit (ExitCode (..), exitWith)
 import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stdin, stdout)
 
-import qualified Obelisk.CLI.TerminalString as TS
-import Obelisk.CLI.Types
+import qualified Obelisk.CliApp.TerminalString as TS
+import Obelisk.CliApp.Types
 
 newCliConfig :: Severity -> Bool -> Bool -> IO CliConfig
 newCliConfig sev noColor noSpinner = do

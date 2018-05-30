@@ -16,7 +16,7 @@ import qualified Data.Text as T
 import System.Process (proc)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), readProcessAndLogStderr, withSpinner)
+import Obelisk.CliApp (Severity (..), readProcessAndLogStderr, withSpinner)
 
 -- | Where to put nix-build output
 data OutLink

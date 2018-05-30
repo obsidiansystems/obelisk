@@ -8,7 +8,7 @@
 
 -- | An extension of `System.Process` that integrates with logging (`Obelisk.CLI.Logging`)
 -- and is thus spinner friendly.
-module Obelisk.CLI.Process
+module Obelisk.CliApp.Process
   ( readProcessAndLogStderr
   , callProcessAndLogOutput
   , createProcess
@@ -38,8 +38,8 @@ import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmd
 import qualified System.Process as Process
 
 import Control.Monad.Log (Severity (..))
-import Obelisk.CLI.Logging (failWith, putLog, putLogRaw)
-import Obelisk.CLI.Types (Cli)
+import Obelisk.CliApp.Logging (failWith, putLog, putLogRaw)
+import Obelisk.CliApp.Types (Cli)
 
 -- | Like `System.Process.readProcess` but logs the stderr instead of letting the external process inherit it.
 readProcessAndLogStderr

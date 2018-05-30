@@ -2,7 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 -- | Types and functions dealing with strings to be printed on terminal.
-module Obelisk.CLI.TerminalString
+module Obelisk.CliApp.TerminalString
   ( TerminalString(..)
   , render
   , putStrWithSGR

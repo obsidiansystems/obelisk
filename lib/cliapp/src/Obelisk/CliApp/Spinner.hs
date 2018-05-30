@@ -2,7 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 -- | Provides a simple CLI spinner that interoperates cleanly with the rest of the logging output.
-module Obelisk.CLI.Spinner (withSpinner) where
+module Obelisk.CliApp.Spinner (withSpinner) where
 
 import Control.Concurrent (killThread, threadDelay)
 import Control.Monad (forM_, (>=>))
@@ -15,9 +15,9 @@ import qualified Data.List as L
 import Data.Text (Text)
 import System.Console.ANSI (Color (Blue, Cyan, Green, Red))
 
-import Obelisk.CLI.Logging (allowUserToMakeLoggingVerbose, fork)
-import Obelisk.CLI.TerminalString (TerminalString (..), enquiryCode)
-import Obelisk.CLI.Types (Cli, CliConfig (..), HasCliConfig, Output (..), getCliConfig)
+import Obelisk.CliApp.Logging (allowUserToMakeLoggingVerbose, fork)
+import Obelisk.CliApp.TerminalString (TerminalString (..), enquiryCode)
+import Obelisk.CliApp.Types (Cli, CliConfig (..), HasCliConfig, Output (..), getCliConfig)
 
 -- | Run an action with a CLI spinner.
 withSpinner

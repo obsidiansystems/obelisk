@@ -2,13 +2,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command.Utils where
 
+import qualified Data.List as L
 import Data.Semigroup ((<>))
 import qualified Data.Text as T
-import qualified Data.List as L
 import qualified System.Process as P
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), callProcessAndLogOutput, readProcessAndLogStderr)
+import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, readProcessAndLogStderr)
 
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> m Bool

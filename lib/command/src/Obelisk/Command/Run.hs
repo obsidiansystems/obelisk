@@ -27,8 +27,8 @@ import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
-import Obelisk.CLI (CliT (..), HasCliConfig, Severity (..), callCommand, failWith, getCliConfig, putLog,
-                    runCli)
+import Obelisk.CliApp (CliT (..), HasCliConfig, Severity (..), callCommand, failWith, getCliConfig, putLog,
+                       runCli)
 import Obelisk.Command.Project (inProjectShell)
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.

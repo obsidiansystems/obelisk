@@ -28,8 +28,8 @@ import System.Posix.Process (executeFile)
 import System.Process (callCommand)
 
 import Obelisk.App
-import Obelisk.CLI (Severity (..), failWith, getLogLevel, newCliConfig, putLog)
-import Obelisk.CLI.Demo (cliDemo)
+import Obelisk.CliApp (Severity (..), failWith, getLogLevel, newCliConfig, putLog)
+import Obelisk.CliApp.Demo (cliDemo)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run

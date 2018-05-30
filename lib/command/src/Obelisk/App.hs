@@ -11,7 +11,7 @@ import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
 
-import Obelisk.CLI (Cli, CliConfig, CliT, HasCliConfig, getCliConfig, runCli)
+import Obelisk.CliApp (Cli, CliConfig, CliT, HasCliConfig, getCliConfig, runCli)
 
 newtype Obelisk = Obelisk
   { _obelisk_cliConfig :: CliConfig

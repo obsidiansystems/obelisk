@@ -9,8 +9,8 @@ import Control.Monad
 import Control.Monad.Catch (finally)
 import Control.Monad.IO.Class (liftIO)
 import Data.Attoparsec.ByteString.Char8 as A
-import qualified Data.ByteString.Char8 as BC8
 import Data.Bits
+import qualified Data.ByteString.Char8 as BC8
 import Data.Default
 import Data.Maybe
 import Data.Monoid
@@ -18,13 +18,12 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
 import System.FilePath
-import System.Posix.Files
 import System.Posix.Env (getEnvironment)
+import System.Posix.Files
 import System.Process (delegate_ctlc, env, proc, readProcess)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CLI (Severity (..), callProcessAndLogOutput, failWith, withSpinner)
-import Obelisk.CLI.Logging
+import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
