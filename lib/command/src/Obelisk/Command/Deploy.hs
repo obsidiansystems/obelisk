@@ -35,14 +35,6 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
   hasConfigDir <- liftIO $ do
     createDirectoryIfMissing True deployDir
     doesDirectoryExist configDir
-  when hasConfigDir $ do
-    callProcessAndLogOutput (Notice, Error) $
-      cp
-        [ "-r"
-        , "-T"
-        , configDir
-        , deployDir </> "config"
-        ]
   localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
     False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
     True -> pure $ deployDir </> "ssh_key"
@@ -53,6 +45,14 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
   forM_ hostnames $ \hostname -> do
     putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
     verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
+  when hasConfigDir $ do
+    callProcessAndLogOutput (Notice, Error) $
+      cp
+        [ "-r"
+        , "-T"
+        , configDir
+        , deployDir </> "config"
+        ]
   liftIO $ createThunk (deployDir </> "src") thunkPtr
   liftIO $ setupObeliskImpl deployDir
   initGit deployDir
