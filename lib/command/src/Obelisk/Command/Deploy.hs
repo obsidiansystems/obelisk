@@ -4,12 +4,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Deploy where
 
-import Control.Applicative
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
-import Data.Attoparsec.ByteString.Char8 as A
 import Data.Bits
-import qualified Data.ByteString.Char8 as BC8
 import Data.Default
 import qualified Data.Map as Map
 import Data.Maybe
@@ -20,7 +17,7 @@ import System.Directory
 import System.Environment (getEnvironment)
 import System.FilePath
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc, readProcess)
+import System.Process (delegate_ctlc, env, proc)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
@@ -135,17 +132,6 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   unless exists $ failWith "ob test should be run inside of a deploy directory"
   result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
-
-sshAgent :: IO [(String, String)]
-sshAgent = do
-  output <- BC8.pack <$> readProcess "ssh-agent" ["-c"] mempty
-  return $ fromMaybe mempty $ A.maybeResult $ A.parse (A.many' p) output
-  where
-    p = do
-      key <- A.string "setenv" >> A.skipSpace >> A.takeWhile (not . isSpace)
-      val <- A.skipSpace >> A.takeWhile (/= ';')
-      _ <- A.string ";" >> A.endOfLine <|> void (A.string ";")
-      return (BC8.unpack key, BC8.unpack val)
 
 verifyHostKey :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
 verifyHostKey knownHostsPath keyPath hostName =
