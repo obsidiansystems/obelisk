@@ -127,7 +127,7 @@ rec {
 
     PATH="${ghcObelisk.obelisk-command}/bin:$PATH"
     export OBELISK_IMPL="${hackGet ./.}"
-    "${justStaticExecutables' ghcObelisk.obelisk-selftest}/bin/obelisk-selftest"
+    "${justStaticExecutables' ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" "$@"
   '';
   #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
   skeleton = pkgs.runCommand "skeleton" {
