@@ -6,5 +6,5 @@ import Backend
 import Frontend
 
 main :: Int -> IO ()
-main port = run port backend frontend
+main port = run port backend staticContent frontend
 

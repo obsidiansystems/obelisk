@@ -19,6 +19,8 @@ library
     , modern-uri
     , network
     , obelisk-executable-config
+    , obelisk-backend
+    , obelisk-snap
     , process
     , reflex-dom
     , streaming-commons

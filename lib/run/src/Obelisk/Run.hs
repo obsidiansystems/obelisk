@@ -9,7 +9,6 @@ import Control.Lens ((^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy.Char8 as BSLC
 import Data.List (uncons)
 import Data.Maybe
 import Data.Semigroup ((<>))
@@ -28,6 +27,8 @@ import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Obelisk.ExecutableConfig (get)
+import Obelisk.Backend (ReflexStaticContent)
+import Obelisk.Snap (mkIndexLBS)
 import Reflex.Dom.Core
 import System.Environment
 import System.IO
@@ -38,14 +39,15 @@ import Text.URI.Lens
 
 run :: Int -- ^ Port to run the backend
     -> IO () -- ^ Backend
-    -> (StaticWidget () (), Widget () ()) -- ^ Frontend widget (head, body)
+    -> ReflexStaticContent
+    -> Widget () () -- ^ Frontend widget (body)
     -> IO ()
-run port backend frontend = do
+run port backend static frontend = do
   let handleBackendErr (_ :: IOException) = hPutStrLn stderr "backend stopped; make a change to your code to reload"
   backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] backend
   putStrLn $ "Backend running on port " <> show port
   let conf = defRunConfig { _runConfig_redirectPort = port }
-  runWidget conf frontend `finally` killThread backendTid
+  runWidget conf static frontend `finally` killThread backendTid
 
 getConfigRoute :: IO (Maybe URI)
 getConfigRoute = do
@@ -55,8 +57,8 @@ getConfigRoute = do
 defAppUri :: URI
 defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 
-runWidget :: RunConfig -> (StaticWidget () (), Widget () ()) -> IO ()
-runWidget conf (h, b) = do
+runWidget :: RunConfig -> ReflexStaticContent -> Widget () () -> IO ()
+runWidget conf static b = do
   uri <- fromMaybe defAppUri <$> getConfigRoute
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
@@ -69,12 +71,12 @@ runWidget conf (h, b) = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp defaultConnectionOptions h b (fallbackProxy redirectHost redirectPort man)
+        app <- obeliskApp defaultConnectionOptions static b (fallbackProxy redirectHost redirectPort man)
         runSettingsSocket settings skt app)
 
-obeliskApp :: ConnectionOptions -> StaticWidget () () -> Widget () () -> Application -> IO Application
-obeliskApp opts h b backend = do
-  html <- BSLC.fromStrict <$> indexHtml h
+obeliskApp :: ConnectionOptions -> ReflexStaticContent -> Widget () () -> Application -> IO Application
+obeliskApp opts static b backend = do
+  html <- mkIndexLBS "/jsaddle.js" static
   let entryPoint = mainWidget' b >> syncPoint
   jsaddleOr opts entryPoint $ \req sendResponse -> case (W.requestMethod req, W.pathInfo req) of
     ("GET", []) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
