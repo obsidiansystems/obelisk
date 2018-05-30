@@ -25,7 +25,6 @@ import System.Environment
 import System.FilePath
 import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
-import System.Process (callCommand)
 
 import Obelisk.App
 import Obelisk.CliApp (Severity (..), failWith, getLogLevel, newCliConfig, putLog)
@@ -125,14 +124,14 @@ deployCommand :: Parser DeployCommand
 deployCommand = hsubparser $ mconcat
   [ command "init" $ info deployInitCommand $ progDesc "Initialize a deployment configuration directory"
   , command "push" $ info (pure DeployCommand_Push) mempty
-  , command "test" $ info (DeployCommand_Test <$> argument (maybeReader readPlatform) (completeWith ["android"])) $ progDesc "Test your obelisk project from a mobile platform. [Only android supported]"
+  , command "test" $ info (DeployCommand_Test <$> platformP) $ progDesc "Test your obelisk project from a mobile platform."
   , command "update" $ info (pure DeployCommand_Update) $ progDesc "Update the deployment's src thunk to latest"
   ]
-
-readPlatform :: String -> Maybe Platform
-readPlatform = \case
-  "android" -> Just Android
-  _ -> Nothing
+  where
+    platformP = hsubparser $ mconcat
+      [ command "android" $ info (pure Android) mempty
+      , command "ios"     $ info (pure IOS <*> strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal")) mempty
+      ]
 
 deployInitCommand :: Parser DeployCommand
 deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
@@ -141,13 +140,14 @@ deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
   <*> some (strOption (long "hostname" <> metavar "HOSTNAME" <> help "hostname of the deployment target"))
   <*> strOption (long "upstream" <> value "origin" <> metavar "REMOTE" <> help "git remote to use for the src thunk" <> showDefault)
 
-data Platform = Android
+type TeamID = String
+data PlatformDeployment = Android | IOS TeamID
   deriving (Show)
 
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
   | DeployCommand_Push
-  | DeployCommand_Test Platform
+  | DeployCommand_Test PlatformDeployment
   | DeployCommand_Update
   deriving Show
 
@@ -290,13 +290,9 @@ ob = \case
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
     DeployCommand_Push -> deployPush "."
-    DeployCommand_Test Android -> withProjectRoot "." $ \root -> do
-      let srcDir = root </> "src"
-      exists <- liftIO $ doesDirectoryExist srcDir
-      unless exists $ failWith "ob test should be run inside of a deploy directory"
-      result <- nixBuildAttrWithCache srcDir "android.frontend"
-      liftIO $ callCommand $ result </> "bin" </> "deploy"
     DeployCommand_Update -> deployUpdate "."
+    DeployCommand_Test Android -> deployMobile "android" []
+    DeployCommand_Test (IOS teamID) -> deployMobile "ios" [teamID]
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
