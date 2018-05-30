@@ -40,8 +40,31 @@ main = do
   withSystemTempDirectory "blank-project" $ \blankProject ->
     hspec $ do
       let shelly_ = void . shelly . silently
+
+          inProj :: Sh a -> IO ()
+          inProj = shelly_ . chdir (fromString blankProject)
+
           inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
           inTmp f = shelly_ . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
+
+          assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
+          assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
+
+          doubleQuotes s = "\"" <> s <> "\""
+
+          revParseHead = T.strip <$> run "git" ["rev-parse", "HEAD"]
+
+          commitAll = do
+            run "git" ["add", "."]
+            run "git" ["commit", "--allow-empty", "-m", doubleQuotes "checkpoint"]
+            revParseHead
+
+          thunk  = ".obelisk/impl"
+          update = run "ob" ["thunk", "update", thunk] >> commitAll
+          pack   = run "ob" ["thunk", "pack",   thunk] >> commitAll
+          unpack = run "ob" ["thunk", "unpack", thunk] >> commitAll
+
+          diff a b = run "git" ["diff", a, b]
 
       describe "ob init" $ do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
@@ -67,21 +90,6 @@ main = do
         it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
 
       describe "blank initialized project" $ do
-        let inProj :: Sh a -> IO ()
-            inProj = shelly_ . chdir (fromString blankProject)
-            thunk  = ".obelisk/impl"
-
-            doubleQuotes s = "\"" <> s <> "\""
-            revParseHead = T.strip <$> run "git" ["rev-parse", "HEAD"]
-            commitAll = do
-              run "git" ["add", "."]
-              run "git" ["commit", "--allow-empty", "-m", doubleQuotes "checkpoint"]
-              revParseHead
-
-            diff a b = run "git" ["diff", a, b]
-            assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
-            assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
-
         it "can be created" $ inProj $ do
           run "ob" ["init"]
           run "git" ["init"]
@@ -107,15 +115,11 @@ main = do
           run "nix-build" []
 
         it "has idempotent thunk update" $ inProj $ do
-          let update = run "ob" ["thunk", "update", thunk] >> commitAll
           u  <- update
           uu <- update
           assertRevEQ u uu
 
         describe "ob thunk pack/unpack" $ do
-          let pack   = run "ob" ["thunk", "pack",   thunk] >> commitAll
-              unpack = run "ob" ["thunk", "unpack", thunk] >> commitAll
-
           it "has thunk pack and unpack inverses" $ inProj $ do
             e    <- commitAll
             eu   <- unpack
