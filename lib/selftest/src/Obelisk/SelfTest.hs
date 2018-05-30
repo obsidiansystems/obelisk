@@ -119,39 +119,39 @@ main = do
           uu <- update
           assertRevEQ u uu
 
-        describe "ob thunk pack/unpack" $ do
-          it "has thunk pack and unpack inverses" $ inProj $ do
-            e    <- commitAll
-            eu   <- unpack
-            eup  <- pack
-            eupu <- unpack
-            _    <- pack
+      describe "ob thunk pack/unpack" $ do
+        it "has thunk pack and unpack inverses" $ inProj $ do
+          e    <- commitAll
+          eu   <- unpack
+          eup  <- pack
+          eupu <- unpack
+          _    <- pack
 
-            assertRevEQ e  eup
-            assertRevEQ eu eupu
-            assertRevNE e  eu
+          assertRevEQ e  eup
+          assertRevEQ eu eupu
+          assertRevNE e  eu
 
-          it "can pack and unpack plain git repos" $ do
-            withSystemTempDirectory "git-repo" $ \dir -> shelly @IO $ silently $ do
-              let repo = toTextIgnore $ dir </> ("repo" :: String)
-              run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo]
-              origHash <- chdir (fromText repo) revParseHead
+        it "can pack and unpack plain git repos" $ do
+          withSystemTempDirectory "git-repo" $ \dir -> shelly @IO $ silently $ do
+            let repo = toTextIgnore $ dir </> ("repo" :: String)
+            run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo]
+            origHash <- chdir (fromText repo) revParseHead
 
-              run_ "ob" ["thunk", "pack", repo]
-              packedFiles <- Set.fromList <$> ls (fromText repo)
-              liftIO $ assertEqual "" packedFiles $
-                Set.fromList $ (repo </>) <$> ["default.nix", "git.json", ".attr-cache" :: String]
+            run_ "ob" ["thunk", "pack", repo]
+            packedFiles <- Set.fromList <$> ls (fromText repo)
+            liftIO $ assertEqual "" packedFiles $
+              Set.fromList $ (repo </>) <$> ["default.nix", "git.json", ".attr-cache" :: String]
 
-              run_ "ob" ["thunk", "unpack", repo]
-              chdir (fromText repo) $ do
-                unpackHash <- revParseHead
-                assertRevEQ origHash unpackHash
+            run_ "ob" ["thunk", "unpack", repo]
+            chdir (fromText repo) $ do
+              unpackHash <- revParseHead
+              assertRevEQ origHash unpackHash
 
-              testThunkPack $ fromText repo
+            testThunkPack $ fromText repo
 
-          it "aborts thunk pack when there are uncommitted files" $ inProj $ do
-            unpack
-            testThunkPack (blankProject </> thunk)
+        it "aborts thunk pack when there are uncommitted files" $ inProj $ do
+          unpack
+          testThunkPack (blankProject </> thunk)
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
 testObRunInDir :: Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
