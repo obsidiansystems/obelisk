@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.ExecutableConfig (get) where
 
 import Control.Exception
@@ -15,9 +16,8 @@ import System.IO.Error
 
 import Obelisk.ExecutableConfig.Types
 
--- XXX: Needs testing
 get :: forall config. ObeliskConfig config => IO config
-get = fmap join $ mainBundleResourcePath >>= \mp -> forM mp $ \p -> do
-  let root = T.unpack (T.decodeUtf8 p)
-      path = getConfigPath configPath
+get = mainBundleResourcePath >>= \(Just p) -> do -- FIXME: Handle Nothing
+  let root = T.unpack $ T.decodeUtf8 p
+      path = getConfigPath (configPath :: ConfigPath config)
   BLS.readFile (root </> path) >>= parseConfig
