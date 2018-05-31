@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 module Obelisk.ExecutableConfig (get) where
 
 import Control.Exception (Exception, bracket, throw)
@@ -22,7 +23,7 @@ instance Exception AssetMissing
 get :: forall config. ObeliskConfig config => IO config
 get = bracket getAssets freeAssetManager $ \mgrObj -> do
   mgr <- assetManagerFromJava mgrObj
-  let path = getConfigPath (configLocation :: ConfigLocation config)
+  let path = getConfigPath @config
   let open = do
         a <- withCString path $ \fn ->
           assetManager_open mgr fn 3

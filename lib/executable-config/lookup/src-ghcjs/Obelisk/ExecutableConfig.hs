@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 module Obelisk.ExecutableConfig where
 
 import qualified Data.ByteString.Char8 as BLC
@@ -16,7 +17,7 @@ import Obelisk.ExecutableConfig.Types
 
 get :: forall config. ObeliskConfig config => IO config
 get = do
-  let path = getConfigPath (configLocation :: ConfigLocation config)
+  let path = getConfigPath @config
   -- FIXME: Handle Nothing values and them throwM
   Just doc <- currentDocument
   Just e <- getElementById doc $ "injected-" <> path

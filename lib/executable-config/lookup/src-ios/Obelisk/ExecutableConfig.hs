@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 module Obelisk.ExecutableConfig (get) where
 
 import Control.Exception
@@ -19,5 +20,5 @@ import Obelisk.ExecutableConfig.Types
 get :: forall config. ObeliskConfig config => IO config
 get = mainBundleResourcePath >>= \(Just p) -> do -- FIXME: Handle Nothing
   let root = T.unpack $ T.decodeUtf8 p
-      path = getConfigPath (configLocation :: ConfigLocation config)
+      path = getConfigPath @config
   BLS.readFile (root </> path) >>= decodeConfig

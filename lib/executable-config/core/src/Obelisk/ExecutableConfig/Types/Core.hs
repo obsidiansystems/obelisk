@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -49,8 +50,10 @@ class ObeliskConfig a where
   encodeConfig :: a -> Text
 
 -- | Get the relative path to the config file
-getConfigPath :: ConfigLocation config -> FilePath
-getConfigPath (ConfigLocation p l) = "config" </> cabalProjectName p </> l
+getConfigPath :: forall config. ObeliskConfig config => FilePath
+getConfigPath = f $ configLocation @config
+  where
+    f (ConfigLocation p l) = "config" </> cabalProjectName p </> l
 
 -- | Retrieve the specified config
 --
@@ -61,7 +64,7 @@ getConfig'
   -> m config
 getConfig' root = liftIO $ BLS.readFile p >>= decodeConfig
   where
-    p = getConfigPath (configLocation :: ConfigLocation config)
+    p = getConfigPath @config
 
 -- | Retrieve the specified config
 --

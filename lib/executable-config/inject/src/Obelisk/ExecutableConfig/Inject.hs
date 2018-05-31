@@ -1,6 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 module Obelisk.ExecutableConfig.Inject where
 
 import Data.ByteString (ByteString)
@@ -22,5 +23,5 @@ inject cfg = do
     key = case configLocation :: ConfigLocation config of
       ConfigLocation CabalProject_Backend _ ->
         error "not allowed" -- XXX: check this compile time
-      cfgPath ->
-        "injected-" <> T.pack (getConfigPath cfgPath)
+      _ ->
+        "injected-" <> T.pack $ getConfigPath @config
