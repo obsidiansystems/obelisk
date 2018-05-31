@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
 module Obelisk.ExecutableConfig (get) where
 
 import Control.Exception
@@ -17,8 +18,15 @@ import System.IO.Error
 
 import Obelisk.ExecutableConfig.Types
 
+data NoBundleResource = NoBundleResource
+  deriving Show
+
+instance Exception NoBundleResource
+
 get :: forall config. ObeliskConfig config => IO config
-get = mainBundleResourcePath >>= \(Just p) -> do -- FIXME: Handle Nothing
-  let root = T.unpack $ T.decodeUtf8 p
-      path = getConfigPath @config
-  BLS.readFile (root </> path) >>= decodeConfig
+get = mainBundleResourcePath >>= \case
+  Nothing -> throw NoBundleResource
+  Just p -> do
+    let root = T.unpack $ T.decodeUtf8 p
+        path = getConfigPath @config
+    BLS.readFile (root </> path) >>= decodeConfig

@@ -38,7 +38,7 @@ instance ObeliskConfig Route where
     uri <- mkURI (T.decodeUtf8 $ BLS.toStrict c)
     Route <$> validate uri
     where
-      validate uri
-        = maybe (throwM MissingPort) (const $ pure uri) $
-          getRoutePort (Route uri)
+      validate uri =
+        maybe (throwM MissingPort) (const $ pure uri) $
+        getRoutePort (Route uri)
   encodeConfig = T.pack . show
