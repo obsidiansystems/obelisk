@@ -18,7 +18,7 @@ import Control.Lens
 import Text.URI (ParseException, URI, mkURI)
 import Text.URI.Lens
 
-import Obelisk.ExecutableConfig.Types.Core (CabalProject (..), ConfigPath (..), ObeliskConfig (..))
+import Obelisk.ExecutableConfig.Types.Core (CabalProject (..), ConfigLocation (..), ObeliskConfig (..))
 
 -- Config: common/route
 newtype Route = Route URI
@@ -33,12 +33,12 @@ getRoutePort :: Route -> Maybe Word
 getRoutePort (Route uri) = uri ^? uriAuthority . _Right . authPort . _Just
 
 instance ObeliskConfig Route where
-  configPath = ConfigPath CabalProject_Common "route"
-  parseConfig c = do
+  configLocation = ConfigLocation CabalProject_Common "route"
+  decodeConfig c = do
     uri <- mkURI (T.decodeUtf8 $ BLS.toStrict c)
     Route <$> validate uri
     where
       validate uri
         = maybe (throwM MissingPort) (const $ pure uri) $
           getRoutePort (Route uri)
-  configToText = T.pack . show
+  encodeConfig = T.pack . show

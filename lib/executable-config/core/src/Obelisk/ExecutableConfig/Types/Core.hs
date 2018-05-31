@@ -36,20 +36,21 @@ cabalProjectName = \case
   CabalProject_Frontend -> "frontend"
 
 -- | Path to a specific config file in the project.
-data ConfigPath config = ConfigPath CabalProject FilePath
+data ConfigLocation config = ConfigLocation CabalProject FilePath
   deriving (Eq, Show, Ord)
-
--- | Relative filepath to the config file.
---
--- Relative to the project root.
-getConfigPath :: ConfigPath config -> FilePath
-getConfigPath (ConfigPath cProj fp)= "config" </> cabalProjectName cProj </> fp
 
 -- | An Obelisk config file item
 class ObeliskConfig a where
-  configPath :: ConfigPath a
-  parseConfig :: MonadThrow m => BLS.ByteString -> m a
-  configToText :: a -> Text
+  -- | Location of this config in the project
+  configLocation :: ConfigLocation a
+  -- | How to decode the config from a bytestring
+  decodeConfig :: MonadThrow m => BLS.ByteString -> m a
+  -- | How to encode the config back to text
+  encodeConfig :: a -> Text
+
+-- | Get the relative path to the config file
+getConfigPath :: ConfigLocation config -> FilePath
+getConfigPath (ConfigLocation p l) = "config" </> cabalProjectName p </> l
 
 -- | Retrieve the specified config
 --
@@ -58,16 +59,15 @@ getConfig'
   :: forall m config. (MonadIO m, MonadThrow m, ObeliskConfig config)
   => FilePath
   -> m config
-getConfig' root = liftIO $ BLS.readFile p >>= parseConfig
+getConfig' root = liftIO $ BLS.readFile p >>= decodeConfig
   where
-    p = getConfigPath (configPath :: ConfigPath config)
+    p = getConfigPath (configLocation :: ConfigLocation config)
 
 -- | Retrieve the specified config
 --
 -- Returns Either wrapping the underlying exception.
 getConfig
-  :: forall m e config.
-     (MonadIO m, Exception e, MonadCatch m, ObeliskConfig config)
+  :: forall m e config. (MonadIO m, Exception e, MonadCatch m, ObeliskConfig config)
   => FilePath
   -> m (Either e config)
-getConfig root = try (getConfig' root)
+getConfig root = try $ getConfig' root

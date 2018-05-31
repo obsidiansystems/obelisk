@@ -16,9 +16,9 @@ import Obelisk.ExecutableConfig.Types
 
 get :: forall config. ObeliskConfig config => IO config
 get = do
-  let path = getConfigPath (configPath :: ConfigPath config)
+  let path = getConfigPath (configLocation :: ConfigLocation config)
   -- FIXME: Handle Nothing values and them throwM
   Just doc <- currentDocument
   Just e <- getElementById doc $ "injected-" <> path
   content :: Text <- getInnerHTML e
-  parseConfig $ BLS.fromStrict $ BLC.pack $ T.unpack content
+  decodeConfig $ BLS.fromStrict $ BLC.pack $ T.unpack content

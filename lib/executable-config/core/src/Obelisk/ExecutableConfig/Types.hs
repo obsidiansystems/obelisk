@@ -2,7 +2,7 @@ module Obelisk.ExecutableConfig.Types
   (
   -- Core
     CabalProject(..)
-  , ConfigPath(..)
+  , ConfigLocation(..)
   , ObeliskConfig(..)
   , getConfig
   , getConfig'

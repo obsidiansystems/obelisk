@@ -17,10 +17,10 @@ inject :: forall config. ObeliskConfig config => config -> IO ByteString
 inject cfg = do
   fmap snd $ renderStatic $
     elAttr "script" ("type" =: "text/plain" <> "id" =: key) $
-      text $ configToText cfg
+      text $ encodeConfig cfg
   where
-    key = case configPath :: ConfigPath config of
-      ConfigPath CabalProject_Backend _ ->
+    key = case configLocation :: ConfigLocation config of
+      ConfigLocation CabalProject_Backend _ ->
         error "not allowed" -- XXX: check this compile time
       cfgPath ->
         "injected-" <> T.pack (getConfigPath cfgPath)

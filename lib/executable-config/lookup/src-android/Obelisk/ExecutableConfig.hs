@@ -22,7 +22,7 @@ instance Exception AssetMissing
 get :: forall config. ObeliskConfig config => IO config
 get = bracket getAssets freeAssetManager $ \mgrObj -> do
   mgr <- assetManagerFromJava mgrObj
-  let path = getConfigPath (configPath :: ConfigPath config)
+  let path = getConfigPath (configLocation :: ConfigLocation config)
   let open = do
         a <- withCString path $ \fn ->
           assetManager_open mgr fn 3
@@ -34,4 +34,4 @@ get = bracket getAssets freeAssetManager $ \mgrObj -> do
     b <- asset_getBuffer asset
     l <- asset_getLength asset
     BS.packCStringLen (b, fromIntegral l)
-  parseConfig $ BSL.fromStrict content
+  decodeConfig $ BSL.fromStrict content

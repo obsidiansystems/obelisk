@@ -26,7 +26,7 @@ import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
-import Obelisk.ExecutableConfig.Types (ConfigPath, Route, configPath, getConfig, getConfigPath)
+import Obelisk.ExecutableConfig.Types (ConfigLocation, Route, configLocation, getConfig, getConfigPath)
 
 deployInit :: MonadObelisk m => ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> m ()
 deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
@@ -64,7 +64,7 @@ setupObeliskImpl deployDir = do
 -- | Verify configuration files and return the config values.
 deployVerify :: MonadObelisk m => FilePath -> m Route
 deployVerify deployPath = do
-  let path = getConfigPath (configPath :: ConfigPath Route)
+  let path = getConfigPath (configLocation :: ConfigLocation Route)
   getConfig deployPath >>= \case
     Left e -> failWith $ T.pack $ path <> ": " <> show (e :: SomeException)
     Right v -> putLog Debug (T.pack $ path <> ": verified") >> pure v
