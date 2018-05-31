@@ -171,11 +171,11 @@ rec {
       cp -r "${compressedJs frontend}" $out/frontend.jsexe
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
-  server = exe: hostName: backendPort:
+  server = exe: hostName:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
         https = (import lib/https {}).module {
-          inherit backendPort;
+          backendPort = 8000; # TODO read from config (but not common/route)
           # sslConfig = {
           #   hostName = "example.com";
           #   adminEmail = "webmaster@example.com";
@@ -277,9 +277,9 @@ rec {
               };
           in mkProject (projectDefinition args));
     in projectOut system // {
-      server = { hostName, backendPort }:
+      server = { hostName }:
         let exe = serverExe (projectOut "x86_64-linux").ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
-        in server exe hostName backendPort;
+        in server exe hostName;
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {

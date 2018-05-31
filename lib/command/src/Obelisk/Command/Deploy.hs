@@ -21,12 +21,12 @@ import System.Posix.Files
 import System.Process (delegate_ctlc, env, proc)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), callProcess, callProcessAndLogOutput, failWith, putLog, withSpinner)
+import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
-import Obelisk.ExecutableConfig.Types (Route, getConfig, getRoutePort)
+import Obelisk.ExecutableConfig.Types (ConfigPath, Route, configPath, getConfig, getConfigPath)
 
 deployInit :: MonadObelisk m => ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> m ()
 deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
@@ -64,16 +64,14 @@ setupObeliskImpl deployDir = do
 -- | Verify configuration files and return the config values.
 deployVerify :: MonadObelisk m => FilePath -> m Route
 deployVerify deployPath = do
+  let path = getConfigPath (configPath :: ConfigPath Route)
   getConfig deployPath >>= \case
-    Left e -> failWith $ T.pack $ "common/route: " <> show (e :: SomeException)
-    Right v -> putLog Debug (T.pack $ "common/route: verified") >> pure v
+    Left e -> failWith $ T.pack $ path <> ": " <> show (e :: SomeException)
+    Right v -> putLog Debug (T.pack $ path <> ": verified") >> pure v
 
 deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
   let backendHosts = deployPath </> "backend_hosts"
-  route <- deployVerify deployPath
-  let (Just port) = getRoutePort route
-  putLog Debug $ T.pack $ "Deploying with route: " <> show route
 
   host <- liftIO $ fmap (T.unpack . T.strip) $ T.readFile backendHosts
   let srcPath = deployPath </> "src"
@@ -85,7 +83,7 @@ deployPush deployPath getNixBuilders = do
             , _target_attr = Just "server"
             }
           , _nixBuildConfig_outLink = OutLink_None
-          , _nixBuildConfig_args = [Arg "hostName" host, Arg "backendPort" $ show port]
+          , _nixBuildConfig_args = pure $ Arg "hostName" host
           , _nixBuildConfig_builders = builders
           }
         return $ listToMaybe $ lines buildOutput
