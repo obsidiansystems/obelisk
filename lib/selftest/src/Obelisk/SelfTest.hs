@@ -3,10 +3,12 @@
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.SelfTest where
 
-import Control.Exception (Exception, throw, bracket)
+import Control.Exception (Exception, bracket, throw)
 import Control.Monad
 import Control.Monad.IO.Class
+import Data.Bool (bool)
 import Data.Function (fix)
+import Data.Maybe (isJust)
 import Data.Semigroup ((<>))
 import qualified Data.Set as Set
 import Data.String
@@ -17,15 +19,19 @@ import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.Socket as Socket
 import Shelly
+import System.Directory (withCurrentDirectory)
 import System.Environment
-import System.Exit (ExitCode (..))
+import System.Exit (ExitCode (..), exitWith)
 import System.Info
 import System.IO (Handle, hClose)
 import System.IO.Temp
+import System.Process (readProcessWithExitCode)
 import System.Timeout
 import Test.Hspec
 import Test.HUnit.Base
-import System.Process (readProcessWithExitCode)
+
+import qualified Obelisk.ExecutableConfig
+import Obelisk.ExecutableConfig.Types (Route)
 
 data ObRunState
   = ObRunState_Init
@@ -35,11 +41,16 @@ data ObRunState
 
 main :: IO ()
 main = do
+  isVerbose <- getArgs >>= \case
+    ["-v"] -> pure True
+    []     -> putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output" *> pure False
+    _      -> putStrLn "Usage: selftest [-v]" *> exitWith (ExitFailure 2)
+  let verbosity = bool silently verbosely isVerbose
   obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
   withSystemTempDirectory "blank-project" $ \blankProject ->
     hspec $ do
-      let shelly_ = void . shelly . silently
+      let shelly_ = void . shelly . verbosity
 
           inProj :: Sh a -> IO ()
           inProj = shelly_ . chdir (fromString blankProject)
@@ -74,6 +85,11 @@ main = do
         it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
           errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
+
+        it "produces a valid route config" $ inTmp $ \tmp -> do
+          run "ob" ["init"]
+          liftIO $ withCurrentDirectory (T.unpack $ toTextIgnore tmp) $
+            Obelisk.ExecutableConfig.get @Route
 
       describe "ob run" $ do
         it "works in root directory" $ inTmp $ \_ -> do
@@ -132,7 +148,7 @@ main = do
           assertRevNE e  eu
 
         it "can pack and unpack plain git repos" $ do
-          withSystemTempDirectory "git-repo" $ \dir -> shelly @IO $ silently $ do
+          withSystemTempDirectory "git-repo" $ \dir -> shelly_ $ do
             let repo = toTextIgnore $ dir </> ("repo" :: String)
             run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo]
             origHash <- chdir (fromText repo) revParseHead
