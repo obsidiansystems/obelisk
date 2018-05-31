@@ -10,7 +10,6 @@ library
     , ansi-terminal
     , Cabal
     , aeson-pretty
-    , attoparsec
     , base
     , base16-bytestring
     , binary
@@ -22,6 +21,7 @@ library
     , either
     , filepath
     , github
+    , here
     , hit
     , io-streams
     , exceptions
@@ -50,6 +50,7 @@ library
     Obelisk.Command.Run
     Obelisk.Command.Thunk
     Obelisk.Command.Utils
+    Obelisk.Command.VmBuilder
   -- -fobject-code is so that the StaticPointers extension can work in ghci
   ghc-options: -Wall -fobject-code
 

@@ -23,6 +23,7 @@ import Options.Applicative
 import System.Directory
 import System.Environment
 import System.FilePath
+import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
 
@@ -33,6 +34,7 @@ import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
+import qualified Obelisk.Command.VmBuilder as VmBuilder
 
 
 data Args = Args
@@ -45,8 +47,12 @@ data Args = Args
   }
   deriving Show
 
-args :: Parser Args
-args = Args <$> noHandoff <*> verbose <*> obCommand
+newtype ArgsConfig = ArgsConfig
+  { _argsConfig_enableVmBuilderByDefault :: Bool
+  }
+
+args :: ArgsConfig -> Parser Args
+args cfg = Args <$> noHandoff <*> verbose <*> obCommand cfg
 
 noHandoff :: Parser Bool
 noHandoff = flag False True $ mconcat
@@ -62,8 +68,8 @@ verbose = flag False True $ mconcat
   , help "Be more verbose"
   ]
 
-argsInfo :: ParserInfo Args
-argsInfo = info (args <**> helper) $ mconcat
+argsInfo :: ArgsConfig -> ParserInfo Args
+argsInfo cfg = info (args cfg <**> helper) $ mconcat
   [ fullDesc
   , progDesc "Manage Obelisk projects"
   ]
@@ -95,7 +101,7 @@ inNixShell' p = withProjectRoot "." $ \root -> do
   projectShell root False "ghc" cmd
   where
     mkCmd = do
-      obArgs <- getObArgs
+      obArgs <- getObArgs =<< getArgsConfig
       progName <- getExecutablePath
       return $ progName : catMaybes
         [ Just "--no-handoff"
@@ -105,11 +111,11 @@ inNixShell' p = withProjectRoot "." $ \root -> do
         , Just $ encodeStaticKey $ staticKey p
         ]
 
-obCommand :: Parser ObCommand
-obCommand = hsubparser
+obCommand :: ArgsConfig -> Parser ObCommand
+obCommand cfg = hsubparser
     (mconcat
       [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
-      , command "deploy" $ info (ObCommand_Deploy <$> deployCommand) $ progDesc "Prepare a deployment for an Obelisk project"
+      , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
@@ -120,10 +126,10 @@ obCommand = hsubparser
       , command "internal" (info (ObCommand_Internal <$> internalCommand) mempty)
       ])
 
-deployCommand :: Parser DeployCommand
-deployCommand = hsubparser $ mconcat
-  [ command "init" $ info deployInitCommand $ progDesc "Initialize a deployment configuration directory"
-  , command "push" $ info (pure DeployCommand_Push) mempty
+deployCommand :: ArgsConfig -> Parser DeployCommand
+deployCommand cfg = hsubparser $ mconcat
+  [ command "init" $ info (DeployCommand_Init <$> deployInitOpts) $ progDesc "Initialize a deployment configuration directory"
+  , command "push" $ info (DeployCommand_Push <$> remoteBuilderParser) mempty
   , command "test" $ info (DeployCommand_Test <$> platformP) $ progDesc "Test your obelisk project from a mobile platform."
   , command "update" $ info (pure DeployCommand_Update) $ progDesc "Update the deployment's src thunk to latest"
   , command "verify" $ info (pure DeployCommand_Verify) mempty
@@ -134,8 +140,25 @@ deployCommand = hsubparser $ mconcat
       , command "ios"     $ info (pure IOS <*> strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal")) mempty
       ]
 
-deployInitCommand :: Parser DeployCommand
-deployInitCommand = fmap DeployCommand_Init $ DeployInitOpts
+    remoteBuilderParser :: Parser (Maybe RemoteBuilder)
+    remoteBuilderParser =
+      flag (if enabledByDefault then enabled else Nothing) enabled (mconcat
+        [ long $ "enable-" <> flagBase
+        , help $ "Enable " <> flagDesc <> (if enabledByDefault then " (default)" else "")
+        ])
+      <|> flag enabled Nothing (mconcat
+        [ long $ "disable-" <> flagBase
+        , help $ "Disable a " <> flagDesc <> (if not enabledByDefault then " (default)" else "")
+        ])
+      where
+        enabledByDefault = _argsConfig_enableVmBuilderByDefault cfg
+        enabled = Just RemoteBuilder_ObeliskVM
+        flagBase = "vm-builder"
+        flagDesc = "managed Linux virtual machine as a Nix remote builder (requires Docker)"
+
+
+deployInitOpts :: Parser DeployInitOpts
+deployInitOpts = DeployInitOpts
   <$> strArgument (action "directory" <> metavar "DEPLOYDIR" <> help "Path to a directory that it will create")
   <*> strOption (long "ssh-key" <> action "file" <> metavar "SSHKEY" <> help "Path to an ssh key that it will symlink to")
   <*> some (strOption (long "hostname" <> metavar "HOSTNAME" <> help "hostname of the deployment target"))
@@ -145,10 +168,13 @@ type TeamID = String
 data PlatformDeployment = Android | IOS TeamID
   deriving (Show)
 
+data RemoteBuilder = RemoteBuilder_ObeliskVM
+  deriving (Eq, Show)
+
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
-  | DeployCommand_Push
   | DeployCommand_Verify
+  | DeployCommand_Push (Maybe RemoteBuilder)
   | DeployCommand_Test PlatformDeployment
   | DeployCommand_Update
   deriving Show
@@ -216,25 +242,27 @@ isInteractiveTerm = do
   inShellCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
   return $ isTerm && not inShellCompletion
 
-mkObeliskConfig :: IO Obelisk
-mkObeliskConfig = do
+mkObeliskConfig :: ArgsConfig -> IO Obelisk
+mkObeliskConfig argsCfg = do
   notInteractive <- not <$> isInteractiveTerm
-  logLevel <- toLogLevel <$> getObArgs
+  logLevel <- toLogLevel <$> getObArgs argsCfg
   cliConf <- newCliConfig logLevel notInteractive notInteractive
   return $ Obelisk cliConf
   where
     toLogLevel = bool Notice Debug . _args_verbose
 
-getObArgs :: IO Args
-getObArgs = getArgs >>= handleParseResult . execParserPure parserPrefs argsInfo
+getObArgs :: ArgsConfig -> IO Args
+getObArgs cfg = getArgs >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
 main :: IO ()
-main = mkObeliskConfig >>= (`runObelisk` ObeliskT main')
+main = do
+  argsCfg <- getArgsConfig
+  mkObeliskConfig argsCfg >>= (`runObelisk` ObeliskT (main' argsCfg))
 
-main' :: MonadObelisk m => m ()
-main' = do
+main' :: MonadObelisk m => ArgsConfig -> m ()
+main' argsCfg = do
   obPath <- liftIO getExecutablePath
-  obArgs <- liftIO getObArgs
+  obArgs <- liftIO $ getObArgs argsCfg
   logLevel <- getLogLevel
   putLog Debug $ T.pack $ unwords
     [ "Starting Obelisk <" <> obPath <> ">"
@@ -248,7 +276,7 @@ main' = do
   --with optparse-applicative until we've done the handoff.
   myArgs <- liftIO getArgs
   let go as = do
-        args' <- liftIO $ handleParseResult (execParserPure parserPrefs argsInfo as)
+        args' <- liftIO $ handleParseResult (execParserPure parserPrefs (argsInfo argsCfg) as)
         case _args_noHandOffPassed args' of
           False -> return ()
           True -> putLog Warning "--no-handoff should only be passed once and as the first argument; ignoring"
@@ -291,8 +319,10 @@ ob = \case
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
       deployInit thunkPtr (root </> "config") deployDir sshKeyPath hostname
-    DeployCommand_Push -> deployPush "."
     DeployCommand_Verify -> void $ deployVerify "."
+    DeployCommand_Push remoteBuilder -> deployPush "." $ case remoteBuilder of
+      Nothing -> pure []
+      Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test Android -> deployMobile "android" []
     DeployCommand_Test (IOS teamID) -> deployMobile "ios" [teamID]
@@ -312,6 +342,9 @@ ob = \case
     ObInternal_CLIDemo -> cliDemo
 
 --TODO: Clean up all the magic strings throughout this codebase
+
+getArgsConfig :: IO ArgsConfig
+getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = System.Info.os == "darwin" }
 
 encodeStaticKey :: StaticKey -> String
 encodeStaticKey = T.unpack . decodeUtf8 . Base16.encode . LBS.toStrict . Binary.encode
