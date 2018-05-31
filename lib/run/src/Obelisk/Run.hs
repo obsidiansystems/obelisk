@@ -34,7 +34,8 @@ import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Reflex.Dom.Core
 
-import Obelisk.ExecutableConfig.Types (Route (..), getConfig', getRoutePort)
+import Obelisk.ExecutableConfig (get)
+import Obelisk.ExecutableConfig.Types (Route (..), getRoutePort)
 
 run :: Int -- ^ Port to run the backend
     -> IO () -- ^ Backend
@@ -55,7 +56,7 @@ defAppUri = Route $ fromMaybe (error "defAppUri") uri
 -- | Run the frontend widget via warp server at the configured route (common/route)
 runWidget :: RunConfig -> (StaticWidget () (), Widget () ()) -> IO ()
 runWidget conf (h, b) = do
-  route <- getConfig' mempty
+  route <- get
   let Route uri = route
       port = fromIntegral $ fromMaybe 80 $ getRoutePort route
       redirectHost = _runConfig_redirectHost conf

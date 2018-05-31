@@ -6,7 +6,7 @@
 module Obelisk.Command.Deploy where
 
 import Control.Monad
-import Control.Monad.Catch (SomeException)
+import Control.Monad.Catch (SomeException, try)
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits
 import Data.Default
@@ -66,7 +66,8 @@ setupObeliskImpl deployDir = do
 deployVerify :: MonadObelisk m => FilePath -> m Route
 deployVerify deployPath = do
   let path = getConfigPath @Route
-  getConfig deployPath >>= \case
+      routeE = try $ getConfig deployPath
+  routeE >>= \case
     Left e -> failWith $ T.pack $ path <> ": " <> show (e :: SomeException)
     Right v -> putLog Debug (T.pack $ path <> ": verified") >> pure v
 

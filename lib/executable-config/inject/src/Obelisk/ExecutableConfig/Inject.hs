@@ -24,4 +24,4 @@ inject cfg = do
       ConfigLocation CabalProject_Backend _ ->
         error "not allowed" -- XXX: check this compile time
       _ ->
-        "injected-" <> T.pack $ getConfigPath @config
+        "injected-" <> T.pack (getConfigPath @config)

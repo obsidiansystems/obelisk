@@ -55,22 +55,11 @@ getConfigPath = f $ configLocation @config
   where
     f (ConfigLocation p l) = "config" </> cabalProjectName p </> l
 
--- | Retrieve the specified config
+-- | Retrieve the specified config from the filesystem.
 --
 -- Throws exceptions during retrieval if any.
-getConfig'
+getConfig
   :: forall m config. (MonadIO m, MonadThrow m, ObeliskConfig config)
   => FilePath
   -> m config
-getConfig' root = liftIO $ BLS.readFile p >>= decodeConfig
-  where
-    p = getConfigPath @config
-
--- | Retrieve the specified config
---
--- Returns Either wrapping the underlying exception.
-getConfig
-  :: forall m e config. (MonadIO m, Exception e, MonadCatch m, ObeliskConfig config)
-  => FilePath
-  -> m (Either e config)
-getConfig root = try $ getConfig' root
+getConfig root = liftIO $ BLS.readFile (getConfigPath @config) >>= decodeConfig

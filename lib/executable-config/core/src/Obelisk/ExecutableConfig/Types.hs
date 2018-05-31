@@ -5,7 +5,6 @@ module Obelisk.ExecutableConfig.Types
   , ConfigLocation(..)
   , ObeliskConfig(..)
   , getConfig
-  , getConfig'
   , getConfigPath
 
   -- Builtins

@@ -21,6 +21,7 @@ library
     , modern-uri
     , mtl
     , network
+    , obelisk-executable-config
     , obelisk-executable-config-core
     , process
     , reflex-dom
