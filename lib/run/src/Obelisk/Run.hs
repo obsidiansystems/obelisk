@@ -49,7 +49,7 @@ run port backend frontend = do
 
 getConfigRoute :: IO (Maybe URI)
 getConfigRoute = get "common/route" >>= \case
-  Just r -> case URI.mkURI $ fromMaybe r $ T.stripSuffix "\n" r of
+  Just r -> case URI.mkURI $ T.strip r of
     Just route -> pure $ Just route
     Nothing -> do
       putStrLn $ "Route is invalid: " <> show r
