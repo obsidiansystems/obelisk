@@ -26,6 +26,20 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
         ```
 1. Install obelisk: `nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command`
 
+### Contributing to Obelisk
+
+When developing on obelisk itself you may launch `ghcid` for the corresponding project as follows. For example to launch ghcid for `lib/backend` project:
+
+```
+nix-shell -A obelisk.obelisk-backend.env --run "cd lib/backend && ghcid -c 'cabal new-repl'"
+```
+
+Or to launch ghcid for `lib/command` project:
+
+```
+nix-shell -A obelisk.obelisk-command.env --run "cd lib/command && ghcid -c 'cabal new-repl'"
+```
+
 ### Accessing private repositories
 To allow the Nix builder to access private git repositories, follow these steps:
 
