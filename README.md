@@ -20,7 +20,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
         ```
     1. If you are using another operating system or linux distribution, ensure that these lines are present in `/etc/nix/nix.conf`:
         ```
-        sandbox = true
+        sandbox = relaxed
         substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
         trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
         ```
