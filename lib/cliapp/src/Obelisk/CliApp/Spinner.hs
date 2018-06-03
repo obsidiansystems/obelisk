@@ -6,16 +6,16 @@ module Obelisk.CliApp.Spinner (withSpinner) where
 
 import Control.Concurrent (killThread, threadDelay)
 import Control.Monad (forM_, (>=>))
-import Control.Monad.Catch (MonadMask, mask, onException)
+import Control.Monad.Catch (MonadMask, bracket_, mask, onException)
 import Control.Monad.IO.Class
-import Control.Monad.Log (logMessage)
+import Control.Monad.Log (Severity (..), logMessage)
 import Control.Monad.Reader (MonadIO)
 import Data.IORef
 import qualified Data.List as L
 import Data.Text (Text)
 import System.Console.ANSI (Color (Blue, Cyan, Green, Red))
 
-import Obelisk.CliApp.Logging (allowUserToMakeLoggingVerbose, fork)
+import Obelisk.CliApp.Logging (allowUserToMakeLoggingVerbose, fork, putLog)
 import Obelisk.CliApp.TerminalString (TerminalString (..), enquiryCode)
 import Obelisk.CliApp.Types (Cli, CliConfig (..), HasCliConfig, Output (..), getCliConfig)
 
@@ -23,22 +23,26 @@ import Obelisk.CliApp.Types (Cli, CliConfig (..), HasCliConfig, Output (..), get
 withSpinner
   :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
   => Text -> m a -> m a
-withSpinner s = bracket' start cleanup . const
+withSpinner s f = do
+  noSpinner <- _cliConfig_noSpinner <$> getCliConfig
+  if noSpinner
+    then bracket_ runFake (pure ()) f
+    else bracket' run cleanup $ const f
   where
-    start = do
-      tids <- run
-      tid <- fork $ allowUserToMakeLoggingVerbose enquiryCode
-      pure $ tid : tids
+    runFake = do
+      putLog Notice s
+      pure []
     run = do
       -- Add this log to the spinner stack
       stack <- _cliConfig_spinnerStack <$> getCliConfig
       wasEmpty <- liftIO $ atomicModifyIORef' stack $ \old -> (TerminalString_Normal s : old, null old)
       if wasEmpty
         then do -- Fork a thread to manage output of anything on the stack
-          tid <- fork $ runSpinner spinner $ \c -> do
+          ctrleThread <- fork $ allowUserToMakeLoggingVerbose enquiryCode
+          spinnerThread <- fork $ runSpinner spinner $ \c -> do
             logs <- liftIO $ concatStack c <$> readIORef stack
             logMessage $ Output_Overwrite logs
-          pure [tid]
+          pure [ctrleThread, spinnerThread]
         else pure []
     cleanup failed tids = do
       stack <- _cliConfig_spinnerStack <$> getCliConfig
