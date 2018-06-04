@@ -6,7 +6,7 @@ module Obelisk.CliApp.Spinner (withSpinner) where
 
 import Control.Concurrent (killThread, threadDelay)
 import Control.Monad (forM_, (>=>))
-import Control.Monad.Catch (MonadMask, bracket_, mask, onException)
+import Control.Monad.Catch (MonadMask, mask, onException)
 import Control.Monad.IO.Class
 import Control.Monad.Log (Severity (..), logMessage)
 import Control.Monad.Reader (MonadIO)
@@ -26,12 +26,9 @@ withSpinner
 withSpinner s f = do
   noSpinner <- _cliConfig_noSpinner <$> getCliConfig
   if noSpinner
-    then bracket_ runFake (pure ()) f
+    then putLog Notice s >> f
     else bracket' run cleanup $ const f
   where
-    runFake = do
-      putLog Notice s
-      pure []
     run = do
       -- Add this log to the spinner stack
       stack <- _cliConfig_spinnerStack <$> getCliConfig
