@@ -167,7 +167,7 @@ rec {
       ln -s "${config}" $out/config
 
       mkdir $out/frontend.jsexe
-      cp -r "${compressedJs frontend}" $out/frontend.jsexe
+      cp ${compressedJs frontend}/* $out/frontend.jsexe/
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
   server = exe: hostName:
