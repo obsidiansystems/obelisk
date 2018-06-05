@@ -49,7 +49,8 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames sslHostname sslEmai
   writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
   writeDeployConfig deployDir "ssl_host" sslHostname
   writeDeployConfig deployDir "ssl_email" sslEmail
-  forM_ hostnames $ \hostname ->
+  forM_ hostnames $ \hostname -> do
+    putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
     -- Note: we can't use a spinner here as this function will prompt the user.
     verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
   when hasConfigDir $ do
