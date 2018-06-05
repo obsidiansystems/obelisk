@@ -165,9 +165,7 @@ rec {
       ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
       ln -s "${assets}" $out/static
       ln -s "${config}" $out/config
-
-      mkdir $out/frontend.jsexe
-      cp ${compressedJs frontend}/* $out/frontend.jsexe/
+      ln -s ${compressedJs frontend} $out/frontend.jsexe
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
   server = exe: hostName:
