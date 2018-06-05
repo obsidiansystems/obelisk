@@ -99,11 +99,7 @@ First create a new EC2 instance:
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
 1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and 443.
 
-At this stage your instance should be booting and become accessible shortly. Note down the hostname of your instance. It should look like this:
-
-```
-INSTANCE_HOSTNAME=ec2-??-??-??-??.ca-central-1.compute.amazonaws.com
-```
+At this stage your instance should be booting and become accessible shortly. Note down the hostname of your EC2 instance.
 
 Now go to your Obelisk project directory (`~/code/myapp`), and initialize a deployment config (`~/code/myapp-deploy`):
 Your project directory must be "thunkable", i.e. something on which `ob thunk pack` can be called. Usually it will be a git repository whose current revision has been pushed upstream.
