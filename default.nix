@@ -188,7 +188,7 @@ rec {
           sslConfig = {
             hostName = sslHost;
             adminEmail = sslEmail;
-          #   subdomains = [ "www" ];
+            subdomains = [ ];
           };
         };
     in nixos {
