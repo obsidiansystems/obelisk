@@ -26,8 +26,17 @@ import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
-deployInit :: MonadObelisk m => ThunkPtr -> FilePath -> FilePath -> FilePath -> [String] -> m ()
-deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
+deployInit
+  :: MonadObelisk m
+  => ThunkPtr
+  -> FilePath
+  -> FilePath
+  -> FilePath
+  -> [String] -- ^ hostnames
+  -> String -- ^ ssl hostname
+  -> String -- ^ ssl email
+  -> m ()
+deployInit thunkPtr configDir deployDir sshKeyPath hostnames sslHostname sslEmail = do
   hasConfigDir <- liftIO $ do
     createDirectoryIfMissing True deployDir
     doesDirectoryExist configDir
@@ -37,9 +46,11 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames = do
   callProcessAndLogOutput (Notice, Error) $
     cp [sshKeyPath, localKey]
   liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
-  liftIO $ writeFile (deployDir </> "backend_hosts") $ unlines hostnames
-  forM_ hostnames $ \hostname -> do
-    putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
+  writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
+  writeDeployConfig deployDir "ssl_host" sslHostname
+  writeDeployConfig deployDir "ssl_email" sslEmail
+  forM_ hostnames $ \hostname ->
+    -- Note: we can't use a spinner here as this function will prompt the user.
     verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
   when hasConfigDir $ do
     callProcessAndLogOutput (Notice, Error) $
@@ -61,8 +72,9 @@ setupObeliskImpl deployDir = do
 
 deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
-  let backendHosts = deployPath </> "backend_hosts"
-  host <- liftIO $ fmap (T.unpack . T.strip) $ T.readFile backendHosts
+  host <- readDeployConfig deployPath "backend_hosts"
+  sslHost <- readDeployConfig deployPath "ssl_host"
+  sslEmail <- readDeployConfig deployPath "ssl_email"
   let srcPath = deployPath </> "src"
       build = do
         builders <- getNixBuilders
@@ -72,7 +84,11 @@ deployPush deployPath getNixBuilders = do
             , _target_attr = Just "server"
             }
           , _nixBuildConfig_outLink = OutLink_None
-          , _nixBuildConfig_args = pure $ Arg "hostName" host
+          , _nixBuildConfig_args =
+              [ Arg "hostName" host
+              , Arg "sslHost" sslHost
+              , Arg "sslEmail" sslEmail
+              ]
           , _nixBuildConfig_builders = builders
           }
         return $ listToMaybe $ lines buildOutput
@@ -116,6 +132,7 @@ deployPush deployPath getNixBuilders = do
           ["-C", deployPath, "add", "."]
         callProcessAndLogOutput (Debug, Error) $ proc "git"
           ["-C", deployPath, "commit", "-m", "New deployment"]
+    putLog Notice $ "Deployed => " <> T.pack sslHost
   where
     callProcess' envMap cmd args = do
       processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
@@ -132,6 +149,14 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   unless exists $ failWith "ob test should be run inside of a deploy directory"
   result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
+
+-- | Simplified deployment configuration mechanism. At one point we may revisit this.
+writeDeployConfig :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
+writeDeployConfig deployDir fname = liftIO . writeFile (deployDir </> fname)
+
+readDeployConfig :: MonadObelisk m => FilePath -> FilePath -> m String
+readDeployConfig deployDir fname = liftIO $ do
+  fmap (T.unpack . T.strip) $ T.readFile $ deployDir </> fname
 
 verifyHostKey :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
 verifyHostKey knownHostsPath keyPath hostName =
