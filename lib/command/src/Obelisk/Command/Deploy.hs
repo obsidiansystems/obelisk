@@ -36,7 +36,7 @@ deployInit
   -> String -- ^ ssl hostname
   -> String -- ^ ssl email
   -> m ()
-deployInit thunkPtr configDir deployDir sshKeyPath hostnames sslHostname sslEmail = do
+deployInit thunkPtr configDir deployDir sshKeyPath hostnames sslHostname adminEmail = do
   hasConfigDir <- liftIO $ do
     createDirectoryIfMissing True deployDir
     doesDirectoryExist configDir
@@ -48,7 +48,7 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames sslHostname sslEmai
   liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
   writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
   writeDeployConfig deployDir "ssl_host" sslHostname
-  writeDeployConfig deployDir "ssl_email" sslEmail
+  writeDeployConfig deployDir "admin_email" adminEmail
   forM_ hostnames $ \hostname -> do
     putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
     -- Note: we can't use a spinner here as this function will prompt the user.
@@ -75,7 +75,7 @@ deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
   host <- readDeployConfig deployPath "backend_hosts"
   sslHost <- readDeployConfig deployPath "ssl_host"
-  sslEmail <- readDeployConfig deployPath "ssl_email"
+  adminEmail <- readDeployConfig deployPath "admin_email"
   let srcPath = deployPath </> "src"
       build = do
         builders <- getNixBuilders
@@ -88,7 +88,7 @@ deployPush deployPath getNixBuilders = do
           , _nixBuildConfig_args =
               [ Arg "hostName" host
               , Arg "sslHost" sslHost
-              , Arg "sslEmail" sslEmail
+              , Arg "adminEmail" adminEmail
               ]
           , _nixBuildConfig_builders = builders
           }
