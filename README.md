@@ -108,8 +108,8 @@ Your project directory must be "thunkable", i.e. something on which `ob thunk pa
 cd ~/code/myapp
 EC2HOST=ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
 SSLHOST=mysite.com 
-SSLEMAIL=myname@mysite.com
-ob deploy init --ssh-key ~/myaws.pem --hostname $EC2HOST --ssl-host $SSLHOST --ssl-email $SSLEMAIL ~/code/myapp-deploy
+EMAIL=myname@mysite.com
+ob deploy init --ssh-key ~/myaws.pem --hostname $EC2HOST --ssl-hostname $SSLHOST --admin-email $EMAIL ~/code/myapp-deploy
 ```
 
 Then go to that created deployment configuration directory, and initiate the deployment:
