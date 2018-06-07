@@ -218,20 +218,19 @@ rec {
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
-    let assets = processAssets { src = base + "/static"; };
-        configPath = base + "/config";
+    let configPath = base + "/config";
         projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
                           , packages ? {}
                           , overrides ? _: _: {}
+                          , static ? base + /static
                           }:
               let frontendName = "frontend";
                   backendName = "backend";
                   commonName = "common";
                   staticName = "static";
-                  staticPath = base + "/static";
-                  assets = processAssets { src = base + "/static"; };
+                  assets = processAssets { src = static; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
@@ -262,13 +261,13 @@ rec {
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
+                    ${if builtins.pathExists static then "assets" else null} = assets.symlinked;
                   } // android;
                 };
                 ios = {
                   ${if ios == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
+                    ${if builtins.pathExists static then "staticSrc" else null} = assets.symlinked;
                   } // ios;
                 };
               };
