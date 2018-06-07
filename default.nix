@@ -273,10 +273,10 @@ rec {
                 };
               };
           in mkProject (projectDefinition args));
+      exe = serverExe (projectOut "x86_64-linux").ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
     in projectOut system // {
-      server = { hostName }:
-        let exe = serverExe (projectOut "x86_64-linux").ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
-        in server exe hostName;
+      inherit exe;
+      server = { hostName }: server exe hostName;
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
