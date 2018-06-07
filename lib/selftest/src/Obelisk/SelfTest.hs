@@ -9,7 +9,7 @@ import Control.Monad.IO.Class
 import Data.Bool (bool)
 import Data.Function (fix)
 import Data.Maybe (isJust)
-import Data.Semigroup ((<>))
+import Data.Semigroup (Semigroup, (<>))
 import qualified Data.Set as Set
 import Data.String
 import Data.Text (Text)
@@ -38,6 +38,18 @@ data ObRunState
   | ObRunState_BackendStarted Text -- Port of backend
   deriving (Eq, Show)
 
+doubleQuotes :: (IsString a, Semigroup a) => a -> a
+doubleQuotes s = "\"" <> s <> "\""
+
+commit :: Text -> Sh ()
+commit msg = void $ run "git"
+  [ "commit"
+  , "--no-gpg-sign"
+  , "--allow-empty"
+  , "-m"
+  , doubleQuotes msg
+  ]
+
 main :: IO ()
 main = do
   isVerbose <- getArgs >>= \case
@@ -60,13 +72,11 @@ main = do
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
           assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
 
-          doubleQuotes s = "\"" <> s <> "\""
-
           revParseHead = T.strip <$> run "git" ["rev-parse", "HEAD"]
 
           commitAll = do
             run "git" ["add", "."]
-            run "git" ["commit", "--allow-empty", "-m", doubleQuotes "checkpoint"]
+            commit "checkpoint"
             revParseHead
 
           thunk  = ".obelisk/impl"
@@ -200,7 +210,7 @@ testThunkPack path = withTempFile (T.unpack $ toTextIgnore path) "test-file" $ \
   git ["add", T.pack file]
   -- Uncommitted files (staged)
   ensureThunkPackFails "unsaved modifications"
-  git ["commit", "-m", "test commit"]
+  chdir path $ commit "test commit"
   -- Non-pushed commits in any branch
   ensureThunkPackFails "not been pushed"
   -- Uncommitted files (unstaged)
