@@ -16,17 +16,13 @@ library
   ghc-options: -Wall
 
 executable backend
-  main-is: main.hs
-  hs-source-dirs: src
+  main-is: Main.hs
+  hs-source-dirs: src-bin
   if impl(ghcjs)
     buildable: False
   build-depends: base
                , backend
-               , common
-               , frontend
                , lens
                , modern-uri
-               , obelisk-backend
                , obelisk-executable-config
-               , obelisk-executable-config-inject
                , text

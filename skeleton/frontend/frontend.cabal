@@ -15,13 +15,10 @@ library
   ghc-options: -Wall
 
 executable frontend
-  main-is: main.hs
-  hs-source-dirs: src
+  main-is: Main.hs
+  hs-source-dirs: src-bin
   build-depends: base
-               , common
                , reflex-dom
-               , static
-               , text
                , frontend
   --TODO: Make these ghc-options optional
   ghc-options: -threaded
