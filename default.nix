@@ -273,10 +273,12 @@ rec {
                 };
               };
           in mkProject (projectDefinition args));
+      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
+      linuxserver = serverOn "x86_64-linux";
     in projectOut system // {
+      inherit linuxserver;
       server = { hostName, sslHost, adminEmail }:
-        let exe = serverExe (projectOut "x86_64-linux").ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
-        in server exe hostName sslHost adminEmail;
+        server linuxserver hostName sslHost adminEmail;
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
