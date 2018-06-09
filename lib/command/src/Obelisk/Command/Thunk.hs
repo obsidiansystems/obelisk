@@ -693,7 +693,7 @@ getThunkPtr' checkClean thunkDir upstream = do
         [remoteMergeRev] <- fmap T.lines $ readGitProcess thunkDir
           ["merge-base", T.unpack localRev, "remotes/" <> T.unpack rm <> "/" <> T.unpack hd]
         case remoteMergeRev == localRev of
-          False -> failWith $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
+          False -> failWith $ mconcat [ "thunk pack: branch ", hd, " has not been pushed to ", rm ]
           True -> return ()
 
     --We assume it's safe to pack the thunk at this point
