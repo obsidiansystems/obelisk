@@ -678,6 +678,11 @@ getThunkPtr' checkClean thunkDir upstream = do
           ] ++ T.lines stashOutput
       True -> return ()
 
+    b <- readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
+    isBranchPushed thunkDir b upstream >>= \case
+      False -> failWith $ mconcat ["thunk pack: current branch (", b, ") has not been pushed to requested remote: ", upstream]
+      True -> return ()
+
     --Check whether all local heads are pushed
     repoHeads <- T.lines <$> readGitProcess thunkDir ["for-each-ref", "--format=%(refname:short)", "refs/heads/"]
     remotes <- T.lines <$> readGitProcess thunkDir ["remote"]
@@ -687,14 +692,12 @@ getThunkPtr' checkClean thunkDir upstream = do
       Just _ -> return ()
     -- iterate over cartesian product
     when checkClean $ forM_ repoHeads $ \hd -> do
-      [localRev] <- T.lines <$> readGitProcess thunkDir ["rev-parse", T.unpack hd]
-      forM_ remotes $ \rm -> do
-        --TODO: The error you get if a branch isn't pushed anywhere could be made more user friendly
-        [remoteMergeRev] <- fmap T.lines $ readGitProcess thunkDir
-          ["merge-base", T.unpack localRev, "remotes/" <> T.unpack rm <> "/" <> T.unpack hd]
-        case remoteMergeRev == localRev of
-          False -> failWith $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
-          True -> return ()
+      let failUnpushed to = failWith $ mconcat [ "thunk pack: branch ", hd, " has not been pushed to ", fromMaybe "any remote" to]
+      filterM (isBranchPushed thunkDir hd) remotes >>= \case
+        [] -> case remotes of
+          [x] -> failUnpushed $ Just x
+          _   -> failUnpushed Nothing
+        _ -> return ()
 
     --We assume it's safe to pack the thunk at this point
     [remoteUri'] <- fmap T.lines $ readGitProcess thunkDir ["config", "--get", "remote." <> T.unpack upstream <> ".url"]
@@ -774,6 +777,17 @@ getThunkPtr' checkClean thunkDir upstream = do
         , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
         }
       }
+
+isBranchPushed :: MonadObelisk m => FilePath -> Text -> Text -> m Bool
+isBranchPushed thunkDir hd rm = do
+  hasBranch <- not . null . T.lines <$> readGitProcess thunkDir ["ls-remote", "--heads", T.unpack rm, T.unpack hd]
+  case hasBranch of
+    False -> pure False
+    True  -> do
+      [localRev] <- T.lines <$> readGitProcess thunkDir ["rev-parse", T.unpack hd]
+      [remoteMergeRev] <- fmap T.lines $ readGitProcess thunkDir
+        ["merge-base", T.unpack localRev, "remotes/" <> T.unpack rm <> "/" <> T.unpack hd]
+      pure $ remoteMergeRev == localRev
 
 parseGitUri :: Text -> Maybe URI
 parseGitUri x = parseURIReference (T.unpack x) <|> parseSshShorthand x
