@@ -106,11 +106,18 @@ Your project directory must be "thunkable", i.e. something on which `ob thunk pa
 
 ```
 cd ~/code/myapp
-EC2HOST=ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
-SSLHOST=mysite.com 
-EMAIL=myname@mysite.com
-ob deploy init --ssh-key ~/myaws.pem --hostname $EC2HOST --ssl-hostname $SSLHOST --admin-email $EMAIL ~/code/myapp-deploy
+SERVER=ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
+ROUTE=https://myapp.com   # Publicly accessible route to your app
+EMAIL=myname@myapp.com
+ob deploy init \
+  --ssh-key ~/myaws.pem \
+  --hostname $SERVER \
+  --route $ROUTE \
+  --admin-email $EMAIL \
+  ~/code/myapp-deploy
 ```
+
+NOTE: HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
 
 Then go to that created deployment configuration directory, and initiate the deployment:
 
