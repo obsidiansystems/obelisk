@@ -98,10 +98,10 @@ deployPush deployPath getNixBuilders = do
             , _target_attr = Just "server"
             }
           , _nixBuildConfig_outLink = OutLink_None
-          , _nixBuildConfig_args =
-            [ Arg "hostName" host
-            , Arg "adminEmail" adminEmail
-            , Arg "sslHost" $ fromMaybe "" sslHost
+          , _nixBuildConfig_args = catMaybes
+            [ Just $ Arg "hostName" host
+            , Just $ Arg "adminEmail" adminEmail
+            , Arg "sslHost" <$> sslHost
             ]
           , _nixBuildConfig_builders = builders
           }
