@@ -183,7 +183,7 @@ rec {
   server = { exe, hostName, adminEmail, sslHost ? null }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
-        # https is enabled unless sslHost is empty string
+        # https is enabled unless sslHost is null
         extraConfig = if sslHost == null then {} else {
           sslConfig = {
             hostName = sslHost;
