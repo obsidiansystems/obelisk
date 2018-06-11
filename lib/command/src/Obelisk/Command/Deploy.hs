@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Deploy where
 
+import Control.Lens
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits
@@ -18,6 +19,8 @@ import System.Environment (getEnvironment)
 import System.FilePath
 import System.Posix.Files
 import System.Process (delegate_ctlc, env, proc)
+import qualified Text.URI as URI
+import Text.URI.Lens
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
@@ -33,37 +36,39 @@ deployInit
   -> FilePath
   -> FilePath
   -> [String] -- ^ hostnames
-  -> String -- ^ ssl hostname
-  -> String -- ^ ssl email
+  -> String -- ^ route
+  -> String -- ^ admin email
+  -> Bool -- ^ disable https
   -> m ()
-deployInit thunkPtr configDir deployDir sshKeyPath hostnames sslHostname adminEmail = do
-  hasConfigDir <- liftIO $ do
+deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail disableHttps = do
+  hasConfigDir <- withSpinner ("Preparing " <> T.pack deployDir) $ liftIO $ do
     createDirectoryIfMissing True deployDir
     doesDirectoryExist configDir
   localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
     False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
     True -> pure $ deployDir </> "ssh_key"
+  unless disableHttps $ do
+    void $ getSslHostFromRoute route -- make sure that hostname is present
   callProcessAndLogOutput (Notice, Error) $
     cp [sshKeyPath, localKey]
   liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
-  writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
-  writeDeployConfig deployDir "ssl_host" sslHostname
-  writeDeployConfig deployDir "admin_email" adminEmail
   forM_ hostnames $ \hostname -> do
     putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
     -- Note: we can't use a spinner here as this function will prompt the user.
     verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
-  when hasConfigDir $ do
+  when hasConfigDir $ withSpinner "Importing project configuration" $ do
     callProcessAndLogOutput (Notice, Error) $
-      cp
-        [ "-r"
-        , "-T"
-        , configDir
-        , deployDir </> "config"
-        ]
-  liftIO $ createThunk (deployDir </> "src") thunkPtr
-  liftIO $ setupObeliskImpl deployDir
-  initGit deployDir
+      cp [ "-r" , "-T" , configDir , deployDir </> "config"]
+  withSpinner "Writing deployment configuration" $ do
+    writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
+    writeDeployConfig deployDir "disable_https" $ show disableHttps
+    writeDeployConfig deployDir "admin_email" adminEmail
+    writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
+  withSpinner "Creating source thunk" $ liftIO $ do
+    createThunk (deployDir </> "src") thunkPtr
+    setupObeliskImpl deployDir
+  withSpinner "Initializing git repository" $
+    initGit deployDir
 
 setupObeliskImpl :: FilePath -> IO ()
 setupObeliskImpl deployDir = do
@@ -74,8 +79,10 @@ setupObeliskImpl deployDir = do
 deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
   host <- readDeployConfig deployPath "backend_hosts"
-  sslHost <- readDeployConfig deployPath "ssl_host"
   adminEmail <- readDeployConfig deployPath "admin_email"
+  disableHttps <- read <$> readDeployConfig deployPath "disable_https"
+  route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
+  sslHost <- if disableHttps then pure Nothing else Just <$> getSslHostFromRoute route
   let srcPath = deployPath </> "src"
       build = do
         builders <- getNixBuilders
@@ -86,10 +93,10 @@ deployPush deployPath getNixBuilders = do
             }
           , _nixBuildConfig_outLink = OutLink_None
           , _nixBuildConfig_args =
-              [ Arg "hostName" host
-              , Arg "sslHost" sslHost
-              , Arg "adminEmail" adminEmail
-              ]
+            [ Arg "hostName" host
+            , Arg "adminEmail" adminEmail
+            , Arg "sslHost" $ fromMaybe "" sslHost
+            ]
           , _nixBuildConfig_builders = builders
           }
         return $ listToMaybe $ lines buildOutput
@@ -133,7 +140,9 @@ deployPush deployPath getNixBuilders = do
           ["-C", deployPath, "add", "."]
         callProcessAndLogOutput (Debug, Error) $ proc "git"
           ["-C", deployPath, "commit", "-m", "New deployment"]
-    putLog Notice $ "Deployed => " <> T.pack sslHost
+    putLog Notice $
+      (if disableHttps then "Deployed (without https) => " else "Deployed => ")
+      <> T.pack route
   where
     callProcess' envMap cmd args = do
       processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
@@ -173,3 +182,21 @@ sshArgs knownHostsPath keyPath askHostKeyCheck =
   , "-o", "StrictHostKeyChecking=" <> if askHostKeyCheck then "ask" else "yes"
   , "-i", keyPath
   ]
+
+-- | Get the hostname from a ssl route
+--
+-- Fail if the route is invalid (i.e, no host present or scheme is not https)
+getSslHostFromRoute :: MonadObelisk m => String -> m String
+getSslHostFromRoute route = do
+  uri <- URI.mkURI $ T.strip $ T.pack route
+  -- TODO: find a way to simplify this code
+  case uri ^? uriScheme of
+    Nothing -> failWith "Missing scheme (relative route) in route"
+    Just scheme -> case scheme of
+      Just s -> case URI.unRText s of
+        "https" -> pure ()
+        _ -> failWith $ "Invalid scheme (not https)" -- <> URI.unRText s
+      _ -> failWith $ "Missing scheme in route" -- <> URI.unRText s
+  case uri ^? uriAuthority . _Right . authHost of
+    Nothing -> failWith "Missing hostname in route"
+    Just sslHost -> return $ T.unpack $ URI.unRText sslHost
