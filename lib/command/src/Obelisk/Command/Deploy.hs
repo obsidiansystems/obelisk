@@ -6,6 +6,7 @@ module Obelisk.Command.Deploy where
 
 import Control.Lens
 import Control.Monad
+import Control.Monad.Catch (Exception (displayException), throwM, try)
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits
 import Data.Default
@@ -19,6 +20,7 @@ import System.Environment (getEnvironment)
 import System.FilePath
 import System.Posix.Files
 import System.Process (delegate_ctlc, env, proc)
+import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
 
@@ -41,17 +43,20 @@ deployInit
   -> Bool -- ^ disable https
   -> m ()
 deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail disableHttps = do
-  hasConfigDir <- withSpinner ("Preparing " <> T.pack deployDir) $ liftIO $ do
-    createDirectoryIfMissing True deployDir
-    doesDirectoryExist configDir
-  localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
-    False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
-    True -> pure $ deployDir </> "ssh_key"
+  (hasConfigDir, localKey) <- withSpinner ("Preparing " <> T.pack deployDir) $ do
+    hasConfigDir <- liftIO $ do
+      createDirectoryIfMissing True deployDir
+      doesDirectoryExist configDir
+    localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
+      False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
+      True -> pure $ deployDir </> "ssh_key"
+    callProcessAndLogOutput (Notice, Error) $
+      cp [sshKeyPath, localKey]
+    liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
+    return $ (hasConfigDir, localKey)
   unless disableHttps $ do
-    void $ getSslHostFromRoute route -- make sure that hostname is present
-  callProcessAndLogOutput (Notice, Error) $
-    cp [sshKeyPath, localKey]
-  liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
+    withSpinner "Validating configuration" $ do
+      void $ getSslHostFromRoute route -- make sure that hostname is present
   forM_ hostnames $ \hostname -> do
     putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
     -- Note: we can't use a spinner here as this function will prompt the user.
@@ -64,10 +69,10 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail di
     writeDeployConfig deployDir "disable_https" $ show disableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
     writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
-  withSpinner "Creating source thunk" $ liftIO $ do
+  withSpinner "Creating source thunk (./src)" $ liftIO $ do
     createThunk (deployDir </> "src") thunkPtr
     setupObeliskImpl deployDir
-  withSpinner "Initializing git repository" $
+  withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
 setupObeliskImpl :: FilePath -> IO ()
@@ -183,20 +188,40 @@ sshArgs knownHostsPath keyPath askHostKeyCheck =
   , "-i", keyPath
   ]
 
--- | Get the hostname from a ssl route
+-- common/route validation
+-- TODO: move these to executable-config once the typed-config stuff is done.
+
+data InvalidRoute
+  = InvalidRoute_NotHttps URI
+  | InvalidRoute_MissingScheme URI
+  | InvalidRoute_MissingHost URI
+  deriving Show
+
+instance Exception InvalidRoute where
+  displayException = \case
+    InvalidRoute_MissingScheme uri -> route uri "has no URI scheme"
+    InvalidRoute_NotHttps uri -> route uri "should be HTTPS"
+    InvalidRoute_MissingHost uri -> route uri "should contain a hostname"
+    where
+      route uri err = T.unpack $ "Route (" <> URI.render uri <> ") " <> err
+
+-- | Get the hostname from a https route
 --
 -- Fail if the route is invalid (i.e, no host present or scheme is not https)
 getSslHostFromRoute :: MonadObelisk m => String -> m String
 getSslHostFromRoute route = do
-  uri <- URI.mkURI $ T.strip $ T.pack route
-  -- TODO: find a way to simplify this code
-  case uri ^? uriScheme of
-    Nothing -> failWith "Missing scheme (relative route) in route"
-    Just scheme -> case scheme of
-      Just s -> case URI.unRText s of
-        "https" -> pure ()
-        _ -> failWith $ "Invalid scheme (not https)" -- <> URI.unRText s
-      _ -> failWith $ "Missing scheme in route" -- <> URI.unRText s
-  case uri ^? uriAuthority . _Right . authHost of
-    Nothing -> failWith "Missing hostname in route"
-    Just sslHost -> return $ T.unpack $ URI.unRText sslHost
+  result :: Either InvalidRoute String <- try f
+  either (failWith . T.pack . displayException) pure result
+  where
+    f = do
+      uri <- URI.mkURI $ T.strip $ T.pack route
+      case uri ^? uriScheme of
+        Nothing -> throwM $ InvalidRoute_MissingScheme uri
+        Just scheme -> case scheme of
+          Just s -> case URI.unRText s of
+            "https" -> pure ()
+            _ -> throwM $ InvalidRoute_NotHttps uri
+          _ -> throwM $ InvalidRoute_MissingScheme uri
+      case uri ^? uriAuthority . _Right . authHost of
+        Nothing -> throwM $ InvalidRoute_MissingHost uri
+        Just sslHost -> return $ T.unpack $ URI.unRText sslHost
