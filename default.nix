@@ -180,17 +180,22 @@ rec {
       ln -s ${compressedJs frontend} $out/frontend.jsexe
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
-  server = exe: hostName: sslHost: adminEmail:
+  server = { exe, hostName, adminEmail, sslHost }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
-        https = (import lib/https {}).module {
-          backendPort = 8000; # TODO read from config
+        # https is enabled unless sslHost is empty string
+        extraConfig = if sslHost == "" then {} else {
           sslConfig = {
             hostName = sslHost;
             adminEmail = adminEmail;
             subdomains = [ ];
           };
         };
+        httpsConfig = {
+          backendPort = 8000; # TODO: read from config
+        } // extraConfig;
+        # TODO: switch from lib/https to nixos builtin ssl config
+        https = (import lib/https {}).module httpsConfig;
     in nixos {
       inherit system;
       configuration = args: {
@@ -286,9 +291,9 @@ rec {
               };
           in mkProject (projectDefinition args));
     in projectOut system // {
-      server = { hostName, sslHost, adminEmail }:
-        let exe = serverExe (projectOut "x86_64-linux").ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
-        in server exe hostName sslHost adminEmail;
+      inherit linuxserver;
+      server = args@{ hostName, adminEmail, sslHost }:
+        server (args // { exe = linuxserver;});
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
