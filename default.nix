@@ -168,11 +168,11 @@ rec {
       ln -s ${compressedJs frontend} $out/frontend.jsexe
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
-  server = { exe, hostName, adminEmail, sslHost }:
+  server = { exe, hostName, adminEmail, sslHost ? null }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
         # https is enabled unless sslHost is empty string
-        extraConfig = if sslHost == "" then {} else {
+        extraConfig = if sslHost == null then {} else {
           sslConfig = {
             hostName = sslHost;
             adminEmail = adminEmail;
@@ -281,7 +281,7 @@ rec {
       linuxserver = serverOn "x86_64-linux";
     in projectOut system // {
       inherit linuxserver;
-      server = args@{ hostName, adminEmail, sslHost }:
+      server = args@{ hostName, adminEmail, sslHost ? null}:
         server (args // { exe = linuxserver;});
       obelisk = import (base + "/.obelisk/impl") {};
     };
