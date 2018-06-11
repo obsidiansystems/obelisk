@@ -180,7 +180,7 @@ rec {
       ln -s ${compressedJs frontend} $out/frontend.jsexe
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
-  server = { exe, hostName, adminEmail, sslHost ? null }:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
         backendPort = 8000;
@@ -190,24 +190,23 @@ rec {
         imports = [
           (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
         ];
-        # TODO: Conditionally enable https
         networking = {
           inherit hostName;
-          firewall.allowedTCPPorts = [ 80 443 ];
+          firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
         };
         services.nginx = {
           enable = true;
-          virtualHosts."${sslHost}" = {
-            enableACME = true;
-            forceSSL = true;
+          virtualHosts."${routeHost}" = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
             locations."/" = {
               proxyPass = "http://localhost:" + toString backendPort;
             };
           };
         };
-        security.acme.certs = {
-          "${sslHost}".email = adminEmail;
-        };
+        security.acme.certs = if enableHttps then {
+          "${routeHost}".email = adminEmail;
+        } else { };
         systemd.services.backend = {
           wantedBy = [ "multi-user.target" ];
           after = [ "network.target" ];
@@ -296,7 +295,7 @@ rec {
           in mkProject (projectDefinition args));
     in projectOut system // {
       inherit linuxserver;
-      server = args@{ hostName, adminEmail, sslHost ? null}:
+      server = args@{ hostName, adminEmail, routeHost, enableHttps }:
         server (args // { exe = linuxserver;});
       obelisk = import (base + "/.obelisk/impl") {};
     };

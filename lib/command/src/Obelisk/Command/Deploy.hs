@@ -55,9 +55,8 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail en
       cp [sshKeyPath, localKey]
     liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
     return $ (hasConfigDir, localKey)
-  when enableHttps $ do
-    withSpinner "Validating configuration" $ do
-      void $ getSslHostFromRoute route -- make sure that hostname is present
+  withSpinner "Validating configuration" $ do
+    void $ getHostFromRoute enableHttps route -- make sure that hostname is present
   forM_ hostnames $ \hostname -> do
     putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
     -- Note: we can't use a spinner here as this function will prompt the user.
@@ -88,7 +87,7 @@ deployPush deployPath getNixBuilders = do
   adminEmail <- readDeployConfig deployPath "admin_email"
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
   route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
-  sslHost <- if enableHttps then Just <$> getSslHostFromRoute route else pure Nothing
+  routeHost <- getHostFromRoute enableHttps route
   let srcPath = deployPath </> "src"
       build = do
         builders <- getNixBuilders
@@ -98,10 +97,11 @@ deployPush deployPath getNixBuilders = do
             , _target_attr = Just "server"
             }
           , _nixBuildConfig_outLink = OutLink_None
-          , _nixBuildConfig_args = catMaybes
-            [ Just $ Arg "hostName" host
-            , Just $ Arg "adminEmail" adminEmail
-            , Arg "sslHost" <$> sslHost
+          , _nixBuildConfig_args =
+            [ strArg "hostName" host
+            , strArg "adminEmail" adminEmail
+            , strArg "routeHost" routeHost
+            , boolArg "enableHttps" enableHttps
             ]
           , _nixBuildConfig_builders = builders
           }
@@ -211,17 +211,27 @@ instance Exception InvalidRoute where
 -- | Get the hostname from a https route
 --
 -- Fail if the route is invalid (i.e, no host present or scheme is not https)
-getSslHostFromRoute :: MonadObelisk m => String -> m String
-getSslHostFromRoute route = do
+getHostFromRoute
+  :: MonadObelisk m
+  => Bool  -- ^ Ensure https?
+  -> String
+  -> m String
+getHostFromRoute mustBeHttps route = do
   result :: Either InvalidRoute String <- try $ do
-    validateCommonRouteAndGetHost =<< URI.mkURI (T.strip $ T.pack route)
+    validateCommonRouteAndGetHost mustBeHttps =<< URI.mkURI (T.strip $ T.pack route)
   either (failWith . T.pack . displayException) pure result
 
-validateCommonRouteAndGetHost :: (MonadThrow m, MonadObelisk m) => URI -> m String
-validateCommonRouteAndGetHost uri = do
+validateCommonRouteAndGetHost
+  :: (MonadThrow m, MonadObelisk m)
+  => Bool -- ^ Ensure https?
+  -> URI
+  -> m String
+validateCommonRouteAndGetHost mustBeHttps uri = do
   case uri ^? uriScheme of
-    Just (Just (URI.unRText -> "https")) -> pure ()
-    Just (Just (URI.unRText -> _s)) -> throwM $ InvalidRoute_NotHttps uri
+    Just (Just (URI.unRText -> s)) -> case (mustBeHttps, s) of
+      (False, _) -> pure ()
+      (True, "https") -> pure ()
+      _ -> throwM $ InvalidRoute_NotHttps uri
     _ -> throwM $ InvalidRoute_MissingScheme uri
   case uri ^. uriPath of
     [] -> pure ()
