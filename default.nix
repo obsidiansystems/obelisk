@@ -183,26 +183,31 @@ rec {
   server = { exe, hostName, adminEmail, sslHost ? null }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
-        # https is enabled unless sslHost is null
-        extraConfig = if sslHost == null then {} else {
-          sslConfig = {
-            hostName = sslHost;
-            adminEmail = adminEmail;
-            subdomains = [ ];
-          };
-        };
-        httpsConfig = {
-          backendPort = 8000;
-        } // extraConfig;
-        https = (import lib/https {}).module httpsConfig;
+        backendPort = 8000;
     in nixos {
       inherit system;
       configuration = args: {
         imports = [
           (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
-          https
         ];
-        networking = { inherit hostName; };
+        # TODO: Conditionally enable https
+        networking = {
+          inherit hostName;
+          firewall.allowedTCPPorts = [ 80 443 ];
+        };
+        services.nginx = {
+          enable = true;
+          virtualHosts."${sslHost}" = {
+            enableACME = true;
+            forceSSL = true;
+            locations."/" = {
+              proxyPass = "http://localhost:" + toString backendPort;
+            };
+          };
+        };
+        security.acme.certs = {
+          "${sslHost}".email = adminEmail;
+        };
         systemd.services.backend = {
           wantedBy = [ "multi-user.target" ];
           after = [ "network.target" ];
