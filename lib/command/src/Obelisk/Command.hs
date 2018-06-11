@@ -169,9 +169,9 @@ deployInitOpts = DeployInitOpts
   <$> strArgument (action "directory" <> metavar "DEPLOYDIR" <> help "Path to a directory that it will create")
   <*> strOption (long "ssh-key" <> action "file" <> metavar "SSHKEY" <> help "Path to an ssh key that it will symlink to")
   <*> some (strOption (long "hostname" <> metavar "HOSTNAME" <> help "hostname of the deployment target"))
-  <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Public URL to your app (comon/route)")
+  <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Publicly accessible URL of your app")
   <*> strOption (long "admin-email" <> metavar "ADMINEMAIL" <> help "Email address where administrative alerts will be sent")
-  <*> flag False True (long "disable-https" <> help "Disable automatic https configuration for the backend")
+  <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
   <*> strOption (long "upstream" <> value "origin" <> metavar "REMOTE" <> help "git remote to use for the src thunk" <> showDefault)
 
 type TeamID = String
@@ -194,7 +194,7 @@ data DeployInitOpts = DeployInitOpts
   , _deployInitOpts_hostname :: [String]
   , _deployInitOpts_route :: String
   , _deployInitOpts_adminEmail :: String
-  , _deployInitOpts_disableHttps :: Bool
+  , _deployInitOpts_enableHttps :: Bool
   , _deployInitOpts_remote :: String
   }
   deriving Show
@@ -367,9 +367,9 @@ ob = \case
           hostname = _deployInitOpts_hostname deployOpts
           route = _deployInitOpts_route deployOpts
           adminEmail = _deployInitOpts_adminEmail deployOpts
-          disableHttps = _deployInitOpts_disableHttps deployOpts
+          enableHttps = _deployInitOpts_enableHttps deployOpts
       deployInit thunkPtr (root </> "config") deployDir
-        sshKeyPath hostname route adminEmail disableHttps
+        sshKeyPath hostname route adminEmail enableHttps
     DeployCommand_Push remoteBuilder -> deployPush "." $ case remoteBuilder of
       Nothing -> pure []
       Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg

@@ -192,9 +192,8 @@ rec {
           };
         };
         httpsConfig = {
-          backendPort = 8000; # TODO: read from config
+          backendPort = 8000;
         } // extraConfig;
-        # TODO: switch from lib/https to nixos builtin ssl config
         https = (import lib/https {}).module httpsConfig;
     in nixos {
       inherit system;

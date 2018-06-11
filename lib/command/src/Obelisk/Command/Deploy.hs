@@ -2,11 +2,12 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns #-}
 module Obelisk.Command.Deploy where
 
 import Control.Lens
 import Control.Monad
-import Control.Monad.Catch (Exception (displayException), throwM, try)
+import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, try)
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits
 import Data.Default
@@ -40,9 +41,9 @@ deployInit
   -> [String] -- ^ hostnames
   -> String -- ^ route
   -> String -- ^ admin email
-  -> Bool -- ^ disable https
+  -> Bool -- ^ enable https
   -> m ()
-deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail disableHttps = do
+deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail enableHttps = do
   (hasConfigDir, localKey) <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     hasConfigDir <- liftIO $ do
       createDirectoryIfMissing True deployDir
@@ -54,7 +55,7 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail di
       cp [sshKeyPath, localKey]
     liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
     return $ (hasConfigDir, localKey)
-  unless disableHttps $ do
+  when enableHttps $ do
     withSpinner "Validating configuration" $ do
       void $ getSslHostFromRoute route -- make sure that hostname is present
   forM_ hostnames $ \hostname -> do
@@ -66,7 +67,7 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail di
       cp [ "-r" , "-T" , configDir , deployDir </> "config"]
   withSpinner "Writing deployment configuration" $ do
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
-    writeDeployConfig deployDir "disable_https" $ show disableHttps
+    writeDeployConfig deployDir "enable_https" $ show enableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
     writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
   withSpinner "Creating source thunk (./src)" $ liftIO $ do
@@ -85,9 +86,9 @@ deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
   host <- readDeployConfig deployPath "backend_hosts"
   adminEmail <- readDeployConfig deployPath "admin_email"
-  disableHttps <- read <$> readDeployConfig deployPath "disable_https"
+  enableHttps <- read <$> readDeployConfig deployPath "enable_https"
   route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
-  sslHost <- if disableHttps then pure Nothing else Just <$> getSslHostFromRoute route
+  sslHost <- if enableHttps then Just <$> getSslHostFromRoute route else pure Nothing
   let srcPath = deployPath </> "src"
       build = do
         builders <- getNixBuilders
@@ -145,9 +146,7 @@ deployPush deployPath getNixBuilders = do
           ["-C", deployPath, "add", "."]
         callProcessAndLogOutput (Debug, Error) $ proc "git"
           ["-C", deployPath, "commit", "-m", "New deployment"]
-    putLog Notice $
-      (if disableHttps then "Deployed (without https) => " else "Deployed => ")
-      <> T.pack route
+    putLog Notice $ "Deployed => " <> T.pack route
   where
     callProcess' envMap cmd args = do
       processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
@@ -195,13 +194,17 @@ data InvalidRoute
   = InvalidRoute_NotHttps URI
   | InvalidRoute_MissingScheme URI
   | InvalidRoute_MissingHost URI
+  | InvalidRoute_HasPort URI
+  | InvalidRoute_HasPath URI
   deriving Show
 
 instance Exception InvalidRoute where
   displayException = \case
-    InvalidRoute_MissingScheme uri -> route uri "has no URI scheme"
-    InvalidRoute_NotHttps uri -> route uri "should be HTTPS"
-    InvalidRoute_MissingHost uri -> route uri "should contain a hostname"
+    InvalidRoute_MissingScheme uri -> route uri "must have an URI scheme"
+    InvalidRoute_NotHttps uri -> route uri "must be HTTPS"
+    InvalidRoute_MissingHost uri -> route uri "must contain a hostname"
+    InvalidRoute_HasPort uri -> route uri "cannot specify port"
+    InvalidRoute_HasPath uri -> route uri "cannot contain path"
     where
       route uri err = T.unpack $ "Route (" <> URI.render uri <> ") " <> err
 
@@ -210,18 +213,22 @@ instance Exception InvalidRoute where
 -- Fail if the route is invalid (i.e, no host present or scheme is not https)
 getSslHostFromRoute :: MonadObelisk m => String -> m String
 getSslHostFromRoute route = do
-  result :: Either InvalidRoute String <- try f
+  result :: Either InvalidRoute String <- try $ do
+    validateCommonRouteAndGetHost =<< URI.mkURI (T.strip $ T.pack route)
   either (failWith . T.pack . displayException) pure result
-  where
-    f = do
-      uri <- URI.mkURI $ T.strip $ T.pack route
-      case uri ^? uriScheme of
-        Nothing -> throwM $ InvalidRoute_MissingScheme uri
-        Just scheme -> case scheme of
-          Just s -> case URI.unRText s of
-            "https" -> pure ()
-            _ -> throwM $ InvalidRoute_NotHttps uri
-          _ -> throwM $ InvalidRoute_MissingScheme uri
-      case uri ^? uriAuthority . _Right . authHost of
-        Nothing -> throwM $ InvalidRoute_MissingHost uri
-        Just sslHost -> return $ T.unpack $ URI.unRText sslHost
+
+validateCommonRouteAndGetHost :: (MonadThrow m, MonadObelisk m) => URI -> m String
+validateCommonRouteAndGetHost uri = do
+  case uri ^? uriScheme of
+    Just (Just (URI.unRText -> "https")) -> pure ()
+    Just (Just (URI.unRText -> _s)) -> throwM $ InvalidRoute_NotHttps uri
+    _ -> throwM $ InvalidRoute_MissingScheme uri
+  case uri ^. uriPath of
+    [] -> pure ()
+    _path -> throwM $ InvalidRoute_HasPath uri
+  case uri ^? uriAuthority . _Right . authPort of
+    Just (Just _port) -> throwM $ InvalidRoute_HasPort uri
+    _ -> pure ()
+  case uri ^? uriAuthority . _Right . authHost of
+    Nothing -> throwM $ InvalidRoute_MissingHost uri
+    Just sslHost -> return $ T.unpack $ URI.unRText sslHost
