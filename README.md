@@ -128,7 +128,7 @@ ob deploy push
 
 `ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance.
 
-At this point you are done. Your app will be accessible at `https://${SSLHOST}`.
+At this point you are done. Your app will be accessible at `${ROUTE}`.
 
 ### Deploying an updated version
 
