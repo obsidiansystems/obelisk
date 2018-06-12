@@ -24,6 +24,7 @@ library
     , streaming-commons
     , text
     , wai
+    , wai-websockets
     , warp
     , websockets
   exposed-modules:

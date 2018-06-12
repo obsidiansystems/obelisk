@@ -25,6 +25,7 @@ import Network.Wai (Application)
 import qualified Network.Wai as W
 import Network.Wai.Handler.Warp
 import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
+import Network.Wai.Handler.WebSockets (isWebSocketsReq)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Obelisk.ExecutableConfig (get)
@@ -80,10 +81,17 @@ obeliskApp :: ConnectionOptions -> StaticWidget () () -> Widget () () -> Applica
 obeliskApp opts h b backend = do
   html <- BSLC.fromStrict <$> indexHtml h
   let entryPoint = mainWidget' b >> syncPoint
-  jsaddleOr opts entryPoint $ \req sendResponse -> case (W.requestMethod req, W.pathInfo req) of
+  jsaddle <- jsaddleOr opts entryPoint $ \req sendResponse -> case (W.requestMethod req, W.pathInfo req) of
     ("GET", []) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
     ("GET", ["jsaddle.js"]) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs False
     _ -> backend req sendResponse
+  -- Workaround jsaddleOr wanting to handle all websockets requests without
+  -- having a chance for run to proxy non jsaddle websocket requests to the
+  -- backend.
+  return $ \req sendResponse -> do
+    if isWebSocketsReq req && not (null $ W.pathInfo req)
+      then backend req sendResponse
+      else jsaddle req sendResponse
 
 indexHtml :: StaticWidget () () -> IO ByteString
 indexHtml h = do
