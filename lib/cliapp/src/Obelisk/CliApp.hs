@@ -15,6 +15,7 @@ module Obelisk.CliApp
 
   -- .Spinner
   , withSpinner
+  , withSpinner'
 
   -- .Logging
   , newCliConfig

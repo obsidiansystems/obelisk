@@ -16,6 +16,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.List
 import Data.Maybe (catMaybes)
 import Data.Monoid
+import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import GHC.StaticPtr
@@ -28,13 +29,14 @@ import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
 
 import Obelisk.App
-import Obelisk.CliApp (Severity (..), failWith, getLogLevel, newCliConfig, putLog)
+import Obelisk.CliApp
 import Obelisk.CliApp.Demo (cliDemo)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
-import qualified Obelisk.Command.VmBuilder as VmBuilder
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
+import Obelisk.Command.Upgrade (decideHandOffToProjectOb, upgradeObelisk)
+import qualified Obelisk.Command.VmBuilder as VmBuilder
 
 
 data Args = Args
@@ -87,6 +89,7 @@ data ObCommand
    | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
+   | ObCommand_Upgrade Text (Maybe Text)
    | ObCommand_Internal ObInternal
    deriving Show
 
@@ -119,6 +122,10 @@ obCommand cfg = hsubparser
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
+      , command "upgrade" $
+        info (ObCommand_Upgrade
+              <$> strArgument (action "branch" <> metavar "GITBRANCH" <> help "Git branch of the obelisk to update to")
+              <*> option (maybeReader $ Just . Just . T.pack) (long "migrate-only-from-hash" <> metavar "FROMHASH" <> help "Migrate only (assume obelisk is already updated), and from the given hash" <> showDefault <> value Nothing)) $ progDesc "Upgrade Obelisk in the project"
       ])
   <|> subparser
     (mconcat
@@ -250,7 +257,10 @@ mkObeliskConfig argsCfg = do
     toLogLevel = bool Notice Debug . _args_verbose
 
 getObArgs :: ArgsConfig -> IO Args
-getObArgs cfg = getArgs >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
+getObArgs cfg = getArgs >>= getObArgs' cfg
+
+getObArgs' :: ArgsConfig -> [String] -> IO Args
+getObArgs' cfg as = pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
 main :: IO ()
 main = do
@@ -268,30 +278,55 @@ main' argsCfg = do
     , "logging-level=" <> show logLevel
     ]
 
-  --TODO: We'd like to actually use the parser to determine whether to hand off,
-  --but in the case where this implementation of 'ob' doesn't support all
-  --arguments being passed along, this could fail.  For now, we don't bother
-  --with optparse-applicative until we've done the handoff.
-  myArgs <- liftIO getArgs
-  let go as = do
-        args' <- liftIO $ handleParseResult (execParserPure parserPrefs (argsInfo argsCfg) as)
-        case _args_noHandOffPassed args' of
-          False -> return ()
-          True -> putLog Warning "--no-handoff should only be passed once and as the first argument; ignoring"
-        ob $ _args_command args'
-      handoffAndGo as = findProjectObeliskCommand "." >>= \case
-        Nothing -> go as -- If not in a project, just run ourselves
-        Just impl -> do
-          -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
-          putLog Debug $ "Handing off to " <> T.pack impl
-          liftIO $ executeFile impl False ("--no-handoff" : myArgs) Nothing
-  case myArgs of
-    "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
-    a:as -- Otherwise bash completion would always hand-off even if the user isn't trying to
-      | "--bash-completion" `isPrefixOf` a
-      && "--no-handoff" `elem` as -> go (a:as)
-      | otherwise -> handoffAndGo (a:as)
-    as -> handoffAndGo as
+  let parseArgs = liftIO . getObArgs' argsCfg
+  (main'' parseArgs <=< parseHandoff parseArgs) =<< liftIO getArgs
+
+-- TODO: It looks like zsh completion is broken with the Handoff refactor; fix it.
+main'' :: MonadObelisk m => ([String] -> m Args) -> HandOff m -> m ()
+main'' parseArgs = \case
+  HandOff_Yes as -> findProjectObeliskCommand "." >>= \case
+    Nothing -> do
+      putLog Debug "Not in a project; not handing off"
+      main'' parseArgs $ HandOff_No as
+    Just impl -> do
+      putLog Debug $ "Handing off to project obelisk " <> T.pack impl
+      liftIO $ executeFile impl False ("--no-handoff" : as) Nothing
+  HandOff_Decide handOff as -> do
+    withSpinner'
+      ( "Deciding whether to handoff"
+      , Just . bool
+          "Decided not to handoff to project obelisk"
+          "Decided to handoff to project obelisk"
+      ) handOff >>= \case
+        True -> main'' parseArgs $ HandOff_Yes as
+        False -> main'' parseArgs $ HandOff_No as
+  HandOff_No as -> do
+    putLog Debug $ "Not handing off"
+    args' <- parseArgs as
+    warnIfExtraneousFlag args'
+    ob $ _args_command args'
+  where
+    warnIfExtraneousFlag a = case _args_noHandOffPassed a of
+      False -> return ()
+      True -> putLog Warning $
+        "Ignoring unexpected --no-handoff (should only be passed once and as the first argument)"
+
+data HandOff m
+  = HandOff_Yes [String]  -- Handoff immediately
+  | HandOff_Decide (m Bool) [String]  -- Handoff only if the action returns True
+  | HandOff_No [String]  -- Do not handoff
+
+-- TODO: Do not actually parse CLI arguments during/ before handoff; only do minimal parsing.
+parseHandoff :: MonadObelisk m => ([String] -> m Args) -> [String] -> m (HandOff m)
+parseHandoff parseArgs as = case elem "--no-handoff" as of
+  True ->
+    pure $ HandOff_No $ delete "--no-handoff" as
+  False -> do
+    _args_command <$> parseArgs as >>= \case
+      ObCommand_Upgrade _ _ ->
+        pure $ HandOff_Decide (decideHandOffToProjectOb ".") as
+      _ ->
+        pure $ HandOff_Yes as
 
 ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
@@ -330,6 +365,8 @@ ob = \case
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir (T.pack upstream)
   ObCommand_Repl -> runRepl
+  ObCommand_Upgrade branch migrateOnlyFromHash -> do
+    upgradeObelisk "." branch migrateOnlyFromHash
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)

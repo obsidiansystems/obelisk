@@ -13,18 +13,16 @@ import Control.Monad.Catch (MonadMask)
 
 import Obelisk.CliApp
 
-cliDemo
-  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
-  => m ()
+cliDemo :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m) => m ()
 cliDemo = withSpinner "CLI Demo" $ do
   putLog Notice "This demo will showcase the CLI library functionality"
-  withSpinner "A long-running task" $ do
+  _ <- withSpinner' ("Searching long for something", \c -> Just $ "Discovered " <> T.pack (show c) <> " objects") $ do
     delay
     withSpinner "Nested task" $ do
       delay
       putLog Notice "In nested task"
       withSpinner "Inbetween" $ do
-        withSpinner "Runnning something specific" $ do
+        withSpinner' ("Runnning something specific", const $ Just "Done the specific stuff") $ do
           delay
           putLog Notice "This task has the same name and still works"
         delay
@@ -36,6 +34,7 @@ cliDemo = withSpinner "CLI Demo" $ do
     putLog Notice "This is some info mesage"
     putLog Warning "And now a warning as well"
     delay
+    return (42 :: Integer)
   putLog Notice "Now we start a 2nd spinner, run a couple of process, the last of which fails:"
   withSpinner "Looking around" $ do
     delay

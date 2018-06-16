@@ -17,7 +17,7 @@ import qualified Data.Text as T
 import System.Process (proc)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), readProcessAndLogStderr, withSpinner)
+import Obelisk.CliApp
 
 -- | Where to put nix-build output
 data OutLink
@@ -56,7 +56,7 @@ instance Default NixBuildConfig where
   def = NixBuildConfig def def mempty mempty
 
 nixBuild :: MonadObelisk m => NixBuildConfig -> m FilePath
-nixBuild cfg = withSpinner msg $ do
+nixBuild cfg = withSpinner' ("Running nix-build on " <> desc, const $ Just $ "Built " <> desc) $ do
   readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
     [[path], attrArg, args, outLink, buildersArg]
   where
@@ -70,7 +70,7 @@ nixBuild cfg = withSpinner msg $ do
       OutLink_Default -> []
       OutLink_None -> ["--no-out-link"]
       OutLink_IndirectRoot l -> ["--out-link", l]
-    msg = T.pack $ "Running nix-build on " <> path <> maybe "" (\a -> " [" <> a <> "]") attr
+    desc = T.pack $ path <> maybe "" (\a -> " [" <> a <> "]") attr
     buildersArg = case _nixBuildConfig_builders cfg of
       [] -> []
       builders -> ["--builders", intercalate ";" builders]

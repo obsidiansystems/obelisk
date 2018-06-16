@@ -1,8 +1,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- | Provides a simple CLI spinner that interoperates cleanly with the rest of the logging output.
-module Obelisk.CliApp.Spinner (withSpinner) where
+module Obelisk.CliApp.Spinner
+  ( withSpinner
+  , withSpinner'
+  ) where
 
 import Control.Concurrent (killThread, threadDelay)
 import Control.Monad (forM_, (>=>))
@@ -23,7 +27,15 @@ import Obelisk.CliApp.Types (Cli, CliConfig (..), HasCliConfig, Output (..), get
 withSpinner
   :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
   => Text -> m a -> m a
-withSpinner s f = do
+withSpinner s = withSpinner' (s, const $ Just s)
+
+-- | Advanced version that controls the last spinner output based on action's result.
+withSpinner'
+  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
+  => (Text, a -> Maybe Text) -- ^ How to (and whether to) render the final spinner message; note that this doesn't take sub-spinner behaviour into account (although it probably should)
+  -> m a
+  -> m a
+withSpinner' (s, s') f = do
   noSpinner <- _cliConfig_noSpinner <$> getCliConfig
   if noSpinner
     then putLog Notice s >> f
@@ -41,16 +53,19 @@ withSpinner s f = do
             logMessage $ Output_Overwrite logs
           pure [ctrleThread, spinnerThread]
         else pure []
-    cleanup failed tids = do
+    cleanup tids resultM = do
       stack <- _cliConfig_spinnerStack <$> getCliConfig
       liftIO $ mapM_ killThread tids
       logMessage Output_ClearLine
-      let mark = if failed
-            then TerminalString_Colorized Red "✖"
-            else TerminalString_Colorized Green "✔"
-      -- Delete this log from the spinner stack
-      logs <- liftIO $ atomicModifyIORef' stack $ \old -> (L.delete (TerminalString_Normal s) old, concatStack mark old)
-      logMessage $ Output_Write logs
+      let (mark, msgM) = case resultM of
+            Nothing -> (TerminalString_Colorized Red "✖", Just s)
+            Just result -> (TerminalString_Colorized Green "✔", s' result)
+      logsM <- liftIO $ atomicModifyIORef' stack $ \old ->
+        let
+          new = L.delete (TerminalString_Normal s) old
+        in
+          (new, (\msg -> concatStack mark $ TerminalString_Normal msg : new) <$> msgM)
+      forM_ logsM $ logMessage . Output_Write
     spinner = coloredSpinner defaultSpinnerTheme
 
 -- | How nested spinner logs should be displayed
@@ -86,9 +101,9 @@ defaultSpinnerTheme :: SpinnerTheme
 defaultSpinnerTheme = spinnerCircleHalves
 
 -- | Like `bracket` but the `release` function can know whether an exception was raised
-bracket' :: MonadMask m => m a -> (Bool -> a -> m b) -> (a -> m c) -> m c
+bracket' :: MonadMask m => m a -> (a -> Maybe c -> m b) -> (a -> m c) -> m c
 bracket' acquire release use = mask $ \unmasked -> do
   resource <- acquire
-  result <- unmasked (use resource) `onException` release True resource
-  _ <- release False resource
+  result <- unmasked (use resource) `onException` release resource Nothing
+  _ <- release resource $ Just result
   return result

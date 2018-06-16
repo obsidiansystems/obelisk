@@ -163,7 +163,7 @@ allowUserToMakeLoggingVerbose keyCode = bracket showTip (liftIO . killThread) $ 
   where
     showTip = fork $ unlessVerbose $ do
       conf <- getCliConfig
-      liftIO $ threadDelay $ 3*1000000  -- Only show tip for actions taking too long (3 seconds or more)
+      liftIO $ threadDelay $ 10*1000000  -- Only show tip for actions taking too long (10 seconds or more)
       tipDisplayed <- liftIO $ atomicModifyIORef' (_cliConfig_tipDisplayed conf) $ (,) True
       unless tipDisplayed $ unlessVerbose $ do -- Check again in case the user had pressed Ctrl+e recently
         putLog Notice "Tip: Press Ctrl+e to display full output"
