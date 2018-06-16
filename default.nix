@@ -16,6 +16,15 @@ let
       then removeConfigureFlag drv' "--ghc-option=-optl=-dead_strip"
       else drv';
 
+  commandRuntimeDeps = pkgs: with pkgs; [
+    coreutils
+    git
+    gitAndTools.hub
+    nix-prefetch-git
+    nixStable
+    openssh
+  ];
+
   #TODO: Upstream
   # Modify a Haskell package to add completion scripts for the given
   # executable produced by it.  These completion scripts will be picked up
@@ -114,18 +123,19 @@ rec {
   inherit (reflex-platform) nixpkgs pinBuildInputs;
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  command = ghcObelisk.obelisk-command;
-  shell = pinBuildInputs "obelisk-shell" ([
-    command
-    pkgs.openssh
-    pkgs.gitAndTools.hub
-  ]) [];
+  command = pkgs.runCommand "ob" { nativeBuildInputs = [pkgs.makeWrapper]; } ''
+    mkdir -p "$out/bin"
+    ln -s '${ghcObelisk.obelisk-command}/bin/ob' "$out/bin/ob"
+    wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
+  '';
+  commandEnv = ghcObelisk.obelisk-command.env;
+  shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
 
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
     set -euo pipefail
 
-    PATH="${ghcObelisk.obelisk-command}/bin:$PATH"
+    PATH="${command}/bin:$PATH"
     export OBELISK_IMPL="${hackGet ./.}"
     "${justStaticExecutables' ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" "$@"
   '';

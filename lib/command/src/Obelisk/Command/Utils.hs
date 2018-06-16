@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command.Utils where
 
-import qualified Data.List as L
+import Control.Applicative (liftA2)
 import Data.Semigroup ((<>))
 import qualified Data.Text as T
 import qualified System.Process as P
@@ -13,36 +13,24 @@ import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, readProcessAndLog
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> m Bool
 checkGitCleanStatus repo = do
-  out <- readProcessAndLogStderr Debug $ git repo [["status", "--porcelain", "--ignored"], ["diff"]]
-  pure $ null out
+  let git = readProcessAndLogStderr Debug . gitProc repo
+  null <$> liftA2 (<>) (git ["status", "--porcelain", "--ignored"]) (git ["diff"])
 
 initGit :: MonadObelisk m => FilePath -> m ()
-initGit dir = callProcessAndLogOutput (Debug, Debug) $ git dir
-  [ ["init"]
-  , ["add", "."]
-  , ["commit", "-m", "Initial commit."]
-  ]
+initGit repo = do
+  let git = callProcessAndLogOutput (Debug, Debug) . gitProc repo
+  git ["init"]
+  git ["add", "."]
+  git ["commit", "-m", "Initial commit."]
 
-git :: FilePath -> [[String]] -> P.CreateProcess
-git repo argss =
-  inNixShell ["git"] $ L.intercalate "; " $
-    map (processToShellString "git" . runGitInDir) $ filter (not . null) argss
+gitProc :: FilePath -> [String] -> P.CreateProcess
+gitProc repo argsRaw =
+  P.proc "git" $ runGitInDir argsRaw
   where
     runGitInDir args' = case filter (not . null) args' of
       args@("clone":_) -> args <> [repo]
       args -> ["-C", repo] <> args
 
--- | Like `System.Process.proc` but with the specified Nix packages installed
-procWithPackages :: [String] -> FilePath -> [String] -> P.CreateProcess
-procWithPackages pkgs cmd args = inNixShell pkgs $ processToShellString cmd args
-
-inNixShell :: [String] -> String -> P.CreateProcess
-inNixShell pkgs cmd = P.proc "nix-shell" $ "-p" : pkgs <> ["--run", cmd]
-
 processToShellString :: FilePath -> [String] -> String
 processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
   where quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
-
--- | Portable `cp` command.
-cp :: [String] -> P.CreateProcess
-cp = procWithPackages ["coreutils"] "cp"
