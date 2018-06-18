@@ -6,6 +6,7 @@
 module Obelisk.Command.Upgrade where
 
 import Control.Monad (forM_, unless, void)
+import Control.Monad.Catch (onException)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.Semigroup ((<>))
@@ -109,10 +110,9 @@ handOffToNewOb project fromHash = do
   let opts = ["internal", "migrate", T.unpack fromHash]
   liftIO $ executeFile impl False ("--no-handoff" : opts) Nothing
 
--- TODO: When this function fails, we should revert the thunk update.
 migrateObelisk :: MonadObelisk m => FilePath -> Hash -> m ()
 migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk" (Just id) $ do
-  updateThunk (toImplDir project) $ \obImpl -> do
+  updateThunk (toImplDir project) $ \obImpl -> revertObImplOnFail obImpl $ do
     toHash <- computeVertexHash obImpl MigrationGraph_ObeliskUpgrade obImpl
     (g, _, _) <- getMigrationGraph obImpl MigrationGraph_ObeliskUpgrade >>= \case
       Nothing -> failWith "New obelisk has no migration metadata"
@@ -142,8 +142,12 @@ migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk"
               -- TODO: Colorize, prettify output to emphasize better.
               putLog Notice $ "=== [" <> hash <> "] ==="
               putLog Notice a
-            putLog Notice $ "Please commit the changes to the project, and manually perform the above migrations to make your project work with the upgraded Obelisk.\n"
+            putLog Notice $ "Please commit the changes to this repo, and manually perform the above migrations to migrate your project to the upgraded Obelisk.\n"
             pure $ "Migrated from " <> fromHash <> " to " <> toHash <> " (" <> T.pack (show $ length actions) <> " actions)"
+  where
+    revertObImplOnFail impl f = f `onException` do
+      putLog Notice $ T.pack $ "Reverting changes to " <> impl
+      callProcessAndLogOutput (Notice, Notice) $ git1 project ["checkout", impl]
 
 -- | Get the migration graph for project, along with the first and last hash.
 getMigrationGraph
