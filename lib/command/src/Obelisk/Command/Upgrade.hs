@@ -64,6 +64,7 @@ decideHandOffToProjectOb project = do
           putLog Warning "No migration path between project and ambient ob; handing off anyway"
           return True
         Just ex -> do
+          putLog Debug $ "Found " <> T.pack (show $ length ex) <> " edges between " <> projectHash <> " and " <> ambientHash <> " in ambient ob graph"
           actions <- sequence $ fmap (getEdge ambientGraph) ex
           return $ not $ or $ fmap parseHandoffMigration actions
   where
@@ -149,7 +150,7 @@ migrateObelisk project fromHash = void $ withSpinner' ("Migrating to new Obelisk
             putLog Notice $ "Migrations are shown below:\n"
             forM_ actions $ \(hash, a) -> do
               -- TODO: Colorize, prettify output to emphasize better.
-              putLog Notice $ "==== [" <> hash <> "] ==="
+              putLog Notice $ "=== [" <> hash <> "] ==="
               putLog Notice a
             putLog Notice $ "Please commit the changes to the project, and manually perform the above migrations to make your project work with the upgraded Obelisk.\n"
             pure $ "Migrated from " <> fromHash <> " to " <> toHash <> " (" <> T.pack (show $ length actions) <> " actions)"
