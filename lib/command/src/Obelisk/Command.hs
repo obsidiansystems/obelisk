@@ -35,8 +35,9 @@ import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
-import Obelisk.Command.Upgrade (decideHandOffToProjectOb, upgradeObelisk)
+import Obelisk.Command.Upgrade (decideHandOffToProjectOb, migrateObelisk, upgradeObelisk)
 import qualified Obelisk.Command.VmBuilder as VmBuilder
+import Obelisk.Migration (Hash)
 
 
 data Args = Args
@@ -89,12 +90,13 @@ data ObCommand
    | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
-   | ObCommand_Upgrade Text (Maybe Text)
+   | ObCommand_Upgrade Text
    | ObCommand_Internal ObInternal
    deriving Show
 
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
+   | ObInternal_Migrate Hash
    | ObInternal_CLIDemo
    deriving Show
 
@@ -122,10 +124,7 @@ obCommand cfg = hsubparser
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-      , command "upgrade" $
-        info (ObCommand_Upgrade
-              <$> strArgument (action "branch" <> metavar "GITBRANCH" <> help "Git branch of the obelisk to update to")
-              <*> option (maybeReader $ Just . Just . T.pack) (long "migrate-only-from-hash" <> metavar "FROMHASH" <> help "Migrate only (assume obelisk is already updated), and from the given hash" <> showDefault <> value Nothing)) $ progDesc "Upgrade Obelisk in the project"
+      , command "upgrade" $ info (ObCommand_Upgrade <$> strArgument (action "branch" <> metavar "GITBRANCH" <> help "Git branch of obelisk to update to")) $ progDesc "Upgrade Obelisk in the project"
       ])
   <|> subparser
     (mconcat
@@ -195,6 +194,7 @@ data DeployInitOpts = DeployInitOpts
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
   [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
+  , command "migrate" $ info (ObInternal_Migrate <$> strArgument (action "fromHash" <> metavar "FROMHASH" <> help "Migrate from this hash")) $ progDesc "Perform a migrate from the given hash to HEAD of obelisk thunk"
   , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
 
@@ -323,7 +323,7 @@ parseHandoff parseArgs as = case elem "--no-handoff" as of
     pure $ HandOff_No $ delete "--no-handoff" as
   False -> do
     _args_command <$> parseArgs as >>= \case
-      ObCommand_Upgrade _ _ ->
+      ObCommand_Upgrade _ ->
         pure $ HandOff_Decide (decideHandOffToProjectOb ".") as
       _ ->
         pure $ HandOff_Yes as
@@ -365,14 +365,16 @@ ob = \case
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir (T.pack upstream)
   ObCommand_Repl -> runRepl
-  ObCommand_Upgrade branch migrateOnlyFromHash -> do
-    upgradeObelisk "." branch migrateOnlyFromHash
+  ObCommand_Upgrade branch -> do
+    upgradeObelisk "." branch
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> do
         c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
+    ObInternal_Migrate fromHash -> do
+      migrateObelisk "." fromHash
     ObInternal_CLIDemo -> cliDemo
 
 --TODO: Clean up all the magic strings throughout this codebase

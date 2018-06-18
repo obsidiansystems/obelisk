@@ -94,15 +94,10 @@ getEdge (Migration _ h) e = case Map.lookup e h of
   Just a -> return a
   Nothing -> failWith $ "Edge " <> T.pack (show e) <> " not found"
 
-upgradeObelisk :: MonadObelisk m => FilePath -> Text -> Maybe Hash -> m ()
-upgradeObelisk project gitBranch migrateOnlyFromHash =
-  case migrateOnlyFromHash of
-    Nothing -> do  -- This is user invoked upgrade command
-      ensureCleanProject project
-      fromHash <- updateObelisk project gitBranch
-      handOffToNewOb project gitBranch fromHash
-    Just fromHash ->
-      migrateObelisk project gitBranch fromHash
+upgradeObelisk :: MonadObelisk m => FilePath -> Text -> m ()
+upgradeObelisk project gitBranch = do
+  ensureCleanProject project
+  updateObelisk project gitBranch >>= handOffToNewOb project
 
 updateObelisk :: MonadObelisk m => FilePath -> Text -> m Hash
 updateObelisk project gitBranch =
@@ -116,22 +111,20 @@ updateObelisk project gitBranch =
         git1 obImpl ["pull"]
       return fromHash
 
-handOffToNewOb :: MonadObelisk m => FilePath -> Text -> Hash -> m ()
-handOffToNewOb project gitBranch fromHash = do
+handOffToNewOb :: MonadObelisk m => FilePath -> Hash -> m ()
+handOffToNewOb project fromHash = do
   impl <- withSpinner' ("Preparing for handoff", Just . ("Handing off to new obelisk " <>) . T.pack) $
     findProjectObeliskCommand project >>= \case
       Nothing -> failWith "Not an Obelisk project"
       Just impl -> pure impl
   -- TODO: respect DRY (see command.hs; maybe reuse Handoff type)
   -- TODO: Should this be `ob internal migrate-only-from-hash` instead?
-  let opts = ["upgrade"]
-        <> ["--migrate-only-from-hash", T.unpack fromHash]
-        <> [T.unpack gitBranch]
+  let opts = ["internal", "migrate", T.unpack fromHash]
   liftIO $ executeFile impl False ("--no-handoff" : opts) Nothing
 
 -- TODO: When this function fails, we should revert the thunk update.
-migrateObelisk :: MonadObelisk m => FilePath -> Text -> Hash -> m ()
-migrateObelisk project gitBranch fromHash = void $ withSpinner' ("Migrating to new Obelisk", Just) $ do
+migrateObelisk :: MonadObelisk m => FilePath -> Hash -> m ()
+migrateObelisk project fromHash = void $ withSpinner' ("Migrating to new Obelisk", Just) $ do
   updateThunk (toImplDir project) $ \obImpl -> do
     toHash <- computeVertexHash obImpl MigrationGraph_ObeliskUpgrade obImpl
     (g, _, _) <- getMigrationGraph obImpl MigrationGraph_ObeliskUpgrade >>= \case
@@ -157,7 +150,7 @@ migrateObelisk project gitBranch fromHash = void $ withSpinner' ("Migrating to n
           Just [] -> do
             pure $ "No migrations necessary between " <> fromHash <> " and " <> toHash
           Just actions -> do
-            putLog Notice $ "Migrations from '" <> gitBranch <> "' are shown below:\n"
+            putLog Notice $ "Migrations are shown below:\n"
             forM_ actions $ \(hash, a) -> do
               -- TODO: Colorize, prettify output to emphasize better.
               putLog Notice $ "==== [" <> hash <> "] ==="
