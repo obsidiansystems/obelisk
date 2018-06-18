@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Upgrade where
 
-import Control.Monad (forM_, unless, void)
+import Control.Monad (unless, void)
 import Control.Monad.Catch (onException)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
@@ -134,16 +134,14 @@ migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk"
         runMigration g fromHash toHash >>= \case
           Nothing -> do
             failWith "Unable to find migration path"
-          Just [] -> do
-            pure $ "No migrations necessary between " <> fromHash <> " and " <> toHash
           Just actions -> do
-            putLog Notice $ "Migrations are shown below:\n"
-            forM_ actions $ \(hash, a) -> do
-              -- TODO: Colorize, prettify output to emphasize better.
-              putLog Notice $ "=== [" <> hash <> "] ==="
-              putLog Notice a
-            putLog Notice $ "Please commit the changes to this repo, and manually perform the above migrations to migrate your project to the upgraded Obelisk.\n"
-            pure $ "Migrated from " <> fromHash <> " to " <> toHash <> " (" <> T.pack (show $ length actions) <> " actions)"
+            let allActions = T.concat $ fmap snd actions
+            let actionsNE = filter (/= mempty) $ fmap snd actions
+            putLog Notice $ "Actionable migrations (if any) are shown below:\n"
+            putLog Notice $ allActions
+            putLog Notice $ "\nPlease commit the changes to this repo, and manually perform the above migrations if any to migrate your project to the upgraded Obelisk.\n"
+            putLog Debug $ T.pack $ show (length actionsNE) <> " actionable out of " <> show (length actions) <> " migrations"
+            pure $ "Migrated from " <> fromHash <> " to " <> toHash
   where
     revertObImplOnFail impl f = f `onException` do
       putLog Notice $ T.pack $ "Reverting changes to " <> impl
