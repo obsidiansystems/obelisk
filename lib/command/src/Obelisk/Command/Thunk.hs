@@ -406,7 +406,7 @@ createThunkWithLatest target s = do
     }
 
 updateThunkToLatest :: MonadObelisk m => FilePath -> m ()
-updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest" , const $ Just $ "Thunk " <> T.pack target <> " updated to latest") $ do
+updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
   (overwrite, ptr) <- readThunk target >>= \case
     Left err -> failWith $ T.pack $ "thunk update: " <> show err
     Right c -> case c of
@@ -581,7 +581,7 @@ nixBuildAttrWithCache exprPath attr = do
 updateThunk :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
 updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
   p' <- copyThunkToTmp tmpDir p
-  unpackThunk' Nothing p'
+  unpackThunk' True p'
   result <- f p'
   updateThunkFromTmp p' "origin"  -- TODO: stop hardcoding remote
   return result
@@ -595,18 +595,18 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
         return tmpThunk
       Right _ -> failWith $ "Thunk is not packed"
     updateThunkFromTmp p' remote = do
-      packThunk' Nothing p' remote
+      packThunk' True p' remote
       callProcessAndLogOutput (Notice, Error) $
         cp ["-r", "-T", p', p]
 
-finalMsg :: Maybe () -> Text -> Maybe Text
-finalMsg stickySpinner s = flip fmap stickySpinner $ const s
+finalMsg :: Bool -> (a -> Text) -> Maybe (a -> Text)
+finalMsg noTrail s = if noTrail then Nothing else Just s
 
 unpackThunk :: MonadObelisk m => FilePath -> m ()
-unpackThunk = unpackThunk' $ Just ()
+unpackThunk = unpackThunk' False
 
-unpackThunk' :: MonadObelisk m => Maybe () -> FilePath -> m ()
-unpackThunk' stickySpinner thunkDir = readThunk thunkDir >>= \case
+unpackThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
+unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
   Left err -> failWith $ "thunk unpack: " <> T.pack (show err)
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right (ThunkData_Checkout _) -> failWith "thunk unpack: thunk is already unpacked"
@@ -622,8 +622,8 @@ unpackThunk' stickySpinner thunkDir = readThunk thunkDir >>= \case
             Nothing -> failWith "Cannot determine clone URI for thunk source"
             Just c -> return $ T.unpack $ getUrl c
 
-          withSpinner' ( "Fetching thunk " <> T.pack thunkDir
-                       , const $ finalMsg stickySpinner $ "Fetched thunk " <> T.pack thunkDir) $ do
+          withSpinner' ("Fetching thunk " <> T.pack thunkDir)
+                       ( finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkDir) $ do
             callProcessAndLogOutput (Debug, Debug) $
               proc "hub" ["clone", "-n", githubURI, tmpRepo]
             --If this directory already exists then something is weird and we should fail
@@ -650,8 +650,8 @@ unpackThunk' stickySpinner thunkDir = readThunk thunkDir >>= \case
               procWithPackages ["coreutils"] "mv" ["-T", tmpRepo, thunkDir]
 
         ThunkSource_Git s -> do
-          withSpinner' ( "Fetching thunk " <> T.pack thunkName
-                       , const $ finalMsg stickySpinner $ "Fetched thunk " <> T.pack thunkName) $ do
+          withSpinner' ("Fetching thunk " <> T.pack thunkName)
+                       (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
             callProcessAndLogOutput (Debug, Debug) $ git tmpRepo
               [ ["clone", if _gitSource_fetchSubmodules s then "--recursive" else "", show (_gitSource_url s)]
               , ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
@@ -670,15 +670,15 @@ unpackThunk' stickySpinner thunkDir = readThunk thunkDir >>= \case
 --TODO: add force mode to pack even if changes are present
 --TODO: add a rollback mode to pack to the original thunk
 packThunk :: MonadObelisk m => FilePath -> Text -> m ()
-packThunk = packThunk' $ Just ()
+packThunk = packThunk' False
 
-packThunk' :: MonadObelisk m => Maybe () -> FilePath -> Text -> m ()
-packThunk' stickySpinner thunkDir upstream = readThunk thunkDir >>= \case
+packThunk' :: MonadObelisk m => Bool -> FilePath -> Text -> m ()
+packThunk' noTrail thunkDir upstream = readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
-    withSpinner' ( "Packing thunk " <> T.pack thunkDir
-                 , const $ finalMsg stickySpinner $ "Packed thunk " <> T.pack thunkDir) $ do
+    withSpinner' ("Packing thunk " <> T.pack thunkDir)
+                 (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
       thunkPtr <- getThunkPtr thunkDir upstream
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr

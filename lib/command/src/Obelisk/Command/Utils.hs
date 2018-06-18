@@ -25,9 +25,8 @@ checkGitCleanStatus repo withIgnored = do
 
 -- | Ensure that git repo is clean
 ensureCleanGitRepo :: MonadObelisk m => FilePath -> Bool -> Text -> m ()
-ensureCleanGitRepo path withIgnored s = withSpinner'
-  ( "Ensuring clean git repo at " <> T.pack path
-  , const Nothing) $ do
+ensureCleanGitRepo path withIgnored s =
+  withSpinnerNoTrail ("Ensuring clean git repo at " <> T.pack path) $ do
     checkGitCleanStatus path withIgnored >>= \case
       False -> do
         statusDebug <- fmap T.pack $ readProcessAndLogStderr Notice $

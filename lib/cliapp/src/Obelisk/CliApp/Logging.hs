@@ -36,7 +36,7 @@ newCliConfig sev noColor noSpinner = do
   level <- newIORef sev
   lock <- newMVar False
   tipDisplayed <- newIORef False
-  stack <- newIORef []
+  stack <- newIORef ([], [])
   return $ CliConfig level noColor noSpinner lock tipDisplayed stack
 
 runCli :: MonadIO m => CliConfig -> CliT m a -> m a

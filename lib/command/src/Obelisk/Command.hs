@@ -292,14 +292,12 @@ main'' parseArgs = \case
       putLog Debug $ "Handing off to project obelisk " <> T.pack impl
       liftIO $ executeFile impl False ("--no-handoff" : as) Nothing
   HandOff_Decide handOff as -> do
-    withSpinner'
-      ( "Deciding whether to handoff"
-      , Just . bool
-          "Decided not to handoff to project obelisk"
-          "Decided to handoff to project obelisk"
-      ) handOff >>= \case
-        True -> main'' parseArgs $ HandOff_Yes as
-        False -> main'' parseArgs $ HandOff_No as
+    withSpinner' "Deciding whether to handoff"
+      (Just $ bool
+        "Decided not to handoff to project obelisk"
+        "Decided to handoff to project obelisk") handOff >>= \case
+      True -> main'' parseArgs $ HandOff_Yes as
+      False -> main'' parseArgs $ HandOff_No as
   HandOff_No as -> do
     putLog Debug $ "Not handing off"
     args' <- parseArgs as

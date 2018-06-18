@@ -92,7 +92,7 @@ upgradeObelisk project gitBranch = do
 
 updateObelisk :: MonadObelisk m => FilePath -> Text -> m Hash
 updateObelisk project gitBranch =
-  withSpinner' ("Updating Obelisk thunk", Just . ("Updated Obelisk thunk to hash " <>)) $
+  withSpinner' "Updating Obelisk thunk" (Just ("Updated Obelisk thunk to hash " <>)) $
     updateThunk (toImplDir project) $ \obImpl -> do
       ob <- getAmbientOb
       fromHash <- computeVertexHash ob MigrationGraph_ObeliskUpgrade obImpl
@@ -104,7 +104,7 @@ updateObelisk project gitBranch =
 
 handOffToNewOb :: MonadObelisk m => FilePath -> Hash -> m ()
 handOffToNewOb project fromHash = do
-  impl <- withSpinner' ("Preparing for handoff", Just . ("Handing off to new obelisk " <>) . T.pack) $
+  impl <- withSpinner' "Preparing for handoff" (Just $ ("Handing off to new obelisk " <>) . T.pack) $
     findProjectObeliskCommand project >>= \case
       Nothing -> failWith "Not an Obelisk project"
       Just impl -> pure impl
@@ -115,7 +115,7 @@ handOffToNewOb project fromHash = do
 
 -- TODO: When this function fails, we should revert the thunk update.
 migrateObelisk :: MonadObelisk m => FilePath -> Hash -> m ()
-migrateObelisk project fromHash = void $ withSpinner' ("Migrating to new Obelisk", Just) $ do
+migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk" (Just id) $ do
   updateThunk (toImplDir project) $ \obImpl -> do
     toHash <- computeVertexHash obImpl MigrationGraph_ObeliskUpgrade obImpl
     (g, _, _) <- getMigrationGraph obImpl MigrationGraph_ObeliskUpgrade >>= \case

@@ -1,10 +1,13 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 -- | Provides a simple CLI spinner that interoperates cleanly with the rest of the logging output.
 module Obelisk.CliApp.Spinner
   ( withSpinner
+  , withSpinnerNoTrail
   , withSpinner'
   ) where
 
@@ -16,6 +19,7 @@ import Control.Monad.Log (Severity (..), logMessage)
 import Control.Monad.Reader (MonadIO)
 import Data.IORef
 import qualified Data.List as L
+import Data.Maybe (isNothing)
 import Data.Text (Text)
 import System.Console.ANSI (Color (Blue, Cyan, Green, Red))
 
@@ -27,50 +31,85 @@ import Obelisk.CliApp.Types (Cli, CliConfig (..), HasCliConfig, Output (..), get
 withSpinner
   :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
   => Text -> m a -> m a
-withSpinner s = withSpinner' (s, const $ Just s)
+withSpinner s = withSpinner' s $ Just $ const s
 
--- | Advanced version that controls the last spinner output based on action's result.
+-- | A spinner that leaves no trail after a successful run.
+--
+-- Use if you wish the spinner to be 'temporary' visually to the user.
+--
+-- The 'no trail' property automatically carries over to sub-spinners (in that they won't
+-- leave a trail either).
+withSpinnerNoTrail
+  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
+  => Text -> m a -> m a
+withSpinnerNoTrail s = withSpinner' s Nothing
+
+-- | Advanced version that controls the display and content of the trail message.
 withSpinner'
   :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
-  => (Text, a -> Maybe Text) -- ^ How to (and whether to) render the final spinner message; note that this doesn't take sub-spinner behaviour into account (although it probably should)
+  => Text
+  -> Maybe (a -> Text) -- ^ Leave an optional trail with the given message creator
   -> m a
   -> m a
-withSpinner' (s, s') f = do
+withSpinner' msg mkTrail action = do
   noSpinner <- _cliConfig_noSpinner <$> getCliConfig
   if noSpinner
-    then putLog Notice s >> f
-    else bracket' run cleanup $ const f
+    then putLog Notice msg >> action
+    else bracket' run cleanup $ const action
   where
     run = do
-      -- Add this log to the spinner stack
-      stack <- _cliConfig_spinnerStack <$> getCliConfig
-      wasEmpty <- liftIO $ atomicModifyIORef' stack $ \old -> (TerminalString_Normal s : old, null old)
-      if wasEmpty
-        then do -- Fork a thread to manage output of anything on the stack
+      -- Add this log to the spinner stack, and start a spinner if it is top-level.
+      modifyStack pushSpinner >>= \case
+        True -> do -- Top-level spinner; fork a thread to manage output of anything on the stack
           ctrleThread <- fork $ allowUserToMakeLoggingVerbose enquiryCode
           spinnerThread <- fork $ runSpinner spinner $ \c -> do
-            logs <- liftIO $ concatStack c <$> readIORef stack
+            logs <- renderSpinnerStack c . snd <$> readStack
             logMessage $ Output_Overwrite logs
           pure [ctrleThread, spinnerThread]
-        else pure []
+        False -> -- Sub-spinner; nothing to do.
+          pure []
     cleanup tids resultM = do
-      stack <- _cliConfig_spinnerStack <$> getCliConfig
       liftIO $ mapM_ killThread tids
       logMessage Output_ClearLine
-      let (mark, msgM) = case resultM of
-            Nothing -> (TerminalString_Colorized Red "✖", Just s)
-            Just result -> (TerminalString_Colorized Green "✔", s' result)
-      logsM <- liftIO $ atomicModifyIORef' stack $ \old ->
-        let
-          new = L.delete (TerminalString_Normal s) old
-        in
-          (new, (\msg -> concatStack mark $ TerminalString_Normal msg : new) <$> msgM)
-      forM_ logsM $ logMessage . Output_Write
+      logsM <- modifyStack $ popSpinner $ case resultM of
+        Nothing ->
+          ( TerminalString_Colorized Red "✖"
+          , Just msg  -- Always display final message if there was an exception.
+          )
+        Just result ->
+          ( TerminalString_Colorized Green "✔"
+          , mkTrail <*> pure result
+          )
+      forM_ logsM $ logMessage . Output_Write  -- Last message, finish off with newline.
+    pushSpinner (flag, old) =
+      ( (isTemporary : flag, TerminalString_Normal msg : old)
+      , null old -- Is empty?
+      )
+      where
+        isTemporary = isNothing mkTrail
+    popSpinner (mark, trailMsgM) (flag, old) =
+      ( (newFlag, new)
+      -- With final trail spinner message to render
+      , renderSpinnerStack mark . (: new) . TerminalString_Normal <$> (
+          if inTemporarySpinner then Nothing else trailMsgM
+          )
+      )
+      where
+        inTemporarySpinner = or newFlag  -- One of our parent spinners is temporary
+        newFlag = drop 1 flag
+        new = L.delete (TerminalString_Normal msg) old
+    readStack = liftIO . readIORef
+      =<< fmap _cliConfig_spinnerStack getCliConfig
+    modifyStack f = liftIO . flip atomicModifyIORef' f
+      =<< fmap _cliConfig_spinnerStack getCliConfig
     spinner = coloredSpinner defaultSpinnerTheme
 
 -- | How nested spinner logs should be displayed
-concatStack :: TerminalString -> [TerminalString] -> [TerminalString]
-concatStack mark = L.intersperse space . go . L.reverse
+renderSpinnerStack
+  :: TerminalString  -- ^ That which comes before the final element in stack
+  -> [TerminalString]  -- ^ Spinner elements in reverse order
+  -> [TerminalString]
+renderSpinnerStack mark = L.intersperse space . go . L.reverse
   where
     go [] = []
     go (x:[]) = mark : [x]
