@@ -14,7 +14,7 @@ import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
 import Data.List
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, listToMaybe)
 import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -106,7 +106,9 @@ inNixShell' p = withProjectRoot "." $ \root -> do
   projectShell root False "ghc" cmd
   where
     mkCmd = do
-      obArgs <- getObArgs =<< getArgsConfig
+      argsCfg <- getArgsConfig
+      myArgs <- getArgs
+      obArgs <- parseCLIArgs argsCfg myArgs
       progName <- getExecutablePath
       return $ progName : catMaybes
         [ Just "--no-handoff"
@@ -239,55 +241,49 @@ parserPrefs = defaultPrefs
   { prefShowHelpOnEmpty = True
   }
 
--- | Are we on a terminal with active user interaction?
-isInteractiveTerm :: IO Bool
-isInteractiveTerm = do
-  isTerm <- hIsTerminalDevice stdout
-  -- Running in bash/fish/zsh completion
-  inShellCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
-  return $ isTerm && not inShellCompletion
+parseCLIArgs :: ArgsConfig -> [String] -> IO Args
+parseCLIArgs cfg as = pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
-mkObeliskConfig :: ArgsConfig -> IO Obelisk
-mkObeliskConfig argsCfg = do
+mkObeliskConfig :: IO Obelisk
+mkObeliskConfig = do
+  cliArgs <- getArgs
+  -- This function should not use argument parser (full argument parsing happens post handoff)
+  let logLevel = toLogLevel $ "-v" `elem` cliArgs
   notInteractive <- not <$> isInteractiveTerm
-  logLevel <- toLogLevel <$> getObArgs argsCfg
   cliConf <- newCliConfig logLevel notInteractive notInteractive
   return $ Obelisk cliConf
   where
-    toLogLevel = bool Notice Debug . _args_verbose
-
-getObArgs :: ArgsConfig -> IO Args
-getObArgs cfg = getArgs >>= getObArgs' cfg
-
-getObArgs' :: ArgsConfig -> [String] -> IO Args
-getObArgs' cfg as = pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
+    toLogLevel = bool Notice Debug
+    isInteractiveTerm = do
+      isTerm <- hIsTerminalDevice stdout
+      -- Running in bash/fish/zsh completion
+      inShellCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
+      return $ isTerm && not inShellCompletion
 
 main :: IO ()
 main = do
   argsCfg <- getArgsConfig
-  mkObeliskConfig argsCfg >>= (`runObelisk` ObeliskT (main' argsCfg))
+  mkObeliskConfig >>= (`runObelisk` ObeliskT (main' argsCfg))
 
 main' :: MonadObelisk m => ArgsConfig -> m ()
 main' argsCfg = do
   obPath <- liftIO getExecutablePath
-  obArgs <- liftIO $ getObArgs argsCfg
+  myArgs <- liftIO getArgs
   logLevel <- getLogLevel
   putLog Debug $ T.pack $ unwords
     [ "Starting Obelisk <" <> obPath <> ">"
-    , "args=" <> show obArgs
+    , "args=" <> show myArgs
     , "logging-level=" <> show logLevel
     ]
 
-  let parseArgs = liftIO . getObArgs' argsCfg
-  (main'' parseArgs <=< parseHandoff parseArgs) =<< liftIO getArgs
+  (mainWithHandOff argsCfg <=< parseHandoff) =<< liftIO getArgs
 
--- TODO: It looks like zsh completion is broken with the Handoff refactor; fix it.
-main'' :: MonadObelisk m => ([String] -> m Args) -> HandOff m -> m ()
-main'' parseArgs = \case
+mainWithHandOff :: MonadObelisk m => ArgsConfig -> HandOff m -> m ()
+mainWithHandOff argsCfg = \case
   HandOff_Yes as -> findProjectObeliskCommand "." >>= \case
     Nothing -> do
       putLog Debug "Not in a project; not handing off"
-      main'' parseArgs $ HandOff_No as
+      mainWithHandOff argsCfg $ HandOff_No as
     Just impl -> do
       putLog Debug $ "Handing off to project obelisk " <> T.pack impl
       liftIO $ executeFile impl False ("--no-handoff" : as) Nothing
@@ -296,11 +292,11 @@ main'' parseArgs = \case
       (Just $ bool
         "Decided /not/ to handoff to project obelisk"
         "Decided to handoff to project obelisk") f >>= \case
-      True -> main'' parseArgs $ HandOff_Yes as
-      False -> main'' parseArgs $ HandOff_No as
+      True -> mainWithHandOff argsCfg $ HandOff_Yes as
+      False -> mainWithHandOff argsCfg $ HandOff_No as
   HandOff_No as -> do
     putLog Debug $ "Not handing off"
-    args' <- parseArgs as
+    args' <- liftIO $ parseCLIArgs argsCfg as
     warnIfExtraneousFlag args'
     ob $ _args_command args'
   where
@@ -314,18 +310,17 @@ data HandOff m
   | HandOff_Decide (m Bool) [String]  -- Handoff only if the action returns True
   | HandOff_No [String]  -- Do not handoff
 
--- TODO: Do not actually parse CLI arguments during/ before handoff; only do minimal parsing.
-parseHandoff :: MonadObelisk m => ([String] -> m Args) -> [String] -> m (HandOff m)
-parseHandoff parseArgs as' = case hasNoHandoff as' of
+parseHandoff :: MonadObelisk m => [String] -> m (HandOff m)
+parseHandoff as' = case hasNoHandoff as' of
   (True, as) ->
     pure $ HandOff_No as
-  (False, as) -> do
-    _args_command <$> parseArgs as >>= \case
-      ObCommand_Upgrade _ ->
-        pure $ HandOff_Decide (decideHandOffToProjectOb ".") as
-      _ ->
-        pure $ HandOff_Yes as
+  (False, as) -> case getSubCommand as of
+    Just "upgrade" ->
+      pure $ HandOff_Decide (decideHandOffToProjectOb ".") as
+    _ ->
+      pure $ HandOff_Yes as
   where
+    getSubCommand = listToMaybe . filter (not . isPrefixOf "-")
     hasNoHandoff = \case
       "--no-handoff" : xs ->
         -- If we've been told not to hand off, don't hand off

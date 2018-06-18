@@ -109,7 +109,6 @@ handOffToNewOb project fromHash = do
       Nothing -> failWith "Not an Obelisk project"
       Just impl -> pure impl
   -- TODO: respect DRY (see command.hs; maybe reuse Handoff type)
-  -- TODO: Should this be `ob internal migrate-only-from-hash` instead?
   let opts = ["internal", "migrate", T.unpack fromHash]
   liftIO $ executeFile impl False ("--no-handoff" : opts) Nothing
 
