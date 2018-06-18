@@ -291,11 +291,11 @@ main'' parseArgs = \case
     Just impl -> do
       putLog Debug $ "Handing off to project obelisk " <> T.pack impl
       liftIO $ executeFile impl False ("--no-handoff" : as) Nothing
-  HandOff_Decide handOff as -> do
+  HandOff_Decide f as -> do
     withSpinner' "Deciding whether to handoff"
       (Just $ bool
-        "Decided not to handoff to project obelisk"
-        "Decided to handoff to project obelisk") handOff >>= \case
+        "Decided /not/ to handoff to project obelisk"
+        "Decided to handoff to project obelisk") f >>= \case
       True -> main'' parseArgs $ HandOff_Yes as
       False -> main'' parseArgs $ HandOff_No as
   HandOff_No as -> do
@@ -316,15 +316,28 @@ data HandOff m
 
 -- TODO: Do not actually parse CLI arguments during/ before handoff; only do minimal parsing.
 parseHandoff :: MonadObelisk m => ([String] -> m Args) -> [String] -> m (HandOff m)
-parseHandoff parseArgs as = case elem "--no-handoff" as of
-  True ->
-    pure $ HandOff_No $ delete "--no-handoff" as
-  False -> do
+parseHandoff parseArgs as' = case hasNoHandoff as' of
+  (True, as) ->
+    pure $ HandOff_No as
+  (False, as) -> do
     _args_command <$> parseArgs as >>= \case
       ObCommand_Upgrade _ ->
         pure $ HandOff_Decide (decideHandOffToProjectOb ".") as
       _ ->
         pure $ HandOff_Yes as
+  where
+    hasNoHandoff = \case
+      "--no-handoff" : xs ->
+        -- If we've been told not to hand off, don't hand off
+        (True, xs)
+      x:xs
+        -- Otherwise bash completion would always hand-off even if the user isn't trying to
+        | "--bash-completion" `isPrefixOf` x && "--no-handoff" `elem` xs ->
+          (True, x:xs)
+        | otherwise ->
+          (False, x:xs)
+      xs ->
+        (False, xs)
 
 ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
