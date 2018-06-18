@@ -6,18 +6,17 @@
 module Obelisk.Migration where
 
 import Control.Monad (forM)
+import Control.Monad.Catch (Exception, MonadThrow, throwM)
 import Data.List (minimumBy)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes)
 import Data.Semigroup ((<>))
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
 import System.FilePath
-
--- TODO: Add error handling in place of error/fail functions
 
 import Algebra.Graph.AdjacencyMap
 
@@ -33,24 +32,42 @@ data Migration action = Migration
 -- A path is a list of edges
 type Path = [(Hash, Hash)]
 
+
+data CyclicGraphError = CyclicGraphError
+  deriving Show
+
+data MultipleTerminalVertices = MultipleTerminalVertices
+  deriving Show
+
+data NonEquivalentPaths = NonEquivalentPaths Hash Hash
+  deriving Show
+
+data MissingEdgeInActionMap = MissingEdgeInActionMap (Hash, Hash)
+  deriving Show
+
+instance Exception CyclicGraphError
+instance Exception MultipleTerminalVertices
+instance Exception NonEquivalentPaths
+instance Exception MissingEdgeInActionMap
+
 -- | Get the directed-acylic graph of migration
-getDag :: Ord a => AdjacencyMap a -> AdjacencyMap a
+getDag :: (MonadThrow m, Ord a) => AdjacencyMap a -> m (AdjacencyMap a)
 getDag g = case topSort g of
-  Just _ -> g
-  Nothing -> error "Cyclic graph detected"
+  Just _ -> pure g
+  Nothing -> throwM CyclicGraphError
 
 -- | Return the list of actions that migrate from one hash to another
 --
 -- Return Nothing if no path can be found.
 runMigration
-  :: (Eq action, Ord action, Monoid action)
+  :: (MonadThrow m, Eq action, Ord action, Monoid action)
   => Migration action
   -> Hash
   -> Hash
-  -> Maybe (Either Text [(Hash, action)])
-runMigration m a b = fmap (fmap getActionWithHash) <$> findShortestEquivalentPath m a b
+  -> m (Maybe [(Hash, action)])
+runMigration m a b = findShortestEquivalentPath m a b >>= traverse (traverse getActionWithHash)
   where
-    getActionWithHash e@(_, v2) = (v2, getAction m e)
+    getActionWithHash e@(_, v2) = getAction m e >>= pure . (v2,)
 
 -- | Read the graph from a directory of files.
 readGraph :: (String -> action) -> FilePath -> Text -> IO (Maybe (Migration action))
@@ -83,23 +100,23 @@ readGraph parseAction root name = doesDirectoryExist root >>= \case
 -- Return `Nothing` if no path exists between the vertices, and `Left` if paths
 -- are not equivalent. The successful case will be a `Right`
 findShortestEquivalentPath
-  :: (Eq action, Ord action, Monoid action)
-  => Migration action -> Hash -> Hash -> Maybe (Either Text Path)
-findShortestEquivalentPath m a b = case findAllPaths m a b of
-  [] -> Nothing
-  paths -> Just $ case verify paths of
-    True -> Right $ minimumBy (\x y -> compare (length x) (length y)) paths
-    False -> Left $ "Not all paths between " <> a <> " and " <> b <> " are equivalent in actions"
+  :: (MonadThrow m, Eq action, Ord action, Monoid action)
+  => Migration action -> Hash -> Hash -> m (Maybe Path)
+findShortestEquivalentPath m a b = findAllPaths m a b >>= \case
+  [] -> pure Nothing
+  paths -> verify paths >>= \case
+    True -> pure $ Just $ minimumBy (\x y -> compare (length x) (length y)) paths
+    False -> throwM $ NonEquivalentPaths a b
   where
-    verify xs = ((== 1) . length) $ uniqs $ fmap (mconcat . fmap (getAction m)) xs
+    verify xs = ((== 1) . length) . uniqs <$> traverse (fmap mconcat . traverse (getAction m)) xs
     uniqs = Set.toList . Set.fromList
 
 -- | Find all possible paths from a to b
 --
 -- Vertices a and b must already exist (as verified by hasVertex).
 -- Return empty list if no paths exist.
-findAllPaths :: Migration action -> Hash -> Hash -> [Path]
-findAllPaths m a b = fmap listInPairs $ go a b $ adjacencyMap $ getDag $ _migration_graph m
+findAllPaths :: MonadThrow m => Migration action -> Hash -> Hash -> m [Path]
+findAllPaths m a b = pure . fmap listInPairs . go a b . adjacencyMap =<< getDag (_migration_graph m)
   where
     -- Do a slow and dummy search. TODO: improve algorithm performance
     go x y g = case x == y of
@@ -119,26 +136,27 @@ hasVertex :: Hash -> Migration action -> Bool
 hasVertex h (Migration g _) = Set.member h $ vertexSet g
 
 -- | Get the action for the given edge (which must exist)
-getAction :: Migration action -> (Hash, Hash) -> action
+getAction :: MonadThrow m => Migration action -> (Hash, Hash) -> m action
 getAction (Migration _ h) e = case Map.lookup e h of
-  Just v -> v
-  Nothing -> error $ "Edge " <> show e <> " not found"
+  Just v -> pure v
+  Nothing -> throwM $ MissingEdgeInActionMap e
 
 -- | Get the last vertex of the given DAG. Nothing if empty graph.
 --
 -- Assumes that the graph is fully connected.
-getLast :: (Ord a, Eq a) => AdjacencyMap a -> Maybe a
-getLast g = case lastVertices of
-  [] -> Nothing
-  [x] -> Just x
-  _ -> error "Invalid graph: multiple terminal vertices"
+getLast :: (MonadThrow m, Ord a, Eq a) => AdjacencyMap a -> m (Maybe a)
+getLast g = lastVertices >>= \case
+  [] -> pure $ Nothing
+  [x] -> pure $ Just x
+  _ -> throwM MultipleTerminalVertices
   where
     lastVertices
-      = fmap fst
-      $ filter (\(_, nexts) -> nexts == [])
-      $ adjacencyList
-      $ getDag g
+      = pure
+      . fmap fst
+      . filter (\(_, nexts) -> nexts == [])
+      . adjacencyList
+      =<< getDag g
 
 -- | Get the first vertex of the given DAG. Nothing if empty graph.
-getFirst :: (Ord a, Eq a) => AdjacencyMap a -> Maybe a
+getFirst :: (MonadThrow m, Ord a, Eq a) => AdjacencyMap a -> m (Maybe a)
 getFirst = getLast . transpose

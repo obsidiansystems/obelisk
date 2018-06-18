@@ -58,15 +58,13 @@ decideHandOffToProjectOb project = do
       False -> do
         putLog Warning "Project ob not found in ambient ob's migration graph; handing off anyway"
         return True
-      True -> case findShortestEquivalentPath ambientGraph projectHash ambientHash of
+      True -> findShortestEquivalentPath ambientGraph projectHash ambientHash >>= \case
         Nothing -> do
           putLog Warning "No migration path between project and ambient ob; handing off anyway"
           return True
-        Just (Left err) -> do
-          failWith $ "Not a valid migration graph: " <> err
-        Just (Right ex) -> do
-          putLog Debug $ "Found " <> T.pack (show $ length ex) <> " edges between " <> projectHash <> " and " <> ambientHash <> " in ambient ob graph"
-          return $ not $ or $ fmap (parseHandoffMigration . getAction ambientGraph) ex
+        Just path -> do
+          putLog Debug $ "Found " <> T.pack (show $ length path) <> " edges between " <> projectHash <> " and " <> ambientHash <> " in ambient ob graph"
+          fmap (not . or . fmap parseHandoffMigration) $ traverse (getAction ambientGraph) path
   where
     getAmbientObInfo = do
       ambientOb <- getAmbientOb
@@ -108,7 +106,6 @@ handOffToNewOb project fromHash = do
     findProjectObeliskCommand project >>= \case
       Nothing -> failWith "Not an Obelisk project"
       Just impl -> pure impl
-  -- TODO: respect DRY (see command.hs; maybe reuse Handoff type)
   let opts = ["internal", "migrate", T.unpack fromHash]
   liftIO $ executeFile impl False ("--no-handoff" : opts) Nothing
 
@@ -134,14 +131,12 @@ migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk"
         pure $ "No upgrade available (new Obelisk is the same)"
       else do
         putLog Debug $ "Migrating from " <> fromHash <> " to " <> toHash
-        case runMigration g fromHash toHash of
+        runMigration g fromHash toHash >>= \case
           Nothing -> do
             failWith "Unable to find migration path"
-          Just (Left err) -> do
-            failWith $ "Not a valid migration graph: " <> err
-          Just (Right []) -> do
+          Just [] -> do
             pure $ "No migrations necessary between " <> fromHash <> " and " <> toHash
-          Just (Right actions) -> do
+          Just actions -> do
             putLog Notice $ "Migrations are shown below:\n"
             forM_ actions $ \(hash, a) -> do
               -- TODO: Colorize, prettify output to emphasize better.
@@ -157,8 +152,8 @@ getMigrationGraph project graph = runMaybeT $ do
   let name = graphName graph
   putLog Debug $ "Reading migration graph " <> name <> " from " <> T.pack project
   g <- MaybeT $ liftIO $ readGraph T.pack  (migrationDir project) name
-  first <- MaybeT $ pure $ getFirst $ _migration_graph g
-  last' <- MaybeT $ pure $ getLast $ _migration_graph g
+  first <- MaybeT $ getFirst $ _migration_graph g
+  last' <- MaybeT $ getLast $ _migration_graph g
   pure $ (g, first, last')
 
 computeVertexHash :: MonadObelisk m => FilePath -> MigrationGraph -> FilePath -> m Hash
