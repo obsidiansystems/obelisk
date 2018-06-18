@@ -58,11 +58,13 @@ decideHandOffToProjectOb project = do
       False -> do
         putLog Warning "Project ob not found in ambient ob's migration graph; handing off anyway"
         return True
-      True -> case findPath ambientGraph projectHash ambientHash of
+      True -> case findShortestEquivalentPath ambientGraph projectHash ambientHash of
         Nothing -> do
           putLog Warning "No migration path between project and ambient ob; handing off anyway"
           return True
-        Just ex -> do
+        Just (Left err) -> do
+          failWith $ "Not a valid migration graph: " <> err
+        Just (Right ex) -> do
           putLog Debug $ "Found " <> T.pack (show $ length ex) <> " edges between " <> projectHash <> " and " <> ambientHash <> " in ambient ob graph"
           return $ not $ or $ fmap (parseHandoffMigration . getAction ambientGraph) ex
   where

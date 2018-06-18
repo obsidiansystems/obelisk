@@ -97,42 +97,21 @@ findShortestEquivalentPath m a b = case findAllPaths m a b of
 -- | Find all possible paths from a to b
 --
 -- Vertices a and b must already exist (as verified by hasVertex).
+-- Return empty list if no paths exist.
 findAllPaths :: Migration action -> Hash -> Hash -> [Path]
 findAllPaths m a b = fmap listInPairs $ go a b $ adjacencyMap $ getDag $ _migration_graph m
   where
     -- Do a slow and dummy search. TODO: improve algorithm performance
     go x y g = case x == y of
       True ->
-        [[]]
+        [[y]]
       False -> case Map.lookup x g of
         Just adjs ->
           fmap (x :) $ mconcat $ fmap (\z -> go z y g) $ Set.toList adjs
         Nothing -> []
     listInPairs = \case
       [] -> []
-      [_] -> error "Not possible to have one vertex in path"
-      [x, y] -> [(x,y)]
-      x:y:xs -> (x,y) : listInPairs (y : xs)
-
--- | Find a path from a to b
---
--- Vertices a and b must already exist (as verified by hasVertex).
-findPath :: Migration action -> Hash -> Hash -> Maybe Path
-findPath m a b = fmap listInPairs $ go a b $ adjacencyMap $ getDag $ _migration_graph m
-  where
-    -- Do a slow and dummy search. TODO: improve algorithm performance
-    go x y g = case x == y of
-      True -> Just []
-      False -> case Map.lookup x g of
-        Just adjs ->
-          let
-            subPaths = listToMaybe $ catMaybes $ fmap (\z -> go z y g) $ Set.toList adjs
-          in
-            fmap (x :) $ if subPaths == Just [] then Just [y] else subPaths
-        Nothing -> Nothing
-    listInPairs = \case
-      [] -> []
-      [_] -> error "Not possible to have one vertex in path"
+      [_] -> []  -- One vertex path has zero edges (thus, zero length path)
       [x, y] -> [(x,y)]
       x:y:xs -> (x,y) : listInPairs (y : xs)
 
