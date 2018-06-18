@@ -95,7 +95,7 @@ upgradeObelisk project gitBranch = do
 
 updateObelisk :: MonadObelisk m => FilePath -> Text -> m Hash
 updateObelisk project gitBranch =
-  withSpinner' "Updating Obelisk thunk" (Just ("Updated Obelisk thunk to hash " <>)) $
+  withSpinner' "Updating Obelisk thunk" (Just $ const $ "Updated Obelisk thunk to latest of " <> gitBranch) $
     updateThunk (toImplDir project) $ \obImpl -> do
       ob <- getAmbientOb
       fromHash <- computeVertexHash ob MigrationGraph_ObeliskUpgrade obImpl

@@ -7,6 +7,7 @@ module Obelisk.Migration where
 
 import Control.Monad (forM)
 import Control.Monad.Catch (Exception, MonadThrow, throwM)
+import Control.Monad.State.Strict (evalStateT, get, put)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
@@ -84,7 +85,6 @@ readGraph root name = doesDirectoryExist root >>= \case
           return $ Just c
         False -> return Nothing
 
--- TODO: memoize for performance
 -- | Find the concataneted actions between two vertices
 --
 -- All paths between the vertices must have the same mappend'ed action;
@@ -92,27 +92,37 @@ readGraph root name = doesDirectoryExist root >>= \case
 findPathAction
   :: (MonadThrow m, Action action, Monoid action, Ord action)
   => Migration action -> Hash -> Hash -> m (Maybe action)
-findPathAction m a b = do
+findPathAction m a b = flip evalStateT Map.empty $ do
   dag <- getDag (_migration_graph m)
   go a b $ adjacencyMap dag
   where
     uniqs = Set.toList . Set.fromList
-    go x y g = case x == y of
-      True ->
-        pure $ Just mempty
-      False -> case Map.lookup x g of
-        Just adjs -> do
-          actions <- fmap catMaybes $ flip traverse (Set.toList adjs) $ \z -> do
-            action0 <- getAction m (x, z)
-            actionM <- go z y g
-            pure $ fmap (mappend action0) $ actionM
-          case uniqs actions of
-            [] -> pure Nothing
-            [v] -> pure $ Just v  -- Exactly one monoidal value; accept.
-            _ -> throwM $ NonEquivalentPaths x y
-        Nothing ->
-          pure Nothing
-
+    go x y g = do
+      -- TODO: refactor the caching part into a separate `memoize` function
+      cache <- get
+      case Map.lookup (x, y) cache of
+        Just v ->
+          pure v
+        Nothing -> do
+          v <- f
+          put $ Map.insert (x, y) v cache
+          pure v
+      where
+        f = case x == y of
+          True ->
+            pure $ Just mempty
+          False -> case Map.lookup x g of
+            Just adjs -> do
+              actions <- fmap catMaybes $ flip traverse (Set.toList adjs) $ \z -> do
+                action0 <- getAction m (x, z)
+                actionM <- go z y g
+                pure $ fmap (mappend action0) $ actionM
+              case uniqs actions of
+                [] -> pure Nothing
+                [v] -> pure $ Just v  -- Exactly one monoidal value; accept.
+                _ -> throwM $ NonEquivalentPaths x y
+            Nothing ->
+              pure Nothing
 
 hasVertex :: Hash -> Migration action -> Bool
 hasVertex h (Migration g _) = Set.member h $ vertexSet g
