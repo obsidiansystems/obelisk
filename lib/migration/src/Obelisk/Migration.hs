@@ -6,6 +6,7 @@
 module Obelisk.Migration where
 
 import Control.Monad (forM)
+import Data.List (minimumBy)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, listToMaybe)
@@ -29,24 +30,32 @@ data Migration action = Migration
   }
   deriving (Eq, Show)
 
+-- A path is a list of edges
+type Path = [(Hash, Hash)]
+
 -- | Get the directed-acylic graph of migration
 getDag :: Ord a => AdjacencyMap a -> AdjacencyMap a
 getDag g = case topSort g of
   Just _ -> g
   Nothing -> error "Cyclic graph detected"
 
--- Return actions that migrate from one hash to another
-runMigration :: Migration action -> Hash -> Hash -> Maybe [(Hash, action)]
-runMigration m a b = fmap getAction <$> findPath a b m
+-- | Return the list of actions that migrate from one hash to another
+--
+-- Return Nothing if no path can be found.
+runMigration
+  :: (Eq action, Ord action, Monoid action)
+  => Migration action
+  -> Hash
+  -> Hash
+  -> Maybe (Either Text [(Hash, action)])
+runMigration m a b = fmap (fmap getActionWithHash) <$> findShortestEquivalentPath m a b
   where
-    getAction (v1, v2) = case Map.lookup (v1, v2) $ _migration_actions m of
-      Just action -> (v2, action)
-      Nothing -> error $ "Missing edge in actions map: " <> show (v1, v2)
+    getActionWithHash e@(_, v2) = (v2, getAction m e)
 
 -- | Read the graph from a directory of files.
 readGraph :: (String -> action) -> FilePath -> Text -> IO (Maybe (Migration action))
 readGraph parseAction root name = doesDirectoryExist root >>= \case
-  -- TODO: maybe get rid of parseAction
+  -- TODO: maybe get rid of parseAction (using typeclass?)
   False -> return Nothing
   True -> do
     allVertexPairs <- listDirectory root >>= return . catMaybes . fmap getEdgeVertices
@@ -67,11 +76,49 @@ readGraph parseAction root name = doesDirectoryExist root >>= \case
           return $ Just c
         False -> return Nothing
 
--- | Finds a path from a to b
+-- | Find the shortest equivalent path between vertices
+--
+-- This path is equivalent to every other path per monoid concat of edge actions.
+--
+-- Return `Nothing` if no path exists between the vertices, and `Left` if paths
+-- are not equivalent. The successful case will be a `Right`
+findShortestEquivalentPath
+  :: (Eq action, Ord action, Monoid action)
+  => Migration action -> Hash -> Hash -> Maybe (Either Text Path)
+findShortestEquivalentPath m a b = case findAllPaths m a b of
+  [] -> Nothing
+  paths -> Just $ case verify paths of
+    True -> Right $ minimumBy (\x y -> compare (length x) (length y)) paths
+    False -> Left $ "Not all paths between " <> a <> " and " <> b <> " are equivalent in actions"
+  where
+    verify xs = ((== 1) . length) $ uniqs $ fmap (mconcat . fmap (getAction m)) xs
+    uniqs = Set.toList . Set.fromList
+
+-- | Find all possible paths from a to b
 --
 -- Vertices a and b must already exist (as verified by hasVertex).
-findPath :: Hash -> Hash -> Migration action -> Maybe [(Hash, Hash)]
-findPath a b (Migration g' _) = fmap listInPairs $ go a b $ adjacencyMap $ getDag g'
+findAllPaths :: Migration action -> Hash -> Hash -> [Path]
+findAllPaths m a b = fmap listInPairs $ go a b $ adjacencyMap $ getDag $ _migration_graph m
+  where
+    -- Do a slow and dummy search. TODO: improve algorithm performance
+    go x y g = case x == y of
+      True ->
+        [[]]
+      False -> case Map.lookup x g of
+        Just adjs ->
+          fmap (x :) $ mconcat $ fmap (\z -> go z y g) $ Set.toList adjs
+        Nothing -> []
+    listInPairs = \case
+      [] -> []
+      [_] -> error "Not possible to have one vertex in path"
+      [x, y] -> [(x,y)]
+      x:y:xs -> (x,y) : listInPairs (y : xs)
+
+-- | Find a path from a to b
+--
+-- Vertices a and b must already exist (as verified by hasVertex).
+findPath :: Migration action -> Hash -> Hash -> Maybe Path
+findPath m a b = fmap listInPairs $ go a b $ adjacencyMap $ getDag $ _migration_graph m
   where
     -- Do a slow and dummy search. TODO: improve algorithm performance
     go x y g = case x == y of
@@ -91,6 +138,12 @@ findPath a b (Migration g' _) = fmap listInPairs $ go a b $ adjacencyMap $ getDa
 
 hasVertex :: Hash -> Migration action -> Bool
 hasVertex h (Migration g _) = Set.member h $ vertexSet g
+
+-- | Get the action for the given edge (which must exist)
+getAction :: Migration action -> (Hash, Hash) -> action
+getAction (Migration _ h) e = case Map.lookup e h of
+  Just v -> v
+  Nothing -> error $ "Edge " <> show e <> " not found"
 
 -- | Get the last vertex of the given DAG. Nothing if empty graph.
 --

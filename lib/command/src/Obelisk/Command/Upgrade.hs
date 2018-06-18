@@ -8,7 +8,6 @@ module Obelisk.Command.Upgrade where
 import Control.Monad (forM_, unless, void)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
-import qualified Data.Map as Map
 import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -59,14 +58,13 @@ decideHandOffToProjectOb project = do
       False -> do
         putLog Warning "Project ob not found in ambient ob's migration graph; handing off anyway"
         return True
-      True -> case findPath projectHash ambientHash ambientGraph of
+      True -> case findPath ambientGraph projectHash ambientHash of
         Nothing -> do
           putLog Warning "No migration path between project and ambient ob; handing off anyway"
           return True
         Just ex -> do
           putLog Debug $ "Found " <> T.pack (show $ length ex) <> " edges between " <> projectHash <> " and " <> ambientHash <> " in ambient ob graph"
-          actions <- sequence $ fmap (getEdge ambientGraph) ex
-          return $ not $ or $ fmap parseHandoffMigration actions
+          return $ not $ or $ fmap (parseHandoffMigration . getAction ambientGraph) ex
   where
     getAmbientObInfo = do
       ambientOb <- getAmbientOb
@@ -81,15 +79,9 @@ decideHandOffToProjectOb project = do
       "True" -> True
       _ -> False
 
-
 -- | Return the path to the current ('ambient') obelisk process Nix directory
 getAmbientOb :: MonadObelisk m => m FilePath
 getAmbientOb = takeDirectory . takeDirectory <$> liftIO getExecutablePath
-
-getEdge :: MonadObelisk m => Migration action -> (Hash, Hash) -> m action
-getEdge (Migration _ h) e = case Map.lookup e h of
-  Just a -> return a
-  Nothing -> failWith $ "Edge " <> T.pack (show e) <> " not found"
 
 upgradeObelisk :: MonadObelisk m => FilePath -> Text -> m ()
 upgradeObelisk project gitBranch = do
@@ -144,9 +136,11 @@ migrateObelisk project fromHash = void $ withSpinner' ("Migrating to new Obelisk
         case runMigration g fromHash toHash of
           Nothing -> do
             failWith "Unable to find migration path"
-          Just [] -> do
+          Just (Left err) -> do
+            failWith $ "Not a valid migration graph: " <> err
+          Just (Right []) -> do
             pure $ "No migrations necessary between " <> fromHash <> " and " <> toHash
-          Just actions -> do
+          Just (Right actions) -> do
             putLog Notice $ "Migrations are shown below:\n"
             forM_ actions $ \(hash, a) -> do
               -- TODO: Colorize, prettify output to emphasize better.
