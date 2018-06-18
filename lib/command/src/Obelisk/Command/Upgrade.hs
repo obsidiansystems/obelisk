@@ -52,28 +52,20 @@ decideHandOffToProjectOb :: MonadObelisk m => FilePath ->  m Bool
 decideHandOffToProjectOb project = do
   ensureCleanProject project
   updateThunk (toImplDir project) $ \projectOb -> do
-    getMigrationGraph projectOb MigrationGraph_ObeliskHandoff >>= \case
-      Nothing -> do
-        putLog Warning "Project obelisk is too old (has no migration graph); won't handoff"
-        return False
-      Just _ -> do
-        projectHash <- computeVertexHash projectOb MigrationGraph_ObeliskHandoff projectOb
-        (ambientGraph, ambientHash) <- getAmbientObInfo
-
-        case hasVertex projectHash ambientGraph of
-          False -> do
-            putLog Warning "Cannot find project ob in ambient ob's migration graph; handing off anyway"
-            return True
-          True -> case findPath projectHash ambientHash ambientGraph of
-            Nothing -> do
-              putLog Warning "No migration path between project and ambient ob; handing off anyway"
-              return True
-            Just ex -> do
-              actions <- sequence $ fmap (getEdge ambientGraph) ex
-              let dontHandoff = or $ flip fmap actions $ \case
-                    "True" -> True
-                    _ -> False
-              return $ not dontHandoff
+    ambientOb <- getAmbientOb
+    (ambientGraph, ambientHash) <- getAmbientObInfo
+    projectHash <- computeVertexHash ambientOb MigrationGraph_ObeliskHandoff projectOb
+    case hasVertex projectHash ambientGraph of
+      False -> do
+        putLog Warning "Project ob not found in ambient ob's migration graph; handing off anyway"
+        return True
+      True -> case findPath projectHash ambientHash ambientGraph of
+        Nothing -> do
+          putLog Warning "No migration path between project and ambient ob; handing off anyway"
+          return True
+        Just ex -> do
+          actions <- sequence $ fmap (getEdge ambientGraph) ex
+          return $ not $ or $ fmap parseHandoffMigration actions
   where
     getAmbientObInfo = do
       ambientOb <- getAmbientOb
@@ -84,6 +76,10 @@ decideHandOffToProjectOb project = do
           unless (hasVertex ambientHash m) $
             failWith "Ambient ob's hash is not in its own graph"
           return (m, ambientHash)
+    parseHandoffMigration = \case
+      "True" -> True
+      _ -> False
+
 
 -- | Return the path to the current ('ambient') obelisk process Nix directory
 getAmbientOb :: MonadObelisk m => m FilePath
