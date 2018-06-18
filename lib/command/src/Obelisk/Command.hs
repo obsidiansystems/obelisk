@@ -278,21 +278,23 @@ main' argsCfg = do
 
   (mainWithHandOff argsCfg <=< parseHandoff) =<< liftIO getArgs
 
+-- Type representing the result of a handoff calculation.
+data HandOff m
+  = HandOff_Yes FilePath [String] -- Handoff immediately to the given impl with the given args
+  | HandOff_Decide (m Bool) FilePath [String]  -- Handoff only if the action returns True
+  | HandOff_No [String]  -- Do not handoff, and continue with the given args
+
 mainWithHandOff :: MonadObelisk m => ArgsConfig -> HandOff m -> m ()
 mainWithHandOff argsCfg = \case
-  HandOff_Yes as -> findProjectObeliskCommand "." >>= \case
-    Nothing -> do
-      putLog Debug "Not in a project; not handing off"
-      mainWithHandOff argsCfg $ HandOff_No as
-    Just impl -> do
-      putLog Debug $ "Handing off to project obelisk " <> T.pack impl
-      liftIO $ executeFile impl False ("--no-handoff" : as) Nothing
-  HandOff_Decide f as -> do
+  HandOff_Yes impl as -> do
+    putLog Debug $ "Handing off to project obelisk " <> T.pack impl
+    liftIO $ executeFile impl False ("--no-handoff" : as) Nothing
+  HandOff_Decide f impl as -> do
     withSpinner' "Deciding whether to handoff"
       (Just $ bool
         "Decided /not/ to handoff to project obelisk"
         "Decided to handoff to project obelisk") f >>= \case
-      True -> mainWithHandOff argsCfg $ HandOff_Yes as
+      True -> mainWithHandOff argsCfg $ HandOff_Yes impl as
       False -> mainWithHandOff argsCfg $ HandOff_No as
   HandOff_No as -> do
     putLog Debug $ "Not handing off"
@@ -305,20 +307,20 @@ mainWithHandOff argsCfg = \case
       True -> putLog Warning $
         "Ignoring unexpected --no-handoff (should only be passed once and as the first argument)"
 
-data HandOff m
-  = HandOff_Yes [String]  -- Handoff immediately
-  | HandOff_Decide (m Bool) [String]  -- Handoff only if the action returns True
-  | HandOff_No [String]  -- Do not handoff
-
+-- Handoff logic
 parseHandoff :: MonadObelisk m => [String] -> m (HandOff m)
 parseHandoff as' = case hasNoHandoff as' of
   (True, as) ->
     pure $ HandOff_No as
-  (False, as) -> case getSubCommand as of
-    Just "upgrade" ->
-      pure $ HandOff_Decide (decideHandOffToProjectOb ".") as
-    _ ->
-      pure $ HandOff_Yes as
+  (False, as) -> findProjectObeliskCommand "." >>= \case
+    Nothing -> do
+      putLog Debug "Not in a project; no need to hand off"
+      pure $ HandOff_No as
+    Just impl -> case getSubCommand as of
+      Just "upgrade" ->
+        pure $ HandOff_Decide (decideHandOffToProjectOb ".") impl as
+      _ ->
+        pure $ HandOff_Yes impl as
   where
     getSubCommand = listToMaybe . filter (not . isPrefixOf "-")
     hasNoHandoff = \case
