@@ -26,6 +26,8 @@ library
     , io-streams
     , exceptions
     , logging-effect
+    , lens
+    , modern-uri
     , monad-loops
     , mtl
     , network

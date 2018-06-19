@@ -97,21 +97,27 @@ First create a new EC2 instance:
 1. Launch a NixOS 17.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-40bee63a)) 
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
-1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80.
+1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and 443.
 
-At this stage your instance should be booting and become accessible shortly. Note down the hostname of your instance. It should look like this:
-
-```
-INSTANCE_HOSTNAME=ec2-??-??-??-??.ca-central-1.compute.amazonaws.com
-```
+At this stage your instance should be booting and become accessible shortly. Note down the hostname of your EC2 instance.
 
 Now go to your Obelisk project directory (`~/code/myapp`), and initialize a deployment config (`~/code/myapp-deploy`):
 Your project directory must be "thunkable", i.e. something on which `ob thunk pack` can be called. Usually it will be a git repository whose current revision has been pushed upstream.
 
 ```
 cd ~/code/myapp
-ob deploy init --ssh-key ~/myaws.pem --hostname ${INSTANCE_HOSTNAME} ~/code/myapp-deploy
+SERVER=ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
+ROUTE=https://myapp.com   # Publicly accessible route to your app
+EMAIL=myname@myapp.com
+ob deploy init \
+  --ssh-key ~/myaws.pem \
+  --hostname $SERVER \
+  --route $ROUTE \
+  --admin-email $EMAIL \
+  ~/code/myapp-deploy
 ```
+
+NOTE: HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
 
 Then go to that created deployment configuration directory, and initiate the deployment:
 
@@ -120,9 +126,9 @@ cd ~/code/myapp-deploy
 ob deploy push
 ```
 
-`ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. It will also configure Nginx so that the public port 80 proxies to the running app.
+`ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance.
 
-At this point you are done. Your app will be accessible at `http://${HOSTNAME}`!
+At this point you are done. Your app will be accessible at `${ROUTE}`.
 
 ### Deploying an updated version
 
