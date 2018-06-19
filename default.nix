@@ -293,6 +293,8 @@ rec {
                 };
               };
           in mkProject (projectDefinition args));
+          serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
+          linuxserver = serverOn "x86_64-linux";
     in projectOut system // {
       inherit linuxserver;
       server = args@{ hostName, adminEmail, routeHost, enableHttps }:
