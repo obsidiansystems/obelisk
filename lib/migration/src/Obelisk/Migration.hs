@@ -92,37 +92,36 @@ readGraph root name = doesDirectoryExist root >>= \case
 findPathAction
   :: (MonadThrow m, Action action, Monoid action, Ord action)
   => Migration action -> Hash -> Hash -> m (Maybe action)
-findPathAction m a b = flip evalStateT Map.empty $ do
-  dag <- getDag (_migration_graph m)
-  go a b $ adjacencyMap dag
-  where
-    uniqs = Set.toList . Set.fromList
-    go x y g = do
+findPathAction m start end = flip evalStateT Map.empty $ do
+  graph <- fmap adjacencyMap $ getDag $ _migration_graph m
+  let
+    findPathFromCached start' = do
       -- TODO: refactor the caching part into a separate `memoize` function
       cache <- get
-      case Map.lookup (x, y) cache of
-        Just v ->
-          pure v
+      case Map.lookup start' cache of
+        Just result ->
+          pure result
         Nothing -> do
-          v <- f
-          put $ Map.insert (x, y) v cache
-          pure v
-      where
-        f = case x == y of
-          True ->
-            pure $ Just mempty
-          False -> case Map.lookup x g of
-            Just adjs -> do
-              actions <- fmap catMaybes $ flip traverse (Set.toList adjs) $ \z -> do
-                action0 <- getAction m (x, z)
-                actionM <- go z y g
-                pure $ fmap (mappend action0) $ actionM
-              case uniqs actions of
-                [] -> pure Nothing
-                [v] -> pure $ Just v  -- Exactly one monoidal value; accept.
-                _ -> throwM $ NonEquivalentPaths x y
-            Nothing ->
-              pure Nothing
+          result <- findPathFrom start'
+          put $ Map.insert start' result cache
+          pure result
+    findPathFrom start' = if start' == end
+      then
+        pure $ Just mempty
+      else case Map.lookup start' graph of
+        Just adjs -> do
+          actions <- fmap catMaybes $ flip traverse (Set.toList adjs) $ \adj -> do
+            action0 <- getAction m (start', adj)
+            actionM <- findPathFromCached adj
+            pure $ fmap (mappend action0) $ actionM
+          case uniqs actions of
+            [] -> pure Nothing
+            [v] -> pure $ Just v  -- Exactly one monoidal value; accept.
+            _ -> throwM $ NonEquivalentPaths start' end
+        Nothing ->
+          pure Nothing
+    uniqs = Set.toList . Set.fromList
+  findPathFrom start
 
 hasVertex :: Hash -> Migration action -> Bool
 hasVertex h (Migration g _) = Set.member h $ vertexSet g
