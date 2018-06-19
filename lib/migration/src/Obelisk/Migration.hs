@@ -121,7 +121,7 @@ findPathAction m start end = flip evalStateT Map.empty $ do
         Nothing ->
           pure Nothing
     uniqs = Set.toList . Set.fromList
-  findPathFrom start
+  findPathFromCached start
 
 hasVertex :: Hash -> Migration action -> Bool
 hasVertex h (Migration g _) = Set.member h $ vertexSet g
