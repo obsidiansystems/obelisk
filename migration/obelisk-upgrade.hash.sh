@@ -1,3 +1,4 @@
+#!/bin/sh
 # Calculate vertex hash for the "obelisk-upgrade" migration graph.
 #
 # First argument is the directory to compute the hash for.
