@@ -15,6 +15,7 @@ module Obelisk.Command.Thunk
   , ThunkData (..)
   , ReadThunkError (..)
   , GitHubSource (..)
+  , getThunkGitBranch
   , getLatestRev
   , updateThunkToLatest
   , createThunk
@@ -122,6 +123,11 @@ data GitSource = GitSource
   , _gitSource_fetchSubmodules :: Bool
   }
   deriving (Show, Eq, Ord)
+
+getThunkGitBranch :: ThunkPtr -> Maybe Text
+getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
+  ThunkSource_GitHub s -> _gitHubSource_branch s
+  ThunkSource_Git s -> Just $ _gitSource_branch s
 
 commitNameToRef :: Name Commit -> Ref
 commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c

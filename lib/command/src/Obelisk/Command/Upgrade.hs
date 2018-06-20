@@ -25,7 +25,7 @@ import Obelisk.Command.Utils
 
 import Obelisk.Command.Project (toImplDir)
 import Obelisk.Command.Project (findProjectObeliskCommand)
-import Obelisk.Command.Thunk (updateThunk)
+import Obelisk.Command.Thunk (ThunkData (..), getThunkGitBranch, readThunk, updateThunk)
 
 import Obelisk.Migration
 
@@ -72,7 +72,6 @@ decideHandOffToProjectOb project = do
           return True
         Just (HandoffAction dontHandoff) -> do
           return $ not $ getAny dontHandoff
-          -- fmap (not . or . fmap parseHandoffMigration) $ traverse (getAction ambientGraph) path
   where
     getAmbientObInfo = do
       ambientOb <- getAmbientOb
@@ -88,14 +87,24 @@ decideHandOffToProjectOb project = do
 getAmbientOb :: MonadObelisk m => m FilePath
 getAmbientOb = takeDirectory . takeDirectory <$> liftIO getExecutablePath
 
-upgradeObelisk :: MonadObelisk m => FilePath -> Text -> m ()
-upgradeObelisk project gitBranch = do
+upgradeObelisk :: MonadObelisk m => FilePath -> Maybe Text -> m ()
+upgradeObelisk project gitBranchM = do
   ensureCleanProject project
+  gitBranch <- maybe (getObeliskBranch project) pure gitBranchM
   updateObelisk project gitBranch >>= handOffToNewOb project
+
+getObeliskBranch :: MonadObelisk m => FilePath -> m Text
+getObeliskBranch project = readThunk (toImplDir project) >>= \case
+  Left e -> failWith $ T.pack $ show e
+  Right (ThunkData_Checkout _) -> failWith "obelisk thunk must be packed"
+  Right (ThunkData_Packed tptr) -> case getThunkGitBranch tptr of
+    Just v -> pure v
+    Nothing ->
+      failWith "You must specify a git branch to `ob upgrade` as obelisk thunk does not specify any."
 
 updateObelisk :: MonadObelisk m => FilePath -> Text -> m Hash
 updateObelisk project gitBranch =
-  withSpinner' "Updating Obelisk thunk" (Just $ const $ "Updated Obelisk thunk to latest of " <> gitBranch) $
+  withSpinner ("Fetching new Obelisk [" <> gitBranch <> "]") $
     updateThunk (toImplDir project) $ \obImpl -> do
       ob <- getAmbientOb
       fromHash <- computeVertexHash ob MigrationGraph_ObeliskUpgrade obImpl
@@ -107,7 +116,7 @@ updateObelisk project gitBranch =
 
 handOffToNewOb :: MonadObelisk m => FilePath -> Hash -> m ()
 handOffToNewOb project fromHash = do
-  impl <- withSpinner' "Preparing for handoff" (Just $ ("Handing off to new obelisk " <>) . T.pack) $
+  impl <- withSpinner' "Preparing for handoff" (Just $ ("Handed off to new Obelisk " <>) . T.pack) $
     findProjectObeliskCommand project >>= \case
       Nothing -> failWith "Not an Obelisk project"
       Just impl -> pure impl

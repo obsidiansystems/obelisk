@@ -90,7 +90,7 @@ data ObCommand
    | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
-   | ObCommand_Upgrade Text
+   | ObCommand_Upgrade (Maybe Text)
    | ObCommand_Internal ObInternal
    deriving Show
 
@@ -126,7 +126,7 @@ obCommand cfg = hsubparser
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-      , command "upgrade" $ info (ObCommand_Upgrade <$> strArgument (action "branch" <> metavar "GITBRANCH" <> help "Git branch of obelisk to update to")) $ progDesc "Upgrade Obelisk in the project"
+      , command "upgrade" $ info (ObCommand_Upgrade <$> argument (maybeReader $ Just . Just . T.pack) (action "branch" <> metavar "GITBRANCH" <> value Nothing <> help "Git branch of obelisk to update to (defaults to the thunk's branch)")) $ progDesc "Upgrade Obelisk in the project"
       ])
   <|> subparser
     (mconcat
