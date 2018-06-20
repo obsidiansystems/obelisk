@@ -1,9 +1,17 @@
-#!/bin/sh
+#!/run/current-system/sw/bin/bash
 # Calculate vertex hash for the "obelisk-upgrade" migration graph.
 #
 # First argument is the directory to compute the hash for.
 # Second optional argument specifies the specific git revision of that directory
 # (repository).
+
+# FIXME(submodules): `git show` will fail on submdules. A large question is
+# how do we calculate hash for submodule?
+# 1. Recurse into them? Then this script will become more complex (as it will
+#    have to the fetch submodule repo and compute the hash of it).
+# 2. Maybe just use the submodule commit.
+# 3. Ignore them (submodules not supported)
+# We are going with option (3) now.
 
 set -e
 set -o pipefail
@@ -32,16 +40,20 @@ function getFiles {
         if [ $NUMARGS -lt 2 ]; then
             # Working copy files
             # >&2 echo "did NOT specify rev"
-            git ls-files
+            git ls-files | ignoreSubmodules
         else
             # >&2 echo "specified rev ${REV}"
-            git ls-tree -r --name-only ${REV}
+            git ls-tree -r --name-only ${REV} | ignoreSubmodules
         fi
     else
         # XXX: the exit here doesn't exit the script
         [ $NUMARGS -lt 2 ] || (>&2 echo "ERROR: Cannot pass rev when not in git repo"; exit 2;);
         find . -not -type d -printf '%P\n'
     fi | grep -v ${EXCLUDE} | sort;
+}
+
+function ignoreSubmodules {
+    grep -Fxvf <(git submodule status | awk '{ print $2 }')
 }
 
 # Read a path, returning target of symlink as its content.
