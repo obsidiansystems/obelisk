@@ -1,0 +1,16 @@
+# Obelisk HTTPs support
+
+This change to obelisk affects the deployment repo of your projects. To
+migrate, go to the deployment directory (if any) of your project and run these
+commands:
+
+```
+echo True > enable_https
+echo yourname@yoursite.com > admin_email
+echo https://yoursite.com/ > config/common/route
+git add enable_https admin_email config/common/route && git commit -m "Enabled https support"
+ob deploy push
+```
+
+If you wish to not deploy with HTTPS you may change the value of `enable_https` to `False`.
+

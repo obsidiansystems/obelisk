@@ -180,25 +180,33 @@ rec {
       ln -s ${compressedJs frontend} $out/frontend.jsexe
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
-  server = exe: hostName:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
-        https = (import lib/https {}).module {
-          backendPort = 8000; # TODO read from config
-          # sslConfig = {
-          #   hostName = "example.com";
-          #   adminEmail = "webmaster@example.com";
-          #   subdomains = [ "www" ];
-          # };
-        };
+        backendPort = 8000;
     in nixos {
       inherit system;
       configuration = args: {
         imports = [
           (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
-          https
         ];
-        networking = { inherit hostName; };
+        networking = {
+          inherit hostName;
+          firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
+        };
+        services.nginx = {
+          enable = true;
+          virtualHosts."${routeHost}" = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
+            locations."/" = {
+              proxyPass = "http://localhost:" + toString backendPort;
+            };
+          };
+        };
+        security.acme.certs = if enableHttps then {
+          "${routeHost}".email = adminEmail;
+        } else { };
         systemd.services.backend = {
           wantedBy = [ "multi-user.target" ];
           after = [ "network.target" ];
@@ -285,10 +293,12 @@ rec {
                 };
               };
           in mkProject (projectDefinition args));
-      exe = serverExe (projectOut "x86_64-linux").ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
+          serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
+          linuxserver = serverOn "x86_64-linux";
     in projectOut system // {
-      inherit exe;
-      server = { hostName }: server exe hostName;
+      inherit linuxserver;
+      server = args@{ hostName, adminEmail, routeHost, enableHttps }:
+        server (args // { exe = linuxserver;});
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
