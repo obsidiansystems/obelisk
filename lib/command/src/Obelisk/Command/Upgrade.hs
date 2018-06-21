@@ -219,7 +219,6 @@ getDirectoryHashDestructive excludes dir = do
 
 createMigrationEdgeFromHEAD :: MonadObelisk m => FilePath -> m ()
 createMigrationEdgeFromHEAD project = do
-  -- Like: backfillGraph (Just 2) project -- but includes wc
   [headHash] <- getHashAtGitRevision ["HEAD"] migrationIgnore project
   wcHash <- getDirectoryHash migrationIgnore project
   if (headHash == wcHash)
