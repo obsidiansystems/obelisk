@@ -286,4 +286,7 @@ computeVertexHash obDir graph repoDir = fmap T.pack $ readProcessAndLogStderr Er
 
 
 migrationDir :: FilePath -> FilePath
-migrationDir project = project </> "migration"
+migrationDir project = project </> migrationDirName
+
+migrationDirName :: FilePath
+migrationDirName = "migration"

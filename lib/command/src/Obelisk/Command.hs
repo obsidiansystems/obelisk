@@ -35,7 +35,7 @@ import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
-import Obelisk.Command.Upgrade (decideHandOffToProjectOb, migrateObelisk, upgradeObelisk)
+import Obelisk.Command.Upgrade
 import qualified Obelisk.Command.VmBuilder as VmBuilder
 import Obelisk.Migration (Hash)
 
@@ -96,6 +96,7 @@ data ObCommand
 
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
+   | ObInternal_Hash
    | ObInternal_Migrate Hash
    | ObInternal_CLIDemo
    deriving Show
@@ -196,6 +197,7 @@ data DeployInitOpts = DeployInitOpts
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
   [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
+  , command "hash" $ info (pure ObInternal_Hash) mempty
   , command "migrate" $ info (ObInternal_Migrate <$> strArgument (action "fromHash" <> metavar "FROMHASH" <> help "Migrate from this hash")) $ progDesc "Perform a migrate from the given hash to HEAD of obelisk thunk"
   , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
@@ -387,6 +389,9 @@ ob = \case
       Just p -> do
         c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
+    ObInternal_Hash -> do
+      hash <- getDirectoryHash [migrationDirName] "."
+      putLog Notice $ "Hash: " <> hash
     ObInternal_Migrate fromHash -> do
       migrateObelisk "." fromHash
     ObInternal_CLIDemo -> cliDemo
