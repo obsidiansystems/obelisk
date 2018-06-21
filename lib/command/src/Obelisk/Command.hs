@@ -244,6 +244,7 @@ parserPrefs = defaultPrefs
 parseCLIArgs :: ArgsConfig -> [String] -> IO Args
 parseCLIArgs cfg as = pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
+-- | Create an Obelisk config for this process.
 mkObeliskConfig :: IO Obelisk
 mkObeliskConfig = do
   cliArgs <- getArgs
@@ -265,7 +266,7 @@ mkObeliskConfig = do
 -- Example:
 -- > runCommand $ someFuncInMonadObelisk ...
 runCommand :: ObeliskT IO a -> IO a
-runCommand f = mkObeliskConfig >>= (`runObelisk` f)
+runCommand f = flip runObelisk f =<< mkObeliskConfig
 
 main :: IO ()
 main = runCommand . main' =<< getArgsConfig

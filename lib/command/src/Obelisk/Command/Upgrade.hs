@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Upgrade where
 
-import Control.Monad (unless, void)
+import Control.Monad (forM_, unless, void)
 import Control.Monad.Catch (onException)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
@@ -14,10 +14,12 @@ import Data.Monoid (Any (..), getAny)
 import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
+import System.Directory
 import System.Environment (getExecutablePath)
 import System.FilePath
+import System.IO.Temp
 import System.Posix.Process (executeFile)
-import System.Process (proc)
+import System.Process (cwd, proc)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
@@ -52,7 +54,8 @@ fromGraphName = \case
   _ -> error "Invalid graph name specified"
 
 ensureCleanProject :: MonadObelisk m => FilePath -> m ()
-ensureCleanProject project = ensureCleanGitRepo project False "Cannot upgrade with uncommited changes"
+ensureCleanProject project =
+  ensureCleanGitRepo project False "Cannot upgrade with uncommited changes"
 
 -- | Decide whether we (ambient ob) should handoff to project obelisk before performing upgrade
 decideHandOffToProjectOb :: MonadObelisk m => FilePath ->  m Bool
@@ -180,7 +183,43 @@ getMigrationGraph' project graph = runMaybeT $ do
 -- other files if the directory is a git repo. This needs to be done as `nix hash-path`
 -- doesn't support taking an excludes list.
 getDirectoryHash :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
-getDirectoryHash excludes dir = undefined
+getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hasing-" $ \tmpDir -> do
+  withSpinner (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
+    let inTmp p = p { cwd = Just tmpDir }
+    runProc $ copyDir dir tmpDir
+    runProc $ inTmp $ proc "ls" ["-al"]
+    -- If git repo, remove tracked files and the .git directory
+    liftIO (doesDirectoryExist $ tmpDir </> ".git") >>= \case
+      True -> do
+        ignored <- gitLsFiles tmpDir ["--ignored", "--exclude-standard", "--others"]
+        untracked <- gitLsFiles tmpDir ["--exclude-standard", "--others"]
+        putLog Notice $ T.pack $ "Found " <> show (length ignored) <> " ignored files."
+        -- putLog Notice $ T.pack $ "Untracked:\n" <> unlines untracked
+        -- putLog Notice $ T.pack $ "Ignored:\n" <> unlines ignored
+        withSpinnerNoTrail "Removing untracked and ignored files" $ do
+          forM_ (fmap (tmpDir </>) $ ignored <> untracked) $
+            liftIO . removePathForcibly
+        -- Empty directories won't be included in these lists. Git doesn't track them
+        -- So we must delete these separately.
+        runProc $ inTmp $ proc "find" [".", "-depth", "-empty", "-type", "d", "-delete"]
+        -- Finally get rid of the git index itself.
+        runProc $ inTmp $ proc "rm" ["-fr", ".git"]
+      False -> do
+        pure ()
+    -- Remove excluded paths
+    withSpinnerNoTrail "Removing excluded paths" $ do
+      forM_ (fmap (tmpDir </>) excludes) $
+        liftIO . removePathForcibly
+    runProc $ inTmp $ proc "ls" ["-al"]
+    withSpinnerNoTrail "Running `nix hash-path`" $
+      fmap T.pack $ readProcessAndLogStderr Error $
+        inTmp $ proc "nix" ["hash-path", "--type", "md5", "."]
+  where
+    runProc = callProcessAndLogOutput (Notice, Error)
+    gitLsFiles pwd opts = fmap lines $ readProcessAndLogStderr Error $
+      (proc "git" $ ["ls-files", "."] <> opts) { cwd = Just pwd }
+    copyDir src dest =
+      (proc "cp" ["-a", ".", dest]) { cwd = Just src }
 
 computeVertexHash :: MonadObelisk m => FilePath -> MigrationGraph -> FilePath -> m Hash
 computeVertexHash obDir graph repoDir = fmap T.pack $ readProcessAndLogStderr Error $
