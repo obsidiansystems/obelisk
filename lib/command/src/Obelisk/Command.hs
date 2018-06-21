@@ -97,6 +97,7 @@ data ObCommand
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
    | ObInternal_Hash (Maybe Text)
+   | ObInternal_CreateMigration
    | ObInternal_Migrate Hash
    | ObInternal_CLIDemo
    deriving Show
@@ -198,6 +199,7 @@ internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
   [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
   , command "hash" $ info (ObInternal_Hash <$> argument (maybeReader $ Just . Just . T.pack) (action "rev" <> metavar "GITREVISION" <> value Nothing <> help "Calculate for the specified git revision (defaults to working copy")) $ progDesc "Computes hash of working directory (or git revision)"
+  , command "create-migration" $ info (pure ObInternal_CreateMigration) mempty
   , command "migrate" $ info (ObInternal_Migrate <$> strArgument (action "fromHash" <> metavar "FROMHASH" <> help "Migrate from this hash")) $ progDesc "Perform a migrate from the given hash to HEAD of obelisk thunk"
   , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
@@ -396,8 +398,8 @@ ob = \case
       Just rev -> do
         [hash] <- getHashAtGitRevision [rev] [migrationDirName] "."
         putLog Notice $ "Hash for " <> rev <> ": " <> hash
-
-
+    ObInternal_CreateMigration -> do
+      createMigrationEdgeFromHEAD "."
     ObInternal_Migrate fromHash -> do
       migrateObelisk "." fromHash
     ObInternal_CLIDemo -> cliDemo

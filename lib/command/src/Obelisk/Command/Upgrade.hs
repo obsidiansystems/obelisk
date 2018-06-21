@@ -179,6 +179,9 @@ computeVertexHash = getDirectoryHash [migrationDirName]
 migrationDir :: FilePath -> FilePath
 migrationDir project = project </> migrationDirName
 
+migrationIgnore :: [FilePath]
+migrationIgnore = [migrationDirName]
+
 migrationDirName :: FilePath
 migrationDirName = "migration"
 
@@ -199,6 +202,7 @@ getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hash-" $ \tmpDi
     runProc $ copyDir dir tmpDir
   getDirectoryHashDestructive excludes tmpDir
 
+-- Do /not/ call this directly! Call `getDirectoryHash` instead.
 getDirectoryHashDestructive :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
 getDirectoryHashDestructive excludes dir = do
   liftIO (doesDirectoryExist $ dir </> ".git") >>= \case
@@ -213,36 +217,42 @@ getDirectoryHashDestructive excludes dir = do
       liftIO . removePathForcibly
   nixHash dir
 
+createMigrationEdgeFromHEAD :: MonadObelisk m => FilePath -> m ()
+createMigrationEdgeFromHEAD project = do
+  -- Like: backfillGraph (Just 2) project -- but includes wc
+  [headHash] <- getHashAtGitRevision ["HEAD"] migrationIgnore project
+  wcHash <- getDirectoryHash migrationIgnore project
+  if (headHash == wcHash)
+    then
+      putLog Warning "No migration necessary (working copy has not changed from HEAD)"
+    else do
+      written <- writeEdge (migrationDir project) headHash wcHash
+      unless written $
+        putLog Warning "No migration was created"
+
+-- | Verify the integrity of the migration graph in relation to the Git repo.
+verifyGraph :: MonadObelisk m => FilePath -> m ()
+verifyGraph = undefined
+
 -- | Create, or update, the migration graph with new edges with vertices
 -- corresponding to every commit in the Git history from HEAD.
 backfillGraph :: MonadObelisk m => Maybe Int -> FilePath -> m ()
 backfillGraph lastN project = do
   revs <- fmap (takeM lastN . fmap (fst . T.breakOn " ") . T.lines) $
     readProc $ gitProc project ["log", "--pretty=oneline"]
-  liftIO $ print revs
-  withSpinner ("Backfilling with " <> tshow (length revs) <> " revisions") $ do
-    -- Note: we need to take unique hashes only; this is fine for backfilling.
-    -- But future migrations should ensure that there are no duplicate hashes
-    -- (which would cause cycles) such as those introduced by revert commits.
-    vertices :: [Hash] <- withSpinnerNoTrail "Computing hash for git history" $
-      fmap (unique . reverse) $ getHashAtGitRevision revs [migrationDirName] project
-    liftIO $ print vertices
-    let vertexPairs = zip vertices $ drop 1 vertices
-    let edgesDir = migrationDir project
-    liftIO $ print vertexPairs
-    liftIO $ createDirectoryIfMissing False edgesDir
-    forM_ vertexPairs $ \(v1, v2) -> do
-      unless (v1 /= v2) $
-        failWith $ "Cannot create self loop with: " <> v1
-      let edgeDir = edgesDir </> (T.unpack $ v1 <> "-" <> v2)
-      liftIO (doesDirectoryExist edgeDir) >>= \case
-        True -> pure ()
-        False -> do
-          putLog Notice $ T.pack $ "Creating edge " <> edgeDir
-          liftIO $ createDirectory edgeDir
-          forM_ actionFiles $ \fp -> liftIO $
-            writeFile (edgeDir </> fp) ""
-    return ()
+  -- Note: we need to take unique hashes only; this is fine for backfilling.
+  -- But future migrations should ensure that there are no duplicate hashes
+  -- (which would cause cycles) such as those introduced by revert commits.
+  vertices :: [Hash] <- withSpinnerNoTrail "Computing hash for git history" $
+    fmap (unique . reverse) $ getHashAtGitRevision revs [migrationDirName] project
+  void $ withSpinner'
+    ("Backfilling with " <> tshow (length vertices) <> " vertices")
+    (Just $ \n -> "Backfilled " <> tshow n <> " edges.") $ do
+      let vertexPairs = zip vertices $ drop 1 vertices
+      let edgesDir = migrationDir project
+      liftIO $ createDirectoryIfMissing False edgesDir
+      fmap (length . filter (== True)) $ forM vertexPairs $ \(v1, v2) -> do
+        writeEdge edgesDir v1 v2
   where
     -- Return unique items in the list, preserving order
     unique = loop mempty
@@ -251,10 +261,28 @@ backfillGraph lastN project = do
         loop s (x : xs)
           | S.member x s = loop s xs
           | otherwise = x : loop (S.insert x s) xs
-    actionFiles = ["obelisk-handoff", "obelisk-upgrade"]
     takeM n' xs = case n' of
       Just n -> take n xs
       Nothing -> xs
+
+-- | Write the edge to filesystem.
+--
+-- Return True if the edge was created, False if already exists.
+writeEdge :: MonadObelisk m => FilePath -> Hash -> Hash -> m Bool
+writeEdge dir v1 v2 = do
+  unless (v1 /= v2) $
+    failWith $ "Cannot create self loop with: " <> v1
+  let edgeDir = dir </> (T.unpack $ v1 <> "-" <> v2)
+  liftIO (doesDirectoryExist edgeDir) >>= \case
+    True -> pure False
+    False -> do
+      putLog Notice $ T.pack $ "Creating edge " <> edgeDir
+      liftIO $ createDirectory edgeDir
+      forM_ actionFiles $ \fp -> liftIO $
+        writeFile (edgeDir </> fp) ""
+      pure True
+  where
+    actionFiles = ["obelisk-handoff", "obelisk-upgrade"]
 
 getHashAtGitRevision :: MonadObelisk m => [Text] -> [FilePath] -> FilePath -> m [Hash]
 getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashrev-" $ \tmpDir -> do
