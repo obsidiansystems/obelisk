@@ -14,6 +14,7 @@ import Data.Bool (bool)
 import Data.Maybe (catMaybes)
 import Data.Monoid (Any (..), getAny)
 import Data.Semigroup ((<>))
+import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Directory
@@ -213,8 +214,11 @@ backfillGraph lastN project = do
     readProc $ gitProc project ["log", "--pretty=oneline"]
   liftIO $ print revs
   withSpinner ("Backfilling with " <> tshow (length revs) <> " revisions") $ do
-    vertices <- withSpinnerNoTrail "Computing hash for git history" $
-      fmap reverse $ getHashAtGitRevision revs [migrationDirName] project
+    -- Note: we need to take unique hashes only; this is fine for backfilling.
+    -- But future migrations should ensure that there are no duplicate hashes
+    -- (which would cause cycles) such as those introduced by revert commits.
+    vertices :: [Hash] <- withSpinnerNoTrail "Computing hash for git history" $
+      fmap (unique . reverse) $ getHashAtGitRevision revs [migrationDirName] project
     liftIO $ print vertices
     let vertexPairs = zip vertices $ drop 1 vertices
     let edgesDir = migrationDir project
@@ -233,6 +237,13 @@ backfillGraph lastN project = do
             writeFile (edgeDir </> fp) ""
     return ()
   where
+    -- Return unique items in the list, preserving order
+    unique = loop mempty
+      where
+        loop s [] = []
+        loop s (x : xs)
+          | S.member x s = loop s xs
+          | otherwise = x : loop (S.insert x s) xs
     actionFiles = ["obelisk-handoff", "obelisk-upgrade"]
     takeM n' xs = case n' of
       Just n -> take n xs
