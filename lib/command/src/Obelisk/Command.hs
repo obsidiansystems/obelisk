@@ -260,10 +260,15 @@ mkObeliskConfig = do
       inShellCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
       return $ isTerm && not inShellCompletion
 
+-- For use from development obelisk repls
+--
+-- Example:
+-- > runCommand $ someFuncInMonadObelisk ...
+runCommand :: ObeliskT IO a -> IO a
+runCommand f = mkObeliskConfig >>= (`runObelisk` f)
+
 main :: IO ()
-main = do
-  argsCfg <- getArgsConfig
-  mkObeliskConfig >>= (`runObelisk` ObeliskT (main' argsCfg))
+main = runCommand . main' =<< getArgsConfig
 
 main' :: MonadObelisk m => ArgsConfig -> m ()
 main' argsCfg = do
