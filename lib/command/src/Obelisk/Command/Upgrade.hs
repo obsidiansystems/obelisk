@@ -213,7 +213,6 @@ backfillGraph lastN project = do
     readProc $ gitProc project ["log", "--pretty=oneline"]
   liftIO $ print revs
   withSpinner ("Backfilling with " <> tshow (length revs) <> " revisions") $ do
-    -- TODO: Eventually move these to obelisk-migration
     vertices <- withSpinnerNoTrail "Computing hash for git history" $
       fmap reverse $ getHashAtGitRevision revs [migrationDirName] project
     liftIO $ print vertices
