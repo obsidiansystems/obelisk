@@ -123,7 +123,7 @@ rec {
   inherit (reflex-platform) nixpkgs pinBuildInputs;
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  command = pkgs.runCommand "ob" { nativeBuildInputs = [pkgs.makeWrapper]; } ''
+  command = pkgs.runCommand ghcObelisk.obelisk-command.name { nativeBuildInputs = [pkgs.makeWrapper]; } ''
     mkdir -p "$out/bin"
     ln -s '${ghcObelisk.obelisk-command}/bin/ob' "$out/bin/ob"
     wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
