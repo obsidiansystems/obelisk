@@ -221,6 +221,8 @@ backfillGraph lastN project = do
     liftIO $ print vertexPairs
     liftIO $ createDirectoryIfMissing False edgesDir
     forM_ vertexPairs $ \(v1, v2) -> do
+      unless (v1 == v2) $
+        failWith $ "Cannot create self loop with: " <> v1
       let edgeDir = edgesDir </> (T.unpack $ v1 <> "-" <> v2)
       liftIO (doesDirectoryExist edgeDir) >>= \case
         True -> pure ()
