@@ -170,11 +170,24 @@ getMigrationGraph' project graph = runMaybeT $ do
   pure $ (g, first, last')
 
 
+-- | Get the unique hash of the given directory
+--
+-- Excludes the specified top-level files/ directories. Uses the same algorithm as
+-- Nix uses (`nix hash-path`).
+--
+-- This function will do a full copy of the directory to a temporary location before
+-- computing the hash. Because it will be deleting the files in exclude list, and
+-- other files if the directory is a git repo. This needs to be done as `nix hash-path`
+-- doesn't support taking an excludes list.
+getDirectoryHash :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
+getDirectoryHash excludes dir = undefined
+
 computeVertexHash :: MonadObelisk m => FilePath -> MigrationGraph -> FilePath -> m Hash
 computeVertexHash obDir graph repoDir = fmap T.pack $ readProcessAndLogStderr Error $
   proc "sh" [hashScript, repoDir]
   where
     hashScript = (migrationDir obDir) </> (T.unpack (graphName graph) <> ".hash.sh")
+
 
 migrationDir :: FilePath -> FilePath
 migrationDir project = project </> "migration"
