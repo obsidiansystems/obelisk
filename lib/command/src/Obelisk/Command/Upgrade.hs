@@ -248,7 +248,7 @@ getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashre
   where
     withFilesStashed base fs m = withSystemTempDirectory "obelisk-hashrev-stash-" $ \stashDir -> do
       existingPaths <- fmap catMaybes $ forM fs $ \p -> do
-        liftIO (doesPathExist p) >>= pure . bool Nothing (Just p)
+        liftIO (doesPathExist $ base </> p) >>= pure . bool Nothing (Just p)
       forM_ existingPaths $ \p ->
         liftIO $ renamePath (base </> p) (stashDir </> p)
       result <- m
