@@ -151,6 +151,8 @@ migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk"
           Nothing -> do
             failWith "Unable to find migration path"
           Just action -> do
+            -- TODO: Don't show this if there is no migration to be done.
+            -- TODO: don't use 'if any' phrasing
             putLog Notice $ "Actionable migrations (if any) are shown below:\n"
             putLog Notice $ action
             putLog Notice $ "\nPlease commit the changes to this repo, and manually perform the above migrations if any to migrate your project to the upgraded Obelisk.\n"
