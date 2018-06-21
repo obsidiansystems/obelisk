@@ -68,3 +68,10 @@ runProc = callProcessAndLogOutput (Notice, Error)
 -- | Like runProc, but all output goes to Debug logging level
 runProcSilently :: MonadObelisk m => P.CreateProcess -> m ()
 runProcSilently = callProcessAndLogOutput (Debug, Debug)
+
+-- | A simpler wrapper for CliApp's readProcessAndLogStderr with sensible defaults.
+readProc :: MonadObelisk m => P.CreateProcess -> m Text
+readProc = fmap T.pack . readProcessAndLogStderr Error
+
+tshow :: Show a => a -> Text
+tshow = T.pack . show

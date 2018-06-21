@@ -203,6 +203,29 @@ getDirectoryHashDestructive excludes dir = do
       liftIO . removePathForcibly
   nixHash dir
 
+-- | Create, or update, the migration graph with new edges with vertices
+-- corresponding to every commit in the Git history from HEAD.
+backfillGraph :: MonadObelisk m => FilePath -> m ()
+backfillGraph project = do
+  revs <- fmap (fmap (fst . T.breakOn " ") . T.lines) $
+    readProc $ gitProc project ["log", "--pretty=oneline"]
+  withSpinner ("Backfilling with " <> tshow (length revs) <> " revisions") $ do
+    -- TODO: Eventually move these to obelisk-migration
+    let vertexPairs = zip (reverse revs) (drop 1 $ reverse revs)
+    let edgesDir = migrationDir project
+    forM_ vertexPairs $ \(v1, v2) -> do
+      let edgeDir = edgesDir </> (T.unpack $ v1 <> "-" <> v2)
+      liftIO (doesDirectoryExist edgeDir) >>= \case
+        True -> pure ()
+        False -> do
+          putLog Notice $ T.pack $ "Creating edge " <> edgeDir
+          liftIO $ createDirectory edgeDir
+          forM_ actionFiles $ \fp -> liftIO $
+            writeFile (edgeDir </> fp) ""
+    return ()
+  where
+    actionFiles = ["obelisk-handoff", "obelisk-upgrade"]
+
 getHashAtGitRevision :: MonadObelisk m => [Text] -> [FilePath] -> FilePath -> m [Hash]
 getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashrev-" $ \tmpDir -> do
   withSpinner (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
@@ -228,8 +251,7 @@ getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashre
 
 nixHash :: MonadObelisk m => FilePath -> m Hash
 nixHash dir = withSpinnerNoTrail "Running `nix hash-path`" $
-  fmap T.pack $ readProcessAndLogStderr Error $
-    proc "nix" ["hash-path", "--type", "md5", dir]
+  readProc $ proc "nix" ["hash-path", "--type", "md5", dir]
 
 -- | Clean up the following files in the git working copy
 --
@@ -255,7 +277,7 @@ tidyUpGitWorkingCopy dir = withSpinnerNoTrail "Tidying up git working copy" $ do
     gitLsFiles pwd opts = fmap lines $ readProcessAndLogStderr Error $
       (proc "git" $ ["ls-files", "."] <> opts) { cwd = Just pwd }
 
-
+-- TODO: replace this with the above eventually.
 computeVertexHash :: MonadObelisk m => FilePath -> MigrationGraph -> FilePath -> m Hash
 computeVertexHash obDir graph repoDir = fmap T.pack $ readProcessAndLogStderr Error $
   proc "sh" [hashScript, repoDir]
