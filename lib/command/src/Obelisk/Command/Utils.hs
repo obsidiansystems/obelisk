@@ -49,6 +49,11 @@ gitProc repo argsRaw =
       args@("clone":_) -> args <> [repo]
       args -> ["-C", repo] <> args
 
+-- | Recursively copy a directory using `cp -a`
+copyDir :: FilePath -> FilePath -> P.CreateProcess
+copyDir src dest =
+  (P.proc "cp" ["-a", ".", dest]) { P.cwd = Just src }
+
 readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
 readGitProcess repo = fmap T.pack . readProcessAndLogStderr Notice . gitProc repo
 
@@ -59,3 +64,7 @@ processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
 -- | A simpler wrapper for CliApp's most used process function with sensible defaults.
 runProc :: MonadObelisk m => P.CreateProcess -> m ()
 runProc = callProcessAndLogOutput (Notice, Error)
+
+-- | Like runProc, but all output goes to Debug logging level
+runProcSilently :: MonadObelisk m => P.CreateProcess -> m ()
+runProcSilently = callProcessAndLogOutput (Debug, Debug)

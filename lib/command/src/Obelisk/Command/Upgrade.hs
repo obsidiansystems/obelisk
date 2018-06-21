@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Upgrade where
 
-import Control.Monad (forM_, unless, void)
+import Control.Monad (forM, forM_, unless, void)
 import Control.Monad.Catch (onException)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
@@ -172,6 +172,7 @@ getMigrationGraph' project graph = runMaybeT $ do
   last' <- MaybeT $ getLast $ _migration_graph g
   pure $ (g, first, last')
 
+-- TODO: Move this to migration library? (we rely on wrapProgram exes)
 
 -- | Get the unique hash of the given directory
 --
@@ -183,48 +184,77 @@ getMigrationGraph' project graph = runMaybeT $ do
 -- other files if the directory is a git repo. This needs to be done as `nix hash-path`
 -- doesn't support taking an excludes list.
 getDirectoryHash :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
-getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hasing-" $ \tmpDir -> do
+getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hash-" $ \tmpDir -> do
   withSpinner (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
     runProc $ copyDir dir tmpDir
   getDirectoryHashDestructive excludes tmpDir
-  where
-    copyDir src dest =
-      (proc "cp" ["-a", ".", dest]) { cwd = Just src }
-
-getHashAtGitRevision :: MonadObelisk m => Text -> [FilePath] -> FilePath -> m Hash
-getHashAtGitRevision rev excludes dir = undefined
 
 getDirectoryHashDestructive :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
-getDirectoryHashDestructive excludes tmpDir = do
-  -- If git repo, remove tracked files and the .git directory
-  liftIO (doesDirectoryExist $ tmpDir </> ".git") >>= \case
-    True -> withSpinnerNoTrail "Removing ignored/ untracked/ empty directories" $ do
-      ignored <- gitLsFiles tmpDir ["--ignored", "--exclude-standard", "--others"]
-      untracked <- gitLsFiles tmpDir ["--exclude-standard", "--others"]
-      putLog Notice $ T.pack $ "Found " <> show (length ignored) <> " ignored files."
-      -- putLog Notice $ T.pack $ "Untracked:\n" <> unlines untracked
-      -- putLog Notice $ T.pack $ "Ignored:\n" <> unlines ignored
-      withSpinnerNoTrail "Removing untracked and ignored files" $ do
-        forM_ (fmap (tmpDir </>) $ ignored <> untracked) $
-          liftIO . removePathForcibly
-      -- Empty directories won't be included in these lists. Git doesn't track them
-      -- So we must delete these separately.
-      runProc $ inTmp $ proc "find" [".", "-depth", "-empty", "-type", "d", "-delete"]
-      -- Finally get rid of the git index itself.
-      runProc $ inTmp $ proc "rm" ["-fr", ".git"]
-    False -> do
-      pure ()
+getDirectoryHashDestructive excludes dir = do
+  liftIO (doesDirectoryExist $ dir </> ".git") >>= \case
+    True -> do
+      tidyUpGitWorkingCopy dir
+      withSpinnerNoTrail "Removing .git directory" $
+        liftIO $ removePathForcibly $ dir </> ".git"
+    False -> pure ()
   -- Remove excluded paths
   withSpinnerNoTrail "Removing excluded paths" $ do
-    forM_ (fmap (tmpDir </>) excludes) $
+    forM_ (fmap (dir </>) excludes) $
       liftIO . removePathForcibly
-  withSpinnerNoTrail "Running `nix hash-path`" $
-    fmap T.pack $ readProcessAndLogStderr Error $
-      inTmp $ proc "nix" ["hash-path", "--type", "md5", "."]
+  nixHash dir
+
+getHashAtGitRevision :: MonadObelisk m => [Text] -> [FilePath] -> FilePath -> m [Hash]
+getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashrev-" $ \tmpDir -> do
+  withSpinner (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
+    runProc $ copyDir dir tmpDir
+  tidyUpGitWorkingCopy tmpDir
+  -- Discard changes to tracked files
+  runProcSilently $ gitProc tmpDir ["reset", "--hard"]
+  forM revs $ \rev -> do
+    runProcSilently $ gitProc tmpDir ["checkout", T.unpack rev]
+    -- Checking out an arbitrary revision can leave untracked files (from
+    -- previous revison) around, so tidy them up.
+    tidyUpGitWorkingCopy tmpDir
+    withFilesStashed tmpDir (excludes <> [".git"]) $
+      nixHash tmpDir
   where
-    inTmp p = p { cwd = Just tmpDir }
+    withFilesStashed base fs m = withSystemTempDirectory "obelisk-hashrev-stash-" $ \stashDir -> do
+      forM_ fs $ \p ->
+        liftIO $ renamePath (base </> p) (stashDir </> p)
+      result <- m
+      forM_ fs $ \p ->
+        liftIO $ renamePath (stashDir </> p) (base </> p)
+      return result
+
+nixHash :: MonadObelisk m => FilePath -> m Hash
+nixHash dir = withSpinnerNoTrail "Running `nix hash-path`" $
+  fmap T.pack $ readProcessAndLogStderr Error $
+    proc "nix" ["hash-path", "--type", "md5", dir]
+
+-- | Clean up the following files in the git working copy
+--
+-- * Paths ignored by .gitignored, but still present in the filesystem
+-- * Untracked files (not added to git index)
+-- * Any empty directories (these are not tracked by git)
+--
+-- Note that this leaves modified (staged or unstaged) files as they are.
+tidyUpGitWorkingCopy :: MonadObelisk m => FilePath -> m ()
+tidyUpGitWorkingCopy dir = withSpinnerNoTrail "Tidying up git working copy" $ do
+  ignored <- gitLsFiles dir ["--ignored", "--exclude-standard", "--others"]
+  untracked <- gitLsFiles dir ["--exclude-standard", "--others"]
+  putLog Debug $ T.pack $ "Found " <> show (length ignored) <> " ignored files."
+  putLog Debug $ T.pack $ "Untracked:\n" <> unlines untracked
+  putLog Debug $ T.pack $ "Ignored:\n" <> unlines ignored
+  withSpinnerNoTrail "Removing untracked and ignored files" $ do
+    forM_ (fmap (dir </>) $ ignored <> untracked) $
+      liftIO . removePathForcibly
+  -- Empty directories won't be included in these lists. Git doesn't track them
+  -- So we must delete these separately.
+  runProc $ proc "find" [dir, "-depth", "-empty", "-type", "d", "-delete"]
+  where
     gitLsFiles pwd opts = fmap lines $ readProcessAndLogStderr Error $
       (proc "git" $ ["ls-files", "."] <> opts) { cwd = Just pwd }
+
 
 computeVertexHash :: MonadObelisk m => FilePath -> MigrationGraph -> FilePath -> m Hash
 computeVertexHash obDir graph repoDir = fmap T.pack $ readProcessAndLogStderr Error $
