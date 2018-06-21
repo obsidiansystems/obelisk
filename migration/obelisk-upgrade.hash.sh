@@ -5,6 +5,8 @@
 # Second optional argument specifies the specific git revision of that directory
 # (repository).
 
+# TODO: Include file permissions in the computed hash.
+
 # FIXME(submodules): `git show` will fail on submdules. A large question is
 # how do we calculate hash for submodule?
 # 1. Recurse into them? Then this script will become more complex (as it will
@@ -53,6 +55,7 @@ function getFiles {
 }
 
 function ignoreSubmodules {
+    # FIXME: This doesn't work, because we must look at the submodules of $REF not HEAD.
     grep -Fxvf <(git submodule status | awk '{ print $2 }')
 }
 
