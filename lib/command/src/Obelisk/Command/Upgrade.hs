@@ -219,6 +219,7 @@ backfillGraph lastN project = do
     let vertexPairs = zip vertices $ drop 1 vertices
     let edgesDir = migrationDir project
     liftIO $ print vertexPairs
+    liftIO $ createDirectoryIfMissing False edgesDir
     forM_ vertexPairs $ \(v1, v2) -> do
       let edgeDir = edgesDir </> (T.unpack $ v1 <> "-" <> v2)
       liftIO (doesDirectoryExist edgeDir) >>= \case
