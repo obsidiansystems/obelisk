@@ -64,9 +64,8 @@ decideHandOffToProjectOb :: MonadObelisk m => FilePath ->  m Bool
 decideHandOffToProjectOb project = do
   ensureCleanProject project
   updateThunk (toImplDir project) $ \projectOb -> do
-    ambientOb <- getAmbientOb
     (ambientGraph, ambientHash) <- getAmbientObInfo
-    projectHash <- computeVertexHash ambientOb MigrationGraph_ObeliskHandoff projectOb
+    projectHash <- computeVertexHash projectOb
     case hasVertex projectHash ambientGraph of
       False -> do
         putLog Warning "Project ob not found in ambient ob's migration graph; handing off anyway"
@@ -111,8 +110,7 @@ updateObelisk :: MonadObelisk m => FilePath -> Text -> m Hash
 updateObelisk project gitBranch =
   withSpinner ("Fetching new Obelisk [" <> gitBranch <> "]") $
     updateThunk (toImplDir project) $ \obImpl -> do
-      ob <- getAmbientOb
-      fromHash <- computeVertexHash ob MigrationGraph_ObeliskUpgrade obImpl
+      fromHash <- computeVertexHash obImpl
       callProcessAndLogOutput (Debug, Debug) $
         gitProc obImpl ["checkout", T.unpack gitBranch]
       callProcessAndLogOutput (Debug, Debug) $
@@ -131,7 +129,7 @@ handOffToNewOb project fromHash = do
 migrateObelisk :: MonadObelisk m => FilePath -> Hash -> m ()
 migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk" (Just id) $ do
   updateThunk (toImplDir project) $ \obImpl -> revertObImplOnFail obImpl $ do
-    toHash <- computeVertexHash obImpl MigrationGraph_ObeliskUpgrade obImpl
+    toHash <- computeVertexHash obImpl
     (g, _, _) <- getMigrationGraph' obImpl MigrationGraph_ObeliskUpgrade >>= \case
       Nothing -> failWith "New obelisk has no migration metadata"
       Just m -> pure m
@@ -209,15 +207,19 @@ getDirectoryHashDestructive excludes dir = do
 
 -- | Create, or update, the migration graph with new edges with vertices
 -- corresponding to every commit in the Git history from HEAD.
-backfillGraph :: MonadObelisk m => FilePath -> m ()
-backfillGraph project = do
-  revs <- fmap (fmap (fst . T.breakOn " ") . T.lines) $
+backfillGraph :: MonadObelisk m => Maybe Int -> FilePath -> m ()
+backfillGraph lastN project = do
+  revs <- fmap (takeM lastN . fmap (fst . T.breakOn " ") . T.lines) $
     readProc $ gitProc project ["log", "--pretty=oneline"]
+  liftIO $ print revs
   withSpinner ("Backfilling with " <> tshow (length revs) <> " revisions") $ do
     -- TODO: Eventually move these to obelisk-migration
-    vertices <- fmap reverse $ getHashAtGitRevision revs [migrationDirName] project
+    vertices <- withSpinnerNoTrail "Computing hash for git history" $
+      fmap reverse $ getHashAtGitRevision revs [migrationDirName] project
+    liftIO $ print vertices
     let vertexPairs = zip vertices $ drop 1 vertices
     let edgesDir = migrationDir project
+    liftIO $ print vertexPairs
     forM_ vertexPairs $ \(v1, v2) -> do
       let edgeDir = edgesDir </> (T.unpack $ v1 <> "-" <> v2)
       liftIO (doesDirectoryExist edgeDir) >>= \case
@@ -230,6 +232,9 @@ backfillGraph project = do
     return ()
   where
     actionFiles = ["obelisk-handoff", "obelisk-upgrade"]
+    takeM n' xs = case n' of
+      Just n -> take n xs
+      Nothing -> xs
 
 getHashAtGitRevision :: MonadObelisk m => [Text] -> [FilePath] -> FilePath -> m [Hash]
 getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashrev-" $ \tmpDir -> do
@@ -284,12 +289,8 @@ tidyUpGitWorkingCopy dir = withSpinnerNoTrail "Tidying up git working copy" $ do
     gitLsFiles pwd opts = fmap lines $ readProcessAndLogStderr Error $
       (proc "git" $ ["ls-files", "."] <> opts) { cwd = Just pwd }
 
--- TODO: replace this with the above eventually.
-computeVertexHash :: MonadObelisk m => FilePath -> MigrationGraph -> FilePath -> m Hash
-computeVertexHash obDir graph repoDir = fmap T.pack $ readProcessAndLogStderr Error $
-  proc "sh" [hashScript, repoDir]
-  where
-    hashScript = (migrationDir obDir) </> (T.unpack (graphName graph) <> ".hash.sh")
+computeVertexHash :: MonadObelisk m => FilePath -> m Hash
+computeVertexHash = getDirectoryHash [migrationDirName]
 
 
 migrationDir :: FilePath -> FilePath
