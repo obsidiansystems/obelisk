@@ -152,11 +152,9 @@ migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk"
           Nothing -> do
             failWith "Unable to find migration path"
           Just action -> do
-            -- TODO: Don't show this if there is no migration to be done.
-            -- TODO: don't use 'if any' phrasing
-            putLog Notice $ "Actionable migrations (if any) are shown below:\n"
-            putLog Notice $ action
-            putLog Notice $ "\nPlease commit the changes to this repo, and manually perform the above migrations if any to migrate your project to the upgraded Obelisk.\n"
+            unless (action == mempty) $ do
+              putLog Notice "To upgrade your project to the new version of obelisk, please follow these instructions:\n"
+              putLog Notice action
             pure $ "Migrated from " <> fromHash <> " to " <> toHash
   where
     revertObImplOnFail impl f = f `onException` do
@@ -174,6 +172,15 @@ getMigrationGraph' project graph = runMaybeT $ do
   first <- MaybeT $ getFirst $ _migration_graph g
   last' <- MaybeT $ getLast $ _migration_graph g
   pure $ (g, first, last')
+
+computeVertexHash :: MonadObelisk m => FilePath -> m Hash
+computeVertexHash = getDirectoryHash [migrationDirName]
+
+migrationDir :: FilePath -> FilePath
+migrationDir project = project </> migrationDirName
+
+migrationDirName :: FilePath
+migrationDirName = "migration"
 
 -- TODO: Move this to migration library? (we rely on wrapProgram exes)
 
@@ -240,7 +247,7 @@ backfillGraph lastN project = do
     -- Return unique items in the list, preserving order
     unique = loop mempty
       where
-        loop s [] = []
+        loop _ [] = []
         loop s (x : xs)
           | S.member x s = loop s xs
           | otherwise = x : loop (S.insert x s) xs
@@ -302,12 +309,3 @@ tidyUpGitWorkingCopy dir = withSpinnerNoTrail "Tidying up git working copy" $ do
     gitLsFiles pwd opts = fmap lines $ readProcessAndLogStderr Error $
       (proc "git" $ ["ls-files", "."] <> opts) { cwd = Just pwd }
 
-computeVertexHash :: MonadObelisk m => FilePath -> m Hash
-computeVertexHash = getDirectoryHash [migrationDirName]
-
-
-migrationDir :: FilePath -> FilePath
-migrationDir project = project </> migrationDirName
-
-migrationDirName :: FilePath
-migrationDirName = "migration"
