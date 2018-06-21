@@ -109,9 +109,9 @@ updateObelisk project gitBranch =
       ob <- getAmbientOb
       fromHash <- computeVertexHash ob MigrationGraph_ObeliskUpgrade obImpl
       callProcessAndLogOutput (Debug, Debug) $
-        git1 obImpl ["checkout", T.unpack gitBranch]
+        gitProc obImpl ["checkout", T.unpack gitBranch]
       callProcessAndLogOutput (Debug, Debug) $
-        git1 obImpl ["pull"]
+        gitProc obImpl ["pull"]
       return fromHash
 
 handOffToNewOb :: MonadObelisk m => FilePath -> Hash -> m ()
@@ -155,7 +155,7 @@ migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk"
   where
     revertObImplOnFail impl f = f `onException` do
       putLog Notice $ T.pack $ "Reverting changes to " <> impl
-      callProcessAndLogOutput (Notice, Notice) $ git1 project ["checkout", impl]
+      callProcessAndLogOutput (Notice, Notice) $ gitProc project ["checkout", impl]
 
 -- | Get the migration graph for project, along with the first and last hash.
 getMigrationGraph'

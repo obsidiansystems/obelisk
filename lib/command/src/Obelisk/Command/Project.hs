@@ -35,7 +35,6 @@ import GitHub.Data.Name (Name)
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (cp)
 --TODO: Make this module resilient to random exceptions
 
 --TODO: Don't hardcode this
@@ -86,7 +85,7 @@ initProject source = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
 
     callProcessAndLogOutput (Notice, Error) $
-      cp
+      proc "cp"
         [ "-r"
         , "--preserve=links"
         , obDir
@@ -96,7 +95,7 @@ initProject source = withSystemTempDirectory "ob-init" $ \tmpDir -> do
 
   withSpinner "Copying project skeleton" $ do
     callProcessAndLogOutput (Notice, Error) $
-      cp --TODO: Make this package depend on nix-prefetch-url properly
+      proc "cp"
         [ "-r"
         , "--no-preserve=mode"
         , "-T"

@@ -7,7 +7,6 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-
 module Obelisk.Command.Thunk
   ( ThunkPtr (..)
   , ThunkRev (..)
@@ -75,7 +74,7 @@ import System.Process (proc)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
-import Obelisk.Command.Utils (cp, ensureCleanGitRepo, git, procWithPackages)
+import Obelisk.Command.Utils
 
 --TODO: Support symlinked thunk data
 data ThunkData
@@ -137,7 +136,7 @@ getNixSha256ForUriUnpacked :: MonadObelisk m => URI -> m NixSha256
 getNixSha256ForUriUnpacked uri =
   withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> T.pack (show uri)) $ do
     fmap T.pack $ readProcessAndLogStderr Debug $
-      procWithPackages ["nix-prefetch-scripts"] "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
+      proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
 
 nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
@@ -157,10 +156,10 @@ nixPrefetchGit uri rev fetchSubmodules =
 getLatestGitRev :: MonadObelisk m => GitSource -> m ThunkRev
 getLatestGitRev s = withSystemTempDirectory "git-clone" $ \tmpDir -> do
   withExitFailMessage ("Unable to determine latest git revision for branch " <> branch) $ do
-    out <- fmap T.pack $ readProcessAndLogStderr Debug $ git tmpDir
-      [ ["clone", "--no-checkout", show $ _gitSource_url s] -- Might be able to use --bare here instead to go faster.
-      , ["log", T.unpack branch, "--max-count=1", "--format=%H"]
-      ]
+    let git = fmap T.pack . readProcessAndLogStderr Debug . gitProc tmpDir
+    out <- liftA2 (<>)
+      (git ["clone", "--no-checkout", show $ _gitSource_url s]) -- Might be able to use --bare here instead to go faster.
+      (git ["log", T.unpack branch, "--max-count=1", "--format=%H"])
 
     case T.strip <$> safeLast (T.lines out) of
       Nothing -> failWith $ "Unable to parse git log: " <> out
@@ -597,13 +596,13 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
       Right (ThunkData_Packed _) -> do
         let tmpThunk = tmpDir </> "thunk"
         callProcessAndLogOutput (Notice, Error) $
-          cp ["-r", "-T", thunkDir, tmpThunk]
+          proc "cp" ["-r", "-T", thunkDir, tmpThunk]
         return tmpThunk
       Right _ -> failWith $ "Thunk is not packed"
     updateThunkFromTmp p' remote = do
       packThunk' True p' remote
       callProcessAndLogOutput (Notice, Error) $
-        cp ["-r", "-T", p', p]
+        proc "cp" ["-r", "-T", p', p]
 
 finalMsg :: Bool -> (a -> Text) -> Maybe (a -> Text)
 finalMsg noTrail s = if noTrail then Nothing else Just s
@@ -635,7 +634,7 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
             --If this directory already exists then something is weird and we should fail
             liftIO $ createDirectory obGitDir
             callProcessAndLogOutput (Debug, Error) $
-              cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
+              proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
 
             -- Checkout
             putLog Debug $ "Checking out " <> T.pack (show $ maybe "" untagName $ _gitHubSource_branch s)
@@ -650,28 +649,26 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
             forM_ (_gitHubSource_branch s) $ \branch ->
               callProcessAndLogOutput (Debug, Error) $
                 proc "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
-            callProcessAndLogOutput (Notice, Error) $
-              proc "rm" ["-r", thunkDir]
-            callProcessAndLogOutput (Notice, Error) $
-              procWithPackages ["coreutils"] "mv" ["-T", tmpRepo, thunkDir]
+            callProcessAndLogOutput (Notice, Error) $ proc "rm" ["-r", thunkDir]
+            callProcessAndLogOutput (Notice, Error) $ proc "mv" ["-T", tmpRepo, thunkDir]
 
         ThunkSource_Git s -> do
           withSpinner' ("Fetching thunk " <> T.pack thunkName)
                        (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
-            callProcessAndLogOutput (Debug, Debug) $ git tmpRepo
-              [ ["clone", if _gitSource_fetchSubmodules s then "--recursive" else "", show (_gitSource_url s)]
-              , ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
-              , if _gitSource_fetchSubmodules s then ["submodule", "update", "--recursive"] else []
-              , ["branch", "-u", "origin/" <> T.unpack (untagName $ _gitSource_branch s)]
-              ]
+            let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
+            git ["clone", if _gitSource_fetchSubmodules s then "--recursive" else "", show (_gitSource_url s)]
+            git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
+            when (_gitSource_fetchSubmodules s) $
+              git ["submodule", "update", "--recursive", "--init"]
+            git ["branch", "-u", "origin/" <> T.unpack (untagName $ _gitSource_branch s)]
 
             liftIO $ createDirectory obGitDir
             callProcessAndLogOutput (Notice, Error) $
-              cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
+              proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
             callProcessAndLogOutput (Notice, Error) $
               proc "rm" ["-r", thunkDir]
             callProcessAndLogOutput (Notice, Error) $
-              procWithPackages ["coreutils"] "mv" ["-T", tmpRepo, thunkDir]
+              proc "mv" ["-T", tmpRepo, thunkDir]
 
 --TODO: add force mode to pack even if changes are present
 --TODO: add a rollback mode to pack to the original thunk
@@ -821,7 +818,3 @@ parseSshShorthand uri = do
   guard $ isNothing (T.findIndex (=='/') authAndHostname)
         && not (T.null colonAndPath)
   parseURI $ T.unpack properUri
-
-
-readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
-readGitProcess repo args = fmap T.pack $ readProcessAndLogStderr Notice $ git repo [args]
