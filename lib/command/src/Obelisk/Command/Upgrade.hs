@@ -185,41 +185,46 @@ getMigrationGraph' project graph = runMaybeT $ do
 getDirectoryHash :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
 getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hasing-" $ \tmpDir -> do
   withSpinner (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
-    let inTmp p = p { cwd = Just tmpDir }
     runProc $ copyDir dir tmpDir
-    runProc $ inTmp $ proc "ls" ["-al"]
-    -- If git repo, remove tracked files and the .git directory
-    liftIO (doesDirectoryExist $ tmpDir </> ".git") >>= \case
-      True -> do
-        ignored <- gitLsFiles tmpDir ["--ignored", "--exclude-standard", "--others"]
-        untracked <- gitLsFiles tmpDir ["--exclude-standard", "--others"]
-        putLog Notice $ T.pack $ "Found " <> show (length ignored) <> " ignored files."
-        -- putLog Notice $ T.pack $ "Untracked:\n" <> unlines untracked
-        -- putLog Notice $ T.pack $ "Ignored:\n" <> unlines ignored
-        withSpinnerNoTrail "Removing untracked and ignored files" $ do
-          forM_ (fmap (tmpDir </>) $ ignored <> untracked) $
-            liftIO . removePathForcibly
-        -- Empty directories won't be included in these lists. Git doesn't track them
-        -- So we must delete these separately.
-        runProc $ inTmp $ proc "find" [".", "-depth", "-empty", "-type", "d", "-delete"]
-        -- Finally get rid of the git index itself.
-        runProc $ inTmp $ proc "rm" ["-fr", ".git"]
-      False -> do
-        pure ()
-    -- Remove excluded paths
-    withSpinnerNoTrail "Removing excluded paths" $ do
-      forM_ (fmap (tmpDir </>) excludes) $
-        liftIO . removePathForcibly
-    runProc $ inTmp $ proc "ls" ["-al"]
-    withSpinnerNoTrail "Running `nix hash-path`" $
-      fmap T.pack $ readProcessAndLogStderr Error $
-        inTmp $ proc "nix" ["hash-path", "--type", "md5", "."]
+  getDirectoryHashDestructive excludes tmpDir
   where
-    runProc = callProcessAndLogOutput (Notice, Error)
-    gitLsFiles pwd opts = fmap lines $ readProcessAndLogStderr Error $
-      (proc "git" $ ["ls-files", "."] <> opts) { cwd = Just pwd }
     copyDir src dest =
       (proc "cp" ["-a", ".", dest]) { cwd = Just src }
+
+getHashAtGitRevision :: MonadObelisk m => Text -> [FilePath] -> FilePath -> m Hash
+getHashAtGitRevision rev excludes dir = undefined
+
+getDirectoryHashDestructive :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
+getDirectoryHashDestructive excludes tmpDir = do
+  -- If git repo, remove tracked files and the .git directory
+  liftIO (doesDirectoryExist $ tmpDir </> ".git") >>= \case
+    True -> withSpinnerNoTrail "Removing ignored/ untracked/ empty directories" $ do
+      ignored <- gitLsFiles tmpDir ["--ignored", "--exclude-standard", "--others"]
+      untracked <- gitLsFiles tmpDir ["--exclude-standard", "--others"]
+      putLog Notice $ T.pack $ "Found " <> show (length ignored) <> " ignored files."
+      -- putLog Notice $ T.pack $ "Untracked:\n" <> unlines untracked
+      -- putLog Notice $ T.pack $ "Ignored:\n" <> unlines ignored
+      withSpinnerNoTrail "Removing untracked and ignored files" $ do
+        forM_ (fmap (tmpDir </>) $ ignored <> untracked) $
+          liftIO . removePathForcibly
+      -- Empty directories won't be included in these lists. Git doesn't track them
+      -- So we must delete these separately.
+      runProc $ inTmp $ proc "find" [".", "-depth", "-empty", "-type", "d", "-delete"]
+      -- Finally get rid of the git index itself.
+      runProc $ inTmp $ proc "rm" ["-fr", ".git"]
+    False -> do
+      pure ()
+  -- Remove excluded paths
+  withSpinnerNoTrail "Removing excluded paths" $ do
+    forM_ (fmap (tmpDir </>) excludes) $
+      liftIO . removePathForcibly
+  withSpinnerNoTrail "Running `nix hash-path`" $
+    fmap T.pack $ readProcessAndLogStderr Error $
+      inTmp $ proc "nix" ["hash-path", "--type", "md5", "."]
+  where
+    inTmp p = p { cwd = Just tmpDir }
+    gitLsFiles pwd opts = fmap lines $ readProcessAndLogStderr Error $
+      (proc "git" $ ["ls-files", "."] <> opts) { cwd = Just pwd }
 
 computeVertexHash :: MonadObelisk m => FilePath -> MigrationGraph -> FilePath -> m Hash
 computeVertexHash obDir graph repoDir = fmap T.pack $ readProcessAndLogStderr Error $

@@ -55,3 +55,7 @@ readGitProcess repo = fmap T.pack . readProcessAndLogStderr Notice . gitProc rep
 processToShellString :: FilePath -> [String] -> String
 processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
   where quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
+
+-- | A simpler wrapper for CliApp's most used process function with sensible defaults.
+runProc :: MonadObelisk m => P.CreateProcess -> m ()
+runProc = callProcessAndLogOutput (Notice, Error)
