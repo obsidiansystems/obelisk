@@ -10,6 +10,8 @@ import Control.Monad (forM, forM_, unless, void)
 import Control.Monad.Catch (onException)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
+import Data.Bool (bool)
+import Data.Maybe (catMaybes)
 import Data.Monoid (Any (..), getAny)
 import Data.Semigroup ((<>))
 import Data.Text (Text)
@@ -213,7 +215,8 @@ backfillGraph project = do
     readProc $ gitProc project ["log", "--pretty=oneline"]
   withSpinner ("Backfilling with " <> tshow (length revs) <> " revisions") $ do
     -- TODO: Eventually move these to obelisk-migration
-    let vertexPairs = zip (reverse revs) (drop 1 $ reverse revs)
+    vertices <- fmap reverse $ getHashAtGitRevision revs [migrationDirName] project
+    let vertexPairs = zip vertices $ drop 1 vertices
     let edgesDir = migrationDir project
     forM_ vertexPairs $ \(v1, v2) -> do
       let edgeDir = edgesDir </> (T.unpack $ v1 <> "-" <> v2)
@@ -244,10 +247,12 @@ getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashre
       nixHash tmpDir
   where
     withFilesStashed base fs m = withSystemTempDirectory "obelisk-hashrev-stash-" $ \stashDir -> do
-      forM_ fs $ \p ->
+      existingPaths <- fmap catMaybes $ forM fs $ \p -> do
+        liftIO (doesPathExist p) >>= pure . bool Nothing (Just p)
+      forM_ existingPaths $ \p ->
         liftIO $ renamePath (base </> p) (stashDir </> p)
       result <- m
-      forM_ fs $ \p ->
+      forM_ existingPaths $ \p ->
         liftIO $ renamePath (stashDir </> p) (base </> p)
       return result
 
