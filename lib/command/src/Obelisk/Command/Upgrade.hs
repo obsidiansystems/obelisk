@@ -196,6 +196,7 @@ migrationDirName = "migration"
 -- computing the hash. Because it will be deleting the files in exclude list, and
 -- other files if the directory is a git repo. This needs to be done as `nix hash-path`
 -- doesn't support taking an excludes list.
+-- TODO: Test this function with a git archive export.
 getDirectoryHash :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
 getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hash-" $ \tmpDir -> do
   withSpinner (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
@@ -211,7 +212,6 @@ getDirectoryHashDestructive excludes dir = do
       withSpinnerNoTrail "Removing .git directory" $
         liftIO $ removePathForcibly $ dir </> ".git"
     False -> pure ()
-  -- Remove excluded paths
   withSpinnerNoTrail "Removing excluded paths" $ do
     forM_ (fmap (dir </>) excludes) $
       liftIO . removePathForcibly
@@ -219,22 +219,44 @@ getDirectoryHashDestructive excludes dir = do
 
 createMigrationEdgeFromHEAD :: MonadObelisk m => FilePath -> m ()
 createMigrationEdgeFromHEAD project = do
-  [headHash] <- getHashAtGitRevision ["HEAD"] migrationIgnore project
+  headHash <- getHeadVertex project
   wcHash <- getDirectoryHash migrationIgnore project
   if (headHash == wcHash)
     then
       putLog Warning "No migration necessary (working copy has not changed from HEAD)"
     else do
+      -- TODO: And have `ob internal create-migration --backfill=n` do it for all.
       written <- writeEdge (migrationDir project) headHash wcHash
       unless written $
         putLog Warning "No migration was created"
 
--- | Verify the integrity of the migration graph in relation to the Git repo.
+-- | Return the hash corresponding to HEAD
+--
+-- Fail if the hash does not exist in project's migration graph.
+getHeadVertex :: MonadObelisk m => FilePath -> m Hash
+getHeadVertex project = do
+  projectGraph :: Migration Text <- liftIO (readGraph (migrationDir project) (graphName MigrationGraph_ObeliskUpgrade)) >>= \case
+    Nothing -> failWith "No migration graph found"
+    Just g -> pure g
+  [headHash] <- getHashAtGitRevision ["HEAD"] migrationIgnore project
+  unless (hasVertex headHash projectGraph) $
+    -- This means that the HEAD commit has no vertex in the graph,
+    -- possible due to developer negligence when commiting it.
+    -- Perhaps we should use a post-commit hook or some such thing
+    -- to reject such commits in the first place? For now, just
+    -- error out.
+    failWith $ "No vertex found for HEAD (" <> headHash <> ")"
+  return headHash
+
+-- | TODO: Verify the integrity of the migration graph in relation to the Git repo.
 verifyGraph :: MonadObelisk m => FilePath -> m ()
 verifyGraph = undefined
 
--- | Create, or update, the migration graph with new edges with vertices
+-- | Create, or update, the migration graph with new edges and new vertices
 -- corresponding to every commit in the Git history from HEAD.
+--
+-- NOTE: This creates a linear graph, and doesn't follow the Git graph
+-- structure.
 backfillGraph :: MonadObelisk m => Maybe Int -> FilePath -> m ()
 backfillGraph lastN project = do
   revs <- fmap (takeM lastN . fmap (fst . T.breakOn " ") . T.lines) $
@@ -253,7 +275,7 @@ backfillGraph lastN project = do
       fmap (length . filter (== True)) $ forM vertexPairs $ \(v1, v2) -> do
         writeEdge edgesDir v1 v2
   where
-    -- Return unique items in the list, preserving order
+    -- Return unique items in the list /while/ preserving order
     unique = loop mempty
       where
         loop _ [] = []
