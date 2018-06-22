@@ -186,21 +186,25 @@ migrationIgnore = [migrationDirName]
 migrationDirName :: FilePath
 migrationDirName = "migration"
 
--- TODO: Move this to migration library? (we rely on wrapProgram exes)
+-- TODO: Move this to migration library? (but we rely on wrapProgram exes)
 
 -- | Get the unique hash of the given directory
 --
--- Excludes the specified top-level files/ directories. Uses the same algorithm as
--- Nix uses (`nix hash-path`).
+-- Excludes the following before computing the hash:
+-- * the specified top-level files/ directories.
+-- * .git directory
+-- * untracked Git files
+-- * ignored Git files
+--
+-- Uses the same predictive algorithm that Nix (`nix hash-path`).
 --
 -- This function will do a full copy of the directory to a temporary location before
 -- computing the hash. Because it will be deleting the files in exclude list, and
 -- other files if the directory is a git repo. This needs to be done as `nix hash-path`
 -- doesn't support taking an excludes list.
--- TODO: Test this function with a git archive export.
 getDirectoryHash :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
 getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hash-" $ \tmpDir -> do
-  withSpinner (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
+  withSpinnerNoTrail (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
     runProc $ copyDir dir tmpDir
   getDirectoryHashDestructive excludes tmpDir
 
@@ -226,7 +230,8 @@ createMigrationEdgeFromHEAD obDir = do
     then
       putLog Warning "No migration necessary (working copy has not changed from HEAD)"
     else do
-      -- TODO: And have `ob internal create-migration --backfill=n` do it for all.
+      -- TODO: Add `ob internal create-migration --backfill=n` do it for all revisions.
+      -- See the failure condition in getHeadVertex
       written <- writeEdge (migrationDir obDir) headHash wcHash
       unless written $
         putLog Warning "No migration was created"
