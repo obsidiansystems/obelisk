@@ -189,8 +189,14 @@ verifyGraph obDir = do
     getMigrationGraph @Text obDir MigrationGraph_ObeliskUpgrade
   withSpinner "Checking graph integrity" $
     ensureGraphIntegrity upgradeGraph
-  withSpinner "Checking existence of HEAD vertex" $
-    void $ getHeadVertex obDir
+  liftIO (doesDirectoryExist $ obDir </> ".git") >>= \case
+    True ->
+      withSpinner "Checking existence of HEAD vertex" $
+        void $ getHeadVertex obDir
+    False -> do
+      hash <- computeVertexHash obDir
+      unless (hasVertex hash upgradeGraph) $
+        failWith $ "No vertex found for obelisk hash " <> hash
 
 -- | Create an edge from HEAD vertex to the hash corresponding to the Git
 -- working copy. The HEAD vertex must already exist.
