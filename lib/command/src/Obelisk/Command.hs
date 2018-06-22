@@ -100,6 +100,7 @@ data ObInternal
    = ObInternal_RunStaticIO StaticKey
    | ObInternal_Hash (Maybe Text)
    | ObInternal_CreateMigration
+   | ObInternal_VerifyMigration
    | ObInternal_Migrate Hash
    | ObInternal_CLIDemo
    deriving Show
@@ -202,6 +203,7 @@ internalCommand = subparser $ mconcat
   [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
   , command "hash" $ info (ObInternal_Hash <$> argument (maybeReader $ Just . Just . T.pack) (action "rev" <> metavar "GITREVISION" <> value Nothing <> help "Calculate for the specified git revision (defaults to working copy")) $ progDesc "Computes hash of working directory (or git revision)"
   , command "create-migration" $ info (pure ObInternal_CreateMigration) mempty
+  , command "verify-migration" $ info (pure ObInternal_VerifyMigration) mempty
   , command "migrate" $ info (ObInternal_Migrate <$> strArgument (action "fromHash" <> metavar "FROMHASH" <> help "Migrate from this hash")) $ progDesc "Perform a migrate from the given hash to HEAD of obelisk thunk"
   , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
@@ -393,16 +395,16 @@ ob = \case
       Just p -> do
         c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
-    ObInternal_Hash revM -> case revM of
-      Nothing -> do
-        hash <- getDirectoryHash [migrationDirName] "."
-        putLog Notice $ "Hash: " <> hash
-      Just rev -> do
-        [hash] <- getHashAtGitRevision [rev] [migrationDirName] "."
-        putLog Notice $ "Hash for " <> rev <> ": " <> hash
-    ObInternal_CreateMigration -> do
+    ObInternal_Hash revM -> do
+      hash <- case revM of
+        Nothing -> getDirectoryHash [migrationDirName] "."
+        Just rev -> fmap head $ getHashAtGitRevision [rev] [migrationDirName] "."
+      putLog Notice hash
+    ObInternal_CreateMigration ->
       createMigrationEdgeFromHEAD "."
-    ObInternal_Migrate fromHash -> do
+    ObInternal_VerifyMigration ->
+      verifyGraph "."
+    ObInternal_Migrate fromHash ->
       migrateObelisk "." fromHash
     ObInternal_CLIDemo -> cliDemo
 

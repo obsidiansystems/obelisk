@@ -62,7 +62,7 @@ getDirectoryHashDestructive excludes dir = do
 
 getHashAtGitRevision :: MonadObelisk m => [Text] -> [FilePath] -> FilePath -> m [Hash]
 getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashrev-" $ \tmpDir -> do
-  withSpinner (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
+  withSpinnerNoTrail (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
     runProc $ copyDir dir tmpDir
   tidyUpGitWorkingCopy tmpDir
   -- Discard changes to tracked files

@@ -136,8 +136,11 @@ type SpinnerTheme = [Text]
 spinnerCircleHalves :: SpinnerTheme
 spinnerCircleHalves = ["◐", "◓", "◑", "◒"]
 
+spinnerMoon :: SpinnerTheme
+spinnerMoon = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
+
 defaultSpinnerTheme :: SpinnerTheme
-defaultSpinnerTheme = spinnerCircleHalves
+defaultSpinnerTheme = spinnerMoon
 
 -- | Like `bracket` but the `release` function can know whether an exception was raised
 bracket' :: MonadMask m => m a -> (a -> Maybe c -> m b) -> (a -> m c) -> m c

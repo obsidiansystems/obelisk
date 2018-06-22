@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Upgrade where
 
 import Control.Monad (forM, unless, void)
@@ -85,9 +86,7 @@ decideHandOffToProjectOb project = do
         Just m -> do
           -- We don't have ambient's ob source code, so locate its hash from the
           -- graph. The last vertex should be it.
-          ambientHash <- getLast (_migration_graph m) >>= \case
-            Nothing -> failWith "Ambient ob has no (last) vertex"
-            Just v -> pure v
+          ambientHash <- getLast (_migration_graph m)
           unless (hasVertex ambientHash m) $
             failWith "Ambient ob's hash is not in its own graph"
           return (m, ambientHash)
@@ -166,6 +165,13 @@ migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk"
       callProcessAndLogOutput (Notice, Notice) $ gitProc project ["checkout", impl]
 
 -- | Get the migration graph for project
+getMigrationGraph
+  :: (Action action, MonadObelisk m)
+  => FilePath -> MigrationGraph -> m (Migration action)
+getMigrationGraph obDir graph = getMigrationGraph' obDir graph >>= \case
+  Nothing -> failWith "Migration graph missing"
+  Just m -> pure m
+
 getMigrationGraph'
   :: (Action action, MonadObelisk m)
   => FilePath -> MigrationGraph -> m (Maybe (Migration action))
@@ -177,6 +183,12 @@ getMigrationGraph' obDir graph = do
 
 computeVertexHash :: MonadObelisk m => FilePath -> m Hash
 computeVertexHash = getDirectoryHash [migrationDirName]
+
+-- | Verify the integrity of the migration graph in relation to the Git repo.
+verifyGraph :: MonadObelisk m => FilePath -> m ()
+verifyGraph obDir = do
+  upgradeGraph <- getMigrationGraph @Text obDir MigrationGraph_ObeliskUpgrade
+  ensureGraphIntegrity upgradeGraph
 
 createMigrationEdgeFromHEAD :: MonadObelisk m => FilePath -> m ()
 createMigrationEdgeFromHEAD obDir = do
@@ -199,9 +211,7 @@ createMigrationEdgeFromHEAD obDir = do
 -- Fail if the hash does not exist in project's migration graph.
 getHeadVertex :: MonadObelisk m => FilePath -> m Hash
 getHeadVertex obDir = do
-  projectGraph :: Migration Text <- getMigrationGraph' obDir MigrationGraph_ObeliskUpgrade >>= \case
-    Nothing -> failWith "No migration graph found"
-    Just g -> pure g
+  projectGraph <- getMigrationGraph @Text obDir MigrationGraph_ObeliskUpgrade
   [headHash] <- getHashAtGitRevision ["HEAD"] migrationIgnore obDir
   unless (hasVertex headHash projectGraph) $ do
     -- This means that the HEAD commit has no vertex in the graph,
@@ -245,10 +255,6 @@ backfillGraph lastN obDir = do
     takeM n' xs = case n' of
       Just n -> take n xs
       Nothing -> xs
-
--- | TODO: Verify the integrity of the migration graph in relation to the Git repo.
-verifyGraph :: MonadObelisk m => FilePath -> m ()
-verifyGraph = undefined
 
 migrationDir :: FilePath -> FilePath
 migrationDir project = project </> migrationDirName

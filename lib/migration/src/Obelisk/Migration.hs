@@ -5,7 +5,7 @@
 {-# LANGUAGE TupleSections #-}
 module Obelisk.Migration where
 
-import Control.Monad (forM, forM_, unless)
+import Control.Monad (forM, forM_, unless, void)
 import Control.Monad.Catch (Exception, MonadThrow, throwM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State.Strict (evalStateT, get, put)
@@ -40,6 +40,9 @@ data CyclicGraphError = CyclicGraphError
 data MultipleTerminalVertices = MultipleTerminalVertices
   deriving Show
 
+data NoTerminalVertex = NoTerminalVertex
+  deriving Show
+
 data NonEquivalentPaths = NonEquivalentPaths Hash Hash
   deriving Show
 
@@ -48,6 +51,7 @@ data MissingEdgeInActionMap = MissingEdgeInActionMap (Hash, Hash)
 
 instance Exception CyclicGraphError
 instance Exception MultipleTerminalVertices
+instance Exception NoTerminalVertex
 instance Exception NonEquivalentPaths
 instance Exception MissingEdgeInActionMap
 
@@ -84,6 +88,30 @@ readGraph root name = doesDirectoryExist root >>= \case
           return $ Just c
         False -> do
           return Nothing
+
+-- | Ensures that the migration class is correct
+--
+-- Throw the following if integrity check fails
+-- * `CyclicGraphError`
+-- * `NonEquivalentPaths`
+ensureGraphIntegrity
+  :: (MonadThrow m, Monoid action, Ord action)
+  => Migration action -> m ()
+ensureGraphIntegrity m = do
+  graph <- fmap adjacencyMap $ getDag $ _migration_graph m
+  firstVertex <- getFirst $ _migration_graph m
+  let
+    traverseFrom visited acc start = case Map.lookup start graph of
+      Nothing -> pure ()
+      Just adjs -> void $ flip traverse (Set.toList adjs) $ \adj -> do
+        acc' <- fmap (mappend acc) $ getAction m (start, adj)
+        visited' <- case Map.lookup adj visited of
+          Nothing -> pure $ Map.insert adj acc' visited
+          Just adjAcc -> if acc' == adjAcc
+            then pure visited
+            else throwM $ NonEquivalentPaths start adj
+        traverseFrom visited' acc' adj
+  traverseFrom mempty mempty firstVertex
 
 -- | Find the concataneted actions between two vertices
 --
@@ -135,10 +163,10 @@ getAction (Migration _ h) e = case Map.lookup e h of
 -- | Get the last vertex of the given DAG. Nothing if empty graph.
 --
 -- Assumes that the graph is fully connected.
-getLast :: (MonadThrow m, Ord a, Eq a) => AdjacencyMap a -> m (Maybe a)
+getLast :: (MonadThrow m, Ord a, Eq a) => AdjacencyMap a -> m a
 getLast g = lastVertices >>= \case
-  [] -> pure $ Nothing
-  [x] -> pure $ Just x
+  [] -> throwM NoTerminalVertex
+  [x] -> pure x
   _ -> throwM MultipleTerminalVertices
   where
     lastVertices
@@ -149,7 +177,7 @@ getLast g = lastVertices >>= \case
       =<< getDag g
 
 -- | Get the first vertex of the given DAG. Nothing if empty graph.
-getFirst :: (MonadThrow m, Ord a, Eq a) => AdjacencyMap a -> m (Maybe a)
+getFirst :: (MonadThrow m, Ord a, Eq a) => AdjacencyMap a -> m a
 getFirst = getLast . transpose
 
 -- | Write an edge directly to the filesystem.
