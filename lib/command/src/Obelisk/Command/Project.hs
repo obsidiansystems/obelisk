@@ -33,7 +33,7 @@ import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, createProcess_, failWith, putLog, withSpinner)
+import Obelisk.CliApp
 import Obelisk.Command.Thunk
 --TODO: Make this module resilient to random exceptions
 
@@ -110,7 +110,7 @@ initProject source = withSystemTempDirectory "ob-init" $ \tmpDir -> do
 --TODO: Allow the user to ignore our security concerns
 -- | Find the Obelisk implementation for the project at the given path
 findProjectObeliskCommand :: MonadObelisk m => FilePath -> m (Maybe FilePath)
-findProjectObeliskCommand target = do
+findProjectObeliskCommand target = withSpinnerNoTrail "Locating project obelisk" $ do
   myUid <- liftIO getRealUserID
   targetStat <- liftIO $ getFileStatus target
   (result, insecurePaths) <- flip runStateT [] $ walkToProjectRoot target targetStat myUid >>= \case

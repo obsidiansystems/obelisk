@@ -14,6 +14,7 @@ module Obelisk.Command.Thunk
   , ThunkData (..)
   , ReadThunkError (..)
   , GitHubSource (..)
+  , getThunkGitBranch
   , getLatestRev
   , updateThunkToLatest
   , createThunk
@@ -23,6 +24,7 @@ module Obelisk.Command.Thunk
   , unpackThunk
   , packThunk
   , readThunk
+  , updateThunk
   , getThunkPtr
   , getThunkPtr'
   ) where
@@ -71,9 +73,8 @@ import System.Posix (getSymbolicLinkStatus, modificationTime)
 import System.Process (proc)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, readProcessAndLogStderr,
-                       withExitFailMessage, withSpinner)
-import Obelisk.Command.Utils (checkGitCleanStatus, gitProc)
+import Obelisk.CliApp
+import Obelisk.Command.Utils
 
 --TODO: Support symlinked thunk data
 data ThunkData
@@ -121,6 +122,11 @@ data GitSource = GitSource
   , _gitSource_fetchSubmodules :: Bool
   }
   deriving (Show, Eq, Ord)
+
+getThunkGitBranch :: ThunkPtr -> Maybe Text
+getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
+  ThunkSource_GitHub s -> _gitHubSource_branch s
+  ThunkSource_Git s -> Just $ _gitSource_branch s
 
 commitNameToRef :: Name Commit -> Ref
 commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
@@ -405,7 +411,7 @@ createThunkWithLatest target s = do
     }
 
 updateThunkToLatest :: MonadObelisk m => FilePath -> m ()
-updateThunkToLatest target = withSpinner ("Updating thunk " <> T.pack target <> " to latest") $ do
+updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
   (overwrite, ptr) <- readThunk target >>= \case
     Left err -> failWith $ T.pack $ "thunk update: " <> show err
     Right c -> case c of
@@ -572,11 +578,40 @@ nixBuildAttrWithCache exprPath attr = do
       , _nixBuildConfig_outLink = OutLink_None
       }
 
-unpackThunk
-  :: MonadObelisk m
-  => FilePath
-  -> m ()
-unpackThunk thunkDir = readThunk thunkDir >>= \case
+-- | Safely update thunk using a custom action
+--
+-- A temporary working space is used to do any update. When the custom
+-- action successfully completes, the resulting (packed) thunk is copied
+-- back to the original location.
+updateThunk :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
+updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
+  p' <- copyThunkToTmp tmpDir p
+  unpackThunk' True p'
+  result <- f p'
+  updateThunkFromTmp p' "origin"  -- TODO: stop hardcoding remote
+  return result
+  where
+    copyThunkToTmp tmpDir thunkDir = readThunk thunkDir >>= \case
+      Left err -> failWith $ "withThunkUnpacked: " <> T.pack (show err)
+      Right (ThunkData_Packed _) -> do
+        let tmpThunk = tmpDir </> "thunk"
+        callProcessAndLogOutput (Notice, Error) $
+          proc "cp" ["-r", "-T", thunkDir, tmpThunk]
+        return tmpThunk
+      Right _ -> failWith $ "Thunk is not packed"
+    updateThunkFromTmp p' remote = do
+      packThunk' True p' remote
+      callProcessAndLogOutput (Notice, Error) $
+        proc "cp" ["-r", "-T", p', p]
+
+finalMsg :: Bool -> (a -> Text) -> Maybe (a -> Text)
+finalMsg noTrail s = if noTrail then Nothing else Just s
+
+unpackThunk :: MonadObelisk m => FilePath -> m ()
+unpackThunk = unpackThunk' False
+
+unpackThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
+unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
   Left err -> failWith $ "thunk unpack: " <> T.pack (show err)
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right (ThunkData_Checkout _) -> failWith "thunk unpack: thunk is already unpacked"
@@ -592,18 +627,18 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
             Nothing -> failWith "Cannot determine clone URI for thunk source"
             Just c -> return $ T.unpack $ getUrl c
 
-          withSpinner ("Retrieving thunk " <> T.pack thunkName <> " from GitHub") $ do
-            callProcessAndLogOutput (Notice, Notice) $
+          withSpinner' ("Fetching thunk " <> T.pack thunkDir)
+                       ( finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkDir) $ do
+            callProcessAndLogOutput (Debug, Debug) $
               proc "hub" ["clone", "-n", githubURI, tmpRepo]
             --If this directory already exists then something is weird and we should fail
             liftIO $ createDirectory obGitDir
-            callProcessAndLogOutput (Notice, Error) $
+            callProcessAndLogOutput (Debug, Error) $
               proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
 
-          withSpinner ("Preparing thunk in " <> T.pack thunkDir) $ do
             -- Checkout
-            putLog Notice $ "Checking out " <> T.pack (show $ maybe "" untagName $ _gitHubSource_branch s)
-            callProcessAndLogOutput (Notice, Notice) $
+            putLog Debug $ "Checking out " <> T.pack (show $ maybe "" untagName $ _gitHubSource_branch s)
+            callProcessAndLogOutput (Debug, Debug) $
               proc "hub" $ concat
                 [ ["-C", tmpRepo]
                 , pure "checkout"
@@ -612,13 +647,14 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
                 ]
             -- Set upstream branch
             forM_ (_gitHubSource_branch s) $ \branch ->
-              callProcessAndLogOutput (Notice, Error) $
+              callProcessAndLogOutput (Debug, Error) $
                 proc "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
             callProcessAndLogOutput (Notice, Error) $ proc "rm" ["-r", thunkDir]
             callProcessAndLogOutput (Notice, Error) $ proc "mv" ["-T", tmpRepo, thunkDir]
 
         ThunkSource_Git s -> do
-          withSpinner ("Retreiving thunk " <> T.pack thunkName <> " from Git repo") $ do
+          withSpinner' ("Fetching thunk " <> T.pack thunkName)
+                       (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
             let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
             git ["clone", if _gitSource_fetchSubmodules s then "--recursive" else "", show (_gitSource_url s)]
             git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
@@ -626,7 +662,6 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
               git ["submodule", "update", "--recursive", "--init"]
             git ["branch", "-u", "origin/" <> T.unpack (untagName $ _gitSource_branch s)]
 
-          withSpinner ("Preparing thunk in " <> T.pack thunkDir) $ do
             liftIO $ createDirectory obGitDir
             callProcessAndLogOutput (Notice, Error) $
               proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
@@ -637,16 +672,16 @@ unpackThunk thunkDir = readThunk thunkDir >>= \case
 
 --TODO: add force mode to pack even if changes are present
 --TODO: add a rollback mode to pack to the original thunk
-packThunk
-  :: MonadObelisk m
-  => FilePath
-  -> Text
-  -> m ()
-packThunk thunkDir upstream = readThunk thunkDir >>= \case
+packThunk :: MonadObelisk m => FilePath -> Text -> m ()
+packThunk = packThunk' False
+
+packThunk' :: MonadObelisk m => Bool -> FilePath -> Text -> m ()
+packThunk' noTrail thunkDir upstream = readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
-    withSpinner ("Packing thunk " <> T.pack thunkDir) $ do
+    withSpinner' ("Packing thunk " <> T.pack thunkDir)
+                 (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
       thunkPtr <- getThunkPtr thunkDir upstream
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
@@ -656,13 +691,8 @@ getThunkPtr = getThunkPtr' True
 
 getThunkPtr' :: MonadObelisk m => Bool -> FilePath -> Text -> m ThunkPtr
 getThunkPtr' checkClean thunkDir upstream = do
-    when checkClean $ checkGitCleanStatus thunkDir >>= \case
-      False -> do
-        statusDebug <- readGitProcess thunkDir ["status", "--ignored"]
-        putLog Warning "cannot proceed with unsaved working copy (git status):"
-        putLog Notice statusDebug
-        failWith "thunk pack: thunk checkout contains unsaved modifications"
-      True -> return ()
+    when checkClean $ ensureCleanGitRepo thunkDir True $
+      "thunk pack: thunk checkout contains unsaved modifications"
 
     -- Check whether there are any stashes
     stashOutput <- readGitProcess thunkDir ["stash", "list"]
@@ -788,7 +818,3 @@ parseSshShorthand uri = do
   guard $ isNothing (T.findIndex (=='/') authAndHostname)
         && not (T.null colonAndPath)
   parseURI $ T.unpack properUri
-
-
-readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
-readGitProcess repo = fmap T.pack . readProcessAndLogStderr Notice . gitProc repo

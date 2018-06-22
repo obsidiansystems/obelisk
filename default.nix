@@ -90,6 +90,14 @@ let
                 --replace "  arbitrary = (:|) <$> arbitrary <*> arbitrary" ""
             '';
           })).override { megaparsec = super.megaparsec_6_1_1; };
+    algebraic-graphs =
+      let src = pkgs.fetchFromGitHub {
+            owner = "snowleopard";
+            repo = "alga";
+            rev = "480a73137e9b38ad3f1bc2c628847953d2fb3e25";
+            sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
+          };
+      in pkgs.haskell.lib.dontCheck (self.callCabal2nix "algebraic-graphs" src {});
     network-transport = self.callHackage "network-transport" "0.5.2" {};
     network-transport-tcp = self.callHackage "network-transport-tcp" "0.6.0" {};
   };
@@ -104,11 +112,12 @@ let
   addLibs = self: super: {
     obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
     obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
-    obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
     obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
+    obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
     obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
     obelisk-executable-config = executableConfig.haskellPackage self;
     obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
+    obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
     obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
     obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
@@ -123,9 +132,13 @@ rec {
   inherit (reflex-platform) nixpkgs pinBuildInputs;
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  command = pkgs.runCommand ghcObelisk.obelisk-command.name { nativeBuildInputs = [pkgs.makeWrapper]; } ''
+  commandWithMigration = ghcObelisk.obelisk-command.overrideAttrs (drv: {
+     postInstall = (drv.postInstall or "") +
+                   ''cp -r ${./migration} $out/migration;'';
+  });
+  command = pkgs.runCommand commandWithMigration.name { nativeBuildInputs = [pkgs.makeWrapper]; } ''
     mkdir -p "$out/bin"
-    ln -s '${ghcObelisk.obelisk-command}/bin/ob' "$out/bin/ob"
+    ln -s '${commandWithMigration}/bin/ob' "$out/bin/ob"
     wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
   '';
   commandEnv = ghcObelisk.obelisk-command.env;

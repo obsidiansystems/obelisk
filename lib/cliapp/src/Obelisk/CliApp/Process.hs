@@ -73,7 +73,7 @@ createProcess
   :: (MonadIO m, Cli m)
   => CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess p = do
-  putLog Debug $ "Creating process: " <> T.pack (show p)
+  putLog Debug $ "Creating process: " <> T.pack (show $ cmdspec p)
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.createProcess_` but also logs (debug) the process being run
@@ -81,7 +81,7 @@ createProcess_
   :: (MonadIO m, Cli m)
   => String -> CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess_ name p = do
-  putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (show p)
+  putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (show $ cmdspec p)
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.callProcess` but also logs (debug) the process being run
