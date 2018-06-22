@@ -89,11 +89,16 @@ readGraph root name = doesDirectoryExist root >>= \case
         False -> do
           return Nothing
 
--- | Ensures that the migration class is correct
+-- | Ensures that the migration graph is correct
+--
+-- In a correct migration graph: for all pairs of nodes, all paths between
+-- those nodes have the same migration value
 --
 -- Throw the following if integrity check fails
 -- * `CyclicGraphError`
 -- * `NonEquivalentPaths`
+--
+-- Complexity: O(V+E)
 ensureGraphIntegrity
   :: (MonadThrow m, Monoid action, Ord action)
   => Migration action -> m ()
@@ -111,12 +116,18 @@ ensureGraphIntegrity m = do
             then pure visited
             else throwM $ NonEquivalentPaths start adj
         traverseFrom visited' acc' adj
+  -- We only check all paths from the _first_ vertex; it is not necessary to
+  -- check all paths between _all_ pairs of vertices as that can be proved by
+  -- induction, as long as there is exactly one first vertex (which we check on
+  -- further above).
   traverseFrom mempty mempty firstVertex
 
 -- | Find the concataneted actions between two vertices
 --
 -- All paths between the vertices must have the same mappend'ed action;
 -- otherwise this will throw.
+--
+-- Complexity: O(V+E)
 findPathAction
   :: (MonadThrow m, Action action, Monoid action, Ord action)
   => Migration action -> Hash -> Hash -> m (Maybe action)

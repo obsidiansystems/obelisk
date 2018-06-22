@@ -187,8 +187,12 @@ computeVertexHash = getDirectoryHash [migrationDirName]
 -- | Verify the integrity of the migration graph in relation to the Git repo.
 verifyGraph :: MonadObelisk m => FilePath -> m ()
 verifyGraph obDir = do
-  upgradeGraph <- getMigrationGraph @Text obDir MigrationGraph_ObeliskUpgrade
-  ensureGraphIntegrity upgradeGraph
+  upgradeGraph <- withSpinner "Reading graph" $
+    getMigrationGraph @Text obDir MigrationGraph_ObeliskUpgrade
+  withSpinner "Checking graph integrity" $
+    ensureGraphIntegrity upgradeGraph
+  withSpinner "Checking existence of HEAD vertex" $
+    void $ getHeadVertex obDir  -- HEAD vertex must be present.
 
 createMigrationEdgeFromHEAD :: MonadObelisk m => FilePath -> m ()
 createMigrationEdgeFromHEAD obDir = do
@@ -215,7 +219,7 @@ getHeadVertex obDir = do
   [headHash] <- getHashAtGitRevision ["HEAD"] migrationIgnore obDir
   unless (hasVertex headHash projectGraph) $ do
     -- This means that the HEAD commit has no vertex in the graph,
-    -- possible due to developer negligence when commiting it.
+    -- possibly due to developer negligence when commiting it.
     -- Perhaps we should use a post-commit hook or some such thing
     -- to reject such commits in the first place? For now, just
     -- error out.
