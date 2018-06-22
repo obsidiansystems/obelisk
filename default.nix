@@ -132,11 +132,14 @@ rec {
   inherit (reflex-platform) nixpkgs pinBuildInputs;
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  command = pkgs.runCommand ghcObelisk.obelisk-command.name { nativeBuildInputs = [pkgs.makeWrapper]; } ''
+  commandWithMigration = ghcObelisk.obelisk-command.overrideAttrs (drv: {
+     postInstall = (drv.postInstall or "") +
+                   ''cp -r ${./migration} $out/migration;'';
+  });
+  command = pkgs.runCommand commandWithMigration.name { nativeBuildInputs = [pkgs.makeWrapper]; } ''
     mkdir -p "$out/bin"
-    ln -s '${ghcObelisk.obelisk-command}/bin/ob' "$out/bin/ob"
+    ln -s '${commandWithMigration}/bin/ob' "$out/bin/ob"
     wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
-    cp -r ${./migration} $out/migration;
   '';
   commandEnv = ghcObelisk.obelisk-command.env;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];

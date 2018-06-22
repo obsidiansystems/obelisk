@@ -8,10 +8,15 @@ import Data.Bool (bool)
 import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
+import System.Directory (canonicalizePath)
+import System.Environment (getExecutablePath)
 import qualified System.Process as P
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
+
+getObeliskExe :: IO FilePath
+getObeliskExe = getExecutablePath >>= canonicalizePath
 
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> Bool -> m Bool

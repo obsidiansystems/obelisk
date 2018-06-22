@@ -9,7 +9,6 @@ module Obelisk.Command.Upgrade where
 import Control.Monad (forM, forM_, unless, void)
 import Control.Monad.Catch (onException)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.Bool (bool)
 import Data.Maybe (catMaybes)
 import Data.Monoid (Any (..), getAny)
@@ -18,7 +17,6 @@ import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Directory
-import System.Environment (getExecutablePath)
 import System.FilePath
 import System.IO.Temp
 import System.Posix.Process (executeFile)
@@ -83,14 +81,19 @@ decideHandOffToProjectOb project = do
       getMigrationGraph' ambientOb MigrationGraph_ObeliskHandoff >>= \case
         Nothing -> do
           failWith "Ambient ob has no migration (this can't be possible)"
-        Just (m, _, ambientHash) -> do
+        Just m -> do
+          -- We don't have ambient's ob source code, so locate its hash from the
+          -- graph. The last vertex should be it.
+          ambientHash <- getLast (_migration_graph m) >>= \case
+            Nothing -> failWith "Ambient ob has no (last) vertex"
+            Just v -> pure v
           unless (hasVertex ambientHash m) $
             failWith "Ambient ob's hash is not in its own graph"
           return (m, ambientHash)
 
 -- | Return the path to the current ('ambient') obelisk process Nix directory
 getAmbientOb :: MonadObelisk m => m FilePath
-getAmbientOb = takeDirectory . takeDirectory <$> liftIO getExecutablePath
+getAmbientOb = takeDirectory . takeDirectory <$> liftIO getObeliskExe
 
 upgradeObelisk :: MonadObelisk m => FilePath -> Maybe Text -> m ()
 upgradeObelisk project gitBranchM = do
@@ -131,7 +134,7 @@ migrateObelisk :: MonadObelisk m => FilePath -> Hash -> m ()
 migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk" (Just id) $ do
   updateThunk (toImplDir project) $ \obImpl -> revertObImplOnFail obImpl $ do
     toHash <- computeVertexHash obImpl
-    (g, _, _) <- getMigrationGraph' obImpl MigrationGraph_ObeliskUpgrade >>= \case
+    g <- getMigrationGraph' obImpl MigrationGraph_ObeliskUpgrade >>= \case
       Nothing -> failWith "New obelisk has no migration metadata"
       Just m -> pure m
 
@@ -161,17 +164,15 @@ migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk"
       putLog Notice $ T.pack $ "Reverting changes to " <> impl
       callProcessAndLogOutput (Notice, Notice) $ gitProc project ["checkout", impl]
 
--- | Get the migration graph for project, along with the first and last hash.
+-- | Get the migration graph for project
 getMigrationGraph'
   :: (Action action, MonadObelisk m)
-  => FilePath -> MigrationGraph -> m (Maybe (Migration action, Hash, Hash))
-getMigrationGraph' project graph = runMaybeT $ do
+  => FilePath -> MigrationGraph -> m (Maybe (Migration action))
+getMigrationGraph' obDir graph = do
   let name = graphName graph
-  putLog Debug $ "Reading migration graph " <> name <> " from " <> T.pack project
-  g <- MaybeT $ liftIO $ readGraph (migrationDir project) name
-  first <- MaybeT $ getFirst $ _migration_graph g
-  last' <- MaybeT $ getLast $ _migration_graph g
-  pure $ (g, first, last')
+      dir = migrationDir obDir
+  putLog Debug $ "Reading migration graph " <> name <> " from " <> T.pack dir
+  liftIO $ readGraph dir name
 
 computeVertexHash :: MonadObelisk m => FilePath -> m Hash
 computeVertexHash = getDirectoryHash [migrationDirName]
@@ -218,15 +219,15 @@ getDirectoryHashDestructive excludes dir = do
   nixHash dir
 
 createMigrationEdgeFromHEAD :: MonadObelisk m => FilePath -> m ()
-createMigrationEdgeFromHEAD project = do
-  headHash <- getHeadVertex project
-  wcHash <- getDirectoryHash migrationIgnore project
+createMigrationEdgeFromHEAD obDir = do
+  headHash <- getHeadVertex obDir
+  wcHash <- getDirectoryHash migrationIgnore obDir
   if (headHash == wcHash)
     then
       putLog Warning "No migration necessary (working copy has not changed from HEAD)"
     else do
       -- TODO: And have `ob internal create-migration --backfill=n` do it for all.
-      written <- writeEdge (migrationDir project) headHash wcHash
+      written <- writeEdge (migrationDir obDir) headHash wcHash
       unless written $
         putLog Warning "No migration was created"
 
@@ -234,12 +235,12 @@ createMigrationEdgeFromHEAD project = do
 --
 -- Fail if the hash does not exist in project's migration graph.
 getHeadVertex :: MonadObelisk m => FilePath -> m Hash
-getHeadVertex project = do
-  projectGraph :: Migration Text <- liftIO (readGraph (migrationDir project) (graphName MigrationGraph_ObeliskUpgrade)) >>= \case
+getHeadVertex obDir = do
+  projectGraph :: Migration Text <- getMigrationGraph' obDir MigrationGraph_ObeliskUpgrade >>= \case
     Nothing -> failWith "No migration graph found"
     Just g -> pure g
-  [headHash] <- getHashAtGitRevision ["HEAD"] migrationIgnore project
-  unless (hasVertex headHash projectGraph) $
+  [headHash] <- getHashAtGitRevision ["HEAD"] migrationIgnore obDir
+  unless (hasVertex headHash projectGraph) $ do
     -- This means that the HEAD commit has no vertex in the graph,
     -- possible due to developer negligence when commiting it.
     -- Perhaps we should use a post-commit hook or some such thing

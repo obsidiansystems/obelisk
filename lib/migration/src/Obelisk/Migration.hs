@@ -73,9 +73,7 @@ readGraph root name = doesDirectoryExist root >>= \case
     return $ pure $ Migration (edges $ fmap fst edgesInfo) (Map.fromList edgesInfo)
   where
     getEdgeVertices p = case T.splitOn "-" $ T.pack p of
-      [v1, v2] -> case (T.length v1, T.length v2) of
-        (40, 40) -> Just (v1, v2)
-        _ -> Nothing
+      [v1, v2] -> Just (v1, v2)
       _ -> Nothing
     getEdgeFor graph (v1, v2) = do
       let f = root </> (T.unpack $ v1 <> "-" <> v2) </> T.unpack graph
@@ -83,7 +81,8 @@ readGraph root name = doesDirectoryExist root >>= \case
         True -> do
           c <- readFile f >>= pure . parseEdgeMeta
           return $ Just c
-        False -> return Nothing
+        False -> do
+          return Nothing
 
 -- | Find the concataneted actions between two vertices
 --

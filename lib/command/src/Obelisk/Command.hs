@@ -36,6 +36,7 @@ import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
 import Obelisk.Command.Upgrade
+import Obelisk.Command.Utils (getObeliskExe)
 import qualified Obelisk.Command.VmBuilder as VmBuilder
 import Obelisk.Migration (Hash)
 
@@ -111,7 +112,7 @@ inNixShell' p = withProjectRoot "." $ \root -> do
       argsCfg <- getArgsConfig
       myArgs <- getArgs
       obArgs <- parseCLIArgs argsCfg myArgs
-      progName <- getExecutablePath
+      progName <- getObeliskExe
       return $ progName : catMaybes
         [ Just "--no-handoff"
         , bool Nothing (Just "--verbose") $ _args_verbose obArgs
