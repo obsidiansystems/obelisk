@@ -50,6 +50,7 @@ library
     Obelisk.Command.Run
     Obelisk.Command.Thunk
     Obelisk.Command.Upgrade
+    Obelisk.Command.Upgrade.Hash
     Obelisk.Command.Utils
     Obelisk.Command.VmBuilder
   -- -fobject-code is so that the StaticPointers extension can work in ghci

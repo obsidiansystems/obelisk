@@ -6,10 +6,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Upgrade where
 
-import Control.Monad (forM, forM_, unless, void)
+import Control.Monad (forM, unless, void)
 import Control.Monad.Catch (onException)
 import Control.Monad.IO.Class (liftIO)
-import Data.Bool (bool)
 import Data.Maybe (catMaybes)
 import Data.Monoid (Any (..), getAny)
 import Data.Semigroup ((<>))
@@ -18,9 +17,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import System.Directory
 import System.FilePath
-import System.IO.Temp
 import System.Posix.Process (executeFile)
-import System.Process (cwd, proc)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
@@ -30,6 +27,7 @@ import Obelisk.Command.Project (toImplDir)
 import Obelisk.Command.Project (findProjectObeliskCommand)
 import Obelisk.Command.Thunk (ThunkData (..), getThunkGitBranch, readThunk, updateThunk)
 
+import Obelisk.Command.Upgrade.Hash
 import Obelisk.Migration
 
 newtype HandOffAction = HandoffAction Any
@@ -41,7 +39,7 @@ instance Action HandOffAction where
 data MigrationGraph
   = MigrationGraph_ObeliskUpgrade
   | MigrationGraph_ObeliskHandoff
-  deriving (Eq, Show)
+  deriving (Eq, Show, Bounded, Enum)
 
 graphName :: MigrationGraph -> Text
 graphName = \case
@@ -53,6 +51,9 @@ fromGraphName = \case
   "obelisk-handoff" -> MigrationGraph_ObeliskHandoff
   "obelisk-upgrade" -> MigrationGraph_ObeliskUpgrade
   _ -> error "Invalid graph name specified"
+
+graphNames :: [Text]
+graphNames = fmap graphName $ [minBound .. maxBound]
 
 ensureCleanProject :: MonadObelisk m => FilePath -> m ()
 ensureCleanProject project =
@@ -177,51 +178,6 @@ getMigrationGraph' obDir graph = do
 computeVertexHash :: MonadObelisk m => FilePath -> m Hash
 computeVertexHash = getDirectoryHash [migrationDirName]
 
-migrationDir :: FilePath -> FilePath
-migrationDir project = project </> migrationDirName
-
-migrationIgnore :: [FilePath]
-migrationIgnore = [migrationDirName]
-
-migrationDirName :: FilePath
-migrationDirName = "migration"
-
--- TODO: Move this to migration library? (but we rely on wrapProgram exes)
-
--- | Get the unique hash of the given directory
---
--- Excludes the following before computing the hash:
--- * the specified top-level files/ directories.
--- * .git directory
--- * untracked Git files
--- * ignored Git files
---
--- Uses the same predictive algorithm that Nix (`nix hash-path`).
---
--- This function will do a full copy of the directory to a temporary location before
--- computing the hash. Because it will be deleting the files in exclude list, and
--- other files if the directory is a git repo. This needs to be done as `nix hash-path`
--- doesn't support taking an excludes list.
-getDirectoryHash :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
-getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hash-" $ \tmpDir -> do
-  withSpinnerNoTrail (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
-    runProc $ copyDir dir tmpDir
-  getDirectoryHashDestructive excludes tmpDir
-
--- Do /not/ call this directly! Call `getDirectoryHash` instead.
-getDirectoryHashDestructive :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
-getDirectoryHashDestructive excludes dir = do
-  liftIO (doesDirectoryExist $ dir </> ".git") >>= \case
-    True -> do
-      tidyUpGitWorkingCopy dir
-      withSpinnerNoTrail "Removing .git directory" $
-        liftIO $ removePathForcibly $ dir </> ".git"
-    False -> pure ()
-  withSpinnerNoTrail "Removing excluded paths" $ do
-    forM_ (fmap (dir </>) excludes) $
-      liftIO . removePathForcibly
-  nixHash dir
-
 createMigrationEdgeFromHEAD :: MonadObelisk m => FilePath -> m ()
 createMigrationEdgeFromHEAD obDir = do
   headHash <- getHeadVertex obDir
@@ -232,9 +188,11 @@ createMigrationEdgeFromHEAD obDir = do
     else do
       -- TODO: Add `ob internal create-migration --backfill=n` do it for all revisions.
       -- See the failure condition in getHeadVertex
-      written <- writeEdge (migrationDir obDir) headHash wcHash
-      unless written $
-        putLog Warning "No migration was created"
+      writeEdge (migrationDir obDir) graphNames headHash wcHash >>= \case
+        Nothing ->
+          putLog Warning "No migration was created"
+        Just edgeDir ->
+          putLog Notice $ "Created edge: " <> T.pack edgeDir
 
 -- | Return the hash corresponding to HEAD
 --
@@ -254,32 +212,28 @@ getHeadVertex obDir = do
     failWith $ "No vertex found for HEAD (" <> headHash <> ")"
   return headHash
 
--- | TODO: Verify the integrity of the migration graph in relation to the Git repo.
-verifyGraph :: MonadObelisk m => FilePath -> m ()
-verifyGraph = undefined
-
 -- | Create, or update, the migration graph with new edges and new vertices
 -- corresponding to every commit in the Git history from HEAD.
 --
 -- NOTE: This creates a linear graph, and doesn't follow the Git graph
 -- structure.
 backfillGraph :: MonadObelisk m => Maybe Int -> FilePath -> m ()
-backfillGraph lastN project = do
+backfillGraph lastN obDir = do
   revs <- fmap (takeM lastN . fmap (fst . T.breakOn " ") . T.lines) $
-    readProc $ gitProc project ["log", "--pretty=oneline"]
+    readProc $ gitProc obDir ["log", "--pretty=oneline"]
   -- Note: we need to take unique hashes only; this is fine for backfilling.
   -- But future migrations should ensure that there are no duplicate hashes
   -- (which would cause cycles) such as those introduced by revert commits.
   vertices :: [Hash] <- withSpinnerNoTrail "Computing hash for git history" $
-    fmap (unique . reverse) $ getHashAtGitRevision revs [migrationDirName] project
+    fmap (unique . reverse) $ getHashAtGitRevision revs [migrationDirName] obDir
   void $ withSpinner'
     ("Backfilling with " <> tshow (length vertices) <> " vertices")
     (Just $ \n -> "Backfilled " <> tshow n <> " edges.") $ do
       let vertexPairs = zip vertices $ drop 1 vertices
-      let edgesDir = migrationDir project
+      let edgesDir = migrationDir obDir
       liftIO $ createDirectoryIfMissing False edgesDir
-      fmap (length . filter (== True)) $ forM vertexPairs $ \(v1, v2) -> do
-        writeEdge edgesDir v1 v2
+      fmap (length . catMaybes) $ forM vertexPairs $ \(v1, v2) -> do
+        writeEdge edgesDir graphNames v1 v2
   where
     -- Return unique items in the list /while/ preserving order
     unique = loop mempty
@@ -292,75 +246,15 @@ backfillGraph lastN project = do
       Just n -> take n xs
       Nothing -> xs
 
--- | Write the edge to filesystem.
---
--- Return True if the edge was created, False if already exists.
-writeEdge :: MonadObelisk m => FilePath -> Hash -> Hash -> m Bool
-writeEdge dir v1 v2 = do
-  unless (v1 /= v2) $
-    failWith $ "Cannot create self loop with: " <> v1
-  let edgeDir = dir </> (T.unpack $ v1 <> "-" <> v2)
-  liftIO (doesDirectoryExist edgeDir) >>= \case
-    True -> pure False
-    False -> do
-      putLog Notice $ T.pack $ "Creating edge " <> edgeDir
-      liftIO $ createDirectory edgeDir
-      forM_ actionFiles $ \fp -> liftIO $
-        writeFile (edgeDir </> fp) ""
-      pure True
-  where
-    actionFiles = ["obelisk-handoff", "obelisk-upgrade"]
+-- | TODO: Verify the integrity of the migration graph in relation to the Git repo.
+verifyGraph :: MonadObelisk m => FilePath -> m ()
+verifyGraph = undefined
 
-getHashAtGitRevision :: MonadObelisk m => [Text] -> [FilePath] -> FilePath -> m [Hash]
-getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashrev-" $ \tmpDir -> do
-  withSpinner (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
-    runProc $ copyDir dir tmpDir
-  tidyUpGitWorkingCopy tmpDir
-  -- Discard changes to tracked files
-  runProcSilently $ gitProc tmpDir ["reset", "--hard"]
-  forM revs $ \rev -> do
-    runProcSilently $ gitProc tmpDir ["checkout", T.unpack rev]
-    -- Checking out an arbitrary revision can leave untracked files (from
-    -- previous revison) around, so tidy them up.
-    tidyUpGitWorkingCopy tmpDir
-    withFilesStashed tmpDir (excludes <> [".git"]) $
-      nixHash tmpDir
-  where
-    withFilesStashed base fs m = withSystemTempDirectory "obelisk-hashrev-stash-" $ \stashDir -> do
-      existingPaths <- fmap catMaybes $ forM fs $ \p -> do
-        liftIO (doesPathExist $ base </> p) >>= pure . bool Nothing (Just p)
-      forM_ existingPaths $ \p ->
-        liftIO $ renamePath (base </> p) (stashDir </> p)
-      result <- m
-      forM_ existingPaths $ \p ->
-        liftIO $ renamePath (stashDir </> p) (base </> p)
-      return result
+migrationDir :: FilePath -> FilePath
+migrationDir project = project </> migrationDirName
 
-nixHash :: MonadObelisk m => FilePath -> m Hash
-nixHash dir = withSpinnerNoTrail "Running `nix hash-path`" $
-  readProc $ proc "nix" ["hash-path", "--type", "md5", dir]
+migrationIgnore :: [FilePath]
+migrationIgnore = [migrationDirName]
 
--- | Clean up the following files in the git working copy
---
--- * Paths ignored by .gitignored, but still present in the filesystem
--- * Untracked files (not added to git index)
--- * Any empty directories (these are not tracked by git)
---
--- Note that this leaves modified (staged or unstaged) files as they are.
-tidyUpGitWorkingCopy :: MonadObelisk m => FilePath -> m ()
-tidyUpGitWorkingCopy dir = withSpinnerNoTrail "Tidying up git working copy" $ do
-  ignored <- gitLsFiles dir ["--ignored", "--exclude-standard", "--others"]
-  untracked <- gitLsFiles dir ["--exclude-standard", "--others"]
-  putLog Debug $ T.pack $ "Found " <> show (length ignored) <> " ignored files."
-  putLog Debug $ T.pack $ "Untracked:\n" <> unlines untracked
-  putLog Debug $ T.pack $ "Ignored:\n" <> unlines ignored
-  withSpinnerNoTrail "Removing untracked and ignored files" $ do
-    forM_ (fmap (dir </>) $ ignored <> untracked) $
-      liftIO . removePathForcibly
-  -- Empty directories won't be included in these lists. Git doesn't track them
-  -- So we must delete these separately.
-  runProc $ proc "find" [dir, "-depth", "-empty", "-type", "d", "-delete"]
-  where
-    gitLsFiles pwd opts = fmap lines $ readProcessAndLogStderr Error $
-      (proc "git" $ ["ls-files", "."] <> opts) { cwd = Just pwd }
-
+migrationDirName :: FilePath
+migrationDirName = "migration"

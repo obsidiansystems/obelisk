@@ -36,6 +36,7 @@ import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
 import Obelisk.Command.Upgrade
+import Obelisk.Command.Upgrade.Hash (getDirectoryHash, getHashAtGitRevision)
 import Obelisk.Command.Utils (getObeliskExe)
 import qualified Obelisk.Command.VmBuilder as VmBuilder
 import Obelisk.Migration (Hash)

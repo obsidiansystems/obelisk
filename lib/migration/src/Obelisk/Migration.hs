@@ -5,8 +5,9 @@
 {-# LANGUAGE TupleSections #-}
 module Obelisk.Migration where
 
-import Control.Monad (forM)
+import Control.Monad (forM, forM_, unless)
 import Control.Monad.Catch (Exception, MonadThrow, throwM)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State.Strict (evalStateT, get, put)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -15,7 +16,7 @@ import Data.Semigroup ((<>))
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
-import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
+import System.Directory
 import System.FilePath
 
 import Algebra.Graph.AdjacencyMap
@@ -150,3 +151,21 @@ getLast g = lastVertices >>= \case
 -- | Get the first vertex of the given DAG. Nothing if empty graph.
 getFirst :: (MonadThrow m, Ord a, Eq a) => AdjacencyMap a -> m (Maybe a)
 getFirst = getLast . transpose
+
+-- | Write an edge directly to the filesystem.
+--
+-- Actions are written with empty string.
+--
+-- Return the edge directory created.
+writeEdge :: MonadIO m => FilePath -> [Text] -> Hash -> Hash -> m (Maybe FilePath)
+writeEdge dir actionFiles v1 v2 = do
+  unless (v1 /= v2) $
+    fail $ "Cannot create self loop with: " <> T.unpack v1
+  let edgeDir = dir </> (T.unpack $ v1 <> "-" <> v2)
+  liftIO (doesDirectoryExist edgeDir) >>= \case
+    True -> pure Nothing
+    False -> do
+      liftIO $ createDirectory edgeDir
+      forM_ actionFiles $ \fp -> liftIO $
+        writeFile (edgeDir </> T.unpack fp) ""
+      pure $ Just edgeDir
