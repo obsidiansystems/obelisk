@@ -4,8 +4,7 @@
 module Obelisk.CliApp.Demo where
 
 import Control.Concurrent (threadDelay)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (MonadIO)
+import Control.Monad.IO.Class
 import Data.Semigroup ((<>))
 import qualified Data.Text as T
 import System.Process (proc)

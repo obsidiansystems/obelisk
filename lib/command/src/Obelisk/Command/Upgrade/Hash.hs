@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+-- | Hash a git repo or arbitrary directory using nix-hash.
 module Obelisk.Command.Upgrade.Hash
   ( getDirectoryHash
   , getHashAtGitRevision
@@ -33,20 +34,20 @@ import Obelisk.Migration
 -- * .git directory
 -- * untracked Git files
 -- * ignored Git files
+-- * empty directories
 --
--- Uses the same predictive algorithm that Nix (`nix hash-path`).
+-- Uses the same predictive algorithm as that of Nix (`nix hash-path`).
 --
 -- This function will do a full copy of the directory to a temporary location before
 -- computing the hash. Because it will be deleting the files in exclude list, and
--- other files if the directory is a git repo. This needs to be done as `nix hash-path`
--- doesn't support taking an excludes list.
+-- other files if the directory is a git repo, which needs to be done as `nix
+-- hash-path` doesn't support taking an excludes list.
 getDirectoryHash :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
 getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hash-" $ \tmpDir -> do
   withSpinnerNoTrail (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
     runProc $ copyDir dir tmpDir
   getDirectoryHashDestructive excludes tmpDir
 
--- Do /not/ call this directly! Call `getDirectoryHash` instead.
 getDirectoryHashDestructive :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
 getDirectoryHashDestructive excludes dir = do
   liftIO (doesDirectoryExist $ dir </> ".git") >>= \case
@@ -91,7 +92,7 @@ nixHash dir = withSpinnerNoTrail "Running `nix hash-path`" $
 
 -- | Clean up the following files in the git working copy
 --
--- * Paths ignored by .gitignored, but still present in the filesystem
+-- * Paths ignored by .gitignore, and still present
 -- * Untracked files (not added to git index)
 -- * Any empty directories (these are not tracked by git)
 --
@@ -100,9 +101,8 @@ tidyUpGitWorkingCopy :: MonadObelisk m => FilePath -> m ()
 tidyUpGitWorkingCopy dir = withSpinnerNoTrail "Tidying up git working copy" $ do
   ignored <- gitLsFiles dir ["--ignored", "--exclude-standard", "--others"]
   untracked <- gitLsFiles dir ["--exclude-standard", "--others"]
-  putLog Debug $ T.pack $ "Found " <> show (length ignored) <> " ignored files."
-  putLog Debug $ T.pack $ "Untracked:\n" <> unlines untracked
-  putLog Debug $ T.pack $ "Ignored:\n" <> unlines ignored
+  putLog Debug $ T.pack $ "Ignored: " <> show (length ignored) <> " files."
+  putLog Debug $ T.pack $ "Untracked files:\n" <> unlines untracked
   withSpinnerNoTrail "Removing untracked and ignored files" $ do
     forM_ (fmap (dir </>) $ ignored <> untracked) $
       liftIO . removePathForcibly

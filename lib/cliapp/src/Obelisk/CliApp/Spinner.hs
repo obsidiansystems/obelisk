@@ -16,7 +16,6 @@ import Control.Monad (forM_, (>=>))
 import Control.Monad.Catch (MonadMask, mask, onException)
 import Control.Monad.IO.Class
 import Control.Monad.Log (Severity (..), logMessage)
-import Control.Monad.Reader (MonadIO)
 import Data.IORef
 import qualified Data.List as L
 import Data.Maybe (isNothing)
@@ -35,10 +34,10 @@ withSpinner s = withSpinner' s $ Just $ const s
 
 -- | A spinner that leaves no trail after a successful run.
 --
--- Use if you wish the spinner to be 'temporary' visually to the user.
+-- Use if you wish the spinner to be ephemerally visible to the user.
 --
--- The 'no trail' property automatically carries over to sub-spinners (in that they won't
--- leave a trail either).
+-- The 'no trail' property automatically carries over to sub-spinners (in that
+-- they won't leave a trail either).
 withSpinnerNoTrail
   :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
   => Text -> m a -> m a
@@ -80,7 +79,8 @@ withSpinner' msg mkTrail action = do
           ( TerminalString_Colorized Green "✔"
           , mkTrail <*> pure result
           )
-      forM_ logsM $ logMessage . Output_Write  -- Last message, finish off with newline.
+      -- Last message, finish off with newline.
+      forM_ logsM $ logMessage . Output_Write
     pushSpinner (flag, old) =
       ( (isTemporary : flag, TerminalString_Normal msg : old)
       , null old -- Is empty?
@@ -133,8 +133,8 @@ runSpinner spinner f = forM_ spinner $ f >=> const delay
 type SpinnerTheme = [Text]
 
 -- Find more spinners at https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
-spinnerCircleHalves :: SpinnerTheme
-spinnerCircleHalves = ["◐", "◓", "◑", "◒"]
+_spinnerCircleHalves :: SpinnerTheme
+_spinnerCircleHalves = ["◐", "◓", "◑", "◒"]
 
 spinnerMoon :: SpinnerTheme
 spinnerMoon = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]

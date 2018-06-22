@@ -106,7 +106,7 @@ ensureGraphIntegrity m = do
   graph <- fmap adjacencyMap $ getDag $ _migration_graph m
   firstVertex <- getFirst $ _migration_graph m
   let
-    traverseFrom visited acc start = case Map.lookup start graph of
+    visitFrom visited acc start = case Map.lookup start graph of
       Nothing -> pure ()
       Just adjs -> void $ flip traverse (Set.toList adjs) $ \adj -> do
         acc' <- fmap (mappend acc) $ getAction m (start, adj)
@@ -115,14 +115,14 @@ ensureGraphIntegrity m = do
           Just adjAcc -> if acc' == adjAcc
             then pure visited
             else throwM $ NonEquivalentPaths start adj
-        traverseFrom visited' acc' adj
+        visitFrom visited' acc' adj
   -- We only check all paths from the _first_ vertex; it is not necessary to
   -- check all paths between _all_ pairs of vertices as that can be proved by
   -- induction, as long as there is exactly one first vertex (which we check on
   -- further above).
-  traverseFrom mempty mempty firstVertex
+  visitFrom mempty mempty firstVertex
 
--- | Find the concataneted actions between two vertices
+-- | Find the concatenated actions between two vertices
 --
 -- All paths between the vertices must have the same mappend'ed action;
 -- otherwise this will throw.

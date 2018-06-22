@@ -252,7 +252,7 @@ parserPrefs = defaultPrefs
 parseCLIArgs :: ArgsConfig -> [String] -> IO Args
 parseCLIArgs cfg as = pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
--- | Create an Obelisk config for this process.
+-- | Create an Obelisk config for the current process.
 mkObeliskConfig :: IO Obelisk
 mkObeliskConfig = do
   cliArgs <- getArgs
@@ -269,7 +269,7 @@ mkObeliskConfig = do
       inShellCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
       return $ isTerm && not inShellCompletion
 
--- For use from development obelisk repls
+-- | For use from development obelisk repls
 --
 -- Example:
 -- > runCommand $ someFuncInMonadObelisk ...
@@ -306,8 +306,8 @@ mainWithHandOff argsCfg = \case
   HandOff_Decide f impl as -> do
     withSpinner' "Deciding whether to handoff"
       (Just $ bool
-        "Decided /not/ to handoff to project obelisk"
-        "Decided to handoff to project obelisk") f >>= \case
+        "Continuing in ambient obelisk without handing off"
+        "Handed off to project obelisk") f >>= \case
       True -> mainWithHandOff argsCfg $ HandOff_Yes impl as
       False -> mainWithHandOff argsCfg $ HandOff_No as
   HandOff_No as -> do

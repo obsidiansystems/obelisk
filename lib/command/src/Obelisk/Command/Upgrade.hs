@@ -87,8 +87,6 @@ decideHandOffToProjectOb project = do
           -- We don't have ambient's ob source code, so locate its hash from the
           -- graph. The last vertex should be it.
           ambientHash <- getLast (_migration_graph m)
-          unless (hasVertex ambientHash m) $
-            failWith "Ambient ob's hash is not in its own graph"
           return (m, ambientHash)
 
 -- | Return the path to the current ('ambient') obelisk process Nix directory
@@ -108,11 +106,11 @@ getObeliskBranch project = readThunk (toImplDir project) >>= \case
   Right (ThunkData_Packed tptr) -> case getThunkGitBranch tptr of
     Just v -> pure v
     Nothing ->
-      failWith "You must specify a git branch to `ob upgrade` as obelisk thunk does not specify any."
+      failWith "You must run `ob upgrade` with the Git branch specified explicitly, as the project's obelisk thunk does not specify any."
 
 updateObelisk :: MonadObelisk m => FilePath -> Text -> m Hash
 updateObelisk project gitBranch =
-  withSpinner ("Fetching new Obelisk [" <> gitBranch <> "]") $
+  withSpinner ("Fetching new obelisk [" <> gitBranch <> "]") $
     updateThunk (toImplDir project) $ \obImpl -> do
       fromHash <- computeVertexHash obImpl
       callProcessAndLogOutput (Debug, Debug) $
@@ -123,15 +121,15 @@ updateObelisk project gitBranch =
 
 handOffToNewOb :: MonadObelisk m => FilePath -> Hash -> m ()
 handOffToNewOb project fromHash = do
-  impl <- withSpinner' "Preparing for handoff" (Just $ ("Handed off to new Obelisk " <>) . T.pack) $
+  impl <- withSpinner' "Preparing for handoff" (Just $ ("Handed off to new obelisk " <>) . T.pack) $
     findProjectObeliskCommand project >>= \case
-      Nothing -> failWith "Not an Obelisk project"
+      Nothing -> failWith "Not an obelisk project"
       Just impl -> pure impl
   let opts = ["internal", "migrate", T.unpack fromHash]
   liftIO $ executeFile impl False ("--no-handoff" : opts) Nothing
 
 migrateObelisk :: MonadObelisk m => FilePath -> Hash -> m ()
-migrateObelisk project fromHash = void $ withSpinner' "Migrating to new Obelisk" (Just id) $ do
+migrateObelisk project fromHash = void $ withSpinner' "Migrating to new obelisk" (Just id) $ do
   updateThunk (toImplDir project) $ \obImpl -> revertObImplOnFail obImpl $ do
     toHash <- computeVertexHash obImpl
     g <- getMigrationGraph' obImpl MigrationGraph_ObeliskUpgrade >>= \case
@@ -192,18 +190,18 @@ verifyGraph obDir = do
   withSpinner "Checking graph integrity" $
     ensureGraphIntegrity upgradeGraph
   withSpinner "Checking existence of HEAD vertex" $
-    void $ getHeadVertex obDir  -- HEAD vertex must be present.
+    void $ getHeadVertex obDir
 
+-- | Create an edge from HEAD vertex to the hash corresponding to the Git
+-- working copy. The HEAD vertex must already exist.
 createMigrationEdgeFromHEAD :: MonadObelisk m => FilePath -> m ()
 createMigrationEdgeFromHEAD obDir = do
   headHash <- getHeadVertex obDir
   wcHash <- getDirectoryHash migrationIgnore obDir
   if (headHash == wcHash)
     then
-      putLog Warning "No migration necessary (working copy has not changed from HEAD)"
+      putLog Warning "No migration necessary (working copy has the same hash as that of HEAD)"
     else do
-      -- TODO: Add `ob internal create-migration --backfill=n` do it for all revisions.
-      -- See the failure condition in getHeadVertex
       writeEdge (migrationDir obDir) graphNames headHash wcHash >>= \case
         Nothing ->
           putLog Warning "No migration was created"
