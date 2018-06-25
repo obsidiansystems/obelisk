@@ -20,7 +20,7 @@ data CliConfig = CliConfig
   , _cliConfig_noSpinner :: Bool  -- Disallow spinners
   , _cliConfig_lock :: MVar Bool  -- Whether the last message was an Overwrite output
   , _cliConfig_tipDisplayed :: IORef Bool  -- Whether the user tip (to make verbose) was already displayed
-  , _cliConfig_spinnerStack :: IORef [TerminalString] -- Stack of logs from nested spinners
+  , _cliConfig_spinnerStack :: IORef ([Bool], [TerminalString]) -- Stack of logs from nested spinners
   }
 
 data Output

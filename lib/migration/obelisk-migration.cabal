@@ -1,0 +1,24 @@
+name: obelisk-migration
+version: 0.1
+license: BSD3
+build-type: Simple
+cabal-version: >=1.2
+
+library
+  hs-source-dirs: src
+  build-depends:
+      algebraic-graphs >= 0.2
+    , base
+    , containers
+    , directory
+    , exceptions
+    , filepath
+    , mtl
+    , obelisk-cliapp
+    , process
+    , text
+    , transformers
+  exposed-modules:
+    Obelisk.Migration
+  other-modules:
+  ghc-options: -Wall -fobject-code
