@@ -88,7 +88,8 @@ getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashre
 
 nixHash :: MonadObelisk m => FilePath -> m Hash
 nixHash dir = withSpinnerNoTrail "Running `nix hash-path`" $
-  readProc $ proc "nix" ["hash-path", "--type", "md5", dir]
+  readProc $ proc "nix-hash" [dir]
+  -- Nix2.0 only; readProc $ proc "nix" ["hash-path", "--type", "md5", dir]
 
 -- | Clean up the following files in the git working copy
 --
