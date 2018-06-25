@@ -189,24 +189,25 @@ verifyMigration obDir = do
     getMigrationGraph @Text obDir MigrationGraph_ObeliskUpgrade
   withSpinner "Checking graph integrity" $
     ensureGraphIntegrity upgradeGraph
-  withSpinner "Checking graph is linear" $
-    -- We don't support merge commits (i.e., diamonds in a graph) yet.
-    -- Until we do, ensure that the graph is a linear list.
-    try (ensureGraphLinearity upgradeGraph) >>= \case
-      Left (NonLinearGraph_MultipleAdjacents vertex) ->
-        failWith $ "Graph is not linear; branches at vertex: " <> tshow vertex
-      Left (NonLinearGraph_NotConnected isolatedVertices) ->
-        failWith $ "Graph is partly linear, but with isolated vertices: " <> tshow isolatedVertices
-      Right () ->
-        pure ()
-  liftIO (doesDirectoryExist $ obDir </> ".git") >>= \case
+  headVertex <- liftIO (doesDirectoryExist $ obDir </> ".git") >>= \case
     True ->
       withSpinner "Checking existence of HEAD vertex" $
-        void $ getHeadVertex obDir
+        getHeadVertex obDir
     False -> do
       hash <- computeVertexHash obDir
       unless (hasVertex hash upgradeGraph) $
         failWith $ "No vertex found for obelisk hash " <> hash
+      pure hash
+  withSpinner "Checking graph linearity" $
+    -- NOTE: We don't support merge commits (i.e., diamonds in a graph) yet.
+    -- Until we do, ensure that the graph is a fully connected linear list.
+    try (ensureGraphLinearity upgradeGraph) >>= \case
+      Left (NonLinearGraph_MultipleAdjacents vertex) ->
+        failWith $ "Graph is not linear; branches at vertex: " <> tshow vertex
+      Left (NonLinearGraph_NotConnected isolatedVertices) ->
+        failWith $ "Graph is partly linear, with isolated vertices: " <> tshow isolatedVertices
+      Right lastVertex -> unless (lastVertex == headVertex) $
+        failWith $ "Graph is linear, but its last vertex (" <> lastVertex <> ") is different from head vertex (" <> headVertex <> ")"
 
 -- | Create an edge from HEAD vertex to the hash corresponding to the Git
 -- working copy. The HEAD vertex must already exist.

@@ -134,22 +134,24 @@ ensureGraphIntegrity m = do
   visitFrom mempty mempty firstVertex
 
 -- | Ensure that the graph is a fully connected linear list
-ensureGraphLinearity :: MonadThrow m => Migration action -> m ()
+--
+-- Returns the last vertex in the linear list.
+ensureGraphLinearity :: MonadThrow m => Migration action -> m Hash
 ensureGraphLinearity m = do
   graph <- fmap adjacencyMap $ getDag $ _migration_graph m
   firstVertex <- getFirst $ _migration_graph m
   let
+    allVertices = vertexSet $ _migration_graph m
     visitFrom start = case Map.lookup start graph of
       Nothing -> throwM $ GraphInternalError $ "Vertex not found: " <> start
       Just adjs -> case (Set.toList adjs) of
-        [] -> [start]
-        [adj] -> start : visitFrom adj
+        [] -> pure (start, [start])
+        [adj] -> fmap (start :) <$> visitFrom adj
         _ -> throwM $ NonLinearGraph_MultipleAdjacents start
-    visitedVertices = Set.fromList $ visitFrom firstVertex
-    allVertices = vertexSet $ _migration_graph m
-    unvisitedVertices = Set.difference allVertices visitedVertices
+  (lastVertex, visitedVertices) <- visitFrom firstVertex
+  let unvisitedVertices = Set.difference allVertices $ Set.fromList visitedVertices
   if Set.null unvisitedVertices
-    then pure ()
+    then pure lastVertex
     else throwM $ NonLinearGraph_NotConnected unvisitedVertices
 
 -- | Find the concatenated actions between two vertices
