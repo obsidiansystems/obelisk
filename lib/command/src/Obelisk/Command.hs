@@ -403,7 +403,7 @@ ob = \case
     ObInternal_CreateMigration ->
       createMigrationEdgeFromHEAD "."
     ObInternal_VerifyMigration ->
-      verifyGraph "."
+      verifyMigration "."
     ObInternal_Migrate fromHash ->
       migrateObelisk "." fromHash
     ObInternal_CLIDemo -> cliDemo

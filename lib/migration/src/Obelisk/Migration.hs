@@ -13,6 +13,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Semigroup ((<>))
+import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -33,6 +34,8 @@ data Migration action = Migration
 -- A path is a list of edges
 type Path = [(Hash, Hash)]
 
+data GraphInternalError = GraphInternalError Text
+  deriving Show
 
 data CyclicGraphError = CyclicGraphError
   deriving Show
@@ -49,11 +52,18 @@ data NonEquivalentPaths = NonEquivalentPaths Hash Hash
 data MissingEdgeInActionMap = MissingEdgeInActionMap (Hash, Hash)
   deriving Show
 
+data NonLinearGraph
+  = NonLinearGraph_MultipleAdjacents Hash
+  | NonLinearGraph_NotConnected (Set Hash)
+  deriving Show
+
+instance Exception GraphInternalError
 instance Exception CyclicGraphError
 instance Exception MultipleTerminalVertices
 instance Exception NoTerminalVertex
 instance Exception NonEquivalentPaths
 instance Exception MissingEdgeInActionMap
+instance Exception NonLinearGraph
 
 class Action action where
   parseEdgeMeta :: String -> action
@@ -62,6 +72,7 @@ instance Action Text where
   parseEdgeMeta = T.pack
 
 -- | Get the directed-acylic graph of migration
+-- TODO: Consider calling getDag only when reading the graph for efficiency.
 getDag :: (MonadThrow m, Ord a) => AdjacencyMap a -> m (AdjacencyMap a)
 getDag g = case topSort g of
   Just _ -> pure g
@@ -89,7 +100,7 @@ readGraph root name = doesDirectoryExist root >>= \case
         False -> do
           return Nothing
 
--- | Ensures that the migration graph is correct
+-- | Ensure that the migration graph is correct
 --
 -- In a correct migration graph: for all pairs of nodes, all paths between
 -- those nodes have the same migration value
@@ -121,6 +132,25 @@ ensureGraphIntegrity m = do
   -- induction, as long as there is exactly one first vertex (which we check on
   -- further above).
   visitFrom mempty mempty firstVertex
+
+-- | Ensure that the graph is a fully connected linear list
+ensureGraphLinearity :: MonadThrow m => Migration action -> m ()
+ensureGraphLinearity m = do
+  graph <- fmap adjacencyMap $ getDag $ _migration_graph m
+  firstVertex <- getFirst $ _migration_graph m
+  let
+    visitFrom start = case Map.lookup start graph of
+      Nothing -> throwM $ GraphInternalError $ "Vertex not found: " <> start
+      Just adjs -> case (Set.toList adjs) of
+        [] -> [start]
+        [adj] -> start : visitFrom adj
+        _ -> throwM $ NonLinearGraph_MultipleAdjacents start
+    visitedVertices = Set.fromList $ visitFrom firstVertex
+    allVertices = vertexSet $ _migration_graph m
+    unvisitedVertices = Set.difference allVertices visitedVertices
+  if Set.null unvisitedVertices
+    then pure ()
+    else throwM $ NonLinearGraph_NotConnected unvisitedVertices
 
 -- | Find the concatenated actions between two vertices
 --

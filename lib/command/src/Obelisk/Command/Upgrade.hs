@@ -8,7 +8,7 @@
 module Obelisk.Command.Upgrade where
 
 import Control.Monad (forM, unless, void)
-import Control.Monad.Catch (onException)
+import Control.Monad.Catch (onException, try)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (catMaybes)
 import Data.Monoid (Any (..), getAny)
@@ -183,12 +183,22 @@ computeVertexHash :: MonadObelisk m => FilePath -> m Hash
 computeVertexHash = getDirectoryHash [migrationDirName]
 
 -- | Verify the integrity of the migration graph in relation to the Git repo.
-verifyGraph :: MonadObelisk m => FilePath -> m ()
-verifyGraph obDir = do
-  upgradeGraph <- withSpinner "Reading graph" $
+verifyMigration :: MonadObelisk m => FilePath -> m ()
+verifyMigration obDir = do
+  upgradeGraph <- withSpinner "Reading migration graph" $
     getMigrationGraph @Text obDir MigrationGraph_ObeliskUpgrade
   withSpinner "Checking graph integrity" $
     ensureGraphIntegrity upgradeGraph
+  withSpinner "Checking graph is linear" $
+    -- We don't support merge commits (i.e., diamonds in a graph) yet.
+    -- Until we do, ensure that the graph is a linear list.
+    try (ensureGraphLinearity upgradeGraph) >>= \case
+      Left (NonLinearGraph_MultipleAdjacents vertex) ->
+        failWith $ "Graph is not linear; branches at vertex: " <> tshow vertex
+      Left (NonLinearGraph_NotConnected isolatedVertices) ->
+        failWith $ "Graph is partly linear, but with isolated vertices: " <> tshow isolatedVertices
+      Right () ->
+        pure ()
   liftIO (doesDirectoryExist $ obDir </> ".git") >>= \case
     True ->
       withSpinner "Checking existence of HEAD vertex" $
