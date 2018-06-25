@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -8,8 +9,11 @@ module Obelisk.Command.Nix
   , Target (..)
   , OutLink (..)
   , Arg (..)
+  , boolArg
+  , strArg
   ) where
 
+import Data.Bool (bool)
 import Data.Default
 import Data.List (intercalate)
 import Data.Monoid ((<>))
@@ -40,10 +44,21 @@ instance Default Target where
     , _target_attr = Nothing
     }
 
-data Arg = Arg
-  { _arg_key :: String
-  , _arg_value :: String
-  }
+data Arg
+  = Arg_Str String String
+  | Arg_Expr String String
+  deriving (Eq, Show)
+
+strArg :: String -> String -> Arg
+strArg k = Arg_Str k
+
+boolArg :: String -> Bool -> Arg
+boolArg k = Arg_Expr k . bool "false" "true"
+
+cliFromArgs :: [Arg] -> [String]
+cliFromArgs = concatMap $ \case
+  Arg_Str k v -> ["--argstr", k, v]
+  Arg_Expr k v -> ["--arg", k, v]
 
 data NixBuildConfig = NixBuildConfig
   { _nixBuildConfig_target :: Target
@@ -65,7 +80,7 @@ nixBuild cfg = withSpinner' ("Running nix-build on " <> desc) (Just $ const $ "B
     attrArg = case attr of
       Nothing -> []
       Just a -> ["-A", a]
-    args = mconcat [["--argstr", k, v] | Arg k v <- _nixBuildConfig_args cfg]
+    args = cliFromArgs $ _nixBuildConfig_args cfg
     outLink = case _nixBuildConfig_outLink cfg of
       OutLink_Default -> []
       OutLink_None -> ["--no-out-link"]
