@@ -1,11 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.CliApp.Demo where
 
 import Control.Concurrent (threadDelay)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (MonadIO)
-import Data.Monoid ((<>))
+import Control.Monad.IO.Class
+import Data.Semigroup ((<>))
 import qualified Data.Text as T
 import System.Process (proc)
 
@@ -13,20 +13,19 @@ import Control.Monad.Catch (MonadMask)
 
 import Obelisk.CliApp
 
-cliDemo
-  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
-  => m ()
+cliDemo :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m) => m ()
 cliDemo = withSpinner "CLI Demo" $ do
   putLog Notice "This demo will showcase the CLI library functionality"
-  withSpinner "A long-running task" $ do
+  _ <- withSpinner' "Searching long for something" (Just $ \c -> "Discovered " <> T.pack (show c) <> " objects") $ do
     delay
     withSpinner "Nested task" $ do
       delay
       putLog Notice "In nested task"
-      withSpinner "Inbetween" $ do
-        withSpinner "Runnning something specific" $ do
+      -- This is a 'no trail' spinner that won't leave a trail (even its sub spinners)
+      withSpinnerNoTrail "In between, doing something temporary" $ do
+        withSpinner "Runnning something deep inside" $ do
           delay
-          putLog Notice "This task has the same name and still works"
+          putLog Notice "You can still log from inside no-trail spinners"
         delay
       delay
       putLog Error "Top nested task finished"
@@ -36,6 +35,7 @@ cliDemo = withSpinner "CLI Demo" $ do
     putLog Notice "This is some info mesage"
     putLog Warning "And now a warning as well"
     delay
+    return (42 :: Integer)
   putLog Notice "Now we start a 2nd spinner, run a couple of process, the last of which fails:"
   withSpinner "Looking around" $ do
     delay

@@ -78,7 +78,7 @@ deployPush deployPath getNixBuilders = do
     Right (ThunkData_Packed _) ->
       build
     Right (ThunkData_Checkout _) -> do
-      checkGitCleanStatus srcPath >>= \case
+      checkGitCleanStatus srcPath True >>= \case
         True -> do
           result <- build
           packThunk srcPath "origin" -- get upstream
@@ -107,7 +107,7 @@ deployPush deployPath getNixBuilders = do
                     ]
                 ]
     deployAndSwitch res
-    isClean <- checkGitCleanStatus deployPath
+    isClean <- checkGitCleanStatus deployPath True
     when (not isClean) $ do
       withSpinner "Commiting changes to Git" $ do
         callProcessAndLogOutput (Debug, Error) $ proc "git"
