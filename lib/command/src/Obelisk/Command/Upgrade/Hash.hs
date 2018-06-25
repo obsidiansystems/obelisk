@@ -36,12 +36,12 @@ import Obelisk.Migration
 -- * ignored Git files
 -- * empty directories
 --
--- Uses the same predictive algorithm as that of Nix (`nix hash-path`).
+-- Uses the same predictive algorithm as that of Nix (`nix-hash`).
 --
 -- This function will do a full copy of the directory to a temporary location before
 -- computing the hash. Because it will be deleting the files in exclude list, and
--- other files if the directory is a git repo, which needs to be done as `nix
--- hash-path` doesn't support taking an excludes list.
+-- other files if the directory is a git repo, which needs to be done as `nix-hash`
+-- doesn't support taking an excludes list.
 getDirectoryHash :: MonadObelisk m => [FilePath] -> FilePath -> m Hash
 getDirectoryHash excludes dir = withSystemTempDirectory "obelisk-hash-" $ \tmpDir -> do
   withSpinnerNoTrail (T.pack $ "Copying " <> dir <> " to " <> tmpDir) $ do
@@ -87,9 +87,8 @@ getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashre
       return result
 
 nixHash :: MonadObelisk m => FilePath -> m Hash
-nixHash dir = withSpinnerNoTrail "Running `nix hash-path`" $
+nixHash dir = withSpinnerNoTrail "Running `nix-hash`" $
   readProc $ proc "nix-hash" [dir]
-  -- Nix2.0 only; readProc $ proc "nix" ["hash-path", "--type", "md5", dir]
 
 -- | Clean up the following files in the git working copy
 --

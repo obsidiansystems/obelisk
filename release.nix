@@ -19,22 +19,20 @@ with pkgs;
     #  # cd $out
     #  # ob init --symlink=${self.path}
     #'';
+
     verify-migration = runCommand "verify-migration" {
      nativeBuildInputs = [
        self.command
-       nix  # obelisk uses `nix hash-path`
+       nix  # obelisk uses `nix-hash`
      ];
     } ''
      set -xe
-     # Fix permissions so `removePathForcibly` on copied-to-tmp paths
+     # Fix permissions so `removePathForcibly` works on copied-to-tmp paths
      cp -a ${self.pathGit} $TMPDIR/obelisk
      cd $TMPDIR/obelisk
      chmod -R u+w .
-     pwd
-     ls -la
 
      ob internal hash
-
      ob internal verify-migration
 
      mkdir -p $out
