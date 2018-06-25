@@ -130,6 +130,7 @@ with pkgs.lib;
 rec {
   inherit reflex-platform;
   inherit (reflex-platform) nixpkgs pinBuildInputs;
+  pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
   commandWithMigration = ghcObelisk.obelisk-command.overrideAttrs (drv: {
