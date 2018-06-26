@@ -119,6 +119,7 @@ let
     obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
     obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
     obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
+    obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
     obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
     obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};

@@ -6,5 +6,16 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base,
-                 lens
+                 categories,
+                 constraints,
+                 containers,
+                 dependent-map,
+                 dependent-sum,
+                 dependent-sum-template,
+                 either,
+                 lens,
+                 mtl,
+                 reflex,
+                 text,
+                 universe
   exposed-modules: Obelisk.Route
