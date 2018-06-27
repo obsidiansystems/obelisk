@@ -5,6 +5,8 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
 - [Deploying](#deploying)
+  - [Locally](#locally)
+  - [EC2](#ec2)
 - [Mobile](#mobile)
   - [iOS](#ios)
   - [Android](#android)
@@ -90,11 +92,28 @@ Every time you change the Haskell source files in frontend, common or backend, `
 
 ## Deploying
 
+### Locally
+
+Build everything:
+
+```
+nix-build -A exe -o result-exe
+```
+
+Run the server:
+
+```
+cd result-exe
+./backend
+```
+
+### EC2
+
 In this section we will demonstrate how to deploy your Obelisk app to an Amazon EC2 instance.
 
 First create a new EC2 instance:
 
-1. Launch a NixOS 17.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-40bee63a)) 
+1. Launch a NixOS 17.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-40bee63a))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
 1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80.
@@ -153,7 +172,7 @@ Install Xcode 8.2 (contains iOS SDK 10.2) and open it so that it runs its post i
 These versions will work out of the box but iOS SDKs prior to 11.3 should also work. You can choose another installed version in `default.nix`
 
 More recent Xcodes should also work, as long as one of the SDKs mentioned above has been used.
-To add another SDK to your current Xcode, [download](https://developer.apple.com/download/more/) the corresponding Xcode, extract it and copy its SDK folder next to the installed one, e.g. 
+To add another SDK to your current Xcode, [download](https://developer.apple.com/download/more/) the corresponding Xcode, extract it and copy its SDK folder next to the installed one, e.g.
 ```
 open -W Xcode_9.2.xip
 sudo cp -R Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS11.2.sdk
@@ -167,7 +186,7 @@ xcodebuild -showsdks
 
 ##### Certificates
 To deploy and/or package apps, you'll need to inform Apple of your development devices and permissions by
-adding credentials to the correct provisioning profile via the Apple Developer portal. 
+adding credentials to the correct provisioning profile via the Apple Developer portal.
 
 1. Open up XCode and go to Preferences - Accounts. Select the organization
 Member role, click Manage Certificates, and add an iOS Development
@@ -244,8 +263,8 @@ Now edit your project's `default.nix` and tell Obelisk of your app's keystore fi
   ...
   android.applicationId = "com.example.myapp";
   android.displayName = "My App";
-  android.releaseKey = 
-    { storeFile = /path/to/myandroidkey.jks;  
+  android.releaseKey =
+    { storeFile = /path/to/myandroidkey.jks;
       storePassword = "abcd1234";
       keyAlias = "myandroidalias";
       keyPassword = "abcd1234";
