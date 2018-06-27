@@ -1,17 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Inject where
 
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import Data.Semigroup ((<>))
+import Data.ByteString (ByteString)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
+import qualified Data.Text.IO as T
 import Reflex.Dom
 import System.FilePath ((</>))
 
 inject :: FilePath -> IO ByteString
 inject item = do
-  f <- BS.readFile $ "config" </> item
-  fmap snd $ renderStatic $
-    elAttr "script" ("type" =: "text/plain" <> "id" =: ("config-" <> T.pack item)) $
-      text $ T.decodeUtf8 f
+  f <- T.readFile $ "config" </> item
+  fmap snd $ renderStatic $ injectPure item f
+
+injectPure :: DomBuilder t m => FilePath -> T.Text -> m ()
+injectPure item content = elAttr "script" ("type" =: "text/plain" <> "id" =: ("config-" <> T.pack item)) $
+  text content
