@@ -74,32 +74,6 @@ let
   };
 
   fixUpstreamPkgs = self: super: {
-    heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
-    modern-uri =
-      let src = pkgs.fetchFromGitHub {
-            owner = "mrkkrp";
-            repo = "modern-uri";
-            rev = "21064285deb284cb3328094c69c34f9f67919cc9";
-            sha256 = "0vddw8r9sb31h1fz1anzxrs9p3a3p8ygpxlj398z5j47wmr86cmi";
-          };
-      in (overrideCabal (self.callCabal2nix "modern-uri" src {}) (drv: {
-            doCheck = false;
-            postPatch = (drv.postPatch or "") + ''
-              substituteInPlace Text/URI/Types.hs \
-                --replace "instance Arbitrary (NonEmpty (RText 'PathPiece)) where" "" \
-                --replace "  arbitrary = (:|) <$> arbitrary <*> arbitrary" ""
-            '';
-          })).override { megaparsec = super.megaparsec_6_1_1; };
-    algebraic-graphs =
-      let src = pkgs.fetchFromGitHub {
-            owner = "snowleopard";
-            repo = "alga";
-            rev = "480a73137e9b38ad3f1bc2c628847953d2fb3e25";
-            sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
-          };
-      in pkgs.haskell.lib.dontCheck (self.callCabal2nix "algebraic-graphs" src {});
-    network-transport = self.callHackage "network-transport" "0.5.2" {};
-    network-transport-tcp = self.callHackage "network-transport-tcp" "0.6.0" {};
   };
 
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
