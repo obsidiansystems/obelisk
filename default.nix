@@ -114,7 +114,7 @@ let
     obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
     obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
     obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-    obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
+    obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {});
     obelisk-executable-config = executableConfig.haskellPackage self;
     obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
     obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
