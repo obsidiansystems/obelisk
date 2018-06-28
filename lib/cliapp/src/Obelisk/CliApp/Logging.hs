@@ -26,7 +26,7 @@ import System.Console.ANSI (Color (Red, White, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (SetColor, SetConsoleIntensity), clearLine)
 import System.Exit (ExitCode (..), exitWith)
-import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stdin, stdout)
+import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stderr, stdin, stdout)
 
 import qualified Obelisk.CliApp.TerminalString as TS
 import Obelisk.CliApp.Types
@@ -137,12 +137,13 @@ withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
 writeLog:: (MonadIO m, MonadMask m) => Bool -> Bool -> WithSeverity Text -> m ()
 writeLog withNewLine noColor (WithSeverity severity s)
   | noColor && severity <= Warning = liftIO $ putFn $ T.pack (show severity) <> ": " <> s
-  | not noColor && severity <= Error = TS.putStrWithSGR errorColors withNewLine s
-  | not noColor && severity <= Warning = TS.putStrWithSGR warningColors withNewLine s
-  | not noColor && severity >= Debug = TS.putStrWithSGR debugColors withNewLine s
+  | not noColor && severity <= Error = TS.putStrWithSGR errorColors h withNewLine s
+  | not noColor && severity <= Warning = TS.putStrWithSGR warningColors h withNewLine s
+  | not noColor && severity >= Debug = TS.putStrWithSGR debugColors h withNewLine s
   | otherwise = liftIO $ putFn s
   where
-    putFn = if withNewLine then T.putStrLn else T.putStr
+    putFn = if withNewLine then (T.hPutStrLn h) else (T.hPutStr h)
+    h = if severity <= Error then stderr else stdout
     errorColors = [SetColor Foreground Vivid Red]
     warningColors = [SetColor Foreground Vivid Yellow]
     debugColors = [SetColor Foreground Vivid White, SetConsoleIntensity FaintIntensity]
