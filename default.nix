@@ -53,19 +53,6 @@ let
         enableLibraryProfiling = profiling;
       });
 
-      #TODO: Eliminate this when https://github.com/phadej/github/pull/307 makes its way to reflex-platform
-      github = overrideCabal super.github (drv: {
-        src = pkgs.fetchFromGitHub {
-          owner = "ryantrinkle";
-          repo = "github";
-          rev = "8f543cdc07876bfb7b924d3722e3dbc1df4b02ca";
-          sha256 = "0vcnx9cxqd821kmjx1r4cvj95zs742qm1pwqnb52vw3djplbqd86";
-        };
-        sha256 = null;
-        revision = null;
-        editedCabalFile = null;
-      });
-
       # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
       obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
 
@@ -74,6 +61,13 @@ let
   };
 
   fixUpstreamPkgs = self: super: {
+    algebraic-graphs = pkgs.haskell.lib.doJailbreak
+      (self.callCabal2nix "algebraic-graphs" (pkgs.fetchFromGitHub {
+        owner = "snowleopard";
+        repo = "alga";
+        rev = "480a73137e9b38ad3f1bc2c628847953d2fb3e25";
+        sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
+      }) {});
   };
 
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(

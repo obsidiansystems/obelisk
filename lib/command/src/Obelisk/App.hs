@@ -25,8 +25,6 @@ newtype ObeliskT m a = ObeliskT
     ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask
     , HasObelisk, HasCliConfig)
 
-deriving instance Monad m => Cli (ObeliskT m)
-
 class HasObelisk m where
   getObelisk :: m Obelisk
 
