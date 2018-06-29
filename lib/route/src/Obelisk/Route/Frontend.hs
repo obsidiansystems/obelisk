@@ -26,6 +26,7 @@ module Obelisk.Route.Frontend
   , askRoute
   , withRoutedT
   , mapRoutedT
+  , subRoute
   , subRoute_
   , runRouteViewT
   ) where
@@ -34,10 +35,7 @@ import Prelude hiding ((.), id)
 
 import Obelisk.Route
 
-import Control.Applicative
-import Control.Category (Category (..), (.), id)
-import qualified Control.Categorical.Functor as Cat
-import Control.Categorical.Bifunctor
+import Control.Category (Category (..), (.))
 import Control.Category.Cartesian
 import Control.Lens hiding (Bifunctor, bimap, universe)
 import Control.Monad.Fix
@@ -45,29 +43,14 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
 import Data.Coerce
-import Data.Dependent.Sum (DSum (..), ShowTag (..))
-import Data.Dependent.Map (DMap)
-import qualified Data.Dependent.Map as DMap
-import Data.Foldable
+import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
-import Data.GADT.Compare.TH
 import Data.GADT.Show
-import Data.GADT.Show.TH
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Maybe
 import Data.Monoid
-import Data.Set (Set)
-import qualified Data.Set as Set
 import Data.Some (Some)
-import qualified Data.Some as Some
 import Data.Text (Text)
-import qualified Data.Text as T
-import Data.Either.Validation (Validation (..))
 import Data.Universe
 import Data.Functor.Compose
-import Data.Functor.Identity
 import Reflex.Class
 import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
@@ -121,9 +104,12 @@ mapRoutedT f = RoutedT . mapReaderT f . unRoutedT
 withRoutedT :: (Dynamic t r -> Dynamic t r') -> RoutedT t r' m a -> RoutedT t r m a
 withRoutedT f = RoutedT . withReaderT f . unRoutedT
 
---TODO: This needs to use a monad other than ReaderT - something that guarantees that the value is actually available.  Perhaps a "strict ReaderT"? Otherwise factorDyn will fail
 subRoute_ :: (Reflex t, MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m ()) -> RoutedT t (R r) m ()
 subRoute_ f = factorRouted $ strictDynWidget_ $ \(c :=> r') -> do
+  runRoutedT (f c) r'
+
+subRoute :: (Reflex t, MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m b) -> RoutedT t (R r) m (Dynamic t b)
+subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
 dsumValueCoercion :: Coercion f g -> Coercion (DSum k f) (DSum k g)

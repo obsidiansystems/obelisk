@@ -49,13 +49,11 @@ module Obelisk.Route
 import Prelude hiding ((.), id)
 
 import Control.Applicative
-import Control.Category (Category (..), (.), id)
+import Control.Category (Category (..))
 import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
-import Control.Category.Cartesian
-import Control.Lens hiding (Bifunctor, bimap, universe)
+import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?))
 import Control.Monad.Except
-import Data.Constraint
 import Data.Dependent.Sum (DSum (..), ShowTag (..))
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
@@ -77,10 +75,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Either.Validation (Validation (..))
 import Data.Universe
-import Data.Functor.Compose
-import Data.Functor.Identity
-
-import Reflex.Class (EitherTag (..))
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -106,6 +100,7 @@ import Reflex.Class (EitherTag (..))
 
 type R f = DSum f Identity --TODO: Better name
 
+--TODO: COMPLETE pragma
 infixr 5 :/
 pattern (:/) :: f a -> a -> R f
 pattern a :/ b = a :=> Identity b
@@ -120,10 +115,8 @@ mapSome f (Some.This a) = Some.This $ f a
 newtype Encoder check parse decoded encoded = Encoder { unEncoder :: check (ValidEncoder parse decoded encoded) }
 
 -- | Law:
--- forall p. _totalEncoder_decode p . _totalEncoder_encode == id
--- Note that the reverse may not be the case: when parsing, a route may be canonicalized, and erroneous routes may be collapsed to a single 404 route.  However, as a consequence of the law, decode . encode must be idemponent.
-type TotalEncoder = Encoder Identity
-
+-- forall p. _totalEncoder_decode ve . _validEncoder_encode ve p == pure
+-- Note that the reverse may not be the case: when parsing, a route may be canonicalized, and erroneous routes may be collapsed to a single 404 route.  However, as a consequence of the law, encode . decode must be idemponent.
 -- | TODO: Should this be turned around?  That would match enumEncoder better
 data ValidEncoder parse decoded encoded = ValidEncoder
   { _validEncoder_decode :: !(encoded -> parse decoded) -- Can fail; can lose information; must always succeed on outputs of `_validEncoder_encode` and result in the original value
@@ -394,7 +387,7 @@ prismValidEncoder :: MonadError Text parse => Prism' b a -> ValidEncoder parse a
 prismValidEncoder p = ValidEncoder
   { _validEncoder_encode = (^. re p)
   , _validEncoder_decode = \r -> case r ^? p of
-      Just p -> pure p
+      Just a -> pure a
       Nothing -> throwError "prismValidEncoder: value is not present in the prism"
   }
 
@@ -425,11 +418,13 @@ data ObeliskRoute :: (* -> *) -> * -> * where
 
 data ResourceRoute :: * -> * where
   ResourceRoute_Static :: ResourceRoute [Text] -- This [Text] represents the *path in our static files directory*, not necessarily the URL path that the asset gets served at (although that will often be "/static/this/text/thing")
+  ResourceRoute_JSaddleWarp :: ResourceRoute (R JSaddleWarpRoute)
 
 --TODO: Generate this
 instance Universe (Some ResourceRoute) where
   universe =
     [ Some.This ResourceRoute_Static
+    , Some.This ResourceRoute_JSaddleWarp
     ]
 
 --TODO: Figure out a way to check this
@@ -443,7 +438,7 @@ obeliskComponentEncoder = Encoder $ pure $ ValidEncoder
       Left (Some.This r) -> Some.This $ ObeliskRoute_Resource r
   }
 
-newtype ValidEncoderFunc parse p r = ValidEncoderFunc { unValidEncoderFunc :: forall a. p a -> ValidEncoder parse a r }
+newtype ValidEncoderFunc parse p r = ValidEncoderFunc { runValidEncoderFunc :: forall a. p a -> ValidEncoder parse a r }
 
 checkSomeUniverseEncoder
   :: forall check parse p r.
@@ -470,26 +465,46 @@ obeliskRouteEncoder
   -> (forall a. appRoute a -> Encoder check parse a PageName)
   -> Encoder check parse (R (ObeliskRoute appRoute)) PageName
 obeliskRouteEncoder appComponentEncoder appRouteEncoder = Encoder $ do
-  ValidEncoderFunc appRouteValidEncoder <- checkSomeUniverseEncoder appRouteEncoder
-  let componentEncoder =
-        (
-          resourceComponentEncoder
-          `shadowEncoder`
-          appComponentEncoder
-        )
-        .
-        obeliskComponentEncoder
+  let componentEncoder = (resourceComponentEncoder `shadowEncoder` appComponentEncoder) . obeliskComponentEncoder
+  appRouteValidEncoder <- checkSomeUniverseEncoder appRouteEncoder
+  resourceRouteValidEncoder <- checkSomeUniverseEncoder resourceRouteEncoder
   checkEncoder $ pathComponentEncoder componentEncoder $ \case
-    ObeliskRoute_App appRoute -> appRouteValidEncoder appRoute
-    ObeliskRoute_Resource resRoute -> resourceRouteValidEncoder resRoute
+    ObeliskRoute_App appRoute -> runValidEncoderFunc appRouteValidEncoder appRoute
+    ObeliskRoute_Resource resRoute -> runValidEncoderFunc resourceRouteValidEncoder resRoute
 
 resourceComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some ResourceRoute) (Maybe Text)
 resourceComponentEncoder = enum1Encoder $ \case
   ResourceRoute_Static -> Just "static"
+  ResourceRoute_JSaddleWarp -> Just "jsaddle"
 
-resourceRouteValidEncoder :: MonadError Text parse => ResourceRoute a -> ValidEncoder parse a PageName
-resourceRouteValidEncoder = \case
-  ResourceRoute_Static -> pathOnlyValidEncoder
+resourceRouteEncoder :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> Encoder check parse a PageName
+resourceRouteEncoder = \case
+  ResourceRoute_Static -> Encoder $ pure pathOnlyValidEncoder
+  ResourceRoute_JSaddleWarp -> jsaddleWarpEncoder
+
+data JSaddleWarpRoute :: * -> * where
+  JSaddleWarpRoute_JavaScript :: JSaddleWarpRoute ()
+  JSaddleWarpRoute_WebSocket :: JSaddleWarpRoute ()
+  JSaddleWarpRoute_Sync :: JSaddleWarpRoute [Text]
+
+instance Universe (Some JSaddleWarpRoute) where
+  universe =
+    [ Some.This JSaddleWarpRoute_JavaScript
+    , Some.This JSaddleWarpRoute_WebSocket
+    , Some.This JSaddleWarpRoute_Sync
+    ]
+
+jsaddleWarpComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some JSaddleWarpRoute) (Maybe Text)
+jsaddleWarpComponentEncoder = enum1Encoder $ \case
+  JSaddleWarpRoute_JavaScript -> Just "jsaddle.js"
+  JSaddleWarpRoute_WebSocket -> Just "websocket"
+  JSaddleWarpRoute_Sync -> Just "sync"
+
+jsaddleWarpEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (R JSaddleWarpRoute) PageName
+jsaddleWarpEncoder = pathComponentEncoder jsaddleWarpComponentEncoder $ \case
+  JSaddleWarpRoute_JavaScript -> endValidEncoder mempty
+  JSaddleWarpRoute_WebSocket -> endValidEncoder mempty
+  JSaddleWarpRoute_Sync -> pathOnlyValidEncoder
 
 instance ShowTag appRoute Identity => ShowTag (ObeliskRoute appRoute) Identity where
   showTaggedPrec = \case
@@ -499,6 +514,14 @@ instance ShowTag appRoute Identity => ShowTag (ObeliskRoute appRoute) Identity w
 instance ShowTag ResourceRoute Identity where
   showTaggedPrec = \case
     ResourceRoute_Static -> showsPrec
+    ResourceRoute_JSaddleWarp -> showsPrec
+
+instance ShowTag JSaddleWarpRoute Identity where
+  showTaggedPrec = \case
+    JSaddleWarpRoute_JavaScript -> showsPrec
+    JSaddleWarpRoute_WebSocket -> showsPrec
+    JSaddleWarpRoute_Sync -> showsPrec
+
 
 instance Universe (Some appRoute) => Universe (Some (ObeliskRoute appRoute)) where
   universe = mconcat
@@ -522,11 +545,22 @@ instance GEq appRoute => GEq (ObeliskRoute appRoute) where
     (ObeliskRoute_Resource, ObeliskRoute_Resource) -> Just Refl
 -}
 
+--TODO: Fix deriveGShow
 instance GShow appRoute => GShow (ObeliskRoute appRoute) where
+  gshowsPrec prec = \case
+    ObeliskRoute_App appRoute -> showParen (prec > 10) $
+      showString "ObeliskRoute_App " . gshowsPrec 11 appRoute
+    ObeliskRoute_Resource appRoute -> showParen (prec > 10) $
+      showString "ObeliskRoute_Resource " . gshowsPrec 11 appRoute
 
 makePrisms ''ObeliskRoute
+--TODO: Prevent deriveGShow from creating this warning:
+-- Defined but not used: ‘p’
 deriveGShow ''ResourceRoute
 deriveGEq ''ResourceRoute
 deriveGCompare ''ResourceRoute
+deriveGShow ''JSaddleWarpRoute
+deriveGEq ''JSaddleWarpRoute
+deriveGCompare ''JSaddleWarpRoute
 
 --TODO: decodeURIComponent as appropriate
