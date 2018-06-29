@@ -529,23 +529,6 @@ instance Universe (Some appRoute) => Universe (Some (ObeliskRoute appRoute)) whe
     , mapSome ObeliskRoute_Resource <$> universe
     ]
 
-{-
-instance GCompare appRoute => GCompare (ObeliskRoute appRoute) where
-  gcompare a b = case (a, b) of
-    (ObeliskRoute_App aa, ObeliskRoute_App ab) -> gcompare aa ab
-    (ObeliskRoute_App _, ObeliskRoute_Resource) -> GLT
-    (ObeliskRoute_Resource, ObeliskRoute_App _) -> GGT
-    (ObeliskRoute_Resource, ObeliskRoute_Resource) -> GEQ
-
-instance GEq appRoute => GEq (ObeliskRoute appRoute) where
-  geq a b = case (a, b) of
-    (ObeliskRoute_App aa, ObeliskRoute_App ab) -> geq aa ab
-    (ObeliskRoute_App _, ObeliskRoute_Resource) -> Nothing
-    (ObeliskRoute_Resource, ObeliskRoute_App _) -> Nothing
-    (ObeliskRoute_Resource, ObeliskRoute_Resource) -> Just Refl
--}
-
---TODO: Fix deriveGShow
 instance GShow appRoute => GShow (ObeliskRoute appRoute) where
   gshowsPrec prec = \case
     ObeliskRoute_App appRoute -> showParen (prec > 10) $
