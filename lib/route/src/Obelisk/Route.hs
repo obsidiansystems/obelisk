@@ -17,7 +17,6 @@
 module Obelisk.Route
   ( R
   , pattern (:/)
-  , pattern (:~)
   , PageName
   , Encoder (..) --TODO: unsafe
   , checkEncoder
@@ -40,6 +39,9 @@ module Obelisk.Route
   , prismValidEncoder
   , rPrism
   , obeliskRouteEncoder
+  , pageNameEncoder
+  , catchValidEncoder
+  , ObeliskRoute (..)
   , _ObeliskRoute_App
   , _ObeliskRoute_Resource
   ) where
@@ -77,7 +79,8 @@ import Data.Either.Validation (Validation (..))
 import Data.Universe
 import Data.Functor.Compose
 import Data.Functor.Identity
-import Reflex.Class
+
+import Reflex.Class (EitherTag (..))
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -106,10 +109,6 @@ type R f = DSum f Identity --TODO: Better name
 infixr 5 :/
 pattern (:/) :: f a -> a -> R f
 pattern a :/ b = a :=> Identity b
-
-infixr 5 :~
-pattern (:~) :: Reflex t => f a -> Dynamic t a -> DSum f (Compose (Dynamic t) Identity)
-pattern a :~ b <- a :=> (coerceDynamic . getCompose -> b)
 
 mapSome :: (forall a. f a -> g a) -> Some f -> Some g
 mapSome f (Some.This a) = Some.This $ f a
@@ -397,6 +396,22 @@ prismValidEncoder p = ValidEncoder
   , _validEncoder_decode = \r -> case r ^? p of
       Just p -> pure p
       Nothing -> throwError "prismValidEncoder: value is not present in the prism"
+  }
+
+
+-- | Encode a PageName into a path and query string, suitable for use in the
+-- 'URI' type
+pageNameEncoder :: MonadError Text parse => ValidEncoder parse PageName (String, String)
+pageNameEncoder = ve
+  where Right ve = checkEncoder $ bimap
+          (unpackTextEncoder . prefixTextEncoder "/" . intercalateTextEncoder "/" . listToNonEmptyEncoder)
+          (unpackTextEncoder . prefixNonemptyTextEncoder "?" . intercalateTextEncoder "&" . listToNonEmptyEncoder . Cat.fmap (joinPairTextEncoder "=") . toListMapEncoder)
+
+catchValidEncoder :: (e -> a) -> ValidEncoder (Either e) a b -> ValidEncoder Identity a b
+catchValidEncoder recover ve = ve
+  { _validEncoder_decode = \a -> pure $ case _validEncoder_decode ve a of
+      Right r -> r
+      Left err -> recover err
   }
 
 --------------------------------------------------------------------------------
