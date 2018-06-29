@@ -25,6 +25,7 @@ module Obelisk.Route
   , mapSome
   , pathComponentEncoder
   , enumEncoder
+  , enum1Encoder
   , endValidEncoder
   , pathOnlyValidEncoder
   , singletonListValidEncoder
@@ -40,7 +41,7 @@ module Obelisk.Route
   , rPrism
   , obeliskRouteEncoder
   , _ObeliskRoute_App
-  , _ObeliskRoute_Static
+  , _ObeliskRoute_Resource
   ) where
 
 import Prelude hiding ((.), id)
@@ -157,6 +158,13 @@ instance Monad parse => Bifunctor (,) (ValidEncoder parse) (ValidEncoder parse) 
     , _validEncoder_decode = \(a, b) -> liftA2 (,) (_validEncoder_decode f a) (_validEncoder_decode g b)
     }
 
+instance (Applicative check, Monad parse) => PFunctor (,) (Encoder check parse) (Encoder check parse) where
+  first f = bimap f id
+instance (Applicative check, Monad parse) => QFunctor (,) (Encoder check parse) (Encoder check parse) where
+  second g = bimap id g
+instance (Applicative check, Monad parse) => Bifunctor (,) (Encoder check parse) (Encoder check parse) (Encoder check parse) where
+  bimap f g = Encoder $ liftA2 bimap (checkEncoder f) (checkEncoder g)
+
 instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder check parse) (Encoder check parse) where
   fmap e = Encoder $ do
     ve <- checkEncoder e
@@ -228,8 +236,8 @@ shadowEncoder
      , Show c
      , check ~ parse --TODO: Get rid of this
      )
-  => Encoder check parse a c
-  -> Encoder check parse b c
+  => Encoder check parse a c -- ^ Overlaps
+  -> Encoder check parse b c -- ^ Gets overlapped
   -> Encoder check parse (Either a b) c
 shadowEncoder f g = Encoder $ do
   vf <- checkEncoder f
@@ -249,6 +257,18 @@ shadowEncoder f g = Encoder $ do
         Right b -> _validEncoder_encode vg b
     , _validEncoder_decode = \c -> (Left <$> _validEncoder_decode vf c) `catchError` \_ -> Right <$> _validEncoder_decode vg c
     }
+
+enum1Encoder
+  :: ( Universe (Some p)
+     , GShow p
+     , GCompare p
+     , Ord r
+     , MonadError Text check
+     , MonadError Text parse
+     , Show r
+     )
+  => (forall a. p a -> r) -> Encoder check parse (Some p) r
+enum1Encoder f = enumEncoder $ \(Some.This p) -> f p
 
 -- | Encode an enumerable, bounded type.  WARNING: Don't use this on types that
 -- have a large number of values - it will use a lot of memory.
@@ -386,7 +406,27 @@ prismValidEncoder p = ValidEncoder
 data ObeliskRoute :: (* -> *) -> * -> * where
   -- We need to have the `f a` as an argument here, because otherwise we have no way to specifically check for overlap between us and the given encoder
   ObeliskRoute_App :: f a -> ObeliskRoute f a
-  ObeliskRoute_Static :: ObeliskRoute f [Text] -- This [Text] represents the *path in our static files directory*, not necessarily the URL path that the asset gets served at (although that will often be "/static/this/text/thing")
+  ObeliskRoute_Resource :: ResourceRoute a -> ObeliskRoute f a
+
+data ResourceRoute :: * -> * where
+  ResourceRoute_Static :: ResourceRoute [Text] -- This [Text] represents the *path in our static files directory*, not necessarily the URL path that the asset gets served at (although that will often be "/static/this/text/thing")
+
+--TODO: Generate this
+instance Universe (Some ResourceRoute) where
+  universe =
+    [ Some.This ResourceRoute_Static
+    ]
+
+--TODO: Figure out a way to check this
+obeliskComponentEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (ObeliskRoute f)) (Either (Some ResourceRoute) (Some f))
+obeliskComponentEncoder = Encoder $ pure $ ValidEncoder
+  { _validEncoder_encode = \(Some.This o) -> case o of
+      ObeliskRoute_App r -> Right $ Some.This r
+      ObeliskRoute_Resource r -> Left $ Some.This r
+  , _validEncoder_decode = pure . \case
+      Right (Some.This r) -> Some.This $ ObeliskRoute_App r
+      Left (Some.This r) -> Some.This $ ObeliskRoute_Resource r
+  }
 
 newtype ValidEncoderFunc parse p r = ValidEncoderFunc { unValidEncoderFunc :: forall a. p a -> ValidEncoder parse a r }
 
@@ -409,48 +449,69 @@ obeliskRouteEncoder
      , GShow appRoute
      , MonadError Text check
      , MonadError Text parse
+     , check ~ parse --TODO: Get rid of this
      )
-  => (Some appRoute -> Maybe Text)
+  => (Encoder check parse (Some appRoute) (Maybe Text))
   -> (forall a. appRoute a -> Encoder check parse a PageName)
   -> Encoder check parse (R (ObeliskRoute appRoute)) PageName
-obeliskRouteEncoder showAppRoute appRouteEncoder = Encoder $ do
+obeliskRouteEncoder appComponentEncoder appRouteEncoder = Encoder $ do
   ValidEncoderFunc appRouteValidEncoder <- checkSomeUniverseEncoder appRouteEncoder
-  checkEncoder $ pathComponentEncoder (enumEncoder (showRoute showAppRoute)) $ \case
+  let componentEncoder =
+        (
+          resourceComponentEncoder
+          `shadowEncoder`
+          appComponentEncoder
+        )
+        .
+        obeliskComponentEncoder
+  checkEncoder $ pathComponentEncoder componentEncoder $ \case
     ObeliskRoute_App appRoute -> appRouteValidEncoder appRoute
-    ObeliskRoute_Static -> pathOnlyValidEncoder
+    ObeliskRoute_Resource resRoute -> resourceRouteValidEncoder resRoute
+
+resourceComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some ResourceRoute) (Maybe Text)
+resourceComponentEncoder = enum1Encoder $ \case
+  ResourceRoute_Static -> Just "static"
+
+resourceRouteValidEncoder :: MonadError Text parse => ResourceRoute a -> ValidEncoder parse a PageName
+resourceRouteValidEncoder = \case
+  ResourceRoute_Static -> pathOnlyValidEncoder
 
 instance ShowTag appRoute Identity => ShowTag (ObeliskRoute appRoute) Identity where
   showTaggedPrec = \case
     ObeliskRoute_App a -> showTaggedPrec a
-    ObeliskRoute_Static -> showsPrec
+    ObeliskRoute_Resource r -> showTaggedPrec r
+
+instance ShowTag ResourceRoute Identity where
+  showTaggedPrec = \case
+    ResourceRoute_Static -> showsPrec
 
 instance Universe (Some appRoute) => Universe (Some (ObeliskRoute appRoute)) where
   universe = mconcat
     [ mapSome ObeliskRoute_App <$> universe
-    , [Some.This ObeliskRoute_Static]
+    , mapSome ObeliskRoute_Resource <$> universe
     ]
 
-showRoute :: (Some appRoute -> Maybe Text) -> Some (ObeliskRoute appRoute) -> Maybe Text
-showRoute showAppRoute (Some.This r) = case r of
-  ObeliskRoute_App appRoute -> showAppRoute $ Some.This appRoute
-  ObeliskRoute_Static -> Just "static"
-
+{-
 instance GCompare appRoute => GCompare (ObeliskRoute appRoute) where
   gcompare a b = case (a, b) of
     (ObeliskRoute_App aa, ObeliskRoute_App ab) -> gcompare aa ab
-    (ObeliskRoute_App _, ObeliskRoute_Static) -> GLT
-    (ObeliskRoute_Static, ObeliskRoute_App _) -> GGT
-    (ObeliskRoute_Static, ObeliskRoute_Static) -> GEQ
+    (ObeliskRoute_App _, ObeliskRoute_Resource) -> GLT
+    (ObeliskRoute_Resource, ObeliskRoute_App _) -> GGT
+    (ObeliskRoute_Resource, ObeliskRoute_Resource) -> GEQ
 
 instance GEq appRoute => GEq (ObeliskRoute appRoute) where
   geq a b = case (a, b) of
     (ObeliskRoute_App aa, ObeliskRoute_App ab) -> geq aa ab
-    (ObeliskRoute_App _, ObeliskRoute_Static) -> Nothing
-    (ObeliskRoute_Static, ObeliskRoute_App _) -> Nothing
-    (ObeliskRoute_Static, ObeliskRoute_Static) -> Just Refl
+    (ObeliskRoute_App _, ObeliskRoute_Resource) -> Nothing
+    (ObeliskRoute_Resource, ObeliskRoute_App _) -> Nothing
+    (ObeliskRoute_Resource, ObeliskRoute_Resource) -> Just Refl
+-}
 
 instance GShow appRoute => GShow (ObeliskRoute appRoute) where
 
 makePrisms ''ObeliskRoute
+deriveGShow ''ResourceRoute
+deriveGEq ''ResourceRoute
+deriveGCompare ''ResourceRoute
 
 --TODO: decodeURIComponent as appropriate
