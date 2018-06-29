@@ -119,7 +119,7 @@ runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
   where
     opts =
       [ "-W"
-      , "--command='ghci -ghci-script " <> dotGhci <> "' "
+      , "--command='ghci -Wall -ghci-script " <> dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd
