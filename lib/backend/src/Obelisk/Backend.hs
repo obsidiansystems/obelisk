@@ -45,5 +45,5 @@ backend cfg = do
   httpServe httpConf $ route
     [ ("", serveApp "" appCfg)
     , ("", serveAssets "frontend.jsexe.assets" "frontend.jsexe") --TODO: Can we prevent naming conflicts between frontend.jsexe and static?
-    , ("", serveAssets "static.assets" "static")
+    , ("static", serveAssets "static.assets" "static")
     ]

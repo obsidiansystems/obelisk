@@ -44,6 +44,9 @@ module Obelisk.Route
   , ObeliskRoute (..)
   , _ObeliskRoute_App
   , _ObeliskRoute_Resource
+  , ResourceRoute (..)
+  , JSaddleWarpRoute (..)
+  , jsaddleWarpRouteEncoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -480,7 +483,7 @@ resourceComponentEncoder = enum1Encoder $ \case
 resourceRouteEncoder :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> Encoder check parse a PageName
 resourceRouteEncoder = \case
   ResourceRoute_Static -> Encoder $ pure pathOnlyValidEncoder
-  ResourceRoute_JSaddleWarp -> jsaddleWarpEncoder
+  ResourceRoute_JSaddleWarp -> jsaddleWarpRouteEncoder
 
 data JSaddleWarpRoute :: * -> * where
   JSaddleWarpRoute_JavaScript :: JSaddleWarpRoute ()
@@ -494,14 +497,14 @@ instance Universe (Some JSaddleWarpRoute) where
     , Some.This JSaddleWarpRoute_Sync
     ]
 
-jsaddleWarpComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some JSaddleWarpRoute) (Maybe Text)
-jsaddleWarpComponentEncoder = enum1Encoder $ \case
+jsaddleWarpRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some JSaddleWarpRoute) (Maybe Text)
+jsaddleWarpRouteComponentEncoder = enum1Encoder $ \case
   JSaddleWarpRoute_JavaScript -> Just "jsaddle.js"
-  JSaddleWarpRoute_WebSocket -> Just "websocket"
+  JSaddleWarpRoute_WebSocket -> Nothing
   JSaddleWarpRoute_Sync -> Just "sync"
 
-jsaddleWarpEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (R JSaddleWarpRoute) PageName
-jsaddleWarpEncoder = pathComponentEncoder jsaddleWarpComponentEncoder $ \case
+jsaddleWarpRouteEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (R JSaddleWarpRoute) PageName
+jsaddleWarpRouteEncoder = pathComponentEncoder jsaddleWarpRouteComponentEncoder $ \case
   JSaddleWarpRoute_JavaScript -> endValidEncoder mempty
   JSaddleWarpRoute_WebSocket -> endValidEncoder mempty
   JSaddleWarpRoute_Sync -> pathOnlyValidEncoder

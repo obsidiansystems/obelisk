@@ -1,20 +1,35 @@
+{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Run where
+
+import Obelisk.Route
 
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((^?), _Just, _Right)
+import Control.Monad.Except
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import Data.List (uncons)
 import Data.Maybe
+import Data.GADT.Compare.TH
+import Data.GADT.Show
 import Data.Semigroup ((<>))
+import Data.Some (Some)
 import Data.Streaming.Network (bindPortTCP)
+import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Universe
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -25,7 +40,6 @@ import Network.Wai (Application)
 import qualified Network.Wai as W
 import Network.Wai.Handler.Warp
 import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
-import Network.Wai.Handler.WebSockets (isWebSocketsReq)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Obelisk.ExecutableConfig (get)
@@ -77,28 +91,39 @@ runWidget conf (h, b) = do
         app <- obeliskApp defaultConnectionOptions h b (fallbackProxy redirectHost redirectPort man)
         runSettingsSocket settings skt app)
 
+data Void1 :: * -> * where {}
+
+instance Universe (Some Void1) where
+  universe = []
+
+void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
+void1Encoder = Encoder $ pure $ ValidEncoder
+  { _validEncoder_encode = \case {}
+  , _validEncoder_decode = \_ -> throwError "void1Encoder: can't decode anything"
+  }
+
 obeliskApp :: ConnectionOptions -> StaticWidget () () -> Widget () () -> Application -> IO Application
 obeliskApp opts h b backend = do
   html <- BSLC.fromStrict <$> indexHtml h
   let entryPoint = mainWidget' b >> syncPoint
-  jsaddle <- jsaddleOr opts entryPoint $ \req sendResponse -> case (W.requestMethod req, W.pathInfo req) of
-    ("GET", []) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
-    ("GET", ["jsaddle.js"]) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs False
+  Right ve <- return $ checkEncoder $ obeliskRouteEncoder void1Encoder (\case {})
+  Right (jsaddleWarpRouteValidEncoder :: ValidEncoder (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
+  jsaddle <- jsaddleWithAppOr opts entryPoint $ error "obeliskApp: jsaddle got a bad URL"
+  return $ \req sendResponse -> case _validEncoder_decode ve (W.pathInfo req, mempty) of --TODO: Query strings
+    Right (ObeliskRoute_Resource ResourceRoute_JSaddleWarp :/ jsaddleRoute) -> case jsaddleRoute of
+      JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just "http://localhost:8000/jsaddle") False
+      _ -> flip jsaddle sendResponse $ req
+        { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
+        }
+    Left _ -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
     _ -> backend req sendResponse
-  -- Workaround jsaddleOr wanting to handle all websockets requests without
-  -- having a chance for run to proxy non jsaddle websocket requests to the
-  -- backend.
-  return $ \req sendResponse -> do
-    if isWebSocketsReq req && not (null $ W.pathInfo req)
-      then backend req sendResponse
-      else jsaddle req sendResponse
 
 indexHtml :: StaticWidget () () -> IO ByteString
 indexHtml h = do
   ((), bs) <- renderStatic $ el "html" $ do
     el "head" $ h
     el "body" $ return ()
-    elAttr "script" ("src" =: "/jsaddle.js") $ return ()
+    elAttr "script" ("src" =: "/jsaddle/jsaddle.js") $ return ()
   return $ "<!DOCTYPE html>" <> bs
 
 -- | like 'bindPortTCP' but reconnects on exception
@@ -147,3 +172,8 @@ defRunConfig = RunConfig
   , _runConfig_redirectPort = 3001
   , _runConfig_retryTimeout = 1
   }
+
+deriveGCompare ''Void1
+deriveGEq ''Void1
+instance GShow Void1 where
+  gshowsPrec _ = \case {}

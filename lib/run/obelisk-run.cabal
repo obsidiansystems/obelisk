@@ -10,6 +10,8 @@ library
       attoparsec
     , base
     , bytestring
+    , dependent-sum
+    , dependent-sum-template
     , http-client
     , http-reverse-proxy
     , http-types
@@ -17,12 +19,15 @@ library
     , jsaddle-warp
     , lens
     , modern-uri
+    , mtl
     , network
     , obelisk-executable-config
+    , obelisk-route
     , process
     , reflex-dom
     , streaming-commons
     , text
+    , universe
     , wai
     , wai-websockets
     , warp
