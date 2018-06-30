@@ -13,9 +13,16 @@ library
                  dependent-sum,
                  dependent-sum-template,
                  either,
+                 ghcjs-dom,
+                 jsaddle,
                  lens,
+                 monad-control,
                  mtl,
+                 network-uri,
                  reflex,
+                 reflex-dom,
                  text,
+                 transformers,
                  universe
   exposed-modules: Obelisk.Route
+                   Obelisk.Route.Frontend
