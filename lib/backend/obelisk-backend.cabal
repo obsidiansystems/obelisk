@@ -8,10 +8,13 @@ library
   build-depends: base,
                  bytestring,
                  data-default,
+                 dependent-sum,
                  lens,
                  obelisk-asset-serve-snap,
+                 obelisk-route,
                  obelisk-snap,
                  reflex-dom,
                  snap,
-                 snap-server
+                 snap-server,
+                 text
   exposed-modules: Obelisk.Backend

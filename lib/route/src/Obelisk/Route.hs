@@ -39,7 +39,7 @@ module Obelisk.Route
   , prismValidEncoder
   , rPrism
   , obeliskRouteEncoder
-  , pageNameEncoder
+  , pageNameValidEncoder
   , catchValidEncoder
   , ObeliskRoute (..)
   , _ObeliskRoute_App
@@ -47,6 +47,7 @@ module Obelisk.Route
   , ResourceRoute (..)
   , JSaddleWarpRoute (..)
   , jsaddleWarpRouteEncoder
+  , GhcjsRoute (..)
   ) where
 
 import Prelude hiding ((.), id)
@@ -275,15 +276,15 @@ enumEncoder f = Encoder $ do
         [e] -> Success e
         _ -> Failure $ Map.singleton k vs
       showRedundant :: r -> Set p -> [Text]
-      showRedundant k vs = ("  " <> T.pack (show k) <> " can decode to any of:")
-        : fmap (("    "<>) . T.pack . show) (Set.toList vs)
+      showRedundant k vs = ("  " <> tshow k <> " can decode to any of:")
+        : fmap (("    "<>) . tshow) (Set.toList vs)
   case itraverse checkSingleton reversed :: Validation (Map r (Set p)) (Map r p) of
     Failure ambiguousEntries -> throwError $ T.unlines $
       "enumEncoder: ambiguous encodings detected:" : concat (Map.elems $ imap showRedundant ambiguousEntries)
     Success m -> pure $ ValidEncoder
       { _validEncoder_decode = \r -> case Map.lookup r m of
           Just a -> pure a
-          Nothing -> throwError $ "enumEncoder: not recognized: " <> T.pack (show r) --TODO: Report this as a better type
+          Nothing -> throwError $ "enumEncoder: not recognized: " <> tshow r --TODO: Report this as a better type
       , _validEncoder_encode = f
       }
 
@@ -292,7 +293,7 @@ endValidEncoder expected = ValidEncoder
   { _validEncoder_decode = \obtained ->
       if obtained == expected
       then pure ()
-      else throwError $ "endValidEncoder: expected " <> T.pack (show expected) <> ", got " <> T.pack (show obtained)
+      else throwError $ "endValidEncoder: expected " <> tshow expected <> ", got " <> tshow obtained
   , _validEncoder_encode = \_ -> expected
   }
 
@@ -309,7 +310,7 @@ singletonListValidEncoder :: (MonadError Text parse) => ValidEncoder parse a [a]
 singletonListValidEncoder = ValidEncoder
   { _validEncoder_decode = \case
       [a] -> pure a
-      l -> throwError $ "singletonListValidEncoder: expected one item, got " <> T.pack (show $ length l)
+      l -> throwError $ "singletonListValidEncoder: expected one item, got " <> tshow (length l)
   , _validEncoder_encode = (:[])
   }
 
@@ -339,7 +340,7 @@ prefixTextEncoder :: (Applicative check, MonadError Text parse) => Text -> Encod
 prefixTextEncoder p = Encoder $ pure $ ValidEncoder
   { _validEncoder_encode = mappend p
   , _validEncoder_decode = \v -> case T.stripPrefix p v of
-      Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> T.pack (show p)
+      Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> tshow p <> ", got " <> tshow (T.take (T.length p) v)
       Just stripped -> pure stripped
   }
 
@@ -351,7 +352,7 @@ prefixNonemptyTextEncoder p = Encoder $ pure $ ValidEncoder
   , _validEncoder_decode = \case
       "" -> pure ""
       v -> case T.stripPrefix p v of
-        Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> T.pack (show p)
+        Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> tshow p
         Just stripped -> pure stripped
   }
 
@@ -376,7 +377,7 @@ joinPairTextEncoder = Encoder . \case
         let (kt, vt) = T.breakOn separator r
         in case vt of
           -- The separator was not found
-          "" -> throwError $ "joinPairTextEncoder: separator not found; expected " <> T.pack (show separator)
+          "" -> throwError $ "joinPairTextEncoder: separator not found; expected " <> tshow separator
           _ -> return (kt, T.drop (T.length separator) vt)
     }
 
@@ -397,8 +398,8 @@ prismValidEncoder p = ValidEncoder
 
 -- | Encode a PageName into a path and query string, suitable for use in the
 -- 'URI' type
-pageNameEncoder :: MonadError Text parse => ValidEncoder parse PageName (String, String)
-pageNameEncoder = ve
+pageNameValidEncoder :: MonadError Text parse => ValidEncoder parse PageName (String, String)
+pageNameValidEncoder = ve
   where Right ve = checkEncoder $ bimap
           (unpackTextEncoder . prefixTextEncoder "/" . intercalateTextEncoder "/" . listToNonEmptyEncoder)
           (unpackTextEncoder . prefixNonemptyTextEncoder "?" . intercalateTextEncoder "&" . listToNonEmptyEncoder . Cat.fmap (joinPairTextEncoder "=") . toListMapEncoder)
@@ -421,12 +422,14 @@ data ObeliskRoute :: (* -> *) -> * -> * where
 
 data ResourceRoute :: * -> * where
   ResourceRoute_Static :: ResourceRoute [Text] -- This [Text] represents the *path in our static files directory*, not necessarily the URL path that the asset gets served at (although that will often be "/static/this/text/thing")
+  ResourceRoute_Ghcjs :: ResourceRoute (R GhcjsRoute)
   ResourceRoute_JSaddleWarp :: ResourceRoute (R JSaddleWarpRoute)
 
 --TODO: Generate this
 instance Universe (Some ResourceRoute) where
   universe =
     [ Some.This ResourceRoute_Static
+    , Some.This ResourceRoute_Ghcjs
     , Some.This ResourceRoute_JSaddleWarp
     ]
 
@@ -478,11 +481,13 @@ obeliskRouteEncoder appComponentEncoder appRouteEncoder = Encoder $ do
 resourceComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some ResourceRoute) (Maybe Text)
 resourceComponentEncoder = enum1Encoder $ \case
   ResourceRoute_Static -> Just "static"
+  ResourceRoute_Ghcjs -> Just "ghcjs"
   ResourceRoute_JSaddleWarp -> Just "jsaddle"
 
 resourceRouteEncoder :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> Encoder check parse a PageName
 resourceRouteEncoder = \case
   ResourceRoute_Static -> Encoder $ pure pathOnlyValidEncoder
+  ResourceRoute_Ghcjs -> ghcjsRouteEncoder
   ResourceRoute_JSaddleWarp -> jsaddleWarpRouteEncoder
 
 data JSaddleWarpRoute :: * -> * where
@@ -517,6 +522,7 @@ instance ShowTag appRoute Identity => ShowTag (ObeliskRoute appRoute) Identity w
 instance ShowTag ResourceRoute Identity where
   showTaggedPrec = \case
     ResourceRoute_Static -> showsPrec
+    ResourceRoute_Ghcjs -> showsPrec
     ResourceRoute_JSaddleWarp -> showsPrec
 
 instance ShowTag JSaddleWarpRoute Identity where
@@ -525,6 +531,25 @@ instance ShowTag JSaddleWarpRoute Identity where
     JSaddleWarpRoute_WebSocket -> showsPrec
     JSaddleWarpRoute_Sync -> showsPrec
 
+data GhcjsRoute :: * -> * where
+  GhcjsRoute_AllJs :: GhcjsRoute ()
+
+instance Universe (Some GhcjsRoute) where
+  universe =
+    [ Some.This GhcjsRoute_AllJs
+    ]
+
+instance ShowTag GhcjsRoute Identity where
+  showTaggedPrec = \case
+    GhcjsRoute_AllJs -> showsPrec
+
+ghcjsRouteEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (R GhcjsRoute) PageName
+ghcjsRouteEncoder = pathComponentEncoder ghcjsRouteComponentEncoder $ \case
+  GhcjsRoute_AllJs -> endValidEncoder mempty
+
+ghcjsRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some GhcjsRoute) (Maybe Text)
+ghcjsRouteComponentEncoder = enum1Encoder $ \case
+  GhcjsRoute_AllJs -> Just "all.js"
 
 instance Universe (Some appRoute) => Universe (Some (ObeliskRoute appRoute)) where
   universe = mconcat
@@ -548,5 +573,8 @@ deriveGCompare ''ResourceRoute
 deriveGShow ''JSaddleWarpRoute
 deriveGEq ''JSaddleWarpRoute
 deriveGCompare ''JSaddleWarpRoute
+deriveGShow ''GhcjsRoute
+deriveGEq ''GhcjsRoute
+deriveGCompare ''GhcjsRoute
 
 --TODO: decodeURIComponent as appropriate

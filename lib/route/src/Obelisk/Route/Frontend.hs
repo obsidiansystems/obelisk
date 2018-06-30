@@ -162,11 +162,11 @@ runRouteViewT routeEncoder routeRestEncoder routeToTitle error404 a = do
   rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
       let Right myEncoder = checkEncoder $ obeliskRouteEncoder routeEncoder routeRestEncoder . Encoder (pure $ prismValidEncoder $ rPrism _ObeliskRoute_App)
           route :: Dynamic t (R r)
-          route = fmap (runIdentity . _validEncoder_decode (catchValidEncoder error404 $ pageNameEncoder . myEncoder) . (uriPath &&& uriQuery) . _historyItem_uri) historyState
+          route = fmap (runIdentity . _validEncoder_decode (catchValidEncoder error404 $ pageNameValidEncoder . myEncoder) . (uriPath &&& uriQuery) . _historyItem_uri) historyState
       (result, changeState) <- runEventWriterT $ runRoutedT a route
       let f oldRoute change =
             let newRoute = appEndo change oldRoute
-                (newPath, newQuery) = _validEncoder_encode (pageNameEncoder . myEncoder) newRoute
+                (newPath, newQuery) = _validEncoder_encode (pageNameValidEncoder . myEncoder) newRoute
             in HistoryStateUpdate
                { _historyStateUpdate_state = DOM.SerializedScriptValue jsNull
                , _historyStateUpdate_title = "Reflex FRP - " <> routeToTitle newRoute
