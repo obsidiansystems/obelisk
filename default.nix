@@ -188,9 +188,9 @@ rec {
       mkdir $out
       set -eux
       ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
-      ln -s "${assets}" $out/static
+      ln -s "${assets}" $out/static.assets
       ln -s "${config}" $out/config
-      ln -s ${compressedJs frontend} $out/frontend.jsexe
+      ln -s ${processAssets { src = compressedJs frontend; packageName = "frontend.jsexe"; moduleName = "FrontendJsexe"; }} $out/frontend.jsexe.assets
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
   server = { exe, hostName, adminEmail, routeHost, enableHttps }:
@@ -251,8 +251,8 @@ rec {
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
-    let assets = processAssets { src = base + "/static"; };
-        configPath = base + "/config";
+    let configPath = base + "/config";
+        assets = processAssets { src = base + "/static"; };
         projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
@@ -264,7 +264,6 @@ rec {
                   commonName = "common";
                   staticName = "static";
                   staticPath = base + "/static";
-                  assets = processAssets { src = base + "/static"; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
@@ -306,7 +305,7 @@ rec {
                 };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
+      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend assets configPath;
       linuxserver = serverOn "x86_64-linux";
     in projectOut system // {
       inherit linuxserver;
