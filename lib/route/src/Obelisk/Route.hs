@@ -47,7 +47,6 @@ module Obelisk.Route
   , ResourceRoute (..)
   , JSaddleWarpRoute (..)
   , jsaddleWarpRouteEncoder
-  , GhcjsRoute (..)
   ) where
 
 import Prelude hiding ((.), id)
@@ -422,7 +421,7 @@ data ObeliskRoute :: (* -> *) -> * -> * where
 
 data ResourceRoute :: * -> * where
   ResourceRoute_Static :: ResourceRoute [Text] -- This [Text] represents the *path in our static files directory*, not necessarily the URL path that the asset gets served at (although that will often be "/static/this/text/thing")
-  ResourceRoute_Ghcjs :: ResourceRoute (R GhcjsRoute)
+  ResourceRoute_Ghcjs :: ResourceRoute [Text]
   ResourceRoute_JSaddleWarp :: ResourceRoute (R JSaddleWarpRoute)
 
 --TODO: Generate this
@@ -487,7 +486,7 @@ resourceComponentEncoder = enum1Encoder $ \case
 resourceRouteEncoder :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> Encoder check parse a PageName
 resourceRouteEncoder = \case
   ResourceRoute_Static -> Encoder $ pure pathOnlyValidEncoder
-  ResourceRoute_Ghcjs -> ghcjsRouteEncoder
+  ResourceRoute_Ghcjs -> Encoder $ pure pathOnlyValidEncoder
   ResourceRoute_JSaddleWarp -> jsaddleWarpRouteEncoder
 
 data JSaddleWarpRoute :: * -> * where
@@ -531,26 +530,6 @@ instance ShowTag JSaddleWarpRoute Identity where
     JSaddleWarpRoute_WebSocket -> showsPrec
     JSaddleWarpRoute_Sync -> showsPrec
 
-data GhcjsRoute :: * -> * where
-  GhcjsRoute_AllJs :: GhcjsRoute ()
-
-instance Universe (Some GhcjsRoute) where
-  universe =
-    [ Some.This GhcjsRoute_AllJs
-    ]
-
-instance ShowTag GhcjsRoute Identity where
-  showTaggedPrec = \case
-    GhcjsRoute_AllJs -> showsPrec
-
-ghcjsRouteEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (R GhcjsRoute) PageName
-ghcjsRouteEncoder = pathComponentEncoder ghcjsRouteComponentEncoder $ \case
-  GhcjsRoute_AllJs -> endValidEncoder mempty
-
-ghcjsRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some GhcjsRoute) (Maybe Text)
-ghcjsRouteComponentEncoder = enum1Encoder $ \case
-  GhcjsRoute_AllJs -> Just "all.js"
-
 instance Universe (Some appRoute) => Universe (Some (ObeliskRoute appRoute)) where
   universe = mconcat
     [ mapSome ObeliskRoute_App <$> universe
@@ -573,8 +552,5 @@ deriveGCompare ''ResourceRoute
 deriveGShow ''JSaddleWarpRoute
 deriveGEq ''JSaddleWarpRoute
 deriveGCompare ''JSaddleWarpRoute
-deriveGShow ''GhcjsRoute
-deriveGEq ''GhcjsRoute
-deriveGCompare ''GhcjsRoute
 
 --TODO: decodeURIComponent as appropriate

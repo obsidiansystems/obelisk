@@ -20,12 +20,11 @@ import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
-import Obelisk.Asset.Serve.Snap (serveAsset, serveAssets)
+import Obelisk.Asset.Serve.Snap (serveAsset)
 import Obelisk.Route
-import Obelisk.Snap
 import Reflex.Dom
 import System.IO (hSetBuffering, stdout, stderr, BufferMode (..))
-import Snap (httpServe, defaultConfig, commandLineConfig, route, getsRequest, rqPathInfo, rqQueryString, writeText, writeBS)
+import Snap (httpServe, defaultConfig, commandLineConfig, getsRequest, rqPathInfo, rqQueryString, writeText, writeBS)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 
 --TODO: Add a link to a large explanation of the idea of using 'def'
@@ -66,11 +65,10 @@ backend routeEncoder cfg = do
     case parsed of
       Left e -> writeText e
       Right r -> case r of
-        ObeliskRoute_App _ :/ _ -> do
+        ObeliskRoute_App _ :=> Identity _ -> do
           writeBS $ "<!DOCTYPE html>\n" <> indexHtml
         ObeliskRoute_Resource ResourceRoute_Static :=> Identity pathSegments -> serveAsset "static.assets" "static" $ T.unpack $ T.intercalate "/" pathSegments
-        ObeliskRoute_Resource ResourceRoute_Ghcjs :=> Identity ghcjsRoute -> case ghcjsRoute of
-          GhcjsRoute_AllJs :=> Identity () -> serveAsset "frontend.jsexe.assets" "frontend.jsexe" "all.js"
+        ObeliskRoute_Resource ResourceRoute_Ghcjs :=> Identity pathSegments -> serveAsset "frontend.jsexe.assets" "frontend.jsexe" $ T.unpack $ T.intercalate "/" pathSegments
         ObeliskRoute_Resource ResourceRoute_JSaddleWarp :=> Identity _ -> error "asdf"
 
 blankLoader :: DomBuilder t m => m () -> m ()
