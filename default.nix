@@ -5,8 +5,8 @@
 let
   getReflexPlatform = sys: import ./dep/reflex-platform { inherit iosSdkVersion; system = sys; };
   reflex-platform = getReflexPlatform system;
-  inherit (reflex-platform) hackGet;
-  pkgs = reflex-platform.nixpkgs;
+  inherit (reflex-platform) hackGet nixpkgs;
+  pkgs = nixpkgs;
 in with pkgs.haskell.lib; with pkgs.lib;
 let
   # TODO: Remove this after updating nixpkgs: https://github.com/NixOS/nixpkgs/issues/37750
@@ -125,6 +125,8 @@ let
     obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
   };
 
+  inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
+
   defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
 in
 with pkgs.lib;
@@ -188,9 +190,9 @@ rec {
       mkdir $out
       set -eux
       ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
-      ln -s "${assets}" $out/static.assets
+      ln -s "${mkAssets assets}" $out/static.assets
       ln -s "${config}" $out/config
-      ln -s ${processAssets { src = compressedJs frontend; packageName = "frontend.jsexe"; moduleName = "FrontendJsexe"; }} $out/frontend.jsexe.assets
+      ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
   server = { exe, hostName, adminEmail, routeHost, enableHttps }:
@@ -252,7 +254,8 @@ rec {
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
     let configPath = base + "/config";
-        assets = processAssets { src = base + "/static"; };
+        static = base + "/static";
+        processedStatic = processAssets { src = static; };
         projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
@@ -272,7 +275,7 @@ rec {
                   };
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
-                    ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
+                    ${staticName} = dontHaddock (self.callCabal2nix "static" processedStatic.haskellManifest {});
                     ${backendName} = addBuildDepend super.${backendName} self.obelisk-run;
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
@@ -294,18 +297,18 @@ rec {
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
+                    ${if builtins.pathExists staticPath then "assets" else null} = processedStatic.symlinked;
                   } // android;
                 };
                 ios = {
                   ${if ios == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
+                    ${if builtins.pathExists staticPath then "staticSrc" else null} = processedStatic.symlinked;
                   } // ios;
                 };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend assets configPath;
+      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static configPath;
       linuxserver = serverOn "x86_64-linux";
     in projectOut system // {
       inherit linuxserver;
