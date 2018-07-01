@@ -48,12 +48,11 @@ backend routeEncoder cfg = do
 
   -- Get the web server configuration from the command line
   cmdLineConf <- commandLineConfig defaultConfig
-  headHtml <- fmap snd $ renderStatic $ _backendConfig_head cfg
+  indexHtml <- fmap snd $ renderStatic $ blankLoader $ _backendConfig_head cfg
   let httpConf = cmdLineConf
         { accessLog = Just $ ConfigIoLog BSC8.putStrLn
         , errorLog = Just $ ConfigIoLog BSC8.putStrLn
         }
-      appCfg = def & appConfig_initialHead .~ headHtml
   let Right routeEncoderValid = checkEncoder routeEncoder --TODO: Report error better
   -- Start the web server
   httpServe httpConf $ do
@@ -68,23 +67,17 @@ backend routeEncoder cfg = do
       Left e -> writeText e
       Right r -> case r of
         ObeliskRoute_App _ :/ _ -> do
-          (_, index) <- liftIO $ renderStatic blankLoader --TODO: Render to a Builder instead; don't allow IO
-          writeBS $ "<!DOCTYPE html>\n" <> index
+          writeBS $ "<!DOCTYPE html>\n" <> indexHtml
         ObeliskRoute_Resource ResourceRoute_Static :=> Identity pathSegments -> serveAsset "static.assets" "static" $ T.unpack $ T.intercalate "/" pathSegments
         ObeliskRoute_Resource ResourceRoute_Ghcjs :=> Identity ghcjsRoute -> case ghcjsRoute of
           GhcjsRoute_AllJs :=> Identity () -> serveAsset "frontend.jsexe.assets" "frontend.jsexe" "all.js"
         ObeliskRoute_Resource ResourceRoute_JSaddleWarp :=> Identity _ -> error "asdf"
-  -- Start the web server
-  httpServe httpConf $ route
-    [ ("", serveApp "" appCfg)
-    , ("", serveAssets "frontend.jsexe.assets" "frontend.jsexe") --TODO: Can we prevent naming conflicts between frontend.jsexe and static?
-    , ("static", serveAssets "static.assets" "static")
-    ]
 
-blankLoader :: DomBuilder t m => m ()
-blankLoader = el "html" $ do
+blankLoader :: DomBuilder t m => m () -> m ()
+blankLoader headHtml = el "html" $ do
   el "head" $ do
     elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+    headHtml
   el "body" $ do
     --TODO: Hash the all.js path
     elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
