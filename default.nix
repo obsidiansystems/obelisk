@@ -110,7 +110,6 @@ rec {
     ln -s '${commandWithMigration}/bin/ob' "$out/bin/ob"
     wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
   '';
-  commandEnv = ghcObelisk.obelisk-command.env;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
 
   selftest = pkgs.writeScript "selftest" ''
