@@ -8,6 +8,7 @@
 module Obelisk.Command where
 
 import Control.Monad
+import Control.Monad.Catch (catch)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Binary as Binary
 import Data.Bool (bool)
@@ -37,7 +38,7 @@ import Obelisk.Command.Run
 import Obelisk.Command.Thunk
 import Obelisk.Command.Upgrade
 import Obelisk.Command.Upgrade.Hash (getDirectoryHash, getHashAtGitRevision)
-import Obelisk.Command.Utils (getObeliskExe)
+import Obelisk.Command.Utils
 import qualified Obelisk.Command.VmBuilder as VmBuilder
 import Obelisk.Migration (Hash)
 
@@ -291,6 +292,8 @@ main' argsCfg = do
     ]
 
   (mainWithHandOff argsCfg <=< parseHandoff) =<< liftIO getArgs
+  `catch`
+  \(ProcessFailed p code) -> failWith $ "Process exited with code " <> tshow code <> "; " <> tshow p
 
 -- Type representing the result of a handoff calculation.
 data HandOff m

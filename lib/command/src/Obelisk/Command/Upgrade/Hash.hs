@@ -23,6 +23,7 @@ import System.Process (cwd, proc)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
+import Obelisk.Command.Nix (withNixRemoteCheck)
 import Obelisk.Command.Utils
 
 import Obelisk.Migration
@@ -87,7 +88,7 @@ getHashAtGitRevision revs excludes dir = withSystemTempDirectory "obelisk-hashre
       return result
 
 nixHash :: MonadObelisk m => FilePath -> m Hash
-nixHash dir = withSpinnerNoTrail "Running `nix-hash`" $
+nixHash dir = withSpinnerNoTrail "Running `nix-hash`" $ withNixRemoteCheck $
   readProc $ proc "nix-hash" [dir]
 
 -- | Clean up the following files in the git working copy
