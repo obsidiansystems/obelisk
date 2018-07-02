@@ -12,6 +12,7 @@ module Obelisk.CliApp
   , CliConfig
   , HasCliConfig
   , getCliConfig
+  , Output
 
   -- .Spinner
   , withSpinner

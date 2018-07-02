@@ -11,8 +11,9 @@ import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
+import Control.Monad.Log (MonadLog)
 
-import Obelisk.CliApp (Cli, CliConfig, CliT, HasCliConfig, getCliConfig, runCli)
+import Obelisk.CliApp (CliConfig, CliT, HasCliConfig, getCliConfig, runCli, Output)
 
 newtype Obelisk = Obelisk
   { _obelisk_cliConfig :: CliConfig
@@ -24,6 +25,8 @@ newtype ObeliskT m a = ObeliskT
   deriving
     ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask
     , HasObelisk, HasCliConfig)
+
+deriving instance Monad m => MonadLog Output (ObeliskT m)
 
 class HasObelisk m where
   getObelisk :: m Obelisk
@@ -41,7 +44,7 @@ runObelisk c =
   . unObeliskT
 
 type MonadObelisk m =
-  ( Cli m
+  ( MonadLog Output m
   , HasCliConfig m
   , HasObelisk m
   , MonadIO m
