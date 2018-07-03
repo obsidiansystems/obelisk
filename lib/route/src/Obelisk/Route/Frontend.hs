@@ -170,7 +170,7 @@ runRouteViewT routeComponentEncoder routeRestEncoder routeToTitle error404 a = d
                 (newPath, newQuery) = _validEncoder_encode (pageNameValidEncoder . myEncoder) newRoute
             in HistoryStateUpdate
                { _historyStateUpdate_state = DOM.SerializedScriptValue jsNull
-               , _historyStateUpdate_title = "Reflex FRP - " <> routeToTitle newRoute
+               , _historyStateUpdate_title = routeToTitle newRoute
                , _historyStateUpdate_uri = Just $ nullURI
                  { uriPath = newPath
                  , uriQuery = newQuery
