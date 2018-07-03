@@ -309,11 +309,14 @@ rec {
               };
           in mkProject (projectDefinition args));
       serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static configPath;
-      linuxserver = serverOn "x86_64-linux";
+      linuxExe = serverOn "x86_64-linux";
     in projectOut system // {
-      inherit linuxserver;
+      inherit linuxExe;
+      # `exe` is project's backend executable, with frontend assets, config, etc.
+      # `linuxExe` is the same but built for x86_64-linux.
+      exe = serverOn system;
       server = args@{ hostName, adminEmail, routeHost, enableHttps }:
-        server (args // { exe = linuxserver;});
+        server (args // { exe = linuxExe;});
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
