@@ -19,7 +19,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Obelisk.Route.Frontend
-  ( pattern (:~)
+  ( module Obelisk.Route
+  , pattern (:~)
   , Routed
   , RoutedT
   , runRoutedT
