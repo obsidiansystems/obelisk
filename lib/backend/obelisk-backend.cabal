@@ -9,12 +9,16 @@ library
                  bytestring,
                  data-default,
                  dependent-sum,
+                 dependent-sum-template,
                  lens,
+                 mtl,
                  obelisk-asset-serve-snap,
                  obelisk-route,
                  obelisk-snap,
                  reflex-dom,
                  snap,
                  snap-server,
-                 text
+                 text,
+                 universe
   exposed-modules: Obelisk.Backend
+  ghc-options: -Wall
