@@ -159,9 +159,9 @@ runRouteViewT
   -> (Text -> R r) -- ^ 404 page
   -> RoutedT t (R r) (EventWriterT t (Endo (R r)) m) a
   -> m a
-runRouteViewT routeEncoder routeRestEncoder routeToTitle error404 a = do
+runRouteViewT routeComponentEncoder routeRestEncoder routeToTitle error404 a = do
   rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
-      let Right myEncoder = checkEncoder $ obeliskRouteEncoder routeEncoder routeRestEncoder . Encoder (pure $ prismValidEncoder $ rPrism _ObeliskRoute_App)
+      let Right myEncoder = checkEncoder $ obeliskRouteEncoder routeComponentEncoder routeRestEncoder . Encoder (pure $ prismValidEncoder $ rPrism _ObeliskRoute_App)
           route :: Dynamic t (R r)
           route = fmap (runIdentity . _validEncoder_decode (catchValidEncoder error404 $ pageNameValidEncoder . myEncoder) . (uriPath &&& uriQuery) . _historyItem_uri) historyState
       (result, changeState) <- runEventWriterT $ runRoutedT a route
