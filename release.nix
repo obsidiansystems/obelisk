@@ -26,14 +26,16 @@ with pkgs;
        nix  # obelisk uses `nix-hash`
      ];
     } ''
-     set -xe
+     set -e
      # Fix permissions so `removePathForcibly` works on copied-to-tmp paths
      cp -a ${self.pathGit} $TMPDIR/obelisk
      cd $TMPDIR/obelisk
      chmod -R u+w .
 
-     ob internal hash
-     ob internal verify-migration
+     (set -x;
+      ob internal hash;
+      ob internal verify-migration;
+     )
 
      mkdir -p $out
      touch $out/done

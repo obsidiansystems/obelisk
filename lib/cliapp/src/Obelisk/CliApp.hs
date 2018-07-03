@@ -29,6 +29,7 @@ module Obelisk.CliApp
   , Severity (..)
 
   -- .Process
+  , ProcessFailed (..)
   , readProcessAndLogStderr
   , callProcessAndLogOutput
   , createProcess_

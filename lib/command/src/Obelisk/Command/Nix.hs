@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Nix
   ( nixBuild
+  , withNixRemoteCheck
   , NixBuildConfig (..)
   , Target (..)
   , OutLink (..)
@@ -13,11 +14,15 @@ module Obelisk.Command.Nix
   , strArg
   ) where
 
+import Control.Monad.Catch (catch, throwM)
+import Control.Monad.IO.Class (liftIO)
 import Data.Bool (bool)
 import Data.Default
 import Data.List (intercalate)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
+import System.Directory
+import System.Environment
 import System.Process (proc)
 
 import Obelisk.App (MonadObelisk)
@@ -72,7 +77,7 @@ instance Default NixBuildConfig where
 
 nixBuild :: MonadObelisk m => NixBuildConfig -> m FilePath
 nixBuild cfg = withSpinner' ("Running nix-build on " <> desc) (Just $ const $ "Built " <> desc) $ do
-  readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
+  withNixRemoteCheck $ readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
     [[path], attrArg, args, outLink, buildersArg]
   where
     path = _target_path $ _nixBuildConfig_target cfg
@@ -89,3 +94,24 @@ nixBuild cfg = withSpinner' ("Running nix-build on " <> desc) (Just $ const $ "B
     buildersArg = case _nixBuildConfig_builders cfg of
       [] -> []
       builders -> ["--builders", intercalate ";" builders]
+
+-- | If a nix command fails, and this may be related to the NIX_REMOTE issue,
+-- tell the user what to do.
+--
+-- Added: June, 2018. Consider removing this eventually.
+withNixRemoteCheck :: MonadObelisk m => m a -> m a
+withNixRemoteCheck f = f `catch` \e@(ProcessFailed _ _) -> do
+  liftIO (lookupEnv "NIX_REMOTE") >>= \case
+    Just _ -> throwM e
+    Nothing -> liftIO (writable <$> getPermissions "/nix/var/nix/db") >>= \case
+      True -> throwM e
+      False -> do
+        putLog Error "!!! "
+        putLog Error "!!! A nix command failed to run. You might need to set the NIX_REMOTE environment variable"
+        putLog Error "!!! to `daemon`. To do this, run the following before running obelisk:"
+        putLog Error "!!! "
+        putLog Error "!!!     export NIX_REMOTE=daemon"
+        putLog Error "!!! "
+        putLog Error "!!! For details, see https://github.com/NixOS/nixpkgs/issues/5713"
+        putLog Error "!!! "
+  throwM e
