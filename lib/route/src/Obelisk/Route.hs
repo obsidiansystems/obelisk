@@ -204,7 +204,7 @@ chainEncoder cons this rest = Encoder $ do
     }
 
 --TODO: Do this in terms of a lens instead
-lensEncoder :: Applicative parse => (b -> [a] -> b) -> (b -> [a]) -> ValidEncoder parse (c, [a]) [a] -> ValidEncoder parse (c, b) b
+lensEncoder :: Monad parse => (b -> [a] -> b) -> (b -> [a]) -> ValidEncoder parse (c, [a]) [a] -> ValidEncoder parse (c, b) b
 lensEncoder set get g = ValidEncoder
   { _validEncoder_encode = \(ma, b) -> set b $ _validEncoder_encode g (ma, get b)
   , _validEncoder_decode = \b -> do

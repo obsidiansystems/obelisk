@@ -20,7 +20,6 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
 import Data.Bits
 import Data.Function (on)
-import Data.Monoid
 import qualified Data.Text as T
 import System.Directory
 import System.FilePath

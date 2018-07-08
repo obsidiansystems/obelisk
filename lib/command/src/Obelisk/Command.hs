@@ -16,7 +16,6 @@ import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
 import Data.List
 import Data.Maybe (catMaybes, listToMaybe)
-import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
