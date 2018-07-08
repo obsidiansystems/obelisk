@@ -89,7 +89,26 @@ let
                 --replace "instance Arbitrary (NonEmpty (RText 'PathPiece)) where" "" \
                 --replace "  arbitrary = (:|) <$> arbitrary <*> arbitrary" ""
             '';
-          })).override { megaparsec = super.megaparsec_6_1_1; };
+          }));
+    # SRID: pin to newer to megaparsec because I need it in a project.
+    # TODO: reunification should get rid of this.
+    megaparsec =
+      let src = pkgs.fetchFromGitHub {
+            owner = "mrkkrp";
+            repo = "megaparsec";
+            rev = "7b271a5edc1af59fa435a705349310cfdeaaa7e9";  # 6.5.0
+            sha256 = "0415z18gl8dgms57rxzp870dpz7rcqvy008wrw5r22xw8qq0s13c";
+          };
+      in pkgs.haskell.lib.dontCheck (self.callCabal2nix "megaparsec" src {});
+    parser-combinators =  # megaparsec needs this
+      let src = pkgs.fetchFromGitHub {
+            owner = "mrkkrp";
+            repo = "parser-combinators";
+            rev = "dd6599224fe7eb224477ef8e9269602fb6b79fe0";  # 0.4.0
+            sha256 = "11cpfzlb6vl0r5i7vbhp147cfxds248fm5xq8pwxk92d1f5g9pxm";
+          };
+      in self.callCabal2nix "parser-combinators" src {};
+
     algebraic-graphs =
       let src = pkgs.fetchFromGitHub {
             owner = "snowleopard";
