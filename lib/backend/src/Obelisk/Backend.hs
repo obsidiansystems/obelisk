@@ -66,38 +66,40 @@ backend
   :: ( Universe (R route) --TODO: This seems wrong - should be Universe (Some route)
      , OrdTag route Identity
      , ShowTag route Identity
+     , check ~ Either Text --TODO: Replace with MonadError Text check
      )
   => BackendConfig route
-  -> IO ()
+  -> check (IO ())
 backend cfg = do
-  -- Make output more legible by decreasing the likelihood of output from
-  -- multiple threads being interleaved
-  hSetBuffering stdout LineBuffering
-  hSetBuffering stderr LineBuffering
+  getRequestRoute <- checkGetRequestRoute $ _backendConfig_routeEncoder cfg --TODO: Report error better
+  return $ do
+    -- Make output more legible by decreasing the likelihood of output from
+    -- multiple threads being interleaved
+    hSetBuffering stdout LineBuffering
+    hSetBuffering stderr LineBuffering
 
-  -- Get the web server configuration from the command line
-  cmdLineConf <- commandLineConfig defaultConfig
-  let httpConf = cmdLineConf
-        { accessLog = Just $ ConfigIoLog BSC8.putStrLn
-        , errorLog = Just $ ConfigIoLog BSC8.putStrLn
-        }
-  let Right getRequestRoute = checkGetRequestRoute $ _backendConfig_routeEncoder cfg --TODO: Report error better
-  -- Start the web server
-  httpServe httpConf $ do
-    let staticAssets = StaticAssets
-          { _staticAssets_processed = "static.jsexe.assets"
-          , _staticAssets_unprocessed = "static.jsexe"
+    -- Get the web server configuration from the command line
+    cmdLineConf <- commandLineConfig defaultConfig
+    let httpConf = cmdLineConf
+          { accessLog = Just $ ConfigIoLog BSC8.putStrLn
+          , errorLog = Just $ ConfigIoLog BSC8.putStrLn
           }
-        frontendApp = GhcjsApp
-          { _ghcjsApp_compiled = StaticAssets
-            { _staticAssets_processed = "frontend.jsexe.assets"
-            , _staticAssets_unprocessed = "frontend.jsexe"
+    -- Start the web server
+    httpServe httpConf $ do
+      let staticAssets = StaticAssets
+            { _staticAssets_processed = "static.jsexe.assets"
+            , _staticAssets_unprocessed = "static.jsexe"
             }
-          , _ghcjsApp_value = _backendConfig_frontend cfg
-          }
-    getRequestRoute >>= \case
-      Left e -> writeText e
-      Right r -> serveObeliskRoute staticAssets frontendApp r
+          frontendApp = GhcjsApp
+            { _ghcjsApp_compiled = StaticAssets
+              { _staticAssets_processed = "frontend.jsexe.assets"
+              , _staticAssets_unprocessed = "frontend.jsexe"
+              }
+            , _ghcjsApp_value = _backendConfig_frontend cfg
+            }
+      getRequestRoute >>= \case
+        Left e -> writeText e
+        Right r -> serveObeliskRoute staticAssets frontendApp r
 
 checkGetRequestRoute :: (MonadSnap m, Monad check, MonadError Text parse) => Encoder check parse route PageName -> check (m (parse route))
 checkGetRequestRoute routeEncoder = do

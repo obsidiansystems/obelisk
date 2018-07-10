@@ -68,16 +68,23 @@ import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
 
-run :: (Universe route, Ord route, Show route)
-    => Int -- ^ Port to run the backend
-    -> IO () -- ^ Backend
-    -> Frontend route -- ^ Frontend
-    -> IO ()
-run port backend frontend = do
+run
+  :: ( Universe route
+     , Ord route
+     , Show route
+     )
+  => Int -- ^ Port to run the backend
+  -> Either Text (IO ()) -- ^ Backend
+  -> Frontend route -- ^ Frontend
+  -> IO ()
+run port checkBackend frontend = do
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
-  backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] backend
-  let conf = defRunConfig { _runConfig_redirectPort = port }
-  runWidget conf frontend `finally` killThread backendTid
+  case checkBackend of
+    Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
+    Right backend -> do
+      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] backend
+      let conf = defRunConfig { _runConfig_redirectPort = port }
+      runWidget conf frontend `finally` killThread backendTid
 
 getConfigRoute :: IO (Maybe URI)
 getConfigRoute = get "common/route" >>= \case
