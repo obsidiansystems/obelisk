@@ -31,7 +31,7 @@ import Obelisk.Route
 import Obelisk.Route.Frontend
 import Reflex.Dom
 import System.IO (hSetBuffering, stdout, stderr, BufferMode (..))
-import Snap (MonadSnap, httpServe, defaultConfig, commandLineConfig, getsRequest, rqPathInfo, rqQueryString, writeText, writeBS)
+import Snap (Snap, MonadSnap, httpServe, defaultConfig, commandLineConfig, getsRequest, rqPathInfo, rqQueryString, writeText, writeBS)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 
 --TODO: Add a link to a large explanation of the idea of using 'def'
@@ -78,28 +78,37 @@ backend cfg = do
     hSetBuffering stdout LineBuffering
     hSetBuffering stderr LineBuffering
 
-    -- Get the web server configuration from the command line
-    cmdLineConf <- commandLineConfig defaultConfig
-    let httpConf = cmdLineConf
-          { accessLog = Just $ ConfigIoLog BSC8.putStrLn
-          , errorLog = Just $ ConfigIoLog BSC8.putStrLn
-          }
-    -- Start the web server
-    httpServe httpConf $ do
-      let staticAssets = StaticAssets
-            { _staticAssets_processed = "static.jsexe.assets"
-            , _staticAssets_unprocessed = "static.jsexe"
-            }
-          frontendApp = GhcjsApp
-            { _ghcjsApp_compiled = StaticAssets
-              { _staticAssets_processed = "frontend.jsexe.assets"
-              , _staticAssets_unprocessed = "frontend.jsexe"
-              }
+    runSnapWithCommandLineArgs $ do
+      let frontendApp = GhcjsApp
+            { _ghcjsApp_compiled = defaultFrontendGhcjsAssets
             , _ghcjsApp_value = _backendConfig_frontend cfg
             }
       getRequestRoute >>= \case
         Left e -> writeText e
-        Right r -> serveObeliskRoute staticAssets frontendApp r
+        Right r -> serveObeliskRoute defaultStaticAssets frontendApp r
+
+defaultStaticAssets :: StaticAssets
+defaultStaticAssets = StaticAssets
+  { _staticAssets_processed = "static.jsexe.assets"
+  , _staticAssets_unprocessed = "static.jsexe"
+  }
+
+defaultFrontendGhcjsAssets :: StaticAssets
+defaultFrontendGhcjsAssets = StaticAssets
+  { _staticAssets_processed = "frontend.jsexe.assets"
+  , _staticAssets_unprocessed = "frontend.jsexe"
+  }
+
+runSnapWithCommandLineArgs :: Snap () -> IO ()
+runSnapWithCommandLineArgs a = do
+  -- Get the web server configuration from the command line
+  cmdLineConf <- commandLineConfig defaultConfig
+  let httpConf = cmdLineConf
+        { accessLog = Just $ ConfigIoLog BSC8.putStrLn
+        , errorLog = Just $ ConfigIoLog BSC8.putStrLn
+        }
+  -- Start the web server
+  httpServe httpConf a
 
 checkGetRequestRoute :: (MonadSnap m, Monad check, MonadError Text parse) => Encoder check parse route PageName -> check (m (parse route))
 checkGetRequestRoute routeEncoder = do
