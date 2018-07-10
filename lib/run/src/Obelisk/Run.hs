@@ -76,7 +76,6 @@ run :: (Universe route, Ord route, Show route)
 run port backend frontend = do
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] backend
-  putStrLn $ "Backend running on port " <> show port
   let conf = defRunConfig { _runConfig_redirectPort = port }
   runWidget conf frontend `finally` killThread backendTid
 
