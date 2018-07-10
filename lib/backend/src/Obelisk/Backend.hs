@@ -17,16 +17,10 @@ import Prelude hiding ((.))
 
 import Control.Category
 import Control.Monad.IO.Class
-import Control.Monad.Except
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
 import Data.Dependent.Sum
-import Data.GADT.Show.TH
-import Data.GADT.Compare.TH
 import Data.Functor.Identity
-import Data.Monoid
-import Data.Some
-import qualified Data.Some as Some
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
