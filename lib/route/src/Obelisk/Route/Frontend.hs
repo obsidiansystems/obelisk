@@ -46,9 +46,7 @@ import Control.Monad.Trans.Reader
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
-import Data.GADT.Show
 import Data.Monoid
-import Data.Some (Some)
 import Data.Text (Text)
 import Data.Universe
 import Data.Functor.Compose
@@ -56,7 +54,8 @@ import Reflex.Class
 import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
 import Reflex.PerformEvent.Class
-import Reflex.EventWriter
+import Reflex.EventWriter.Class
+import Reflex.EventWriter.Base
 import Reflex.Dynamic
 import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
