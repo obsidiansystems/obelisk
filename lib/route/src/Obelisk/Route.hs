@@ -121,9 +121,8 @@ mapSome f (Some.This a) = Some.This $ f a
 newtype Encoder check parse decoded encoded = Encoder { unEncoder :: check (ValidEncoder parse decoded encoded) }
 
 -- | Law:
--- forall p. _totalEncoder_decode ve . _validEncoder_encode ve p == pure
+-- forall p. _validEncoder_decode ve . _validEncoder_encode ve p == pure
 -- Note that the reverse may not be the case: when parsing, a route may be canonicalized, and erroneous routes may be collapsed to a single 404 route.  However, as a consequence of the law, encode . decode must be idemponent.
--- | TODO: Should this be turned around?  That would match enumEncoder better
 data ValidEncoder parse decoded encoded = ValidEncoder
   { _validEncoder_decode :: !(encoded -> parse decoded) -- Can fail; can lose information; must always succeed on outputs of `_validEncoder_encode` and result in the original value
   , _validEncoder_encode :: !(decoded -> encoded) -- Must be injective
