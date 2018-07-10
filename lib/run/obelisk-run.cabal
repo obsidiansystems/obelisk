@@ -12,6 +12,7 @@ library
     , bytestring
     , dependent-sum
     , dependent-sum-template
+    , ghcjs-dom
     , http-client
     , http-reverse-proxy
     , http-types
@@ -22,8 +23,11 @@ library
     , mtl
     , network
     , obelisk-executable-config
+    , obelisk-frontend
     , obelisk-route
     , process
+    , ref-tf
+    , reflex
     , reflex-dom
     , streaming-commons
     , text

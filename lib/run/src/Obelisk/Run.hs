@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -6,30 +7,43 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Run where
 
-import Obelisk.Route
+import Prelude hiding ((.), id)
 
+import Control.Category
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((^?), _Just, _Right)
 import Control.Monad.Except
+import Control.Monad.Ref
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy.Char8 as BSLC
+import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Identity
+import Data.IORef
 import Data.List (uncons)
 import Data.Maybe
 import Data.GADT.Compare.TH
 import Data.GADT.Show
 import Data.Semigroup ((<>))
 import Data.Some (Some)
+import qualified Data.Some as Some
 import Data.Streaming.Network (bindPortTCP)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Universe
+import GHCJS.DOM hiding (bracket, catch)
+import GHCJS.DOM.Document
+import GHCJS.DOM.Node
+import qualified GHCJS.DOM.Types as DOM
+import Language.Javascript.JSaddle (JSM)
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -43,7 +57,10 @@ import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Obelisk.ExecutableConfig (get)
+import Obelisk.Frontend
+import Obelisk.Route.Frontend
 import Reflex.Dom.Core
+import Reflex.Host.Class
 import System.Environment
 import System.IO
 import System.Process
@@ -51,9 +68,10 @@ import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
 
-run :: Int -- ^ Port to run the backend
+run :: (Universe route, Ord route, Show route)
+    => Int -- ^ Port to run the backend
     -> IO () -- ^ Backend
-    -> (StaticWidget () (), Widget () ()) -- ^ Frontend widget (head, body)
+    -> Frontend route -- ^ Frontend
     -> IO ()
 run port backend frontend = do
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
@@ -74,8 +92,8 @@ getConfigRoute = get "common/route" >>= \case
 defAppUri :: URI
 defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 
-runWidget :: RunConfig -> (StaticWidget () (), Widget () ()) -> IO ()
-runWidget conf (h, b) = do
+runWidget :: (Universe route, Ord route, Show route) => RunConfig -> Frontend route -> IO ()
+runWidget conf frontend = do
   uri <- fromMaybe defAppUri <$> getConfigRoute
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
@@ -88,7 +106,7 @@ runWidget conf (h, b) = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp defaultConnectionOptions h b (fallbackProxy redirectHost redirectPort man)
+        app <- obeliskApp defaultConnectionOptions frontend (fallbackProxy redirectHost redirectPort man)
         runSettingsSocket settings skt app)
 
 data Void1 :: * -> * where {}
@@ -98,14 +116,63 @@ instance Universe (Some Void1) where
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = \case {}
+  { _validEncoder_encode = \case
+      Some.This f -> case f of {}
   , _validEncoder_decode = \_ -> throwError "void1Encoder: can't decode anything"
   }
 
-obeliskApp :: ConnectionOptions -> StaticWidget () () -> Widget () () -> Application -> IO Application
-obeliskApp opts h b backend = do
-  html <- BSLC.fromStrict <$> indexHtml h
-  let entryPoint = mainWidget' b >> syncPoint
+type Widget' x = ImmediateDomBuilderT DomTimeline (PostBuildT DomTimeline (WithJSContextSingleton x (PerformEventT DomTimeline DomHost))) --TODO: Make this more abstract
+
+{-# INLINABLE attachWidget''' #-}
+attachWidget''' :: (Ref m ~ Ref IO, MonadIO m, MonadReflexHost DomTimeline m, MonadRef m) => (EventChannel -> PerformEventT DomTimeline m (a, IORef (Maybe (EventTrigger DomTimeline ())))) -> m (a, FireCommand DomTimeline m)
+attachWidget''' w = do
+  events <- liftIO newChan
+  ((result, postBuildTriggerRef), fc@(FireCommand fire)) <- hostPerformEventT $ w events
+  mPostBuildTrigger <- readRef postBuildTriggerRef
+  forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
+  return (result, fc)
+
+-- | Warning: `mainWidgetWithHead'` is provided only as performance tweak. It is expected to disappear in future releases.
+runFrontend :: (a -> Widget' () b, b -> Widget' () a) -> JSM ()
+runFrontend widgets = withJSContextSingletonMono $ \jsSing -> do
+  doc <- currentDocumentUnchecked
+  headElement <- getHeadUnchecked doc
+  headFragment <- createDocumentFragment doc
+  bodyElement <- getBodyUnchecked doc
+  bodyFragment <- createDocumentFragment doc
+  (events, fc) <- liftIO $ runDomHost $ attachWidget''' $ \events -> flip runWithJSContextSingleton jsSing $ do
+    let (headWidget, bodyWidget) = widgets
+    (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
+    let go :: forall c. Widget' () c -> DOM.DocumentFragment -> PostBuildT DomTimeline (WithJSContextSingleton () (PerformEventT DomTimeline DomHost)) c
+        go w df = do
+          unreadyChildren <- liftIO $ newIORef 0
+          let builderEnv = ImmediateDomBuilderEnv
+                { _immediateDomBuilderEnv_document = toDocument doc
+                , _immediateDomBuilderEnv_parent = toNode df
+                , _immediateDomBuilderEnv_unreadyChildren = unreadyChildren
+                , _immediateDomBuilderEnv_commitAction = return () --TODO
+                }
+          runImmediateDomBuilderT w builderEnv events
+    flip runPostBuildT postBuild $ do
+      rec b <- go (headWidget a) headFragment
+          a <- go (bodyWidget b) bodyFragment
+      return (events, postBuildTriggerRef)
+  replaceElementContents headElement headFragment
+  replaceElementContents bodyElement bodyFragment
+  liftIO $ processAsyncEvents events fc
+
+--instance DOM.MonadJSM m => DOM.MonadJSM (PerformEventT t m)
+
+-- obeliskRouteEncoder routeComponentEncoder routeRestEncoder . Encoder (pure $ prismValidEncoder $ rPrism _ObeliskRoute_App) --TODO: Deal with failure
+
+obeliskApp :: forall route. (Universe route, Ord route, Show route) => ConnectionOptions -> Frontend route -> Application -> IO Application
+obeliskApp opts frontend backend = do
+  html <- BSLC.fromStrict <$> indexHtml blank --TODO: Something other than `blank` here?
+  let runMyRouteViewT = runRouteViewT
+        (_frontend_routeEncoder frontend)
+        (_frontend_title frontend)
+        (_frontend_notFoundRoute frontend)
+  let entryPoint = runFrontend (\_ -> runMyRouteViewT $ _frontend_head frontend, \_ -> runMyRouteViewT $ _frontend_body frontend) >> syncPoint
   Right ve <- return $ checkEncoder $ obeliskRouteEncoder void1Encoder (\case {})
   Right (jsaddleWarpRouteValidEncoder :: ValidEncoder (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
   jsaddle <- jsaddleWithAppOr opts entryPoint $ error "obeliskApp: jsaddle got a bad URL"

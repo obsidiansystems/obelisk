@@ -32,7 +32,9 @@ import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Universe
 import Obelisk.Asset.Serve.Snap (serveAsset)
+import Obelisk.Frontend
 import Obelisk.Route
+import Obelisk.Route.Frontend
 import Reflex.Dom
 import System.IO (hSetBuffering, stdout, stderr, BufferMode (..))
 import Snap (httpServe, defaultConfig, commandLineConfig, getsRequest, rqPathInfo, rqQueryString, writeText, writeBS)
@@ -42,32 +44,30 @@ import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog
 -- | Configure the operation of the Obelisk backend.  For reasonable defaults,
 -- use 'def'.
 data BackendConfig (route :: * -> *) = BackendConfig
-  { _backendConfig_head :: !(StaticWidget () ())
+  { _backendConfig_frontend :: Frontend (R route)
   , _backendConfig_routeEncoder :: !(Encoder (Either Text) (Either Text) (R (ObeliskRoute route)) PageName)
   }
 
-data IndexOnly :: * -> * where
-  IndexOnly :: IndexOnly ()
-
-instance Universe (Some IndexOnly) where
-  universe = [Some.This IndexOnly]
-
-indexOnlyRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some IndexOnly) (Maybe Text)
-indexOnlyRouteComponentEncoder = enum1Encoder $ \case
-  IndexOnly -> Nothing
-
-indexOnlyRouteRestEncoder :: (Applicative check, MonadError Text parse) => IndexOnly a -> Encoder check parse a PageName
-indexOnlyRouteRestEncoder = \case
-  IndexOnly -> Encoder $ pure $ endValidEncoder mempty
-
-instance route ~ IndexOnly => Default (BackendConfig route) where
+instance route ~ IndexOnlyRoute => Default (BackendConfig route) where
   def = BackendConfig
-    { _backendConfig_head = return ()
+    { _backendConfig_frontend = Frontend
+      { _frontend_head = return ()
+      , _frontend_body = return ()
+      , _frontend_routeEncoder = obeliskRouteEncoder indexOnlyRouteComponentEncoder indexOnlyRouteRestEncoder . Encoder (pure $ prismValidEncoder $ rPrism _ObeliskRoute_App) --TODO: This is mostly redundant with the _backendConfig_routeEncoder
+      , _frontend_title = \_ -> "Obelisk App"
+      , _frontend_notFoundRoute = \_ -> IndexOnlyRoute :/ ()
+      }
     , _backendConfig_routeEncoder = obeliskRouteEncoder indexOnlyRouteComponentEncoder indexOnlyRouteRestEncoder
     }
 
 -- | Start an Obelisk backend
-backend :: ShowTag route Identity => BackendConfig route -> IO ()
+backend
+  :: ( Universe (R route) --TODO: This seems wrong - should be Universe (Some route)
+     , OrdTag route Identity
+     , ShowTag route Identity
+     )
+  => BackendConfig route
+  -> IO ()
 backend cfg = do
   -- Make output more legible by decreasing the likelihood of output from
   -- multiple threads being interleaved
@@ -76,7 +76,7 @@ backend cfg = do
 
   -- Get the web server configuration from the command line
   cmdLineConf <- commandLineConfig defaultConfig
-  indexHtml <- fmap snd $ renderStatic $ blankLoader $ _backendConfig_head cfg
+  let frontend = _backendConfig_frontend cfg
   let httpConf = cmdLineConf
         { accessLog = Just $ ConfigIoLog BSC8.putStrLn
         , errorLog = Just $ ConfigIoLog BSC8.putStrLn
@@ -94,7 +94,9 @@ backend cfg = do
     case parsed of
       Left e -> writeText e
       Right r -> case r of
-        ObeliskRoute_App _ :=> Identity _ -> do
+        ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> do
+          indexHtml <- liftIO $ fmap snd $ renderStatic $ fmap fst $ runEventWriterT $ flip runRoutedT (pure $ appRouteComponent :/ appRouteRest) $ blankLoader $ _frontend_head frontend
+          --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
           writeBS $ "<!DOCTYPE html>\n" <> indexHtml
         ObeliskRoute_Resource ResourceRoute_Static :=> Identity pathSegments -> serveAsset "static.assets" "static" $ T.unpack $ T.intercalate "/" pathSegments
         ObeliskRoute_Resource ResourceRoute_Ghcjs :=> Identity pathSegments -> serveAsset "frontend.jsexe.assets" "frontend.jsexe" $ T.unpack $ T.intercalate "/" pathSegments
@@ -108,11 +110,3 @@ blankLoader headHtml = el "html" $ do
   el "body" $ do
     --TODO: Hash the all.js path
     elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
-
-deriveGShow ''IndexOnly
-deriveGEq ''IndexOnly
-deriveGCompare ''IndexOnly
-
-instance ShowTag IndexOnly Identity where
-  showTaggedPrec = \case
-    IndexOnly -> showsPrec

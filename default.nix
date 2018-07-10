@@ -85,6 +85,7 @@ let
     obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {});
     obelisk-executable-config = executableConfig.haskellPackage self;
     obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
+    obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
     obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
     obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
     obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};

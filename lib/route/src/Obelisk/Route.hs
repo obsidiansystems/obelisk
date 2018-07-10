@@ -47,6 +47,9 @@ module Obelisk.Route
   , ResourceRoute (..)
   , JSaddleWarpRoute (..)
   , jsaddleWarpRouteEncoder
+  , IndexOnlyRoute (..)
+  , indexOnlyRouteComponentEncoder
+  , indexOnlyRouteRestEncoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -543,6 +546,25 @@ instance GShow appRoute => GShow (ObeliskRoute appRoute) where
     ObeliskRoute_Resource appRoute -> showParen (prec > 10) $
       showString "ObeliskRoute_Resource " . gshowsPrec 11 appRoute
 
+
+data IndexOnlyRoute :: * -> * where
+  IndexOnlyRoute :: IndexOnlyRoute ()
+
+instance Universe (Some IndexOnlyRoute) where
+  universe = [Some.This IndexOnlyRoute]
+
+indexOnlyRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some IndexOnlyRoute) (Maybe Text)
+indexOnlyRouteComponentEncoder = enum1Encoder $ \case
+  IndexOnlyRoute -> Nothing
+
+indexOnlyRouteRestEncoder :: (Applicative check, MonadError Text parse) => IndexOnlyRoute a -> Encoder check parse a PageName
+indexOnlyRouteRestEncoder = \case
+  IndexOnlyRoute -> Encoder $ pure $ endValidEncoder mempty --TODO: Allow anything to parse
+
+instance ShowTag IndexOnlyRoute Identity where
+  showTaggedPrec = \case
+    IndexOnlyRoute -> showsPrec
+
 makePrisms ''ObeliskRoute
 --TODO: Prevent deriveGShow from creating this warning:
 -- Defined but not used: ‘p’
@@ -552,5 +574,8 @@ deriveGCompare ''ResourceRoute
 deriveGShow ''JSaddleWarpRoute
 deriveGEq ''JSaddleWarpRoute
 deriveGCompare ''JSaddleWarpRoute
+deriveGShow ''IndexOnlyRoute
+deriveGEq ''IndexOnlyRoute
+deriveGCompare ''IndexOnlyRoute
 
 --TODO: decodeURIComponent as appropriate

@@ -13,6 +13,7 @@ library
                  lens,
                  mtl,
                  obelisk-asset-serve-snap,
+                 obelisk-frontend,
                  obelisk-route,
                  obelisk-snap,
                  reflex-dom,

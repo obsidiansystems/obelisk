@@ -137,7 +137,6 @@ strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   (_, _) <- runWithReplace (f r0) $ f <$> updated r
   pure ()
 
---TODO: Factor this out into Obelisk
 runRouteViewT
   :: forall t m r a.
      ( Monad m
@@ -149,20 +148,19 @@ runRouteViewT
      , MonadFix m
      , Adjustable t m
      , DomBuilder t m
-     , Universe (Some r)
-     , GCompare r
-     , GShow r
+     , Universe r
+     , Ord r
+     , Show r
      )
-  => (Encoder (Either Text) (Either Text) (Some r) (Maybe Text))
-  -> (forall b. r b -> Encoder (Either Text) (Either Text) b PageName)
-  -> (R r -> Text)
-  -> (Text -> R r) -- ^ 404 page
-  -> RoutedT t (R r) (EventWriterT t (Endo (R r)) m) a
+  => (Encoder (Either Text) (Either Text) r PageName)
+  -> (r -> Text)
+  -> (Text -> r) -- ^ 404 page
+  -> RoutedT t r (EventWriterT t (Endo r) m) a
   -> m a
-runRouteViewT routeComponentEncoder routeRestEncoder routeToTitle error404 a = do
+runRouteViewT routeEncoder routeToTitle error404 a = do
   rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
-      let Right myEncoder = checkEncoder $ obeliskRouteEncoder routeComponentEncoder routeRestEncoder . Encoder (pure $ prismValidEncoder $ rPrism _ObeliskRoute_App)
-          route :: Dynamic t (R r)
+      let Right myEncoder = checkEncoder routeEncoder
+          route :: Dynamic t r
           route = fmap (runIdentity . _validEncoder_decode (catchValidEncoder error404 $ pageNameValidEncoder . myEncoder) . (uriPath &&& uriQuery) . _historyItem_uri) historyState
       (result, changeState) <- runEventWriterT $ runRoutedT a route
       let f oldRoute change =
