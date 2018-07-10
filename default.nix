@@ -92,6 +92,13 @@ let
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
     obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
     obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
+
+    dependent-sum-template = self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
+      owner = "mokus0";
+      repo = "dependent-sum-template";
+      rev = "877aea7817f8b9a7ca90374692402cc505bbab25";
+      sha256 = "0x065vdvjnbn2fiw27kk1zbjgknfnbli9bjvn4pmdbdf8m9picpg";
+    }) {};
   };
 
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
