@@ -26,3 +26,4 @@ library
                  universe
   exposed-modules: Obelisk.Route
                    Obelisk.Route.Frontend
+  ghc-options: -Wall
