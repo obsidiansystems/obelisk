@@ -6,11 +6,15 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-} -- Due to instance HasJS x (EventWriterT t w m)
 module Obelisk.Run where
 
 import Prelude hiding ((.), id)
@@ -129,6 +133,11 @@ void1Encoder = Encoder $ pure $ ValidEncoder
 
 type Widget' x = ImmediateDomBuilderT DomTimeline (PostBuildT DomTimeline (WithJSContextSingleton x (PerformEventT DomTimeline DomHost))) --TODO: Make this more abstract
 
+--TODO: Upstream
+instance HasJS x m => HasJS x (EventWriterT t w m) where
+  type JSX (EventWriterT t w m) = JSX m
+  liftJS = lift . liftJS
+
 {-# INLINABLE attachWidget''' #-}
 attachWidget''' :: (Ref m ~ Ref IO, MonadIO m, MonadReflexHost DomTimeline m, MonadRef m) => (EventChannel -> PerformEventT DomTimeline m (a, IORef (Maybe (EventTrigger DomTimeline ())))) -> m (a, FireCommand DomTimeline m)
 attachWidget''' w = do
@@ -188,8 +197,9 @@ obeliskApp opts frontend backend = do
       _ -> flip jsaddle sendResponse $ req
         { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
         }
-    Left _ -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
-    _ -> backend req sendResponse
+    _ -> if W.pathInfo req == [] --TODO: This should just use the real parsing logic for the app
+      then sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
+      else backend req sendResponse
 
 indexHtml :: StaticWidget () () -> IO ByteString
 indexHtml h = do

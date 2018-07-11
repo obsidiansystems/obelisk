@@ -40,6 +40,7 @@ import Control.Category (Category (..), (.))
 import Control.Category.Cartesian
 import Control.Lens hiding (Bifunctor, bimap, universe)
 import Control.Monad.Fix
+import Control.Monad.Ref
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
@@ -60,7 +61,7 @@ import Reflex.Dynamic
 import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
 import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
-import Reflex.Dom.Location
+import Reflex.Dom.Core
 import qualified GHCJS.DOM.Types as DOM
 import Network.URI
 
@@ -77,7 +78,22 @@ instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadJSM)
+
+instance PerformEvent t m => PerformEvent t (RoutedT t r m) where
+  type Performable (RoutedT t r m) = Performable m
+  performEvent = lift . performEvent
+  performEvent_ = lift . performEvent_
+
+instance MonadRef m => MonadRef (RoutedT t r m) where
+  type Ref (RoutedT t r m) = Ref m
+  newRef = lift . newRef
+  readRef = lift . readRef
+  writeRef r = lift . writeRef r
+
+instance HasJS x m => HasJS x (RoutedT t r m) where
+  type JSX (RoutedT t r m) = JSX m
+  liftJS = lift . liftJS
 
 deriving instance EventWriter t w m => EventWriter t w (RoutedT t r m)
 
