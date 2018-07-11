@@ -11,6 +11,10 @@ module Obelisk.Backend
   , BackendConfig (..)
   -- * Re-exports
   , Default (def)
+  , checkGetRequestRoute
+  , runSnapWithCommandLineArgs
+  , serveDefaultObeliskApp
+  , prettifyOutput
   ) where
 
 import Prelude hiding ((.))
@@ -40,7 +44,7 @@ import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 -- use 'def'.
 data BackendConfig (route :: * -> *) = BackendConfig
   { _backendConfig_frontend :: !(Frontend (R route))
-  , _backendConfig_routeEncoder :: !(Encoder (Either Text) (Either Text) (R (ObeliskRoute route)) PageName)
+  , _backendConfig_routeEncoder :: !(Encoder (Either Text) (Either Text) (R (ObeliskRoute route)) PageName) --TODO: Factor this out so that it isn't partially redundant with _frontend_routeEncoder
   }
 
 instance route ~ IndexOnlyRoute => Default (BackendConfig route) where
@@ -74,19 +78,28 @@ backend
 backend cfg = do
   getRequestRoute <- checkGetRequestRoute $ _backendConfig_routeEncoder cfg --TODO: Report error better
   return $ do
-    -- Make output more legible by decreasing the likelihood of output from
-    -- multiple threads being interleaved
-    hSetBuffering stdout LineBuffering
-    hSetBuffering stderr LineBuffering
+    prettifyOutput
 
     runSnapWithCommandLineArgs $ do
-      let frontendApp = GhcjsApp
-            { _ghcjsApp_compiled = defaultFrontendGhcjsAssets
-            , _ghcjsApp_value = _backendConfig_frontend cfg
-            }
       getRequestRoute >>= \case
         Left e -> writeText e
-        Right r -> serveObeliskRoute defaultStaticAssets frontendApp r
+        Right r -> serveDefaultObeliskApp (_backendConfig_frontend cfg) r
+
+-- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
+--TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
+serveDefaultObeliskApp :: MonadSnap m => Frontend (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
+serveDefaultObeliskApp frontend = serveObeliskApp defaultStaticAssets frontendApp
+  where frontendApp = GhcjsApp
+          { _ghcjsApp_compiled = defaultFrontendGhcjsAssets
+          , _ghcjsApp_value = frontend
+          }
+
+prettifyOutput :: IO ()
+prettifyOutput = do
+  -- Make output more legible by decreasing the likelihood of output from
+  -- multiple threads being interleaved
+  hSetBuffering stdout LineBuffering
+  hSetBuffering stderr LineBuffering
 
 defaultStaticAssets :: StaticAssets
 defaultStaticAssets = StaticAssets
@@ -122,8 +135,8 @@ checkGetRequestRoute routeEncoder = do
       , "?" <> T.unpack (decodeUtf8 q)
       )
 
-serveObeliskRoute :: MonadSnap m => StaticAssets -> GhcjsApp (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
-serveObeliskRoute staticAssets frontendApp = \case
+serveObeliskApp :: MonadSnap m => StaticAssets -> GhcjsApp (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
+serveObeliskApp staticAssets frontendApp = \case
   ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> serveGhcjsApp frontendApp $ GhcjsAppRoute_App appRouteComponent :/ appRouteRest
   ObeliskRoute_Resource resComponent :=> Identity resRest -> case resComponent :=> Identity resRest of
     ResourceRoute_Static :=> Identity pathSegments -> serveStaticAssets staticAssets pathSegments

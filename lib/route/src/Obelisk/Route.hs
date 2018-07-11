@@ -21,6 +21,7 @@ module Obelisk.Route
   , Encoder (..) --TODO: unsafe
   , checkEncoder
   , ValidEncoder (..) --TODO: unsafe
+  , ValidEncoderFunc (..)
   , mapSome
   , pathComponentEncoder
   , enumEncoder
@@ -39,6 +40,8 @@ module Obelisk.Route
   , prismValidEncoder
   , rPrism
   , obeliskRouteEncoder
+  , obeliskRouteComponentEncoder
+  , checkObeliskRouteRestEncoder
   , pageNameValidEncoder
   , catchValidEncoder
   , ObeliskRoute (..)
@@ -50,6 +53,7 @@ module Obelisk.Route
   , IndexOnlyRoute (..)
   , indexOnlyRouteComponentEncoder
   , indexOnlyRouteRestEncoder
+  , someSumEncoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -63,7 +67,9 @@ import Control.Monad.Except
 import Data.Dependent.Sum (DSum (..), ShowTag (..))
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Either.Validation (Validation (..))
 import Data.Foldable
+import Data.Functor.Sum
 import Data.GADT.Compare
 import Data.GADT.Compare.TH
 import Data.GADT.Show
@@ -78,7 +84,6 @@ import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Either.Validation (Validation (..))
 import Data.Universe
 
 -- Design goals:
@@ -232,7 +237,7 @@ shadowEncoder
      , Show c
      , check ~ parse --TODO: Get rid of this
      )
-  => Encoder check parse a c -- ^ Overlaps
+  => Encoder check parse a c -- ^ Overlaps; should have a small number of possible routes
   -> Encoder check parse b c -- ^ Gets overlapped
   -> Encoder check parse (Either a b) c
 shadowEncoder f g = Encoder $ do
@@ -471,12 +476,32 @@ obeliskRouteEncoder
   -> (forall a. appRoute a -> Encoder check parse a PageName)
   -> Encoder check parse (R (ObeliskRoute appRoute)) PageName
 obeliskRouteEncoder appComponentEncoder appRouteEncoder = Encoder $ do
-  let componentEncoder = (resourceComponentEncoder `shadowEncoder` appComponentEncoder) . obeliskComponentEncoder
+  let componentEncoder = obeliskRouteComponentEncoder appComponentEncoder
+  restEncoder <- checkObeliskRouteRestEncoder appRouteEncoder
+  checkEncoder $ pathComponentEncoder componentEncoder $ runValidEncoderFunc restEncoder
+
+checkObeliskRouteRestEncoder
+  :: ( MonadError Text check
+     , MonadError Text parse
+     , Universe (Some appRoute)
+     , GCompare appRoute
+     )
+  => (forall a. appRoute a -> Encoder check parse a PageName)
+  -> check (ValidEncoderFunc parse (ObeliskRoute appRoute) PageName)
+checkObeliskRouteRestEncoder appRouteEncoder = do
   appRouteValidEncoder <- checkSomeUniverseEncoder appRouteEncoder
   resourceRouteValidEncoder <- checkSomeUniverseEncoder resourceRouteEncoder
-  checkEncoder $ pathComponentEncoder componentEncoder $ \case
+  return $ ValidEncoderFunc $ \case
     ObeliskRoute_App appRoute -> runValidEncoderFunc appRouteValidEncoder appRoute
     ObeliskRoute_Resource resRoute -> runValidEncoderFunc resourceRouteValidEncoder resRoute
+
+obeliskRouteComponentEncoder
+  :: ( MonadError Text parse
+     , GShow appRoute
+     , check ~ parse
+     )
+  => Encoder check parse (Some appRoute) (Maybe Text) -> Encoder check parse (Some (ObeliskRoute appRoute)) (Maybe Text)
+obeliskRouteComponentEncoder appComponentEncoder = (resourceComponentEncoder `shadowEncoder` appComponentEncoder) . obeliskComponentEncoder
 
 resourceComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some ResourceRoute) (Maybe Text)
 resourceComponentEncoder = enum1Encoder $ \case
@@ -562,6 +587,16 @@ indexOnlyRouteRestEncoder = \case
 instance ShowTag IndexOnlyRoute Identity where
   showTaggedPrec = \case
     IndexOnlyRoute -> showsPrec
+
+someSumEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Sum a b)) (Either (Some a) (Some b))
+someSumEncoder = Encoder $ pure $ ValidEncoder
+  { _validEncoder_encode = \(Some.This t) -> case t of
+      InL l -> Left $ Some.This l
+      InR r -> Right $ Some.This r
+  , _validEncoder_decode = pure . \case
+      Left (Some.This l) -> Some.This (InL l)
+      Right (Some.This r) -> Some.This (InR r)
+  }
 
 makePrisms ''ObeliskRoute
 --TODO: Prevent deriveGShow from creating this warning:
