@@ -30,9 +30,10 @@ import Obelisk.Frontend
 import Obelisk.Route
 import Obelisk.Route.Frontend
 import Reflex.Dom
-import System.IO (hSetBuffering, stdout, stderr, BufferMode (..))
-import Snap (Snap, MonadSnap, httpServe, defaultConfig, commandLineConfig, getsRequest, rqPathInfo, rqQueryString, writeText, writeBS)
+import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, rqPathInfo,
+             rqQueryString, writeBS, writeText)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
+import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 --TODO: Add a link to a large explanation of the idea of using 'def'
 -- | Configure the operation of the Obelisk backend.  For reasonable defaults,
@@ -89,8 +90,8 @@ backend cfg = do
 
 defaultStaticAssets :: StaticAssets
 defaultStaticAssets = StaticAssets
-  { _staticAssets_processed = "static.jsexe.assets"
-  , _staticAssets_unprocessed = "static.jsexe"
+  { _staticAssets_processed = "static.assets"
+  , _staticAssets_unprocessed = "static"
   }
 
 defaultFrontendGhcjsAssets :: StaticAssets
