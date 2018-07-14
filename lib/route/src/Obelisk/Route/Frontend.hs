@@ -49,7 +49,6 @@ import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
 import Data.Text (Text)
-import Data.Universe
 import Data.Functor.Compose
 import Reflex.Class
 import Reflex.PostBuild.Class
@@ -120,11 +119,11 @@ mapRoutedT f = RoutedT . mapReaderT f . unRoutedT
 withRoutedT :: (Dynamic t r -> Dynamic t r') -> RoutedT t r' m a -> RoutedT t r m a
 withRoutedT f = RoutedT . withReaderT f . unRoutedT
 
-subRoute_ :: (Reflex t, MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m ()) -> RoutedT t (R r) m ()
+subRoute_ :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m ()) -> RoutedT t (R r) m ()
 subRoute_ f = factorRouted $ strictDynWidget_ $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
-subRoute :: (Reflex t, MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m b) -> RoutedT t (R r) m (Dynamic t b)
+subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m b) -> RoutedT t (R r) m (Dynamic t b)
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
@@ -140,13 +139,13 @@ factorRouted r = RoutedT $ ReaderT $ \d -> do
   runRoutedT r $ (coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d')
 
 -- | WARNING: The input 'Dynamic' must be fully constructed when this is run
-strictDynWidget :: (Reflex t, MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
+strictDynWidget :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
 strictDynWidget f = RoutedT $ ReaderT $ \r -> do
   r0 <- sample $ current r
   (result0, result') <- runWithReplace (f r0) $ f <$> updated r
   holdDyn result0 result'
 
-strictDynWidget_ :: (Reflex t, MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m ()) -> RoutedT t a m ()
+strictDynWidget_ :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m ()) -> RoutedT t a m ()
 strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   r0 <- sample $ current r
   (_, _) <- runWithReplace (f r0) $ f <$> updated r
@@ -154,18 +153,12 @@ strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
 
 runRouteViewT
   :: forall t m r a.
-     ( Monad m
-     , TriggerEvent t m
+     ( TriggerEvent t m
      , PerformEvent t m
      , MonadHold t m
      , MonadJSM m
      , MonadJSM (Performable m)
      , MonadFix m
-     , Adjustable t m
-     , DomBuilder t m
-     , Universe r
-     , Ord r
-     , Show r
      )
   => (Encoder (Either Text) (Either Text) r PageName)
   -> (r -> Text)

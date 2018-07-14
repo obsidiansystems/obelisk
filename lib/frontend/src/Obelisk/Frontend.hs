@@ -36,10 +36,10 @@ type ObeliskWidget t route m =
   )
 
 data Frontend route = Frontend
-  { _frontend_head :: !(forall t m. ObeliskWidget t route m => RoutedT t (route) m ())
-  , _frontend_body :: !(forall t m x. (MonadWidget t m, HasJS x m, EventWriter t (Endo route) m) => RoutedT t (route) m ())
-  , _frontend_routeEncoder :: !(Encoder (Either Text) (Either Text) (route) PageName)
+  { _frontend_head :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
+  , _frontend_body :: !(forall t m x. (MonadWidget t m, HasJS x m, EventWriter t (Endo route) m) => RoutedT t route m ())
+  , _frontend_routeEncoder :: !(Encoder (Either Text) (Either Text) route PageName)
   , _frontend_title :: !(route -> Text)
-  , _frontend_notFoundRoute :: !(Text -> route)
+  , _frontend_notFoundRoute :: !(Text -> route) --TODO: Instead, maybe we should just require that the `parse` Monad for routeEncoder be `Identity`
   }
 

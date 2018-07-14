@@ -36,7 +36,7 @@ import Data.List (uncons)
 import Data.Maybe
 import Data.GADT.Compare.TH
 import Data.GADT.Show
-import Data.Semigroup ((<>))
+import Data.Semigroup ((<>), Endo)
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.Streaming.Network (bindPortTCP)
@@ -65,6 +65,7 @@ import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
+import qualified Reflex.TriggerEvent.Base as TriggerEvent
 import System.Environment
 import System.IO
 import System.Process
@@ -73,11 +74,7 @@ import qualified Text.URI as URI
 import Text.URI.Lens
 
 run
-  :: ( Universe route
-     , Ord route
-     , Show route
-     )
-  => Int -- ^ Port to run the backend
+  :: Int -- ^ Port to run the backend
   -> Either Text (IO ()) -- ^ Backend
   -> Frontend route -- ^ Frontend
   -> IO ()
@@ -102,7 +99,7 @@ getConfigRoute = get "common/route" >>= \case
 defAppUri :: URI
 defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 
-runWidget :: (Universe route, Ord route, Show route) => RunConfig -> Frontend route -> IO ()
+runWidget :: RunConfig -> Frontend route -> IO ()
 runWidget conf frontend = do
   uri <- fromMaybe defAppUri <$> getConfigRoute
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
@@ -131,7 +128,12 @@ void1Encoder = Encoder $ pure $ ValidEncoder
   , _validEncoder_decode = \_ -> throwError "void1Encoder: can't decode anything"
   }
 
-type Widget' x = ImmediateDomBuilderT DomTimeline (PostBuildT DomTimeline (WithJSContextSingleton x (PerformEventT DomTimeline DomHost))) --TODO: Make this more abstract
+type Widget' x = ImmediateDomBuilderT DomTimeline (DomCoreWidget x)
+
+-- | A widget that isn't attached to any particular part of the DOM hierarchy
+type FloatingWidget x = TriggerEventT DomTimeline (DomCoreWidget x)
+
+type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (PerformEventT DomTimeline DomHost))
 
 --TODO: Upstream
 instance HasJS x m => HasJS x (EventWriterT t w m) where
@@ -139,55 +141,80 @@ instance HasJS x m => HasJS x (EventWriterT t w m) where
   liftJS = lift . liftJS
 
 {-# INLINABLE attachWidget''' #-}
-attachWidget''' :: (Ref m ~ Ref IO, MonadIO m, MonadReflexHost DomTimeline m, MonadRef m) => (EventChannel -> PerformEventT DomTimeline m (a, IORef (Maybe (EventTrigger DomTimeline ())))) -> m (a, FireCommand DomTimeline m)
-attachWidget''' w = do
+--attachWidget''' :: (Ref m ~ Ref IO, MonadIO m, MonadReflexHost DomTimeline m, MonadRef m) => (EventChannel -> PerformEventT DomTimeline m (a, IORef (Maybe (EventTrigger DomTimeline ())))) -> m (a, FireCommand DomTimeline m)
+attachWidget'''
+  :: (EventChannel -> PerformEventT DomTimeline (SpiderHost Global) (IORef (Maybe (EventTrigger DomTimeline ()))))
+  -> IO ()
+attachWidget''' w = runDomHost $ do
   events <- liftIO newChan
-  ((result, postBuildTriggerRef), fc@(FireCommand fire)) <- hostPerformEventT $ w events
+  (postBuildTriggerRef, fc@(FireCommand fire)) <- hostPerformEventT $ w events
   mPostBuildTrigger <- readRef postBuildTriggerRef
   forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
-  return (result, fc)
-
--- | Warning: `mainWidgetWithHead'` is provided only as performance tweak. It is expected to disappear in future releases.
-runFrontend :: (a -> Widget' () b, b -> Widget' () a) -> JSM ()
-runFrontend widgets = withJSContextSingletonMono $ \jsSing -> do
-  doc <- currentDocumentUnchecked
-  headElement <- getHeadUnchecked doc
-  headFragment <- createDocumentFragment doc
-  bodyElement <- getBodyUnchecked doc
-  bodyFragment <- createDocumentFragment doc
-  (events, fc) <- liftIO $ runDomHost $ attachWidget''' $ \events -> flip runWithJSContextSingleton jsSing $ do
-    let (headWidget, bodyWidget) = widgets
-    (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
-    let go :: forall c. Widget' () c -> DOM.DocumentFragment -> PostBuildT DomTimeline (WithJSContextSingleton () (PerformEventT DomTimeline DomHost)) c
-        go w df = do
-          unreadyChildren <- liftIO $ newIORef 0
-          let builderEnv = ImmediateDomBuilderEnv
-                { _immediateDomBuilderEnv_document = toDocument doc
-                , _immediateDomBuilderEnv_parent = toNode df
-                , _immediateDomBuilderEnv_unreadyChildren = unreadyChildren
-                , _immediateDomBuilderEnv_commitAction = return () --TODO
-                }
-          runImmediateDomBuilderT w builderEnv events
-    flip runPostBuildT postBuild $ do
-      rec b <- go (headWidget a) headFragment
-          a <- go (bodyWidget b) bodyFragment
-      return (events, postBuildTriggerRef)
-  replaceElementContents headElement headFragment
-  replaceElementContents bodyElement bodyFragment
   liftIO $ processAsyncEvents events fc
+
+runFrontend
+  :: (   (forall c. Widget' () c -> FloatingWidget () c)
+      -> (forall c. Widget' () c -> FloatingWidget () c)
+      -> FloatingWidget () ()
+     )
+  -> JSM ()
+runFrontend app = withJSContextSingletonMono $ \jsSing -> do
+  globalDoc <- currentDocumentUnchecked
+  headFragment <- createDocumentFragment globalDoc
+  bodyFragment <- createDocumentFragment globalDoc
+  unreadyChildren <- liftIO $ newIORef 0
+  let commit = do
+        headElement <- getHeadUnchecked globalDoc
+        replaceElementContents headElement headFragment
+        bodyElement <- getBodyUnchecked globalDoc
+        replaceElementContents bodyElement bodyFragment
+  liftIO $ attachWidget''' $ \events -> flip runWithJSContextSingleton jsSing $ do
+    (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
+    let appendImmediateDom :: DOM.DocumentFragment -> Widget' () c -> FloatingWidget () c
+        appendImmediateDom df w = do
+          events' <- TriggerEvent.askEvents
+          lift $ do
+            doc <- getOwnerDocumentUnchecked df
+            let builderEnv = ImmediateDomBuilderEnv
+                  { _immediateDomBuilderEnv_document = doc
+                  , _immediateDomBuilderEnv_parent = toNode df
+                  , _immediateDomBuilderEnv_unreadyChildren = unreadyChildren
+                  , _immediateDomBuilderEnv_commitAction = commit
+                  }
+            runImmediateDomBuilderT w builderEnv events'
+    flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (appendImmediateDom headFragment) (appendImmediateDom bodyFragment)
+    liftIO (readIORef unreadyChildren) >>= \case
+      0 -> DOM.liftJSM commit
+      _ -> return ()
+    return postBuildTriggerRef
 
 --instance DOM.MonadJSM m => DOM.MonadJSM (PerformEventT t m)
 
 -- obeliskRouteEncoder routeComponentEncoder routeRestEncoder . Encoder (pure $ prismValidEncoder $ rPrism _ObeliskRoute_App) --TODO: Deal with failure
 
-obeliskApp :: forall route. (Universe route, Ord route, Show route) => ConnectionOptions -> Frontend route -> Application -> IO Application
+
+obeliskApp :: forall route. ConnectionOptions -> Frontend route -> Application -> IO Application
 obeliskApp opts frontend backend = do
   html <- BSLC.fromStrict <$> indexHtml blank --TODO: Something other than `blank` here?
-  let runMyRouteViewT = runRouteViewT
+  let runMyRouteViewT
+        :: ( TriggerEvent t m
+           , PerformEvent t m
+           , MonadHold t m
+           , DOM.MonadJSM m
+           , DOM.MonadJSM (Performable m)
+           , MonadFix m
+           )
+        => RoutedT t route (EventWriterT t (Endo route) m) a
+        -> m a
+      runMyRouteViewT = runRouteViewT
         (_frontend_routeEncoder frontend)
         (_frontend_title frontend)
         (_frontend_notFoundRoute frontend)
-  let entryPoint = runFrontend (\_ -> runMyRouteViewT $ _frontend_head frontend, \_ -> runMyRouteViewT $ _frontend_body frontend) >> syncPoint
+  let entryPoint = do
+        runFrontend $ \appendHead appendBody -> runMyRouteViewT $ do
+          mapRoutedT (mapEventWriterT appendHead) $ _frontend_head frontend
+          mapRoutedT (mapEventWriterT appendBody) $ _frontend_body frontend
+        syncPoint
   Right ve <- return $ checkEncoder $ obeliskRouteEncoder void1Encoder (\case {})
   Right (jsaddleWarpRouteValidEncoder :: ValidEncoder (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
   jsaddle <- jsaddleWithAppOr opts entryPoint $ error "obeliskApp: jsaddle got a bad URL"

@@ -38,4 +38,4 @@ library
     , websockets
   exposed-modules:
       Obelisk.Run
-  ghc-options: -Wall
+  ghc-options: -Wall -fwarn-redundant-constraints

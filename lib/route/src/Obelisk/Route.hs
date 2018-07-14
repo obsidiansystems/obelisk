@@ -373,7 +373,7 @@ toListMapEncoder = Encoder $ pure $ ValidEncoder
   , _validEncoder_decode = pure . Map.fromList --TODO: Should we be stricter about repeated keys?
   }
 
-joinPairTextEncoder :: (MonadError Text check, MonadError Text parse, Applicative parse) => Text -> Encoder check parse (Text, Text) Text
+joinPairTextEncoder :: (MonadError Text check, MonadError Text parse) => Text -> Encoder check parse (Text, Text) Text
 joinPairTextEncoder = Encoder . \case
   "" -> throwError "joinPairTextEncoder: empty separator"
   separator -> pure $ ValidEncoder
@@ -469,7 +469,6 @@ obeliskRouteEncoder
      , GCompare appRoute
      , GShow appRoute
      , MonadError Text check
-     , MonadError Text parse
      , check ~ parse --TODO: Get rid of this
      )
   => (Encoder check parse (Some appRoute) (Maybe Text))
