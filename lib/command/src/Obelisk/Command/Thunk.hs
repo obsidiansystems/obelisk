@@ -50,7 +50,6 @@ import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
@@ -74,6 +73,7 @@ import System.Process (proc)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
+import Obelisk.Command.Nix (withNixRemoteCheck)
 import Obelisk.Command.Utils
 
 --TODO: Support symlinked thunk data
@@ -135,13 +135,13 @@ commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 getNixSha256ForUriUnpacked :: MonadObelisk m => URI -> m NixSha256
 getNixSha256ForUriUnpacked uri =
   withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> T.pack (show uri)) $ do
-    fmap T.pack $ readProcessAndLogStderr Debug $
+    fmap T.pack $ withNixRemoteCheck $ readProcessAndLogStderr Debug $
       proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
 
 nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
   withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> T.pack (show uri) <> " at " <> rev) $ do
-    out <- readProcessAndLogStderr Debug $
+    out <- withNixRemoteCheck $ readProcessAndLogStderr Debug $
       proc "nix-prefetch-git" $ filter (/="")
         [ "--url", show uri
         , "--rev", T.unpack rev

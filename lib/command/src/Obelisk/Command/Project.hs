@@ -20,7 +20,6 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
 import Data.Bits
 import Data.Function (on)
-import Data.Monoid
 import qualified Data.Text as T
 import System.Directory
 import System.FilePath
@@ -35,6 +34,7 @@ import GitHub.Data.Name (Name)
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Thunk
+import Obelisk.Command.Nix (withNixRemoteCheck)
 --TODO: Make this module resilient to random exceptions
 
 --TODO: Don't hardcode this
@@ -201,7 +201,7 @@ inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
   projectShell root False shellName command
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> String -> m ()
-projectShell root isPure shellName command = do
+projectShell root isPure shellName command = withNixRemoteCheck $ do
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
      [ "--pure" | isPure ] <>
      [ "-A"

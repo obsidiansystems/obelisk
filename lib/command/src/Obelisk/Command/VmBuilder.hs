@@ -16,13 +16,13 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory (createDirectoryIfMissing)
 import System.Exit (ExitCode)
-import System.FilePath ((</>), (<.>))
+import System.FilePath ((<.>), (</>))
 import qualified System.Info
 import System.Process (proc)
 
 import Obelisk.App (MonadObelisk, getObeliskUserStateDir)
-import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, readProcessAndLogStderr,
-                       withExitFailMessage, withSpinner)
+import Obelisk.CliApp
+import Obelisk.Command.Nix (withNixRemoteCheck)
 
 -- | Generate the `--builders` argument string to enable the VM builder after ensuring it is available.
 getNixBuildersArg :: MonadObelisk m => m String
@@ -131,7 +131,7 @@ getDockerBuilderStateDir = liftA2 (</>) getObeliskUserStateDir (pure "nix-docker
 -- | Run a test build to see if a Linux build can finish successfully.
 testLinuxBuild :: MonadObelisk m => FilePath -> m Bool
 testLinuxBuild stateDir =
-  fmap (isRight :: Either ExitCode () -> Bool) $ try $
+  fmap (isRight :: Either ExitCode () -> Bool) $ try $ withNixRemoteCheck $
   callProcessAndLogOutput (Debug, Debug) $ proc "nix-build"
     [ "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
     , "--builders", nixBuildersArgString stateDir

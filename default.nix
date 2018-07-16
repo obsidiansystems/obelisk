@@ -5,8 +5,8 @@
 let
   getReflexPlatform = sys: import ./dep/reflex-platform { inherit iosSdkVersion; system = sys; };
   reflex-platform = getReflexPlatform system;
-  inherit (reflex-platform) hackGet;
-  pkgs = reflex-platform.nixpkgs;
+  inherit (reflex-platform) hackGet nixpkgs;
+  pkgs = nixpkgs;
 in with pkgs.haskell.lib; with pkgs.lib;
 let
   # TODO: Remove this after updating nixpkgs: https://github.com/NixOS/nixpkgs/issues/37750
@@ -85,12 +85,23 @@ let
     obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {});
     obelisk-executable-config = executableConfig.haskellPackage self;
     obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
+    obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
     obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
     obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
+    obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
     obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
     obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
+
+    dependent-sum-template = self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
+      owner = "mokus0";
+      repo = "dependent-sum-template";
+      rev = "877aea7817f8b9a7ca90374692402cc505bbab25";
+      sha256 = "0x065vdvjnbn2fiw27kk1zbjgknfnbli9bjvn4pmdbdf8m9picpg";
+    }) {};
   };
+
+  inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
 
   defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
 in
@@ -145,7 +156,7 @@ rec {
       mkdir $out
       cd $out
       ln -s "${justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-      closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+      closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
       echo "//# sourceMappingURL=all.js.map" >> all.js
   '';
 
@@ -154,30 +165,38 @@ rec {
       mkdir $out
       set -eux
       ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
-      ln -s "${assets}" $out/static
+      ln -s "${mkAssets assets}" $out/static.assets
       ln -s "${config}" $out/config
-      ln -s ${compressedJs frontend} $out/frontend.jsexe
-    ''; #TODO: run frontend.jsexe through the asset processing pipeline
+      ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
+    '';
 
-  server = exe: hostName:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
-        https = (import lib/https {}).module {
-          backendPort = 8000; # TODO read from config
-          # sslConfig = {
-          #   hostName = "example.com";
-          #   adminEmail = "webmaster@example.com";
-          #   subdomains = [ "www" ];
-          # };
-        };
+        backendPort = 8000;
     in nixos {
       inherit system;
       configuration = args: {
         imports = [
           (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
-          https
         ];
-        networking = { inherit hostName; };
+        networking = {
+          inherit hostName;
+          firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
+        };
+        services.nginx = {
+          enable = true;
+          virtualHosts."${routeHost}" = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
+            locations."/" = {
+              proxyPass = "http://127.0.0.1:" + toString backendPort;
+            };
+          };
+        };
+        security.acme.certs = if enableHttps then {
+          "${routeHost}".email = adminEmail;
+        } else { };
         systemd.services.backend = {
           wantedBy = [ "multi-user.target" ];
           after = [ "network.target" ];
@@ -209,8 +228,9 @@ rec {
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
-    let assets = processAssets { src = base + "/static"; };
-        configPath = base + "/config";
+    let configPath = base + "/config";
+        static = base + "/static";
+        processedStatic = processAssets { src = static; };
         projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
@@ -222,7 +242,6 @@ rec {
                   commonName = "common";
                   staticName = "static";
                   staticPath = base + "/static";
-                  assets = processAssets { src = base + "/static"; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
@@ -231,7 +250,7 @@ rec {
                   };
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
-                    ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
+                    ${staticName} = dontHaddock (self.callCabal2nix "static" processedStatic.haskellManifest {});
                     ${backendName} = addBuildDepend super.${backendName} self.obelisk-run;
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
@@ -253,25 +272,27 @@ rec {
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
+                    ${if builtins.pathExists staticPath then "assets" else null} = processedStatic.symlinked;
                   } // android;
                 };
                 ios = {
                   ${if ios == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
+                    ${if builtins.pathExists staticPath then "staticSrc" else null} = processedStatic.symlinked;
                   } // ios;
                 };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys:
-        serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
+      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static configPath;
       linuxExe = serverOn "x86_64-linux";
     in projectOut system // {
       inherit linuxExe;
+      # `exe` is project's backend executable, with frontend assets, config, etc.
+      # `linuxExe` is the same but built for x86_64-linux.
       exe = serverOn system;
-      server = { hostName }: server linuxExe hostName;
-      obelisk = import (base + /.obelisk/impl) {};
+      server = args@{ hostName, adminEmail, routeHost, enableHttps }:
+        server (args // { exe = linuxExe;});
+      obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
     ghc = reflex-platform.ghc.override {

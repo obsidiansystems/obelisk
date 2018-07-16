@@ -8,10 +8,18 @@ library
   build-depends: base,
                  bytestring,
                  data-default,
+                 dependent-sum,
+                 dependent-sum-template,
                  lens,
+                 mtl,
                  obelisk-asset-serve-snap,
+                 obelisk-frontend,
+                 obelisk-route,
                  obelisk-snap,
                  reflex-dom,
                  snap,
-                 snap-server
+                 snap-server,
+                 text,
+                 universe
   exposed-modules: Obelisk.Backend
+  ghc-options: -Wall

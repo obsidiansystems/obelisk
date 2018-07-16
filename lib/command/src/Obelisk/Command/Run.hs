@@ -13,9 +13,8 @@ import Data.Either
 import Data.List
 import Data.List.NonEmpty as NE
 import Data.Maybe
-import Data.Monoid
 import qualified Data.Text as T
-import Distribution.PackageDescription.Parsec (ParseResult (..), parseGenericPackageDescription)
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
 import Distribution.Types.BuildInfo
 import Distribution.Types.CondTree
@@ -123,7 +122,7 @@ runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
   where
     opts =
       [ "-W"
-      , "--command='ghci -ghci-script " <> dotGhci <> "' "
+      , "--command='ghci -Wall -ghci-script " <> dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd
