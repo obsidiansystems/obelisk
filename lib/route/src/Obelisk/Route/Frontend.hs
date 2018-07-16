@@ -1,23 +1,24 @@
 {-# LANGUAGE ApplicativeDo #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route.Frontend
   ( module Obelisk.Route
   , pattern (:~)
@@ -32,7 +33,7 @@ module Obelisk.Route.Frontend
   , runRouteViewT
   ) where
 
-import Prelude hiding ((.), id)
+import Prelude hiding (id, (.))
 
 import Obelisk.Route
 
@@ -46,24 +47,24 @@ import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Compose
 import Data.GADT.Compare
 import Data.Monoid
 import Data.Text (Text)
+import Data.Type.Coercion
 import Data.Universe
-import Data.Functor.Compose
+import qualified GHCJS.DOM.Types as DOM
+import Language.Javascript.JSaddle
+import Network.URI
 import Reflex.Class
+import Reflex.Dom.Builder.Class
+import Reflex.Dom.Core
+import Reflex.Dynamic
+import Reflex.EventWriter.Base
+import Reflex.EventWriter.Class
+import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
-import Reflex.PerformEvent.Class
-import Reflex.EventWriter.Class
-import Reflex.EventWriter.Base
-import Reflex.Dynamic
-import Reflex.Dom.Builder.Class
-import Data.Type.Coercion
-import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
-import Reflex.Dom.Core
-import qualified GHCJS.DOM.Types as DOM
-import Network.URI
 
 import Unsafe.Coerce
 
@@ -78,7 +79,11 @@ instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadJSM)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO)
+
+#ifndef ghcjs_HOST_OS
+deriving instance MonadJSM m => MonadJSM (RoutedT t r m)
+#endif
 
 instance PerformEvent t m => PerformEvent t (RoutedT t r m) where
   type Performable (RoutedT t r m) = Performable m
