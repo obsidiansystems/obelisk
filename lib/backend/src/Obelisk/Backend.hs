@@ -32,7 +32,7 @@ import Obelisk.Route
 import Obelisk.Route.Frontend
 import Reflex.Dom
 import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, rqPathInfo,
-             rqQueryString, writeBS)
+             rqQueryString, writeBS, writeText)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
@@ -128,7 +128,10 @@ serveObeliskApp staticAssets frontendApp = \case
   ObeliskRoute_Resource resComponent :=> Identity resRest -> case resComponent :=> Identity resRest of
     ResourceRoute_Static :=> Identity pathSegments -> serveStaticAssets staticAssets pathSegments
     ResourceRoute_Ghcjs :=> Identity pathSegments -> serveGhcjsApp frontendApp $ GhcjsAppRoute_Resource :/ pathSegments
-    ResourceRoute_JSaddleWarp :=> Identity _ -> error "asdf" --TODO
+    ResourceRoute_JSaddleWarp :=> Identity _ -> do
+      let msg = "Error: Obelisk.Backend received jsaddle request"
+      liftIO $ putStrLn $ T.unpack msg
+      writeText msg
 
 serveStaticAssets :: MonadSnap m => StaticAssets -> [Text] -> m ()
 serveStaticAssets assets pathSegments = serveAsset (_staticAssets_processed assets) (_staticAssets_unprocessed assets) $ T.unpack $ T.intercalate "/" pathSegments

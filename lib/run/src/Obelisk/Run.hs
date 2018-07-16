@@ -116,12 +116,11 @@ runWidget conf frontend validFullEncoder = do
 
 obeliskApp :: forall route backendRoute. ConnectionOptions -> Frontend (R route) -> ValidEncoder (Either Text) (R (Sum backendRoute (ObeliskRoute route))) PageName -> Application -> IO Application
 obeliskApp opts frontend validFullEncoder backend = do
-  html <- BSLC.fromStrict <$> indexHtml blank --TODO: Something other than `blank` here?
   let entryPoint = do
         runFrontend validFullEncoder frontend
         syncPoint
   Right (jsaddleWarpRouteValidEncoder :: ValidEncoder (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
-  jsaddle <- jsaddleWithAppOr opts entryPoint $ error "obeliskApp: jsaddle got a bad URL"
+  jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
   return $ \req sendResponse -> case _validEncoder_decode validFullEncoder (W.pathInfo req, mempty) of --TODO: Query strings
     Left e -> sendResponse $ W.responseLBS H.status404 [("Content-Type", "text/plain")] $ LBS.fromStrict $ encodeUtf8 e
     Right r -> case r of
@@ -130,7 +129,9 @@ obeliskApp opts frontend validFullEncoder backend = do
         _ -> flip jsaddle sendResponse $ req
           { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
-      InR (ObeliskRoute_App _) :=> _ -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
+      InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
+        html <- fmap BSLC.fromStrict $ indexHtml $ fmap fst $ runEventWriterT $ flip runRoutedT (pure $ appRouteComponent :/ appRouteRest) $ _frontend_head frontend
+        sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
       _ -> backend req sendResponse
 
 indexHtml :: StaticWidget () () -> IO ByteString
