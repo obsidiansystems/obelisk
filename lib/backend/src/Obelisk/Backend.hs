@@ -15,6 +15,7 @@ module Obelisk.Backend
   , runSnapWithCommandLineArgs
   , serveDefaultObeliskApp
   , prettifyOutput
+  , runBackend
   ) where
 
 import Control.Monad.Except
@@ -163,3 +164,14 @@ blankLoader headHtml = el "html" $ do
   el "body" $ do
     --TODO: Hash the all.js path
     elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
+
+runBackend :: Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
+runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+  Left e -> fail $ "backend error:\n" <> T.unpack e
+  Right validFullEncoder -> _backend_run backend $ \serveRoute -> do
+    runSnapWithCommandLineArgs $ do
+      getRouteWith validFullEncoder >>= \case
+        Left e -> writeText e
+        Right r -> case r of
+          InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
+          InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp frontend $ obeliskRoute :/ a
