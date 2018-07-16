@@ -1,5 +1,7 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -54,6 +56,8 @@ module Obelisk.Route
   , indexOnlyRouteComponentEncoder
   , indexOnlyRouteRestEncoder
   , someSumEncoder
+  , Void1
+  , void1Encoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -597,6 +601,21 @@ someSumEncoder = Encoder $ pure $ ValidEncoder
       Right (Some.This r) -> Some.This (InR r)
   }
 
+data Void1 :: * -> * where {}
+
+instance Universe (Some Void1) where
+  universe = []
+
+void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
+void1Encoder = Encoder $ pure $ ValidEncoder
+  { _validEncoder_encode = \case
+      Some.This f -> case f of {}
+  , _validEncoder_decode = \_ -> throwError "void1Encoder: can't decode anything"
+  }
+
+instance GShow Void1 where
+  gshowsPrec _ = \case {}
+
 makePrisms ''ObeliskRoute
 --TODO: Prevent deriveGShow from creating this warning:
 -- Defined but not used: ‘p’
@@ -609,5 +628,7 @@ deriveGCompare ''JSaddleWarpRoute
 deriveGShow ''IndexOnlyRoute
 deriveGEq ''IndexOnlyRoute
 deriveGCompare ''IndexOnlyRoute
+deriveGEq ''Void1
+deriveGCompare ''Void1
 
 --TODO: decodeURIComponent as appropriate

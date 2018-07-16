@@ -23,7 +23,6 @@ import Control.Category
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((^?), _Just, _Right)
-import Control.Monad.Except
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -34,16 +33,11 @@ import Data.Functor.Identity
 import Data.Functor.Sum
 import Data.List (uncons)
 import Data.Maybe
-import Data.GADT.Compare.TH
-import Data.GADT.Show
 import Data.Semigroup ((<>))
-import Data.Some (Some)
-import qualified Data.Some as Some
 import Data.Streaming.Network (bindPortTCP)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
-import Data.Universe
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -120,18 +114,6 @@ runWidget conf frontend validFullEncoder = do
         app <- obeliskApp defaultConnectionOptions frontend validFullEncoder $ fallbackProxy redirectHost redirectPort man
         runSettingsSocket settings skt app)
 
-data Void1 :: * -> * where {}
-
-instance Universe (Some Void1) where
-  universe = []
-
-void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
-void1Encoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = \case
-      Some.This f -> case f of {}
-  , _validEncoder_decode = \_ -> throwError "void1Encoder: can't decode anything"
-  }
-
 obeliskApp :: forall route backendRoute. ConnectionOptions -> Frontend (R route) -> ValidEncoder (Either Text) (R (Sum backendRoute (ObeliskRoute route))) PageName -> Application -> IO Application
 obeliskApp opts frontend validFullEncoder backend = do
   html <- BSLC.fromStrict <$> indexHtml blank --TODO: Something other than `blank` here?
@@ -205,8 +187,3 @@ defRunConfig = RunConfig
   , _runConfig_redirectPort = 3001
   , _runConfig_retryTimeout = 1
   }
-
-deriveGCompare ''Void1
-deriveGEq ''Void1
-instance GShow Void1 where
-  gshowsPrec _ = \case {}

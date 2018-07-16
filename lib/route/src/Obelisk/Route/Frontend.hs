@@ -52,6 +52,7 @@ import Data.Monoid
 import Data.Text (Text)
 import Data.Functor.Compose
 import Reflex.Class
+import Reflex.Host.Class
 import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
 import Reflex.PerformEvent.Class
@@ -78,7 +79,7 @@ instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadReflexCreateTrigger t, HasDocument)
 
 #ifndef ghcjs_HOST_OS
 deriving instance MonadJSM m => MonadJSM (RoutedT t r m)
