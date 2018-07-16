@@ -12,12 +12,13 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-} -- Due to instance HasJS x (EventWriterT t w m)
 module Obelisk.Run where
 
-import Prelude hiding ((.), id)
+import Prelude hiding (id, (.))
 
 import Control.Category
 import Control.Concurrent
@@ -50,31 +51,33 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
+import Obelisk.Backend
 import Obelisk.ExecutableConfig (get)
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
+import Snap.Core (writeText)
 import System.Environment
 import System.IO
 import System.Process
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
-import Snap.Core (writeText)
-import Obelisk.Backend
 
-run
+runBackend
   :: Int -- ^ Port to run the backend
   -> Backend fullRoute frontendRoute -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
-  -> IO ()
-run port backend frontend = do
+  -> IO (Maybe (ValidEncoder (Either Text) (R (Sum fullRoute (ObeliskRoute frontendRoute))) PageName, ThreadId))
+runBackend port backend frontend = do
   prettifyOutput
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   case checkEncoder $ _backend_routeEncoder backend of
-    Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
+    Left e -> do
+      hPutStrLn stderr $ "backend error:\n" <> T.unpack e
+      pure Nothing
     Right validFullEncoder -> do
-      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
+      fmap (Just . (validFullEncoder, )) $ forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
         _backend_run backend $ \serveRoute -> do
           runSnapWithCommandLineArgs $ do
             getRouteWith validFullEncoder >>= \case
@@ -82,6 +85,16 @@ run port backend frontend = do
               Right r -> case r of
                 InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
                 InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp frontend $ obeliskRoute :/ a
+
+run
+  :: Int -- ^ Port to run the backend
+  -> Backend fullRoute frontendRoute -- ^ Backend
+  -> Frontend (R frontendRoute) -- ^ Frontend
+  -> IO ()
+run port backend frontend = do
+  runBackend port backend frontend >>= \case
+    Nothing -> pure ()
+    Just (validFullEncoder, backendTid) -> do
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf frontend validFullEncoder `finally` killThread backendTid
 
