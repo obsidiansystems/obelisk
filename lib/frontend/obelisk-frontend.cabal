@@ -6,9 +6,14 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base,
+                 dependent-sum,
+                 ghcjs-dom,
+                 jsaddle,
+                 lens,
                  obelisk-route,
                  ref-tf,
                  reflex,
                  reflex-dom-core,
-                 text
+                 text,
+                 transformers
   exposed-modules: Obelisk.Frontend

@@ -1,4 +1,5 @@
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -77,7 +78,11 @@ instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadJSM)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO)
+
+#ifndef ghcjs_HOST_OS
+deriving instance MonadJSM m => MonadJSM (RoutedT t r m)
+#endif
 
 instance PerformEvent t m => PerformEvent t (RoutedT t r m) where
   type Performable (RoutedT t r m) = Performable m
@@ -160,20 +165,19 @@ runRouteViewT
      , MonadJSM (Performable m)
      , MonadFix m
      )
-  => (Encoder (Either Text) (Either Text) r PageName)
+  => (ValidEncoder (Either Text) r PageName)
   -> (r -> Text)
   -> (Text -> r) -- ^ 404 page
   -> RoutedT t r (EventWriterT t (Endo r) m) a
   -> m a
-runRouteViewT routeEncoder routeToTitle error404 a = do
+runRouteViewT routeValidEncoder routeToTitle error404 a = do
   rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
-      let Right myEncoder = checkEncoder routeEncoder
-          route :: Dynamic t r
-          route = fmap (runIdentity . _validEncoder_decode (catchValidEncoder error404 $ pageNameValidEncoder . myEncoder) . (uriPath &&& uriQuery) . _historyItem_uri) historyState
+      let route :: Dynamic t r
+          route = fmap (runIdentity . _validEncoder_decode (catchValidEncoder error404 $ pageNameValidEncoder . routeValidEncoder) . (uriPath &&& uriQuery) . _historyItem_uri) historyState
       (result, changeState) <- runEventWriterT $ runRoutedT a route
       let f oldRoute change =
             let newRoute = appEndo change oldRoute
-                (newPath, newQuery) = _validEncoder_encode (pageNameValidEncoder . myEncoder) newRoute
+                (newPath, newQuery) = _validEncoder_encode (pageNameValidEncoder . routeValidEncoder) newRoute
             in HistoryStateUpdate
                { _historyStateUpdate_state = DOM.SerializedScriptValue jsNull
                , _historyStateUpdate_title = routeToTitle newRoute

@@ -24,30 +24,26 @@ import Control.Concurrent
 import Control.Exception
 import Control.Lens ((^?), _Just, _Right)
 import Control.Monad.Except
-import Control.Monad.Ref
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Identity
-import Data.IORef
+import Data.Functor.Sum
 import Data.List (uncons)
 import Data.Maybe
 import Data.GADT.Compare.TH
 import Data.GADT.Show
-import Data.Semigroup ((<>), Endo)
+import Data.Semigroup ((<>))
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.Streaming.Network (bindPortTCP)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Text.Encoding
 import Data.Universe
-import GHCJS.DOM hiding (bracket, catch)
-import GHCJS.DOM.Document
-import GHCJS.DOM.Node
-import qualified GHCJS.DOM.Types as DOM
-import Language.Javascript.JSaddle (JSM)
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -64,28 +60,36 @@ import Obelisk.ExecutableConfig (get)
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
-import Reflex.Host.Class
-import qualified Reflex.TriggerEvent.Base as TriggerEvent
 import System.Environment
 import System.IO
 import System.Process
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
+import Snap.Core (writeText)
+import Obelisk.Backend
 
 run
   :: Int -- ^ Port to run the backend
-  -> Either Text (IO ()) -- ^ Backend
-  -> Frontend route -- ^ Frontend
+  -> Backend fullRoute frontendRoute -- ^ Backend
+  -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
-run port checkBackend frontend = do
+run port backend frontend = do
+  prettifyOutput
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
-  case checkBackend of
+  case checkEncoder $ _backend_routeEncoder backend of
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
-    Right backend -> do
-      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] backend
+    Right validFullEncoder -> do
+      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
+        _backend_run backend $ \serveRoute -> do
+          runSnapWithCommandLineArgs $ do
+            getRouteWith validFullEncoder >>= \case
+              Left e -> writeText e
+              Right r -> case r of
+                InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
+                InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp frontend $ obeliskRoute :/ a
       let conf = defRunConfig { _runConfig_redirectPort = port }
-      runWidget conf frontend `finally` killThread backendTid
+      runWidget conf frontend validFullEncoder `finally` killThread backendTid
 
 getConfigRoute :: IO (Maybe URI)
 getConfigRoute = get "common/route" >>= \case
@@ -99,8 +103,8 @@ getConfigRoute = get "common/route" >>= \case
 defAppUri :: URI
 defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 
-runWidget :: RunConfig -> Frontend route -> IO ()
-runWidget conf frontend = do
+runWidget :: RunConfig -> Frontend (R route) -> ValidEncoder (Either Text) (R (Sum backendRoute (ObeliskRoute route))) PageName -> IO ()
+runWidget conf frontend validFullEncoder = do
   uri <- fromMaybe defAppUri <$> getConfigRoute
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
@@ -113,7 +117,7 @@ runWidget conf frontend = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp defaultConnectionOptions frontend (fallbackProxy redirectHost redirectPort man)
+        app <- obeliskApp defaultConnectionOptions frontend validFullEncoder $ fallbackProxy redirectHost redirectPort man
         runSettingsSocket settings skt app)
 
 data Void1 :: * -> * where {}
@@ -128,105 +132,24 @@ void1Encoder = Encoder $ pure $ ValidEncoder
   , _validEncoder_decode = \_ -> throwError "void1Encoder: can't decode anything"
   }
 
-type Widget' x = ImmediateDomBuilderT DomTimeline (DomCoreWidget x)
-
--- | A widget that isn't attached to any particular part of the DOM hierarchy
-type FloatingWidget x = TriggerEventT DomTimeline (DomCoreWidget x)
-
-type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (PerformEventT DomTimeline DomHost))
-
---TODO: Upstream
-instance HasJS x m => HasJS x (EventWriterT t w m) where
-  type JSX (EventWriterT t w m) = JSX m
-  liftJS = lift . liftJS
-
-{-# INLINABLE attachWidget''' #-}
---attachWidget''' :: (Ref m ~ Ref IO, MonadIO m, MonadReflexHost DomTimeline m, MonadRef m) => (EventChannel -> PerformEventT DomTimeline m (a, IORef (Maybe (EventTrigger DomTimeline ())))) -> m (a, FireCommand DomTimeline m)
-attachWidget'''
-  :: (EventChannel -> PerformEventT DomTimeline (SpiderHost Global) (IORef (Maybe (EventTrigger DomTimeline ()))))
-  -> IO ()
-attachWidget''' w = runDomHost $ do
-  events <- liftIO newChan
-  (postBuildTriggerRef, fc@(FireCommand fire)) <- hostPerformEventT $ w events
-  mPostBuildTrigger <- readRef postBuildTriggerRef
-  forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
-  liftIO $ processAsyncEvents events fc
-
-runFrontend
-  :: (   (forall c. Widget' () c -> FloatingWidget () c)
-      -> (forall c. Widget' () c -> FloatingWidget () c)
-      -> FloatingWidget () ()
-     )
-  -> JSM ()
-runFrontend app = withJSContextSingletonMono $ \jsSing -> do
-  globalDoc <- currentDocumentUnchecked
-  headFragment <- createDocumentFragment globalDoc
-  bodyFragment <- createDocumentFragment globalDoc
-  unreadyChildren <- liftIO $ newIORef 0
-  let commit = do
-        headElement <- getHeadUnchecked globalDoc
-        replaceElementContents headElement headFragment
-        bodyElement <- getBodyUnchecked globalDoc
-        replaceElementContents bodyElement bodyFragment
-  liftIO $ attachWidget''' $ \events -> flip runWithJSContextSingleton jsSing $ do
-    (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
-    let appendImmediateDom :: DOM.DocumentFragment -> Widget' () c -> FloatingWidget () c
-        appendImmediateDom df w = do
-          events' <- TriggerEvent.askEvents
-          lift $ do
-            doc <- getOwnerDocumentUnchecked df
-            let builderEnv = ImmediateDomBuilderEnv
-                  { _immediateDomBuilderEnv_document = doc
-                  , _immediateDomBuilderEnv_parent = toNode df
-                  , _immediateDomBuilderEnv_unreadyChildren = unreadyChildren
-                  , _immediateDomBuilderEnv_commitAction = commit
-                  }
-            runImmediateDomBuilderT w builderEnv events'
-    flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (appendImmediateDom headFragment) (appendImmediateDom bodyFragment)
-    liftIO (readIORef unreadyChildren) >>= \case
-      0 -> DOM.liftJSM commit
-      _ -> return ()
-    return postBuildTriggerRef
-
---instance DOM.MonadJSM m => DOM.MonadJSM (PerformEventT t m)
-
--- obeliskRouteEncoder routeComponentEncoder routeRestEncoder . Encoder (pure $ prismValidEncoder $ rPrism _ObeliskRoute_App) --TODO: Deal with failure
-
-
-obeliskApp :: forall route. ConnectionOptions -> Frontend route -> Application -> IO Application
-obeliskApp opts frontend backend = do
+obeliskApp :: forall route backendRoute. ConnectionOptions -> Frontend (R route) -> ValidEncoder (Either Text) (R (Sum backendRoute (ObeliskRoute route))) PageName -> Application -> IO Application
+obeliskApp opts frontend validFullEncoder backend = do
   html <- BSLC.fromStrict <$> indexHtml blank --TODO: Something other than `blank` here?
-  let runMyRouteViewT
-        :: ( TriggerEvent t m
-           , PerformEvent t m
-           , MonadHold t m
-           , DOM.MonadJSM m
-           , DOM.MonadJSM (Performable m)
-           , MonadFix m
-           )
-        => RoutedT t route (EventWriterT t (Endo route) m) a
-        -> m a
-      runMyRouteViewT = runRouteViewT
-        (_frontend_routeEncoder frontend)
-        (_frontend_title frontend)
-        (_frontend_notFoundRoute frontend)
   let entryPoint = do
-        runFrontend $ \appendHead appendBody -> runMyRouteViewT $ do
-          mapRoutedT (mapEventWriterT appendHead) $ _frontend_head frontend
-          mapRoutedT (mapEventWriterT appendBody) $ _frontend_body frontend
+        runFrontend validFullEncoder frontend
         syncPoint
-  Right ve <- return $ checkEncoder $ obeliskRouteEncoder void1Encoder (\case {})
   Right (jsaddleWarpRouteValidEncoder :: ValidEncoder (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
   jsaddle <- jsaddleWithAppOr opts entryPoint $ error "obeliskApp: jsaddle got a bad URL"
-  return $ \req sendResponse -> case _validEncoder_decode ve (W.pathInfo req, mempty) of --TODO: Query strings
-    Right (ObeliskRoute_Resource ResourceRoute_JSaddleWarp :/ jsaddleRoute) -> case jsaddleRoute of
-      JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just "http://localhost:8000/jsaddle") False
-      _ -> flip jsaddle sendResponse $ req
-        { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
-        }
-    _ -> if W.pathInfo req == [] --TODO: This should just use the real parsing logic for the app
-      then sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
-      else backend req sendResponse
+  return $ \req sendResponse -> case _validEncoder_decode validFullEncoder (W.pathInfo req, mempty) of --TODO: Query strings
+    Left e -> sendResponse $ W.responseLBS H.status404 [("Content-Type", "text/plain")] $ LBS.fromStrict $ encodeUtf8 e
+    Right r -> case r of
+      InR (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :=> Identity jsaddleRoute -> case jsaddleRoute of
+        JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just "http://localhost:8000/jsaddle") False
+        _ -> flip jsaddle sendResponse $ req
+          { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
+          }
+      InR (ObeliskRoute_App _) :=> _ -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
+      _ -> backend req sendResponse
 
 indexHtml :: StaticWidget () () -> IO ByteString
 indexHtml h = do

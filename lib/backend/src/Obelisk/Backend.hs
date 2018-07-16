@@ -7,57 +7,39 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Backend
-  ( backend
-  , BackendConfig (..)
+  ( Backend (..)
   -- * Re-exports
   , Default (def)
-  , checkGetRequestRoute
+  , getPageName
+  , getRouteWith
   , runSnapWithCommandLineArgs
   , serveDefaultObeliskApp
   , prettifyOutput
   ) where
 
-import Prelude hiding ((.))
-
-import Control.Category
 import Control.Monad.Except
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
 import Data.Dependent.Sum
+import Data.Functor.Sum
 import Data.Functor.Identity
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
-import Data.Universe
 import Obelisk.Asset.Serve.Snap (serveAsset)
 import Obelisk.Frontend
 import Obelisk.Route
 import Obelisk.Route.Frontend
 import Reflex.Dom
 import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, rqPathInfo,
-             rqQueryString, writeBS, writeText)
+             rqQueryString, writeBS)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
---TODO: Add a link to a large explanation of the idea of using 'def'
--- | Configure the operation of the Obelisk backend.  For reasonable defaults,
--- use 'def'.
-data BackendConfig (route :: * -> *) = BackendConfig
-  { _backendConfig_frontend :: !(Frontend (R route))
-  , _backendConfig_routeEncoder :: !(Encoder (Either Text) (Either Text) (R (ObeliskRoute route)) PageName) --TODO: Factor this out so that it isn't partially redundant with _frontend_routeEncoder
+data Backend backendRoute frontendRoute = Backend
+  { _backend_routeEncoder :: Encoder (Either Text) (Either Text) (R (Sum backendRoute (ObeliskRoute frontendRoute))) PageName
+  , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
   }
-
-instance route ~ IndexOnlyRoute => Default (BackendConfig route) where
-  def = BackendConfig
-    { _backendConfig_frontend = Frontend
-      { _frontend_head = return ()
-      , _frontend_body = return ()
-      , _frontend_routeEncoder = obeliskRouteEncoder indexOnlyRouteComponentEncoder indexOnlyRouteRestEncoder . Encoder (pure $ prismValidEncoder $ rPrism _ObeliskRoute_App) --TODO: This is mostly redundant with the _backendConfig_routeEncoder
-      , _frontend_title = \_ -> "Obelisk App"
-      , _frontend_notFoundRoute = \_ -> IndexOnlyRoute :/ ()
-      }
-    , _backendConfig_routeEncoder = obeliskRouteEncoder indexOnlyRouteComponentEncoder indexOnlyRouteRestEncoder
-    }
 
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
 data GhcjsApp route = GhcjsApp
@@ -65,6 +47,7 @@ data GhcjsApp route = GhcjsApp
   , _ghcjsApp_value :: !(Frontend route)
   }
 
+{-
 --TODO: Expose the encoder check phase
 -- | Start an Obelisk backend
 backend
@@ -84,6 +67,7 @@ backend cfg = do
       getRequestRoute >>= \case
         Left e -> writeText e
         Right r -> serveDefaultObeliskApp (_backendConfig_frontend cfg) r
+-}
 
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
@@ -124,16 +108,19 @@ runSnapWithCommandLineArgs a = do
   -- Start the web server
   httpServe httpConf a
 
-checkGetRequestRoute :: (MonadSnap m, Monad check, MonadError Text parse) => Encoder check parse route PageName -> check (m (parse route))
-checkGetRequestRoute routeEncoder = do
-  routeValidEncoder <- checkEncoder routeEncoder
-  return $ do
-    p <- getsRequest rqPathInfo
-    q <- getsRequest rqQueryString
-    return $ _validEncoder_decode (pageNameValidEncoder . routeValidEncoder)
-      ( "/" <> T.unpack (decodeUtf8 p)
-      , "?" <> T.unpack (decodeUtf8 q)
-      )
+getPageName :: (MonadSnap m, MonadError Text parse) => m (parse PageName)
+getPageName = do
+  p <- getsRequest rqPathInfo
+  q <- getsRequest rqQueryString
+  return $ _validEncoder_decode pageNameValidEncoder
+    ( "/" <> T.unpack (decodeUtf8 p)
+    , "?" <> T.unpack (decodeUtf8 q)
+    )
+
+getRouteWith :: (MonadSnap m, MonadError Text parse) => ValidEncoder parse route PageName -> m (parse route)
+getRouteWith e = do
+  pageName <- getPageName
+  return $ pageName >>= _validEncoder_decode e
 
 serveObeliskApp :: MonadSnap m => StaticAssets -> GhcjsApp (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
 serveObeliskApp staticAssets frontendApp = \case

@@ -22,6 +22,7 @@ library
     , modern-uri
     , mtl
     , network
+    , obelisk-backend
     , obelisk-executable-config
     , obelisk-frontend
     , obelisk-route
@@ -29,6 +30,7 @@ library
     , ref-tf
     , reflex
     , reflex-dom
+    , snap-core
     , streaming-commons
     , text
     , universe
