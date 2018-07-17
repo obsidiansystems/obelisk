@@ -59,13 +59,12 @@ type ObeliskWidget t route m =
   , MonadRef (Performable m)
   , Ref (Performable m) ~ Ref IO
   , MonadFix (Performable m)
-  , PrimMonad m
   , EventWriter t (Endo route) m
   )
 
 data Frontend route = Frontend
   { _frontend_head :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
-  , _frontend_body :: !(forall t m x. (MonadWidget t m, ObeliskWidget t route m, HasJS x m) => RoutedT t route m ())
+  , _frontend_body :: !(forall t m x. (MonadWidget t m, PrimMonad m, ObeliskWidget t route m, HasJS x m) => RoutedT t route m ())
   , _frontend_title :: !(route -> Text)
   , _frontend_notFoundRoute :: !(Text -> route) --TODO: Instead, maybe we should just require that the `parse` Monad for routeEncoder be `Identity`
   }
@@ -152,3 +151,7 @@ runFrontend validFullEncoder frontend = do
   runWithHeadAndBody $ \appendHead appendBody -> runMyRouteViewT $ do
     mapRoutedT (mapEventWriterT appendHead) $ _frontend_head frontend
     mapRoutedT (mapEventWriterT appendBody) $ _frontend_body frontend
+
+instance PrimMonad m => PrimMonad (EventWriterT t w m) where
+  type PrimState (EventWriterT t w m) = PrimState m
+  primitive = lift . primitive

@@ -114,6 +114,10 @@ instance MonadTransControl (RoutedT t r) where
   liftWith = defaultLiftWith RoutedT unRoutedT
   restoreT = defaultRestoreT RoutedT
 
+instance PrimMonad m => PrimMonad (RoutedT t r m ) where
+  type PrimState (RoutedT t r m) = PrimState m
+  primitive = lift . primitive
+
 instance DomBuilder t m => DomBuilder t (RoutedT t r m) where
   type DomBuilderSpace (RoutedT t r m) = DomBuilderSpace m
 
