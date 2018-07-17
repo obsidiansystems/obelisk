@@ -585,7 +585,15 @@ indexOnlyRouteComponentEncoder = enum1Encoder $ \case
 
 indexOnlyRouteRestEncoder :: (Applicative check, MonadError Text parse) => IndexOnlyRoute a -> Encoder check parse a PageName
 indexOnlyRouteRestEncoder = \case
-  IndexOnlyRoute -> Encoder $ pure $ endValidEncoder mempty --TODO: Allow anything to parse
+  IndexOnlyRoute -> Encoder $ pure $ constLaxValidEncoder mempty
+
+--TODO: Come up with a naming scheme that is better at describing how permissive
+--versus strict things are
+constLaxValidEncoder :: Applicative parse => a -> ValidEncoder parse () a
+constLaxValidEncoder a = ValidEncoder
+  { _validEncoder_encode = \_ -> a
+  , _validEncoder_decode = \_ -> pure ()
+  }
 
 instance ShowTag IndexOnlyRoute Identity where
   showTaggedPrec = \case
