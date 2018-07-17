@@ -14,6 +14,7 @@ library
                  dependent-sum-template,
                  either,
                  ghcjs-dom,
+                 http-types,
                  jsaddle,
                  lens,
                  monad-control,
