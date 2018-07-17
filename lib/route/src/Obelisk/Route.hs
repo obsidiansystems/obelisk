@@ -617,8 +617,6 @@ instance GShow Void1 where
   gshowsPrec _ = \case {}
 
 makePrisms ''ObeliskRoute
---TODO: Prevent deriveGShow from creating this warning:
--- Defined but not used: ‘p’
 deriveGShow ''ResourceRoute
 deriveGEq ''ResourceRoute
 deriveGCompare ''ResourceRoute
