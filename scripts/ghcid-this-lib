@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+nix-shell ../.. -A haskellPackageSets.ghc.obelisk-$(basename $PWD).env --run "cabal configure ; ghcid -W -c'cabal repl'"

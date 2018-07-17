@@ -71,6 +71,7 @@ run
 run port backend frontend = do
   prettifyOutput
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
+  --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
   case checkEncoder $ _backend_routeEncoder backend of
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
     Right validFullEncoder -> do

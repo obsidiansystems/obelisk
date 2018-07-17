@@ -33,7 +33,6 @@ module Obelisk.Route
   , singletonListValidEncoder
   , unpackTextEncoder
   , prefixTextEncoder
-  , intercalateTextEncoder
   , listToNonEmptyEncoder
   , prefixNonemptyTextEncoder
   , joinPairTextEncoder
@@ -88,7 +87,9 @@ import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Text.Encoding
 import Data.Universe
+import Network.HTTP.Types.URI
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -184,7 +185,7 @@ instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder che
 
 -- | A path and query string, in which trailing slashes don't matter in the path
 -- and duplicate query parameters are not allowed
-type PageName = ([Text], Map Text Text)
+type PageName = ([Text], Map Text (Maybe Text))
 
 newtype Flip f a b = Flip { unFlip :: f b a }
 
@@ -323,16 +324,43 @@ singletonListValidEncoder = ValidEncoder
   , _validEncoder_encode = (:[])
   }
 
+splitTextNonEmpty :: Text -> Text -> NonEmpty Text
+splitTextNonEmpty separator v = case T.splitOn separator v of
+  [] -> error "splitTextNonEmpty: Data.Text.splitOn should never return an empty list"
+  h : t -> h :| t
+
 --TODO: To know this is reversible, we must know that the separator isn't included anywhere in the input text
-intercalateTextEncoder :: (MonadError Text check, Applicative parse) => Text -> Encoder check parse (NonEmpty Text) Text
-intercalateTextEncoder = Encoder . \case
-  "" -> throwError "splitOnTextEncoder: empty split string"
-  separator -> pure $ ValidEncoder
-    { _validEncoder_encode = T.intercalate separator . toList
-    , _validEncoder_decode = \r -> pure $ case T.splitOn separator r of
-        [] -> error "intercalateTextEncoder: Data.Text.splitOn should never return an empty list"
-        h : t -> h :| t
-    }
+pathSegmentsTextEncoder :: (MonadError Text check, Applicative parse) => Encoder check parse (NonEmpty Text) Text
+pathSegmentsTextEncoder = Encoder $ pure $ ValidEncoder
+  { _validEncoder_encode = T.intercalate "/" . fmap (urlEncodeText False) . toList
+  , _validEncoder_decode = pure . fmap (urlDecodeText False) . splitTextNonEmpty "/"
+  }
+
+queryParametersTextEncoder :: (Applicative check, Applicative parse) => Encoder check parse [(Text, Maybe Text)] Text
+queryParametersTextEncoder = Encoder $ pure $ ValidEncoder
+  { _validEncoder_encode = \case
+      [] -> ""
+      params -> T.intercalate "&" (fmap encodeParameter params)
+  , _validEncoder_decode = pure . \case
+      "" -> []
+      encoded ->
+        let h :| t = splitTextNonEmpty "&" encoded
+        in fmap decodeParameter $ h : t
+  }
+  where
+    encodeParameter (k, mv) = urlEncodeText True k <> case mv of
+      Nothing -> ""
+      Just v -> "=" <> urlEncodeText True v
+    decodeParameter t =
+      let (k, eqV) = T.breakOn "=" t
+          mv = T.stripPrefix "=" eqV
+      in (urlDecodeText True k, urlDecodeText True <$> mv)
+
+urlEncodeText :: Bool -> Text -> Text
+urlEncodeText q = decodeUtf8 . urlEncode q . encodeUtf8
+
+urlDecodeText :: Bool -> Text -> Text
+urlDecodeText q = decodeUtf8 . urlDecode q . encodeUtf8
 
 listToNonEmptyEncoder :: (Applicative check, Applicative parse, Monoid a, Eq a) => Encoder check parse [a] (NonEmpty a)
 listToNonEmptyEncoder = Encoder $ pure $ ValidEncoder
@@ -410,8 +438,8 @@ prismValidEncoder p = ValidEncoder
 pageNameValidEncoder :: MonadError Text parse => ValidEncoder parse PageName (String, String)
 pageNameValidEncoder = ve
   where Right ve = checkEncoder $ bimap
-          (unpackTextEncoder . prefixTextEncoder "/" . intercalateTextEncoder "/" . listToNonEmptyEncoder)
-          (unpackTextEncoder . prefixNonemptyTextEncoder "?" . intercalateTextEncoder "&" . listToNonEmptyEncoder . Cat.fmap (joinPairTextEncoder "=") . toListMapEncoder)
+          (unpackTextEncoder . prefixTextEncoder "/" . pathSegmentsTextEncoder . listToNonEmptyEncoder)
+          (unpackTextEncoder . prefixNonemptyTextEncoder "?" . queryParametersTextEncoder . toListMapEncoder)
 
 catchValidEncoder :: (e -> a) -> ValidEncoder (Either e) a b -> ValidEncoder Identity a b
 catchValidEncoder recover ve = ve
@@ -585,7 +613,15 @@ indexOnlyRouteComponentEncoder = enum1Encoder $ \case
 
 indexOnlyRouteRestEncoder :: (Applicative check, MonadError Text parse) => IndexOnlyRoute a -> Encoder check parse a PageName
 indexOnlyRouteRestEncoder = \case
-  IndexOnlyRoute -> Encoder $ pure $ endValidEncoder mempty --TODO: Allow anything to parse
+  IndexOnlyRoute -> Encoder $ pure $ constLaxValidEncoder mempty
+
+--TODO: Come up with a naming scheme that is better at describing how permissive
+--versus strict things are
+constLaxValidEncoder :: Applicative parse => a -> ValidEncoder parse () a
+constLaxValidEncoder a = ValidEncoder
+  { _validEncoder_encode = \_ -> a
+  , _validEncoder_decode = \_ -> pure ()
+  }
 
 instance ShowTag IndexOnlyRoute Identity where
   showTaggedPrec = \case
@@ -617,8 +653,6 @@ instance GShow Void1 where
   gshowsPrec _ = \case {}
 
 makePrisms ''ObeliskRoute
---TODO: Prevent deriveGShow from creating this warning:
--- Defined but not used: ‘p’
 deriveGShow ''ResourceRoute
 deriveGEq ''ResourceRoute
 deriveGCompare ''ResourceRoute

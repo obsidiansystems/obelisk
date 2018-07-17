@@ -168,7 +168,7 @@ rec {
       ln -s "${mkAssets assets}" $out/static.assets
       ln -s "${config}" $out/config
       ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
-    ''; #TODO: run frontend.jsexe through the asset processing pipeline
+    '';
 
   server = { exe, hostName, adminEmail, routeHost, enableHttps }:
     let system = "x86_64-linux";
