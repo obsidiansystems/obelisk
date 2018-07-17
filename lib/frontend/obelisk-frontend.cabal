@@ -11,6 +11,7 @@ library
                  jsaddle,
                  lens,
                  obelisk-route,
+                 primitive,
                  ref-tf,
                  reflex,
                  reflex-dom-core,

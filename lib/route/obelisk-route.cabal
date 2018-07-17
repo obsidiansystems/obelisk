@@ -19,6 +19,7 @@ library
                  monad-control,
                  mtl,
                  network-uri,
+                 primitive,
                  ref-tf,
                  reflex,
                  reflex-dom,

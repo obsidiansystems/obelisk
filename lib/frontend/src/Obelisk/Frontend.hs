@@ -22,6 +22,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class
+import Control.Monad.Primitive
 import Control.Monad.Ref
 import Control.Monad.Trans.Class
 import Data.Dependent.Sum (DSum (..))
@@ -57,12 +58,14 @@ type ObeliskWidget t route m =
   , Ref m ~ Ref IO
   , MonadRef (Performable m)
   , Ref (Performable m) ~ Ref IO
+  , MonadFix (Performable m)
+  , PrimMonad m
   , EventWriter t (Endo route) m
   )
 
 data Frontend route = Frontend
   { _frontend_head :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
-  , _frontend_body :: !(forall t m x. (MonadWidget t m, HasJS x m, EventWriter t (Endo route) m) => RoutedT t route m ())
+  , _frontend_body :: !(forall t m x. (MonadWidget t m, ObeliskWidget t route m, HasJS x m) => RoutedT t route m ())
   , _frontend_title :: !(route -> Text)
   , _frontend_notFoundRoute :: !(Text -> route) --TODO: Instead, maybe we should just require that the `parse` Monad for routeEncoder be `Identity`
   }
@@ -138,6 +141,7 @@ runFrontend validFullEncoder frontend = do
            , DOM.MonadJSM m
            , DOM.MonadJSM (Performable m)
            , MonadFix m
+           , MonadFix (Performable m)
            )
         => RoutedT t (R route) (EventWriterT t (Endo (R route)) m) a
         -> m a

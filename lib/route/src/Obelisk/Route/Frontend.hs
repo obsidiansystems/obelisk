@@ -41,6 +41,7 @@ import Control.Category (Category (..), (.))
 import Control.Category.Cartesian
 import Control.Lens hiding (Bifunctor, bimap, universe)
 import Control.Monad.Fix
+import Control.Monad.Primitive
 import Control.Monad.Ref
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
@@ -80,6 +81,12 @@ instance Monad m => Routed t r (RoutedT t r m) where
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+
+instance (Requester t m, PrimMonad m) => Requester t (RoutedT t r m) where
+  type Request (RoutedT t r m) = Request m
+  type Response (RoutedT t r m) = Response m
+  requesting = RoutedT . requesting
+  requesting_ = RoutedT . requesting_
 
 #ifndef ghcjs_HOST_OS
 deriving instance MonadJSM m => MonadJSM (RoutedT t r m)
