@@ -151,17 +151,18 @@ data GhcjsAppRoute :: (* -> *) -> * -> * where
 serveGhcjsApp :: MonadSnap m => GhcjsApp (R appRouteComponent) -> R (GhcjsAppRoute appRouteComponent) -> m ()
 serveGhcjsApp app = \case
   GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest -> do
-    indexHtml <- liftIO $ fmap snd $ renderStatic $ fmap fst $ runEventWriterT $ flip runRoutedT (pure $ appRouteComponent :/ appRouteRest) $ blankLoader $ _frontend_head $ _ghcjsApp_value app
+    indexHtml <- liftIO $ fmap snd $ renderStatic $ fmap fst $ runEventWriterT $ flip runRoutedT (pure $ appRouteComponent :/ appRouteRest) $ blankLoader (_frontend_head $ _ghcjsApp_value app) (_frontend_body $ _ghcjsApp_value app)
     --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
     writeBS $ "<!DOCTYPE html>\n" <> indexHtml
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
-blankLoader :: DomBuilder t m => m () -> m ()
-blankLoader headHtml = el "html" $ do
+blankLoader :: DomBuilder t m => m () -> m () -> m ()
+blankLoader headHtml bodyHtml = el "html" $ do
   el "head" $ do
     elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
     headHtml
   el "body" $ do
+    bodyHtml
     --TODO: Hash the all.js path
     elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
 

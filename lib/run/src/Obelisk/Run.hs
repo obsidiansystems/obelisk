@@ -131,17 +131,20 @@ obeliskApp opts frontend validFullEncoder backend = do
           { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
       InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
-        html <- fmap BSLC.fromStrict $ indexHtml $ fmap fst $ runEventWriterT $ flip runRoutedT (pure $ appRouteComponent :/ appRouteRest) $ _frontend_head frontend
-        sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
+        html <- renderStaticHtml $ fmap fst $ runEventWriterT $ flip runRoutedT (pure $ appRouteComponent :/ appRouteRest) $ indexHtml (_frontend_head frontend) (_frontend_body frontend)
+        sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] $ BSLC.fromStrict html
       _ -> backend req sendResponse
 
-indexHtml :: StaticWidget () () -> IO ByteString
-indexHtml h = do
-  ((), bs) <- renderStatic $ el "html" $ do
-    el "head" $ h
-    el "body" $ return ()
-    elAttr "script" ("src" =: "/jsaddle/jsaddle.js") $ return ()
+renderStaticHtml :: StaticWidget () () -> IO ByteString
+renderStaticHtml w = do
+  (_, bs) <- renderStatic w
   return $ "<!DOCTYPE html>" <> bs
+
+indexHtml :: DomBuilder t m => m () -> m () -> m ()
+indexHtml h b = el "html" $ do
+  el "head" $ h
+  el "body" $ b
+  elAttr "script" ("src" =: "/jsaddle/jsaddle.js") $ return ()
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings

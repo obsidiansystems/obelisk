@@ -47,6 +47,7 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
 import Data.Coerce
+import Data.Constraint (Dict (..))
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
@@ -81,6 +82,9 @@ instance Monad m => Routed t r (RoutedT t r m) where
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+
+instance Prerender js m => Prerender js (RoutedT t r m) where
+  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
 
 instance (Requester t m, PrimMonad m) => Requester t (RoutedT t r m) where
   type Request (RoutedT t r m) = Request m
