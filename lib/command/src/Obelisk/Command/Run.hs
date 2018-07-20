@@ -122,7 +122,8 @@ runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
   where
     opts =
       [ "-W"
-      , "--command='ghci -Wall -ghci-script " <> dotGhci <> "' "
+      --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
+      , "--command='ghci -Wall -fwarn-redundant-constraints -ghci-script " <> dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd
