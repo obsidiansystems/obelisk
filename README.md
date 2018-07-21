@@ -47,6 +47,27 @@ Or to launch ghcid for `lib/command` project:
 nix-shell -A obelisk.obelisk-command.env --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
+If you need a compatible `cabal-install` and `ghcid` installed in your `nix-shell` as well, use `obeliskDev` instead of `obelisk`, like so:
+
+```
+nix-shell -A obeliskDev.obelisk-command.env --run "cd lib/command && ghcid -c 'cabal new-repl'"
+```
+
+If you get an error like this one:
+
+```
+No files loaded, GHCi is not working properly.
+Command: cabal new-repl
+```
+
+Issue a cabal new-build first:
+
+```
+nix-shell -A obeliskDev.obelisk-command.env --run "cd lib/command && cabal new-build"
+```
+
+Now `ghcid` should work fine.
+
 ### Accessing private repositories
 To allow the Nix builder to access private git repositories, follow these steps:
 
