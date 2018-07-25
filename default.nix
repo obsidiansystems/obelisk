@@ -69,7 +69,7 @@ let
         sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
       }) {});
 
-		monoidal-containers =
+    monoidal-containers =
       let src = pkgs.fetchFromGitHub {
             owner = "obsidiansystems";
             repo = "monoidal-containers";
