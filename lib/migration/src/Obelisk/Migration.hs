@@ -6,7 +6,7 @@
 module Obelisk.Migration where
 
 import Control.Monad (forM, forM_, unless, void)
-import Control.Monad.Catch (Exception, MonadThrow, throwM)
+import Control.Monad.Except
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.State.Strict (evalStateT, get, put)
 import Data.Map (Map)
@@ -34,36 +34,16 @@ data Migration action = Migration
 -- A path is a list of edges
 type Path = [(Hash, Hash)]
 
-data GraphInternalError = GraphInternalError Text
-  deriving Show
-
-data CyclicGraphError = CyclicGraphError
-  deriving Show
-
-data MultipleTerminalVertices = MultipleTerminalVertices
-  deriving Show
-
-data NoTerminalVertex = NoTerminalVertex
-  deriving Show
-
-data NonEquivalentPaths = NonEquivalentPaths Hash Hash
-  deriving Show
-
-data MissingEdgeInActionMap = MissingEdgeInActionMap (Hash, Hash)
-  deriving Show
-
-data NonLinearGraph
-  = NonLinearGraph_MultipleAdjacents Hash
+data MigrationError
+  = GraphInternalError Text
+  | CyclicGraphError
+  | MultipleTerminalVertices
+  | NoTerminalVertex
+  | NonEquivalentPaths Hash Hash
+  | MissingEdgeInActionMap (Hash, Hash)
+  | NonLinearGraph_MultipleAdjacents Hash
   | NonLinearGraph_NotConnected (Set Hash)
-  deriving Show
-
-instance Exception GraphInternalError
-instance Exception CyclicGraphError
-instance Exception MultipleTerminalVertices
-instance Exception NoTerminalVertex
-instance Exception NonEquivalentPaths
-instance Exception MissingEdgeInActionMap
-instance Exception NonLinearGraph
+  deriving (Eq, Ord, Show)
 
 class Action action where
   parseEdgeMeta :: String -> action
@@ -73,10 +53,10 @@ instance Action Text where
 
 -- | Get the directed-acylic graph of migration
 -- TODO: Consider calling getDag only when reading the graph for efficiency.
-getDag :: (MonadThrow m, Ord a) => AdjacencyMap a -> m (AdjacencyMap a)
+getDag :: (MonadError MigrationError m, Ord a) => AdjacencyMap a -> m (AdjacencyMap a)
 getDag g = case topSort g of
   Just _ -> pure g
-  Nothing -> throwM CyclicGraphError
+  Nothing -> throwError CyclicGraphError
 
 -- | Read the graph from a directory of files.
 readGraph :: Action action => FilePath -> Text -> IO (Maybe (Migration action))
@@ -111,7 +91,7 @@ readGraph root name = doesDirectoryExist root >>= \case
 --
 -- Complexity: O(V+E)
 ensureGraphIntegrity
-  :: (MonadThrow m, Monoid action, Ord action)
+  :: (MonadError MigrationError m, Monoid action, Ord action)
   => Migration action -> m ()
 ensureGraphIntegrity m = do
   graph <- fmap adjacencyMap $ getDag $ _migration_graph m
@@ -125,7 +105,7 @@ ensureGraphIntegrity m = do
           Nothing -> pure $ Map.insert adj acc' visited
           Just adjAcc -> if acc' == adjAcc
             then pure visited
-            else throwM $ NonEquivalentPaths start adj
+            else throwError $ NonEquivalentPaths start adj
         visitFrom visited' acc' adj
   -- We only check all paths from the _first_ vertex; it is not necessary to
   -- check all paths between _all_ pairs of vertices as that can be proved by
@@ -136,23 +116,23 @@ ensureGraphIntegrity m = do
 -- | Ensure that the graph is a fully connected linear list
 --
 -- Returns the last vertex in the linear list.
-ensureGraphLinearity :: MonadThrow m => Migration action -> m Hash
+ensureGraphLinearity :: MonadError MigrationError m => Migration action -> m Hash
 ensureGraphLinearity m = do
   graph <- fmap adjacencyMap $ getDag $ _migration_graph m
   firstVertex <- getFirst $ _migration_graph m
   let
     allVertices = vertexSet $ _migration_graph m
     visitFrom start = case Map.lookup start graph of
-      Nothing -> throwM $ GraphInternalError $ "Vertex not found: " <> start
+      Nothing -> throwError $ GraphInternalError $ "Vertex not found: " <> start
       Just adjs -> case (Set.toList adjs) of
         [] -> pure (start, [start])
         [adj] -> fmap (start :) <$> visitFrom adj
-        _ -> throwM $ NonLinearGraph_MultipleAdjacents start
+        _ -> throwError $ NonLinearGraph_MultipleAdjacents start
   (lastVertex, visitedVertices) <- visitFrom firstVertex
   let unvisitedVertices = Set.difference allVertices $ Set.fromList visitedVertices
   if Set.null unvisitedVertices
     then pure lastVertex
-    else throwM $ NonLinearGraph_NotConnected unvisitedVertices
+    else throwError $ NonLinearGraph_NotConnected unvisitedVertices
 
 -- | Find the concatenated actions between two vertices
 --
@@ -161,7 +141,7 @@ ensureGraphLinearity m = do
 --
 -- Complexity: O(V+E)
 findPathAction
-  :: (MonadThrow m, Action action, Monoid action, Ord action)
+  :: (MonadError MigrationError m, Action action, Monoid action, Ord action)
   => Migration action -> Hash -> Hash -> m (Maybe action)
 findPathAction m start end = flip evalStateT Map.empty $ do
   graph <- fmap adjacencyMap $ getDag $ _migration_graph m
@@ -188,7 +168,7 @@ findPathAction m start end = flip evalStateT Map.empty $ do
           case uniqs actions of
             [] -> pure Nothing
             [v] -> pure $ Just v  -- Exactly one monoidal value; accept.
-            _ -> throwM $ NonEquivalentPaths start' end
+            _ -> throwError $ NonEquivalentPaths start' end
         Nothing ->
           pure Nothing
     uniqs = Set.toList . Set.fromList
@@ -198,19 +178,19 @@ hasVertex :: Hash -> Migration action -> Bool
 hasVertex h (Migration g _) = Set.member h $ vertexSet g
 
 -- | Get the action for the given edge (which must exist)
-getAction :: MonadThrow m => Migration action -> (Hash, Hash) -> m action
+getAction :: MonadError MigrationError m => Migration action -> (Hash, Hash) -> m action
 getAction (Migration _ h) e = case Map.lookup e h of
   Just v -> pure v
-  Nothing -> throwM $ MissingEdgeInActionMap e
+  Nothing -> throwError $ MissingEdgeInActionMap e
 
 -- | Get the last vertex of the given DAG. Nothing if empty graph.
 --
 -- Assumes that the graph is fully connected.
-getLast :: (MonadThrow m, Ord a, Eq a) => AdjacencyMap a -> m a
+getLast :: (MonadError MigrationError m, Ord a, Eq a) => AdjacencyMap a -> m a
 getLast g = lastVertices >>= \case
-  [] -> throwM NoTerminalVertex
+  [] -> throwError NoTerminalVertex
   [x] -> pure x
-  _ -> throwM MultipleTerminalVertices
+  _ -> throwError MultipleTerminalVertices
   where
     lastVertices
       = pure
@@ -220,7 +200,7 @@ getLast g = lastVertices >>= \case
       =<< getDag g
 
 -- | Get the first vertex of the given DAG. Nothing if empty graph.
-getFirst :: (MonadThrow m, Ord a, Eq a) => AdjacencyMap a -> m a
+getFirst :: (MonadError MigrationError m, Ord a, Eq a) => AdjacencyMap a -> m a
 getFirst = getLast . transpose
 
 -- | Write an edge directly to the filesystem.

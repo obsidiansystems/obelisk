@@ -8,7 +8,8 @@
 module Obelisk.Command.Upgrade where
 
 import Control.Monad (forM, unless, void)
-import Control.Monad.Catch (onException, try)
+import Control.Monad.Catch (onException)
+import Control.Monad.Except
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (catMaybes)
 import Data.Monoid (Any (..), getAny)
@@ -71,7 +72,7 @@ decideHandOffToProjectOb project = do
       False -> do
         putLog Warning "Project ob not found in ambient ob's migration graph; handing off anyway"
         return True
-      True -> findPathAction ambientGraph projectHash ambientHash >>= \case
+      True -> handleMigrationError (findPathAction ambientGraph projectHash ambientHash) >>= \case
         Nothing -> do
           putLog Warning "No migration path between project and ambient ob; handing off anyway"
           return True
@@ -86,7 +87,7 @@ decideHandOffToProjectOb project = do
         Just m -> do
           -- We don't have ambient's ob source code, so locate its hash from the
           -- graph. The last vertex should be it.
-          ambientHash <- getLast (_migration_graph m)
+          ambientHash <- handleMigrationError $ getLast (_migration_graph m)
           return (m, ambientHash)
 
 -- | Return the path to the current ('ambient') obelisk process Nix directory
@@ -149,7 +150,7 @@ migrateObelisk project fromHash = void $ withSpinner' "Migrating to new obelisk"
         pure $ "No upgrade available (new Obelisk is the same)"
       else do
         putLog Debug $ "Migrating from " <> fromHash <> " to " <> toHash
-        findPathAction g fromHash toHash >>= \case
+        handleMigrationError (findPathAction g fromHash toHash) >>= \case
           Nothing -> do
             failWith "Unable to find migration path"
           Just action -> do
@@ -188,7 +189,7 @@ verifyMigration obDir = do
   upgradeGraph <- withSpinner "Reading migration graph" $
     getMigrationGraph @Text obDir MigrationGraph_ObeliskUpgrade
   withSpinner "Checking graph integrity" $
-    ensureGraphIntegrity upgradeGraph
+    handleMigrationError $ ensureGraphIntegrity upgradeGraph
   headVertex <- liftIO (doesDirectoryExist $ obDir </> ".git") >>= \case
     True ->
       withSpinner "Checking existence of HEAD vertex" $
@@ -201,11 +202,13 @@ verifyMigration obDir = do
   withSpinner "Checking graph linearity" $
     -- NOTE: We don't support merge commits (i.e., diamonds in a graph) yet.
     -- Until we do, ensure that the graph is a fully connected linear list.
-    try (ensureGraphLinearity upgradeGraph) >>= \case
+    runExceptT (ensureGraphLinearity upgradeGraph) >>= \case
       Left (NonLinearGraph_MultipleAdjacents vertex) ->
         failWith $ "Graph is not linear; branches at vertex: " <> tshow vertex
       Left (NonLinearGraph_NotConnected isolatedVertices) ->
         failWith $ "Graph is partly linear, with isolated vertices: " <> tshow isolatedVertices
+      Left e ->
+        failWith $ "Error in migration graph: " <> tshow e
       Right lastVertex -> unless (lastVertex == headVertex) $
         failWith $ "Graph is linear, but its last vertex (" <> lastVertex <> ") is different from head vertex (" <> headVertex <> ")"
 
@@ -274,6 +277,11 @@ backfillGraph lastN obDir = do
     takeM n' xs = case n' of
       Just n -> take n xs
       Nothing -> xs
+
+handleMigrationError :: MonadObelisk m => Except MigrationError a -> m a
+handleMigrationError m = case runExcept m of
+  Left e -> failWith $ "Error in migration graph: " <> tshow e
+  Right a -> return a
 
 migrationDir :: FilePath -> FilePath
 migrationDir project = project </> migrationDirName
