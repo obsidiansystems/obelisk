@@ -67,7 +67,6 @@ type ObeliskWidget t x route m =
 data Frontend route = Frontend
   { _frontend_head :: !(forall t m x. ObeliskWidget t x route m => RoutedT t route m ())
   , _frontend_body :: !(forall t m x. ObeliskWidget t x route m => RoutedT t route m ())
-  , _frontend_title :: !(route -> Text)
   , _frontend_notFoundRoute :: !(Text -> route) --TODO: Instead, maybe we should just require that the `parse` Monad for routeEncoder be `Identity`
   }
 
@@ -144,7 +143,6 @@ runFrontend validFullEncoder frontend = do
         -> m a
       runMyRouteViewT = runRouteViewT
         ve
-        (_frontend_title frontend)
         (_frontend_notFoundRoute frontend)
   runWithHeadAndBody $ \appendHead appendBody -> runMyRouteViewT $ do
     mapRoutedT (mapEventWriterT appendHead) $ _frontend_head frontend

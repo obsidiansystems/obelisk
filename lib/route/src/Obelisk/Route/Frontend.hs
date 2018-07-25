@@ -182,11 +182,10 @@ runRouteViewT
      , MonadFix m
      )
   => (ValidEncoder (Either Text) r PageName)
-  -> (r -> Text)
   -> (Text -> r) -- ^ 404 page
   -> RoutedT t r (EventWriterT t (Endo r) m) a
   -> m a
-runRouteViewT routeValidEncoder routeToTitle error404 a = do
+runRouteViewT routeValidEncoder error404 a = do
   rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
       let route :: Dynamic t r
           route = fmap (runIdentity . _validEncoder_decode (catchValidEncoder error404 $ pageNameValidEncoder . routeValidEncoder) . (uriPath &&& uriQuery) . _historyItem_uri) historyState
@@ -196,7 +195,17 @@ runRouteViewT routeValidEncoder routeToTitle error404 a = do
                 (newPath, newQuery) = _validEncoder_encode (pageNameValidEncoder . routeValidEncoder) newRoute
             in HistoryStateUpdate
                { _historyStateUpdate_state = DOM.SerializedScriptValue jsNull
-               , _historyStateUpdate_title = routeToTitle newRoute
+                 -- We always provide "" as the title.  On Firefox, Chrome, and
+                 -- Edge, this parameter does nothing.  On Safari, "" has the
+                 -- same behavior as other browsers (as far as I can tell), but
+                 -- anything else sets the title for the back button list item
+                 -- the *next* time pushState is called, unless the page title
+                 -- is changed in the interim.  Since the Safari functionality
+                 -- is near-pointless and also confusing, I'm not going to even
+                 -- bother exposing it; if there ends up being a real use case,
+                 -- we can change this function later to accommodate.
+                 -- See: https://github.com/whatwg/html/issues/2174
+               , _historyStateUpdate_title = ""
                , _historyStateUpdate_uri = Just $ nullURI
                  { uriPath = newPath
                  , uriQuery = newQuery
