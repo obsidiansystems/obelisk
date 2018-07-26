@@ -46,8 +46,8 @@ let
     '';
   });
 
-  # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
-  ghcObelisk = reflex-platform.ghc.override {
+  # overrides for the Haskell environment used to build Obelisk itself:
+  obeliskOverrides = {
     overrides = composeExtensions defaultHaskellOverrides (self: super: {
       mkDerivation = args: super.mkDerivation (args // {
         enableLibraryProfiling = profiling;
@@ -72,6 +72,13 @@ let
       optparse-applicative = self.callHackage "optparse-applicative" "0.14.0.0" {};
     });
   };
+
+  # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
+  ghcObelisk = reflex-platform.ghc.override obeliskOverrides;
+
+  ghcObeliskDev = ghcObelisk.override (obeliskOverrides // {
+    overrides = composeExtensions obeliskOverrides.overrides addLibsDev;
+  });
 
   fixUpstreamPkgs = self: super: {
     heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
@@ -124,6 +131,15 @@ let
     obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
   };
 
+
+  addLibsDev = self: super:
+    let
+      libs = addLibs self super;
+      addDevTools = drv: overrideCabal drv (drv: { buildTools = [ self.ghcid self.cabal-install ]; });
+    in
+      mapAttrs (n: addDevTools) libs;
+
+
   defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
 in
 with pkgs.lib;
@@ -133,6 +149,7 @@ rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
+  obeliskDev = ghcObeliskDev;
   commandWithMigration = ghcObelisk.obelisk-command.overrideAttrs (drv: {
      postInstall = (drv.postInstall or "") +
                    ''cp -r ${./migration} $out/migration;'';
