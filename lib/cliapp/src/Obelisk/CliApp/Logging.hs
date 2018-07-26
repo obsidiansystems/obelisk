@@ -22,7 +22,7 @@ import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import System.Console.ANSI (Color (Red, White, Yellow), ColorIntensity (Vivid),
+import System.Console.ANSI (Color (Red, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (SetColor, SetConsoleIntensity), clearLine)
 import System.Exit (ExitCode (..), exitWith)
@@ -146,7 +146,7 @@ writeLog withNewLine noColor (WithSeverity severity s)
     h = if severity <= Error then stderr else stdout
     errorColors = [SetColor Foreground Vivid Red]
     warningColors = [SetColor Foreground Vivid Yellow]
-    debugColors = [SetColor Foreground Vivid White, SetConsoleIntensity FaintIntensity]
+    debugColors = [SetConsoleIntensity FaintIntensity]
 
 -- | Allow the user to immediately switch to verbose logging upon pressing a particular key.
 --
