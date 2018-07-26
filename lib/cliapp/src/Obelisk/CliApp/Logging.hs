@@ -146,7 +146,7 @@ writeLog withNewLine noColor (WithSeverity severity s)
     h = if severity <= Error then stderr else stdout
     errorColors = [SetColor Foreground Vivid Red]
     warningColors = [SetColor Foreground Vivid Yellow]
-    debugColors = [SetColor Foreground Vivid White, SetConsoleIntensity FaintIntensity]
+    debugColors = [SetConsoleIntensity FaintIntensity]
 
 -- | Allow the user to immediately switch to verbose logging upon pressing a particular key.
 --
