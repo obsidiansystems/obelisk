@@ -77,6 +77,23 @@ let
             sha256 = "11v20ing8lrb5ccf6g9iihwcw5d22yj2ifw15v04ypn19y8kariw";
           };
       in pkgs.haskell.lib.dontCheck (self.callCabal2nix "monoidal-containers" src {});
+
+    # Need deriveSomeUniverse
+    # PR: https://github.com/dmwit/universe/pull/32
+    universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "universe";
+      rev = "5a2fc823caa4163411d7e41aa80e67cefb15944a";
+      sha256 = "0ll2z0fh18z6x8jl8kbp7ldagwccz3wjmvrw1gw752z058n82yfa";
+    } + /template) {};
+
+    # Need ShowTag, EqTag, and OrdTag instances
+    dependent-sum-template = self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
+      owner = "mokus0";
+      repo = "dependent-sum-template";
+      rev = "bfe9c37f4eaffd8b17c03f216c06a0bfb66f7df7";
+      sha256 = "1w3s7nvw0iw5li3ry7s8r4651qwgd22hmgz6by0iw3rm64fy8x0y";
+    }) {};
   };
 
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -101,13 +118,6 @@ let
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
     obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
     obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
-
-    dependent-sum-template = self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
-      owner = "mokus0";
-      repo = "dependent-sum-template";
-      rev = "877aea7817f8b9a7ca90374692402cc505bbab25";
-      sha256 = "0x065vdvjnbn2fiw27kk1zbjgknfnbli9bjvn4pmdbdf8m9picpg";
-    }) {};
   };
 
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;

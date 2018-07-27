@@ -67,7 +67,7 @@ import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
 import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?))
 import Control.Monad.Except
-import Data.Dependent.Sum (DSum (..), ShowTag (..))
+import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Either.Validation (Validation (..))
@@ -76,7 +76,6 @@ import Data.Functor.Sum
 import Data.GADT.Compare
 import Data.GADT.Compare.TH
 import Data.GADT.Show
-import Data.GADT.Show.TH
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -90,6 +89,7 @@ import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Universe
 import Network.HTTP.Types.URI
+import Obelisk.Route.TH
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -462,14 +462,6 @@ data ResourceRoute :: * -> * where
   ResourceRoute_Ghcjs :: ResourceRoute [Text]
   ResourceRoute_JSaddleWarp :: ResourceRoute (R JSaddleWarpRoute)
 
---TODO: Generate this
-instance Universe (Some ResourceRoute) where
-  universe =
-    [ Some.This ResourceRoute_Static
-    , Some.This ResourceRoute_Ghcjs
-    , Some.This ResourceRoute_JSaddleWarp
-    ]
-
 --TODO: Figure out a way to check this
 obeliskComponentEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (ObeliskRoute f)) (Either (Some ResourceRoute) (Some f))
 obeliskComponentEncoder = Encoder $ pure $ ValidEncoder
@@ -551,13 +543,6 @@ data JSaddleWarpRoute :: * -> * where
   JSaddleWarpRoute_WebSocket :: JSaddleWarpRoute ()
   JSaddleWarpRoute_Sync :: JSaddleWarpRoute [Text]
 
-instance Universe (Some JSaddleWarpRoute) where
-  universe =
-    [ Some.This JSaddleWarpRoute_JavaScript
-    , Some.This JSaddleWarpRoute_WebSocket
-    , Some.This JSaddleWarpRoute_Sync
-    ]
-
 jsaddleWarpRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some JSaddleWarpRoute) (Maybe Text)
 jsaddleWarpRouteComponentEncoder = enum1Encoder $ \case
   JSaddleWarpRoute_JavaScript -> Just "jsaddle.js"
@@ -570,29 +555,6 @@ jsaddleWarpRouteEncoder = pathComponentEncoder jsaddleWarpRouteComponentEncoder 
   JSaddleWarpRoute_WebSocket -> endValidEncoder mempty
   JSaddleWarpRoute_Sync -> pathOnlyValidEncoder
 
-instance ShowTag appRoute Identity => ShowTag (ObeliskRoute appRoute) Identity where
-  showTaggedPrec = \case
-    ObeliskRoute_App a -> showTaggedPrec a
-    ObeliskRoute_Resource r -> showTaggedPrec r
-
-instance ShowTag ResourceRoute Identity where
-  showTaggedPrec = \case
-    ResourceRoute_Static -> showsPrec
-    ResourceRoute_Ghcjs -> showsPrec
-    ResourceRoute_JSaddleWarp -> showsPrec
-
-instance ShowTag JSaddleWarpRoute Identity where
-  showTaggedPrec = \case
-    JSaddleWarpRoute_JavaScript -> showsPrec
-    JSaddleWarpRoute_WebSocket -> showsPrec
-    JSaddleWarpRoute_Sync -> showsPrec
-
-instance Universe (Some appRoute) => Universe (Some (ObeliskRoute appRoute)) where
-  universe = mconcat
-    [ mapSome ObeliskRoute_App <$> universe
-    , mapSome ObeliskRoute_Resource <$> universe
-    ]
-
 instance GShow appRoute => GShow (ObeliskRoute appRoute) where
   gshowsPrec prec = \case
     ObeliskRoute_App appRoute -> showParen (prec > 10) $
@@ -603,9 +565,6 @@ instance GShow appRoute => GShow (ObeliskRoute appRoute) where
 
 data IndexOnlyRoute :: * -> * where
   IndexOnlyRoute :: IndexOnlyRoute ()
-
-instance Universe (Some IndexOnlyRoute) where
-  universe = [Some.This IndexOnlyRoute]
 
 indexOnlyRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some IndexOnlyRoute) (Maybe Text)
 indexOnlyRouteComponentEncoder = enum1Encoder $ \case
@@ -622,10 +581,6 @@ constLaxValidEncoder a = ValidEncoder
   { _validEncoder_encode = \_ -> a
   , _validEncoder_decode = \_ -> pure ()
   }
-
-instance ShowTag IndexOnlyRoute Identity where
-  showTaggedPrec = \case
-    IndexOnlyRoute -> showsPrec
 
 someSumEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Sum a b)) (Either (Some a) (Some b))
 someSumEncoder = Encoder $ pure $ ValidEncoder
@@ -653,15 +608,13 @@ instance GShow Void1 where
   gshowsPrec _ = \case {}
 
 makePrisms ''ObeliskRoute
-deriveGShow ''ResourceRoute
-deriveGEq ''ResourceRoute
-deriveGCompare ''ResourceRoute
-deriveGShow ''JSaddleWarpRoute
-deriveGEq ''JSaddleWarpRoute
-deriveGCompare ''JSaddleWarpRoute
-deriveGShow ''IndexOnlyRoute
-deriveGEq ''IndexOnlyRoute
-deriveGCompare ''IndexOnlyRoute
+
+concat <$> mapM deriveRouteComponent
+  [ ''ResourceRoute
+  , ''JSaddleWarpRoute
+  , ''IndexOnlyRoute
+  ]
+
 deriveGEq ''Void1
 deriveGCompare ''Void1
 
