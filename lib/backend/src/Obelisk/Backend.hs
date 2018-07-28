@@ -48,28 +48,6 @@ data GhcjsApp route = GhcjsApp
   , _ghcjsApp_value :: !(Frontend route)
   }
 
-{-
---TODO: Expose the encoder check phase
--- | Start an Obelisk backend
-backend
-  :: ( Universe (R route) --TODO: This seems wrong - should be Universe (Some route)
-     , OrdTag route Identity
-     , ShowTag route Identity
-     , check ~ Either Text --TODO: Replace with MonadError Text check
-     )
-  => BackendConfig route
-  -> check (IO ())
-backend cfg = do
-  getRequestRoute <- checkGetRequestRoute $ _backendConfig_routeEncoder cfg --TODO: Report error better
-  return $ do
-    prettifyOutput
-
-    runSnapWithCommandLineArgs $ do
-      getRequestRoute >>= \case
-        Left e -> writeText e
-        Right r -> serveDefaultObeliskApp (_backendConfig_frontend cfg) r
--}
-
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
 serveDefaultObeliskApp :: MonadSnap m => Frontend (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
