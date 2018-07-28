@@ -10,6 +10,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -88,7 +89,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Universe
-import Network.HTTP.Types.URI
+import Network.HTTP.Types.URI hiding (Query)
 import Obelisk.Route.TH
 
 -- Design goals:
@@ -185,37 +186,92 @@ instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder che
 
 -- | A path and query string, in which trailing slashes don't matter in the path
 -- and duplicate query parameters are not allowed
-type PageName = ([Text], Map Text (Maybe Text))
+type PageName = (Path, Query)
+
+type Path = [Text]
+
+type Query = Map Text (Maybe Text)
 
 newtype Flip f a b = Flip { unFlip :: f b a }
 
-pathComponentEncoder :: forall check parse p. (Monad check, Monad parse) => (Encoder check parse (Some p) (Maybe Text)) -> (forall a. p a -> ValidEncoder parse a PageName) -> Encoder check parse (R p) PageName
-pathComponentEncoder this rest = chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consValidEncoder) this rest
+data PathComponentEncoder parse a where
+  PathComponentEncoder_End :: ValidEncoder parse a Query -> PathComponentEncoder parse a
+  PathComponentEncoder_Segment :: Text -> ValidEncoder parse a PageName -> PathComponentEncoder parse a
+
+enum1PathComponentEncoder
+  :: forall check parse p.
+     ( Monad check
+     , Monad parse
+     , Universe (Some p)
+     )
+  => (forall a. p a -> PathComponentEncoder parse a)
+  -> Encoder check parse (R p) PageName
+enum1PathComponentEncoder f = Encoder $ do
+  componentValid <- checkEncoder $ enum1Encoder $ \x -> case f x of
+    PathComponentEncoder_End _ -> Nothing
+    PathComponentEncoder_End t _ -> Just t
+  pure $ ValidEncoder
+    { _validEncoder_encode = \x -> case f x of
+        PathComponentEncoder_End e -> ([], _validEncoder_encode e x)
+    , _validEncoder_decode = \r -> case f 
+    }
 
 --NOTE: Naming convention in this module is to always talk about things in the *encoding* direction, never in the *decoding* direction
 
+data Maybe1 :: (* -> *) -> * -> * where
+  Just1 :: f a -> Maybe1 f a
+  Nothing1 :: Maybe1 f ()
+
+unconsEncoder
+  :: forall check parse p b r.
+     ( Monad check
+     , Monad parse
+     )
+  => ValidEncoder parse (Maybe (b, r)) r -- ^ Cons encoder
+  -> Encoder check parse (Some p) b -- ^ Head encoder
+  -> (forall a. p a -> ValidEncoder parse a r) -- ^ Tail encoder
+  -> Encoder check parse (R (Maybe1 p)) r
+unconsEncoder consValid this rest = Encoder $ do
+  thisValid <- checkEncoder this
+  pure $ ValidEncoder
+    { _validEncoder_decode = _validEncoder_decode consValid >=> \case
+        Just (h, t) -> do
+          Some.This p <- _validEncoder_decode thisValid h
+          (Just1 p :/) <$> _validEncoder_decode (rest p) t
+        Nothing -> pure $ Nothing1 :/ ()
+    , _validEncoder_encode = _validEncoder_encode consValid . \case
+        Just1 p :=> Identity a -> Just (_validEncoder_encode thisValid (Some.This p), _validEncoder_encode (rest p) a)
+        Nothing1 :=> Identity () -> Nothing
+    }
+
+{-
 chainEncoder
   :: forall check parse p r b.
      ( Monad check
      , Monad parse
      )
-  => ValidEncoder parse (b, r) r
-  -> Encoder check parse (Some p) b
+  => ValidEncoder parse (Maybe (b, r)) r
+  -> Encoder check parse (Some p) (Maybe b)
   -> (forall a. p a -> ValidEncoder parse a r)
   -> Encoder check parse (R p) r
 chainEncoder cons this rest = Encoder $ do
   thisValid <- checkEncoder this
   pure $ ValidEncoder
     { _validEncoder_decode = \v -> do
-        (here, following) <- _validEncoder_decode cons v
-        Some.This r <- _validEncoder_decode thisValid here
-        (r :/) <$> _validEncoder_decode (rest r) following
+        _validEncoder_decode cons v >>= \case
+          Nothing -> do
+            Some.This p <- _validEncoder_decode thisValid Nothing
+            (p :/) <$> _validEncoder_decode (rest p) undefined
+          Just (here, following) -> do
+            Some.This p <- _validEncoder_decode thisValid $ Just here
+            (p :/) <$> _validEncoder_decode (rest p) following
     , _validEncoder_encode = \(r :/ s) ->
         _validEncoder_encode cons (_validEncoder_encode thisValid $ Some.This r, _validEncoder_encode (rest r) s)
     }
+-}
 
 --TODO: Do this in terms of a lens instead
-lensEncoder :: Monad parse => (b -> [a] -> b) -> (b -> [a]) -> ValidEncoder parse (c, [a]) [a] -> ValidEncoder parse (c, b) b
+lensEncoder :: Monad parse => (b -> a -> b) -> (b -> a) -> ValidEncoder parse (c, a) a -> ValidEncoder parse (c, b) b
 lensEncoder set get g = ValidEncoder
   { _validEncoder_encode = \(ma, b) -> set b $ _validEncoder_encode g (ma, get b)
   , _validEncoder_decode = \b -> do
@@ -223,13 +279,15 @@ lensEncoder set get g = ValidEncoder
       pure (ma, set b la)
   }
 
-consValidEncoder :: Applicative parse => ValidEncoder parse (Maybe a, [a]) [a] --TODO: Really shouldn't *always* have the [a], even in the Nothing case
+{-
+consValidEncoder :: Applicative parse => ValidEncoder parse (Maybe (a, [a])) [a] --TODO: Really shouldn't *always* have the [a], even in the Nothing case
 consValidEncoder = ValidEncoder
   { _validEncoder_encode = \(h, t) -> maybeToList h <> t
   , _validEncoder_decode = pure . \case
       [] -> (Nothing, [])
       h:t -> (Just h, t)
   }
+-}
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show
