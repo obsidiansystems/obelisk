@@ -45,13 +45,13 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 When developing on obelisk itself you may launch `ghcid` for the corresponding project as follows. For example to launch ghcid for `lib/backend` project:
 
 ```
-nix-shell -A obelisk.obelisk-backend.env --run "cd lib/backend && ghcid -c 'cabal new-repl'"
+nix-shell -E 'let this = import ./default.nix {}; in this.reflex-platform.workOn this.obelisk this.obelisk.obelisk-backend' --run "cd lib/backend && ghcid -c 'cabal new-repl'"
 ```
 
 Or to launch ghcid for `lib/command` project:
 
 ```
-nix-shell -A obelisk.obelisk-command.env --run "cd lib/command && ghcid -c 'cabal new-repl'"
+nix-shell -E 'let this = import ./default.nix {}; in this.reflex-platform.workOn this.obelisk this.obelisk.obelisk-command' --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
 ### Accessing private repositories
