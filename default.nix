@@ -185,11 +185,11 @@ rec {
       set -eux
       ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
       ln -s "${mkAssets assets}" $out/static.assets
-      ln -s "${config}" $out/config
+      cp -r ${config} $out/config
       ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps }:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, ... }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
         backendPort = 8000;
@@ -302,15 +302,15 @@ rec {
                 };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static configPath;
-      linuxExe = serverOn "x86_64-linux";
-    in projectOut system // {
-      inherit linuxExe;
+      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static config;
       # `exe` is project's backend executable, with frontend assets, config, etc.
       # `linuxExe` is the same but built for x86_64-linux.
-      exe = serverOn system;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps }:
-        server (args // { exe = linuxExe;});
+      exe = serverOn system configPath;
+      linuxExe = serverOn "x86_64-linux" configPath;
+    in projectOut system // {
+      inherit exe linuxExe;
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, config }:
+        server (args // { exe = serverOn "x86_64-linux" config;});
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {

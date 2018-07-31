@@ -101,6 +101,7 @@ deployPush deployPath getNixBuilders = do
             , strArg "adminEmail" adminEmail
             , strArg "routeHost" routeHost
             , boolArg "enableHttps" enableHttps
+            , rawArg "config" $ deployPath </> "config"
             ]
           , _nixBuildConfig_builders = builders
           }
