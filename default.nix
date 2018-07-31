@@ -257,6 +257,7 @@ rec {
                           , packages ? {}
                           , overrides ? _: _: {}
                           , tools ? _: []
+                          , shellToolOverrides ? _: _: {}
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
                           }:
               let frontendName = "frontend";
@@ -278,7 +279,7 @@ rec {
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
               in {
-                inherit tools withHoogle;
+                inherit shellToolOverrides tools withHoogle;
                 overrides = totalOverrides;
                 packages = combinedPackages;
                 shells = {
