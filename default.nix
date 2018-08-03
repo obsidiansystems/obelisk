@@ -61,13 +61,13 @@ let
   };
 
   fixUpstreamPkgs = self: super: {
-    algebraic-graphs = pkgs.haskell.lib.doJailbreak
+    algebraic-graphs = pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.doJailbreak
       (self.callCabal2nix "algebraic-graphs" (pkgs.fetchFromGitHub {
         owner = "snowleopard";
         repo = "alga";
         rev = "480a73137e9b38ad3f1bc2c628847953d2fb3e25";
         sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
-      }) {});
+      }) {}));
 
     monoidal-containers =
       let src = pkgs.fetchFromGitHub {
