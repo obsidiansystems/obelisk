@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "reunification-stable",
-  "rev": "39ccd1ff7dd7511d7a1d0c7fb091995be4edb9a9",
-  "sha256": "156wzcx0bhbvaqh2sq31mzmmb24wnkbm1d31nn9q3krbsk45gm9q"
+  "branch": "for-newer-obelisk",
+  "rev": "6d8178b3b82ad13b8c66a37155a3d23bc00523f8",
+  "sha256": "1d8gm8x5h76fz2i30ybpj4hijp5ldp8p2q69zfrh756sdr84clj5"
 }
