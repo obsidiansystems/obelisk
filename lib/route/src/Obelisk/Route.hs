@@ -90,6 +90,7 @@ import Data.Text.Encoding
 import Data.Universe
 import Network.HTTP.Types.URI
 import Obelisk.Route.TH
+import Data.Monoid ((<>))
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)

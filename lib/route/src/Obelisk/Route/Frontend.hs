@@ -58,8 +58,7 @@ import Reflex.Host.Class
 import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
 import Reflex.PerformEvent.Class
-import Reflex.EventWriter.Class
-import Reflex.EventWriter.Base
+import Reflex.EventWriter
 import Reflex.Dynamic
 import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
@@ -81,10 +80,10 @@ instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
 
-instance Prerender js m => Prerender js (RoutedT t r m) where
-  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+-- instance Prerender js m => Prerender js (RoutedT t r m) where
+--   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
 
 instance (Requester t m, PrimMonad m) => Requester t (RoutedT t r m) where
   type Request (RoutedT t r m) = Request m
