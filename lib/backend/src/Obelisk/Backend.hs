@@ -36,6 +36,7 @@ import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, htt
              rqQueryString, writeBS, writeText)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
+import Data.Monoid ((<>))
 
 data Backend backendRoute frontendRoute = Backend
   { _backend_routeEncoder :: Encoder (Either Text) (Either Text) (R (Sum backendRoute (ObeliskRoute frontendRoute))) PageName
