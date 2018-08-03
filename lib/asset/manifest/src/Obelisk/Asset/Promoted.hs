@@ -18,6 +18,7 @@ import qualified Data.Sequence as Seq
 import Control.Monad.Trans.Writer
 import System.FilePath
 import System.Directory
+import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
