@@ -61,6 +61,9 @@ let
   };
 
   fixUpstreamPkgs = self: super: {
+    megaparsec = self.callHackage "megaparsec" "6.0.0" {};
+    modern-uri = pkgs.haskell.lib.dontCheck super.modern-uri;
+
     algebraic-graphs = pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.doJailbreak
       (self.callCabal2nix "algebraic-graphs" (pkgs.fetchFromGitHub {
         owner = "snowleopard";
