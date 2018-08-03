@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "reunification",
-  "rev": "dfff8594d78be7528aa7a23ed334b0cbf9316952",
-  "sha256": "1bdz961xn6x828rhpm08h3hlada2y1gzbd0bqwks8i8cvp73g9kv"
+  "branch": "reunification-stable",
+  "rev": "39ccd1ff7dd7511d7a1d0c7fb091995be4edb9a9",
+  "sha256": "156wzcx0bhbvaqh2sq31mzmmb24wnkbm1d31nn9q3krbsk45gm9q"
 }
