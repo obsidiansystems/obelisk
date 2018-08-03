@@ -40,7 +40,7 @@ import Reflex.Dom.Core
 import Reflex.Host.Class
 import qualified Reflex.TriggerEvent.Base as TriggerEvent
 
-import Data.Semigroup
+import Data.Semigroup hiding (Sum)
 
 makePrisms ''Sum
 
@@ -78,14 +78,6 @@ type Widget' x = ImmediateDomBuilderT DomTimeline (DomCoreWidget x)
 type FloatingWidget x = TriggerEventT DomTimeline (DomCoreWidget x)
 
 type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (PerformEventT DomTimeline DomHost))
-
-
--- | Change the monad underlying an EventWriterT
-mapEventWriterT :: (Semigroup w, Reflex t, MonadHold t m, MonadFix m)
-                 => (forall x. m x -> n x)
-                 -> EventWriterT t w m a
-                 -> EventWriterT t w n a
-mapEventWriterT f (EventWriterT a) = EventWriterT $ mapStateT f a
 
 --TODO: Rename
 {-# INLINABLE attachWidget''' #-}
