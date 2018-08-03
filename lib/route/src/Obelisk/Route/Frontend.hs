@@ -81,7 +81,11 @@ instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+
+instance HasJSContext m => HasJSContext (RoutedT t r m) where
+  type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
+  askJSContext = RoutedT askJSContext
 
 instance Prerender js m => Prerender js (RoutedT t r m) where
   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
