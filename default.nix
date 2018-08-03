@@ -63,6 +63,12 @@ let
   fixUpstreamPkgs = self: super: {
     megaparsec = self.callHackage "megaparsec" "6.0.0" {};
     modern-uri = pkgs.haskell.lib.dontCheck super.modern-uri;
+    github = self.callCabal2nix "github" (pkgs.fetchFromGitHub {
+      owner = "phadej";
+      repo = "github";
+      rev = "v0.18";
+      sha256 = "0a8ndisqmfsf7gaw320ls0ffvk926q8pmcfihd31v25k9qm2i4bi";
+    }) {};
 
     algebraic-graphs = pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.doJailbreak
       (self.callCabal2nix "algebraic-graphs" (pkgs.fetchFromGitHub {
