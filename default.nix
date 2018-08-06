@@ -61,7 +61,7 @@ let
   };
 
   fixUpstreamPkgs = self: super: {
-    Cabal = self.callHackage "Cabal" "2.0.0.2" {};
+    Cabal = pkgs.haskell.lib.dontCheck (self.callHackage "Cabal" "2.0.0.2" {});
     megaparsec = self.callHackage "megaparsec" "6.0.0" {};
     modern-uri = pkgs.haskell.lib.dontCheck super.modern-uri;
     github = pkgs.haskell.lib.doJailbreak (self.callCabal2nix "github" (pkgs.fetchFromGitHub {
