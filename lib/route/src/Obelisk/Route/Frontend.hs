@@ -86,7 +86,7 @@ newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
 instance Prerender js m => Prerender js (RoutedT t r m) where
   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
 
-instance (Requester t m, PrimMonad m) => Requester t (RoutedT t r m) where
+instance Requester t m => Requester t (RoutedT t r m) where
   type Request (RoutedT t r m) = Request m
   type Response (RoutedT t r m) = Response m
   requesting = RoutedT . requesting
@@ -130,6 +130,11 @@ instance Adjustable t m => Adjustable t (RoutedT t r m) where
   traverseIntMapWithKeyWithAdjust f a0 a' = RoutedT $ traverseIntMapWithKeyWithAdjust (coerce f) (coerce a0) $ coerce a'
   traverseDMapWithKeyWithAdjust f a0 a' = RoutedT $ traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
   traverseDMapWithKeyWithAdjustWithMove f a0 a' = RoutedT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
+
+instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
+  tellQueryIncremental = lift . tellQueryIncremental
+  askQueryResult = lift askQueryResult
+  queryIncremental = lift . queryIncremental
 
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
