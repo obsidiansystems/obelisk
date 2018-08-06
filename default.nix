@@ -57,11 +57,12 @@ let
       obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
 
       optparse-applicative = self.callHackage "optparse-applicative" "0.14.0.0" {};
+
+      Cabal = self.callHackage "Cabal" "2.0.0.2" {};
     });
   };
 
   fixUpstreamPkgs = self: super: {
-    Cabal = pkgs.haskell.lib.dontCheck (self.callHackage "Cabal" "2.0.0.2" {});
     megaparsec = self.callHackage "megaparsec" "6.0.0" {};
     modern-uri = pkgs.haskell.lib.dontCheck super.modern-uri;
     github = pkgs.haskell.lib.doJailbreak (self.callCabal2nix "github" (pkgs.fetchFromGitHub {
