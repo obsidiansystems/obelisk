@@ -14,18 +14,17 @@ import Data.List
 import Data.List.NonEmpty as NE
 import Data.Maybe
 import qualified Data.Text as T
-import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
-import Distribution.Parsec.ParseResult (runParseResult)
+import Distribution.PackageDescription.Parse (ParseResult (..), parseGenericPackageDescription)
 import Distribution.Types.BuildInfo
 import Distribution.Types.CondTree
 import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Library
-import Distribution.Utils.Generic (withUTF8FileContents, toUTF8BS)
+import Distribution.Utils.Generic (withUTF8FileContents)
 import Network.Socket
 import System.Directory
 import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
-import Data.ByteString (ByteString)
+import Data.Monoid ((<>))
 
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp (CliT (..), HasCliConfig, Severity (..), callCommand, failWith, getCliConfig, putLog,
@@ -60,23 +59,21 @@ parseHsSrcDir cabalFp = do
   if exists
     then do
       withUTF8FileContentsM cabalFp $ \cabal -> do
-        let (warnings, result) = runParseResult $ parseGenericPackageDescription cabal
-        mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
-        case result of
-          Right gpkg -> do
+        case parseGenericPackageDescription cabal of
+          ParseOk warnings gpkg -> do
+            mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
             return $ do
               (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
               pure $ fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
-          Left (_, errors) -> do
-            putLog Error $ T.pack "Failed to parse cabal file: "
-            mapM_ (putLog Error) $ fmap (T.pack . show) errors
+          ParseFailed e -> do
+            putLog Error $ T.pack $ "Failed to parse cabal file: " <> show e
             return Nothing
     else return Nothing
 
-withUTF8FileContentsM :: (MonadIO m, HasCliConfig m) => FilePath -> (ByteString -> CliT IO a) -> m a
+withUTF8FileContentsM :: (MonadIO m, HasCliConfig m) => FilePath -> (String -> CliT IO a) -> m a
 withUTF8FileContentsM fp f = do
   c <- getCliConfig
-  liftIO $ withUTF8FileContents fp $ runCli c . f . toUTF8BS
+  liftIO $ withUTF8FileContents fp $ runCli c . f
 
 -- | Create ghci configuration to load the given packages
 withGhciScript

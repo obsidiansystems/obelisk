@@ -27,6 +27,7 @@ import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
+import Data.Monoid ((<>))
 
 import Obelisk.App
 import Obelisk.CliApp
