@@ -27,6 +27,7 @@ import System.IO.Temp
 import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process (CreateProcess, cwd, proc, waitForProcess)
+import Data.Monoid ((<>))
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)

@@ -70,6 +70,7 @@ import System.IO.Error
 import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
 import System.Process (proc)
+import Data.Monoid ((<>))
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
