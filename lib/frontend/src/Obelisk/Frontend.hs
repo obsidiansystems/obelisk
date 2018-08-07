@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -12,6 +13,9 @@ module Obelisk.Frontend
   ( ObeliskWidget
   , Frontend (..)
   , runFrontend
+  , renderFrontendHtml
+  , ghcjsFrontend
+  , jsaddleFrontend
   ) where
 
 import Prelude hiding ((.))
@@ -25,6 +29,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Primitive
 import Control.Monad.Ref
 import Control.Monad.Trans.Class
+import Data.ByteString (ByteString)
 import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Sum
 import Data.IORef
@@ -151,3 +156,33 @@ runFrontend validFullEncoder frontend = do
 instance PrimMonad m => PrimMonad (EventWriterT t w m) where
   type PrimState (EventWriterT t w m) = PrimState m
   primitive = lift . primitive
+
+renderFrontendHtml
+  :: forall route a.
+     R route
+  -> Frontend (R route)
+  -> IO ByteString
+renderFrontendHtml route f = do
+  --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
+  html <- fmap snd $ renderStatic $ fmap fst $ runEventWriterT $ flip runRoutedT (pure route) $
+    el "html" $ do
+      el "head" $ _frontend_head f
+      el "body" $ _frontend_body f
+  return $ "<!DOCTYPE html>" <> html
+
+ghcjsScript :: DomBuilder t m => m ()
+ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
+
+ghcjsFrontend :: Frontend a -> Frontend a
+ghcjsFrontend f = f
+  { _frontend_head = _frontend_head f >> elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+  , _frontend_body = _frontend_body f >> ghcjsScript
+  }
+
+jsaddleScript :: DomBuilder t m => m ()
+jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
+
+jsaddleFrontend :: Frontend a -> Frontend a
+jsaddleFrontend f = f
+  { _frontend_body = _frontend_body f >> jsaddleScript
+  }

@@ -22,7 +22,7 @@ import Prelude hiding ((.), id)
 import Control.Category
 import Control.Concurrent
 import Control.Exception
-import Control.Lens ((^?), _Just, _Right)
+import Control.Lens ((%~), (^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -112,39 +112,36 @@ runWidget conf frontend validFullEncoder = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp defaultConnectionOptions frontend validFullEncoder $ fallbackProxy redirectHost redirectPort man
+        app <- obeliskApp defaultConnectionOptions frontend validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
         runSettingsSocket settings skt app)
 
-obeliskApp :: forall route backendRoute. ConnectionOptions -> Frontend (R route) -> ValidEncoder (Either Text) (R (Sum backendRoute (ObeliskRoute route))) PageName -> Application -> IO Application
-obeliskApp opts frontend validFullEncoder backend = do
+obeliskApp
+  :: forall route backendRoute. ConnectionOptions
+  -> Frontend (R route)
+  -> ValidEncoder (Either Text) (R (Sum backendRoute (ObeliskRoute route))) PageName
+  -> URI
+  -> Application
+  -> IO Application
+obeliskApp opts frontend validFullEncoder uri backend = do
   let entryPoint = do
         runFrontend validFullEncoder frontend
         syncPoint
+  jsaddlePath <- URI.mkPathPiece "jsaddle"
+  let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
   Right (jsaddleWarpRouteValidEncoder :: ValidEncoder (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
   jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
   return $ \req sendResponse -> case _validEncoder_decode validFullEncoder (W.pathInfo req, mempty) of --TODO: Query strings
     Left e -> sendResponse $ W.responseLBS H.status404 [("Content-Type", "text/plain")] $ LBS.fromStrict $ encodeUtf8 e
     Right r -> case r of
       InR (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :=> Identity jsaddleRoute -> case jsaddleRoute of
-        JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just "http://localhost:8000/jsaddle") False
+        JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just jsaddleUri) False
         _ -> flip jsaddle sendResponse $ req
           { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
       InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
-        html <- renderStaticHtml $ fmap fst $ runEventWriterT $ flip runRoutedT (pure $ appRouteComponent :/ appRouteRest) $ indexHtml (_frontend_head frontend) (_frontend_body frontend)
+        html <- renderFrontendHtml (appRouteComponent :/ appRouteRest) $ jsaddleFrontend frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] $ BSLC.fromStrict html
       _ -> backend req sendResponse
-
-renderStaticHtml :: StaticWidget () () -> IO ByteString
-renderStaticHtml w = do
-  (_, bs) <- renderStatic w
-  return $ "<!DOCTYPE html>" <> bs
-
-indexHtml :: DomBuilder t m => m () -> m () -> m ()
-indexHtml h b = el "html" $ do
-  el "head" $ h
-  el "body" $ b
-  elAttr "script" ("src" =: "/jsaddle/jsaddle.js") $ return ()
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
