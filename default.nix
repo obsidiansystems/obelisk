@@ -55,8 +55,6 @@ let
 
       # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
       obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
-
-      optparse-applicative = self.callHackage "optparse-applicative" "0.14.0.0" {};
     });
   };
 
