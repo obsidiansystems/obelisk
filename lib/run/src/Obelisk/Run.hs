@@ -23,6 +23,7 @@ import Control.Category
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((%~), (^?), _Just, _Right)
+import Control.Monad
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -87,7 +88,7 @@ run port backend frontend = do
       runWidget conf frontend validFullEncoder `finally` killThread backendTid
 
 getConfigRoute :: IO (Maybe URI)
-getConfigRoute = get "common/route" >>= \case
+getConfigRoute = get "config/common/route" >>= \case
   Just r -> case URI.mkURI $ T.strip r of
     Just route -> pure $ Just route
     Nothing -> do
@@ -139,7 +140,7 @@ obeliskApp opts frontend validFullEncoder uri backend = do
           { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
       InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
-        html <- renderFrontendHtml (appRouteComponent :/ appRouteRest) $ jsaddleFrontend frontend
+        html <- renderFrontendHtml (appRouteComponent :/ appRouteRest) <=< configureFrontend $ jsaddleFrontend frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] $ BSLC.fromStrict html
       _ -> backend req sendResponse
 

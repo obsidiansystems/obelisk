@@ -10,7 +10,7 @@ import System.FilePath ((</>))
 
 inject :: FilePath -> IO ByteString
 inject item = do
-  f <- T.readFile $ "config" </> item
+  f <- T.readFile item
   fmap snd $ renderStatic $ injectPure item f
 
 injectPure :: DomBuilder t m => FilePath -> T.Text -> m ()

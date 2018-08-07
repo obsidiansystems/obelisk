@@ -16,8 +16,10 @@ module Obelisk.Backend
   , serveDefaultObeliskApp
   , prettifyOutput
   , runBackend
+  , configureFrontend
   ) where
 
+import Control.Monad
 import Control.Monad.Except
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
@@ -26,13 +28,17 @@ import Data.Functor.Sum
 import Data.Functor.Identity
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import Data.Text.Encoding
 import Obelisk.Asset.Serve.Snap (serveAsset)
+import Obelisk.ExecutableConfig.Inject (injectPure)
 import Obelisk.Frontend
 import Obelisk.Route
 import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, rqPathInfo,
              rqQueryString, writeBS, writeText)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
+import System.Directory
+import System.FilePath
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 data Backend backendRoute frontendRoute = Backend
@@ -149,7 +155,7 @@ data GhcjsAppRoute :: (* -> *) -> * -> * where
 serveGhcjsApp :: MonadSnap m => GhcjsApp (R appRouteComponent) -> R (GhcjsAppRoute appRouteComponent) -> m ()
 serveGhcjsApp app = \case
   GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest ->
-    writeBS <=< liftIO $ renderFrontendHtml (appRouteComponent :/ appRouteRest) $ ghcjsFrontend $ _ghcjsApp_value app
+    writeBS <=< liftIO $ renderFrontendHtml (appRouteComponent :/ appRouteRest) <=< configureFrontend $ ghcjsFrontend $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
 runBackend :: Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
@@ -162,3 +168,21 @@ runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend 
         Right r -> case r of
           InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
           InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp frontend $ obeliskRoute :/ a
+
+configureFrontend :: Frontend a -> IO (Frontend a)
+configureFrontend f = do
+  cfgC <- getConfigs "config/common"
+  cfgF <- getConfigs "config/frontend"
+  return $ f { _frontend_head = _frontend_head f >> mapM_ (uncurry injectPure) (cfgC <> cfgF) }
+  where
+    getConfigs :: FilePath -> IO [(FilePath, Text)]
+    getConfigs fp = do
+      ps <- listDirectory fp
+      fmap concat $ forM ps $ \p -> do
+        let fullpath = fp </> p
+        dir <- doesDirectoryExist p
+        if dir
+          then getConfigs fullpath
+          else do
+            v <- T.readFile fullpath
+            return [(fullpath, v)]
