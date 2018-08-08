@@ -23,7 +23,6 @@ import Control.Category
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((%~), (^?), _Just, _Right)
-import Control.Monad
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -52,6 +51,7 @@ import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Obelisk.ExecutableConfig (get)
+import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
@@ -140,9 +140,14 @@ obeliskApp opts frontend validFullEncoder uri backend = do
           { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
       InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
-        html <- renderFrontendHtml (appRouteComponent :/ appRouteRest) <=< configureFrontend $ jsaddleFrontend frontend
+        html <- renderJsaddleFrontend (appRouteComponent :/ appRouteRest) frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] $ BSLC.fromStrict html
       _ -> backend req sendResponse
+
+renderJsaddleFrontend :: route -> Frontend route -> IO ByteString
+renderJsaddleFrontend r f =
+  let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
+  in renderFrontendHtml r (_frontend_head f >> injectExecutableConfigs) (_frontend_body f >> jsaddleScript)
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings

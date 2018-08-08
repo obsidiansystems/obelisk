@@ -14,8 +14,6 @@ module Obelisk.Frontend
   , Frontend (..)
   , runFrontend
   , renderFrontendHtml
-  , ghcjsFrontend
-  , jsaddleFrontend
   ) where
 
 import Prelude hiding ((.))
@@ -158,31 +156,15 @@ instance PrimMonad m => PrimMonad (EventWriterT t w m) where
   primitive = lift . primitive
 
 renderFrontendHtml
-  :: forall route a.
-     R route
-  -> Frontend (R route)
+  :: (Semigroup w, t ~ SpiderTimeline Global)
+  => r
+  -> RoutedT t r (EventWriterT t w (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
+  -> RoutedT t r (EventWriterT t w (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
   -> IO ByteString
-renderFrontendHtml route f = do
+renderFrontendHtml route headWidget bodyWidget = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
   html <- fmap snd $ renderStatic $ fmap fst $ runEventWriterT $ flip runRoutedT (pure route) $
     el "html" $ do
-      el "head" $ _frontend_head f
-      el "body" $ _frontend_body f
+      el "head" headWidget
+      el "body" bodyWidget
   return $ "<!DOCTYPE html>" <> html
-
-ghcjsScript :: DomBuilder t m => m ()
-ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
-
-ghcjsFrontend :: Frontend a -> Frontend a
-ghcjsFrontend f = f
-  { _frontend_head = _frontend_head f >> elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
-  , _frontend_body = _frontend_body f >> ghcjsScript
-  }
-
-jsaddleScript :: DomBuilder t m => m ()
-jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
-
-jsaddleFrontend :: Frontend a -> Frontend a
-jsaddleFrontend f = f
-  { _frontend_body = _frontend_body f >> jsaddleScript
-  }

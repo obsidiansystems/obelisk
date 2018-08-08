@@ -24,6 +24,7 @@ library
     , network
     , obelisk-backend
     , obelisk-executable-config
+    , obelisk-executable-config-inject
     , obelisk-frontend
     , obelisk-route
     , process
