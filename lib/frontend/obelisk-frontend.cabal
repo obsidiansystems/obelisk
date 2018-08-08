@@ -6,6 +6,7 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base,
+                 bytestring,
                  dependent-sum,
                  ghcjs-dom,
                  jsaddle,
@@ -18,3 +19,4 @@ library
                  text,
                  transformers
   exposed-modules: Obelisk.Frontend
+  ghc-options: -Wall

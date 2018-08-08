@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -12,6 +13,7 @@ module Obelisk.Frontend
   ( ObeliskWidget
   , Frontend (..)
   , runFrontend
+  , renderFrontendHtml
   ) where
 
 import Prelude hiding ((.))
@@ -25,6 +27,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Primitive
 import Control.Monad.Ref
 import Control.Monad.Trans.Class
+import Data.ByteString (ByteString)
 import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Sum
 import Data.IORef
@@ -151,3 +154,17 @@ runFrontend validFullEncoder frontend = do
 instance PrimMonad m => PrimMonad (EventWriterT t w m) where
   type PrimState (EventWriterT t w m) = PrimState m
   primitive = lift . primitive
+
+renderFrontendHtml
+  :: (Semigroup w, t ~ SpiderTimeline Global)
+  => r
+  -> RoutedT t r (EventWriterT t w (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
+  -> RoutedT t r (EventWriterT t w (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
+  -> IO ByteString
+renderFrontendHtml route headWidget bodyWidget = do
+  --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
+  html <- fmap snd $ renderStatic $ fmap fst $ runEventWriterT $ flip runRoutedT (pure route) $
+    el "html" $ do
+      el "head" headWidget
+      el "body" bodyWidget
+  return $ "<!DOCTYPE html>" <> html
