@@ -10,8 +10,6 @@ library
                  data-default,
                  dependent-sum,
                  dependent-sum-template,
-                 directory,
-                 filepath,
                  lens,
                  mtl,
                  obelisk-asset-serve-snap,
