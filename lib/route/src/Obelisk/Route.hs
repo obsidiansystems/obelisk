@@ -28,6 +28,7 @@ module Obelisk.Route
   , pathComponentEncoder
   , enumEncoder
   , enum1Encoder
+  , checkEnum1EncoderFunc
   , endValidEncoder
   , pathOnlyValidEncoder
   , singletonListValidEncoder
@@ -65,6 +66,8 @@ import Control.Applicative
 import Control.Category (Category (..))
 import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
+import Control.Category.Associative
+import Control.Category.Monoidal
 import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?))
 import Control.Monad.Except
 import Data.Dependent.Sum (DSum (..))
@@ -172,13 +175,57 @@ instance (Applicative check, Monad parse) => QFunctor (,) (Encoder check parse) 
 instance (Applicative check, Monad parse) => Bifunctor (,) (Encoder check parse) (Encoder check parse) (Encoder check parse) where
   bimap f g = Encoder $ liftA2 bimap (checkEncoder f) (checkEncoder g)
 
+instance (Traversable f, Monad parse) => Cat.Functor f (ValidEncoder parse) (ValidEncoder parse) where
+  fmap ve = ValidEncoder
+    { _validEncoder_encode = fmap $ _validEncoder_encode ve
+    , _validEncoder_decode = traverse $ _validEncoder_decode ve
+    }
+
 instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder check parse) (Encoder check parse) where
   fmap e = Encoder $ do
     ve <- checkEncoder e
-    pure $ ValidEncoder
-      { _validEncoder_encode = fmap $ _validEncoder_encode ve
-      , _validEncoder_decode = traverse $ _validEncoder_decode ve
-      }
+    pure $ Cat.fmap ve
+
+instance Monad parse => Associative (ValidEncoder parse) (,) where
+  associate = ValidEncoder
+    { _validEncoder_encode = associate
+    , _validEncoder_decode = pure . disassociate
+    }
+  disassociate = ValidEncoder
+    { _validEncoder_encode = disassociate
+    , _validEncoder_decode = pure . associate
+    }
+
+instance Monad parse => Monoidal (ValidEncoder parse) (,) where
+  type Id (ValidEncoder parse) (,) = ()
+  idl = ValidEncoder
+    { _validEncoder_encode = idl
+    , _validEncoder_decode = pure . coidl
+    }
+  idr = ValidEncoder
+    { _validEncoder_encode = idr
+    , _validEncoder_decode = pure . coidr
+    }
+  coidl = ValidEncoder
+    { _validEncoder_encode = coidl
+    , _validEncoder_decode = pure . idl
+    }
+  coidr = ValidEncoder
+    { _validEncoder_encode = coidr
+    , _validEncoder_decode = pure . idr
+    }
+
+instance (Applicative check, Monad parse) => Associative (Encoder check parse) (,) where
+  associate = Encoder $ pure associate
+  disassociate = Encoder $ pure disassociate
+
+instance (Applicative check, Monad parse) => Monoidal (Encoder check parse) (,) where
+  type Id (Encoder check parse) (,) = ()
+  idl = Encoder $ pure idl
+  idr = Encoder $ pure idr
+  coidl = Encoder $ pure coidl
+  coidr = Encoder $ pure coidr
+
 
 --------------------------------------------------------------------------------
 -- Specific instances of encoders
@@ -476,7 +523,7 @@ obeliskComponentEncoder = Encoder $ pure $ ValidEncoder
 
 newtype ValidEncoderFunc parse p r = ValidEncoderFunc { runValidEncoderFunc :: forall a. p a -> ValidEncoder parse a r }
 
-checkSomeUniverseEncoder
+checkEnum1EncoderFunc
   :: forall check parse p r.
      ( Universe (Some p)
      , GCompare p
@@ -484,9 +531,9 @@ checkSomeUniverseEncoder
      )
   => (forall a. p a -> Encoder check parse a r)
   -> check (ValidEncoderFunc parse p r)
-checkSomeUniverseEncoder f = do
+checkEnum1EncoderFunc f = do
   validEncoders :: DMap p (Flip (ValidEncoder parse) r) <- DMap.fromList <$> traverse (\(Some.This p) -> (p :=>) . Flip <$> checkEncoder (f p)) universe
-  pure $ ValidEncoderFunc $ \p -> unFlip $ DMap.findWithDefault (error "checkSomeUniverseEncoder: ValidEncoder not found (should be impossible)") p validEncoders
+  pure $ ValidEncoderFunc $ \p -> unFlip $ DMap.findWithDefault (error "checkEnum1EncoderFunc: ValidEncoder not found (should be impossible)") p validEncoders
 
 obeliskRouteEncoder
   :: forall check parse appRoute.
@@ -513,8 +560,8 @@ checkObeliskRouteRestEncoder
   => (forall a. appRoute a -> Encoder check parse a PageName)
   -> check (ValidEncoderFunc parse (ObeliskRoute appRoute) PageName)
 checkObeliskRouteRestEncoder appRouteEncoder = do
-  appRouteValidEncoder <- checkSomeUniverseEncoder appRouteEncoder
-  resourceRouteValidEncoder <- checkSomeUniverseEncoder resourceRouteEncoder
+  appRouteValidEncoder <- checkEnum1EncoderFunc appRouteEncoder
+  resourceRouteValidEncoder <- checkEnum1EncoderFunc resourceRouteEncoder
   return $ ValidEncoderFunc $ \case
     ObeliskRoute_App appRoute -> runValidEncoderFunc appRouteValidEncoder appRoute
     ObeliskRoute_Resource resRoute -> runValidEncoderFunc resourceRouteValidEncoder resRoute
