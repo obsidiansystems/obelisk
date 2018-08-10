@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Inject where
 
-import Control.Monad (forM, mapM_)
+import Control.Monad (mapM_)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Semigroup ((<>))
 import Data.ByteString (ByteString)
@@ -34,15 +34,18 @@ injectExecutableConfigs = do
   cfgC <- getConfigs "config/common"
   cfgF <- getConfigs "config/frontend"
   mapM_ (uncurry injectPure) (cfgC <> cfgF)
-  where
-    getConfigs :: MonadIO m => FilePath -> m [(Text, Text)]
-    getConfigs fp = liftIO $ do
+
+getConfigs :: MonadIO m => FilePath -> m [(Text, Text)]
+getConfigs fp = liftIO $ do
+  dir <- doesDirectoryExist fp
+  if dir
+    then do
       ps <- listDirectory fp
-      fmap concat $ forM ps $ \p -> do
-        let fullpath = fp </> p
-        dir <- doesDirectoryExist p
-        if dir
-          then getConfigs fullpath
-          else do
-            v <- T.readFile fullpath
-            return [(T.pack fullpath, v)]
+      fmap concat $ mapM (\p -> getConfigs $ fp </> p) ps
+    else do
+      file <- doesFileExist fp
+      if file
+        then do
+          f <- T.readFile fp
+          return [(T.pack fp, f)]
+        else return []
