@@ -34,6 +34,14 @@ module Obelisk.Route
   , singletonListValidEncoder
   , unpackTextEncoder
   , prefixTextEncoder
+  , unsafeTshowValidEncoder
+  , someConstValidEncoder
+  , singlePathSegmentValidEncoder
+  , justValidEncoder
+  , nothingValidEncoder
+  , isoValidEncoder
+  , wrappedValidEncoder
+  , unwrappedValidEncoder
   , listToNonEmptyEncoder
   , prefixNonemptyTextEncoder
   , joinPairTextEncoder
@@ -68,7 +76,7 @@ import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
 import Control.Category.Associative
 import Control.Category.Monoidal
-import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?))
+import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, view, Wrapped (..))
 import Control.Monad.Except
 import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
@@ -93,6 +101,7 @@ import Data.Text.Encoding
 import Data.Universe
 import Network.HTTP.Types.URI
 import Obelisk.Route.TH
+import Text.Read (readMaybe)
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -236,6 +245,40 @@ type PageName = ([Text], Map Text (Maybe Text))
 
 newtype Flip f a b = Flip { unFlip :: f b a }
 
+someConstValidEncoder :: Applicative parse => ValidEncoder parse (Some (Const a)) a
+someConstValidEncoder = ValidEncoder
+  { _validEncoder_encode = \(Some.This (Const a)) -> a
+  , _validEncoder_decode = pure . Some.This . Const
+  }
+
+-- | WARNING: This is only safe if the Show and Read instances for 'a' are
+-- inverses of each other
+unsafeTshowValidEncoder :: (Show a, Read a, MonadError Text parse) => ValidEncoder parse a Text
+unsafeTshowValidEncoder = ValidEncoder
+  { _validEncoder_encode = tshow
+  , _validEncoder_decode = \raw -> case readMaybe $ T.unpack raw of
+      Nothing -> throwError $ "unsafeTshowValidEncoder: couldn't decode " <> tshow raw
+      Just parsed -> pure parsed
+  }
+
+justValidEncoder :: MonadError Text parse => ValidEncoder parse a (Maybe a)
+justValidEncoder = prismValidEncoder _Just
+
+nothingValidEncoder :: MonadError Text parse => ValidEncoder parse () (Maybe a)
+nothingValidEncoder = prismValidEncoder _Nothing
+
+isoValidEncoder :: Applicative parse => Iso' a b -> ValidEncoder parse a b
+isoValidEncoder f = ValidEncoder
+  { _validEncoder_encode = view f
+  , _validEncoder_decode = pure . view (from f)
+  }
+
+wrappedValidEncoder :: (Wrapped a, Applicative parse) => ValidEncoder parse (Unwrapped a) a
+wrappedValidEncoder = isoValidEncoder $ from _Wrapped'
+
+unwrappedValidEncoder :: (Wrapped a, Applicative parse) => ValidEncoder parse a (Unwrapped a)
+unwrappedValidEncoder = isoValidEncoder _Wrapped'
+
 pathComponentEncoder :: forall check parse p. (Monad check, Monad parse) => (Encoder check parse (Some p) (Maybe Text)) -> (forall a. p a -> ValidEncoder parse a PageName) -> Encoder check parse (R p) PageName
 pathComponentEncoder this rest = chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consValidEncoder) this rest
 
@@ -353,6 +396,9 @@ endValidEncoder expected = ValidEncoder
       else throwError $ "endValidEncoder: expected " <> tshow expected <> ", got " <> tshow obtained
   , _validEncoder_encode = \_ -> expected
   }
+
+singlePathSegmentValidEncoder :: MonadError Text parse => ValidEncoder parse Text PageName
+singlePathSegmentValidEncoder = pathOnlyValidEncoder . singletonListValidEncoder
 
 pathOnlyValidEncoder :: (MonadError Text parse) => ValidEncoder parse [Text] PageName
 pathOnlyValidEncoder = ValidEncoder
