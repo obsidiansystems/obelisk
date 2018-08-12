@@ -183,7 +183,7 @@ rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
+      ln -s "${justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
       ln -s "${config}" $out/config
       ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
