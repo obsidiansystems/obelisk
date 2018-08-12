@@ -92,6 +92,7 @@ data ObCommand
    | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
+   | ObCommand_Watch
    | ObCommand_Upgrade (Maybe Text)
    | ObCommand_Internal ObInternal
    deriving Show
@@ -131,6 +132,7 @@ obCommand cfg = hsubparser
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
+      , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
       , command "upgrade" $ info (ObCommand_Upgrade <$> argument (maybeReader $ Just . Just . T.pack) (action "branch" <> metavar "GITBRANCH" <> value Nothing <> help "Git branch of obelisk to update to (defaults to the thunk's branch)")) $ progDesc "Upgrade Obelisk in the project"
       ])
   <|> subparser
@@ -399,6 +401,7 @@ ob = \case
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir (T.pack upstream)
   ObCommand_Repl -> runRepl
+  ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Upgrade branch -> do
     upgradeObelisk "." branch
   ObCommand_Internal icmd -> case icmd of

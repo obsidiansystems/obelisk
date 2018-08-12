@@ -46,6 +46,11 @@ runRepl = do
   withGhciScript pkgs $ \dotGhciPath -> do
     runGhciRepl dotGhciPath
 
+runWatch :: MonadObelisk m => m ()
+runWatch = do
+  pkgs <- getLocalPkgs
+  withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath Nothing
+
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
 getLocalPkgs :: Applicative f => f [FilePath]
