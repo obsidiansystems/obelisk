@@ -21,7 +21,7 @@ let
     git
     gitAndTools.hub
     nix-prefetch-git
-    nixStable
+    nixUnstable
     openssh
   ];
 
