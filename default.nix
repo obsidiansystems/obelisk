@@ -192,7 +192,7 @@ rec {
       ln -s ${compressedJs frontend} $out/frontend.jsexe
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps }:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, systemPackages ? [] }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
         backendPort = 8000;
@@ -202,6 +202,7 @@ rec {
         imports = [
           (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
         ];
+        environment.systemPackages = systemPackages;
         networking = {
           inherit hostName;
           firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
@@ -259,6 +260,7 @@ rec {
                           , overrides ? _: _: {}
                           , tools ? _: []
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
+                          , systemPackages ? []
                           }:
               let frontendName = "frontend";
                   backendName = "backend";
@@ -314,7 +316,10 @@ rec {
       inherit linuxExe;
       exe = serverOn system;
       server = args@{ hostName, adminEmail, routeHost, enableHttps }:
-        server (args // { exe = linuxExe;});
+        server (args // {
+          exe = linuxExe;
+          systemPackages = (projectDefinition (projectOut system).reflex).systemPackages;
+        });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
