@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -12,6 +13,7 @@ module Obelisk.Frontend
   ( ObeliskWidget
   , Frontend (..)
   , runFrontend
+  , renderFrontendHtml
   ) where
 
 import Prelude hiding ((.))
@@ -22,8 +24,10 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class
+import Control.Monad.Primitive
 import Control.Monad.Ref
 import Control.Monad.Trans.Class
+import Data.ByteString (ByteString)
 import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Sum
 import Data.IORef
@@ -41,7 +45,7 @@ import qualified Reflex.TriggerEvent.Base as TriggerEvent
 
 makePrisms ''Sum
 
-type ObeliskWidget t route m =
+type ObeliskWidget t x route m =
   ( DomBuilder t m
   , MonadFix m
   , MonadHold t m
@@ -52,18 +56,20 @@ type ObeliskWidget t route m =
   , MonadIO m
   , MonadIO (Performable m)
   , TriggerEvent t m
---  , HasDocument m --TODO: Would need StaticDomBuilderT to have this
+  , HasDocument m
   , MonadRef m
   , Ref m ~ Ref IO
   , MonadRef (Performable m)
   , Ref (Performable m) ~ Ref IO
+  , MonadFix (Performable m)
+  , PrimMonad m
+  , Prerender x m
   , EventWriter t (Endo route) m
   )
 
 data Frontend route = Frontend
-  { _frontend_head :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
-  , _frontend_body :: !(forall t m x. (MonadWidget t m, HasJS x m, EventWriter t (Endo route) m) => RoutedT t route m ())
-  , _frontend_title :: !(route -> Text)
+  { _frontend_head :: !(forall t m x. ObeliskWidget t x route m => RoutedT t route m ())
+  , _frontend_body :: !(forall t m x. ObeliskWidget t x route m => RoutedT t route m ())
   , _frontend_notFoundRoute :: !(Text -> route) --TODO: Instead, maybe we should just require that the `parse` Monad for routeEncoder be `Identity`
   }
 
@@ -73,11 +79,6 @@ type Widget' x = ImmediateDomBuilderT DomTimeline (DomCoreWidget x)
 type FloatingWidget x = TriggerEventT DomTimeline (DomCoreWidget x)
 
 type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (PerformEventT DomTimeline DomHost))
-
---TODO: Upstream
-instance HasJS x m => HasJS x (EventWriterT t w m) where
-  type JSX (EventWriterT t w m) = JSX m
-  liftJS = lift . liftJS
 
 --TODO: Rename
 {-# INLINABLE attachWidget''' #-}
@@ -105,9 +106,10 @@ runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
   unreadyChildren <- liftIO $ newIORef 0
   let commit = do
         headElement <- getHeadUnchecked globalDoc
-        replaceElementContents headElement headFragment
         bodyElement <- getBodyUnchecked globalDoc
-        replaceElementContents bodyElement bodyFragment
+        void $ inAnimationFrame' $ \_ -> do
+          replaceElementContents headElement headFragment
+          replaceElementContents bodyElement bodyFragment
   liftIO $ attachWidget''' $ \events -> flip runWithJSContextSingleton jsSing $ do
     (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
     let appendImmediateDom :: DOM.DocumentFragment -> Widget' () c -> FloatingWidget () c
@@ -138,13 +140,31 @@ runFrontend validFullEncoder frontend = do
            , DOM.MonadJSM m
            , DOM.MonadJSM (Performable m)
            , MonadFix m
+           , MonadFix (Performable m)
            )
         => RoutedT t (R route) (EventWriterT t (Endo (R route)) m) a
         -> m a
       runMyRouteViewT = runRouteViewT
         ve
-        (_frontend_title frontend)
         (_frontend_notFoundRoute frontend)
   runWithHeadAndBody $ \appendHead appendBody -> runMyRouteViewT $ do
     mapRoutedT (mapEventWriterT appendHead) $ _frontend_head frontend
     mapRoutedT (mapEventWriterT appendBody) $ _frontend_body frontend
+
+instance PrimMonad m => PrimMonad (EventWriterT t w m) where
+  type PrimState (EventWriterT t w m) = PrimState m
+  primitive = lift . primitive
+
+renderFrontendHtml
+  :: (Semigroup w, t ~ SpiderTimeline Global)
+  => r
+  -> RoutedT t r (EventWriterT t w (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
+  -> RoutedT t r (EventWriterT t w (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
+  -> IO ByteString
+renderFrontendHtml route headWidget bodyWidget = do
+  --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
+  html <- fmap snd $ renderStatic $ fmap fst $ runEventWriterT $ flip runRoutedT (pure route) $
+    el "html" $ do
+      el "head" headWidget
+      el "body" bodyWidget
+  return $ "<!DOCTYPE html>" <> html

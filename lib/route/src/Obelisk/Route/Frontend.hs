@@ -41,11 +41,13 @@ import Control.Category (Category (..), (.))
 import Control.Category.Cartesian
 import Control.Lens hiding (Bifunctor, bimap, universe)
 import Control.Monad.Fix
+import Control.Monad.Primitive
 import Control.Monad.Ref
 import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
 import Data.Coerce
+import Data.Constraint (Dict (..))
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
@@ -81,6 +83,15 @@ instance Monad m => Routed t r (RoutedT t r m) where
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadReflexCreateTrigger t, HasDocument)
 
+instance Prerender js m => Prerender js (RoutedT t r m) where
+  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+
+instance (Requester t m, PrimMonad m) => Requester t (RoutedT t r m) where
+  type Request (RoutedT t r m) = Request m
+  type Response (RoutedT t r m) = Response m
+  requesting = RoutedT . requesting
+  requesting_ = RoutedT . requesting_
+
 #ifndef ghcjs_HOST_OS
 deriving instance MonadJSM m => MonadJSM (RoutedT t r m)
 #endif
@@ -106,6 +117,10 @@ instance MonadTransControl (RoutedT t r) where
   type StT (RoutedT t r) a = StT (ReaderT (Dynamic t r)) a
   liftWith = defaultLiftWith RoutedT unRoutedT
   restoreT = defaultRestoreT RoutedT
+
+instance PrimMonad m => PrimMonad (RoutedT t r m ) where
+  type PrimState (RoutedT t r m) = PrimState m
+  primitive = lift . primitive
 
 instance DomBuilder t m => DomBuilder t (RoutedT t r m) where
   type DomBuilderSpace (RoutedT t r m) = DomBuilderSpace m
@@ -167,11 +182,10 @@ runRouteViewT
      , MonadFix m
      )
   => (ValidEncoder (Either Text) r PageName)
-  -> (r -> Text)
   -> (Text -> r) -- ^ 404 page
   -> RoutedT t r (EventWriterT t (Endo r) m) a
   -> m a
-runRouteViewT routeValidEncoder routeToTitle error404 a = do
+runRouteViewT routeValidEncoder error404 a = do
   rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
       let route :: Dynamic t r
           route = fmap (runIdentity . _validEncoder_decode (catchValidEncoder error404 $ pageNameValidEncoder . routeValidEncoder) . (uriPath &&& uriQuery) . _historyItem_uri) historyState
@@ -181,7 +195,17 @@ runRouteViewT routeValidEncoder routeToTitle error404 a = do
                 (newPath, newQuery) = _validEncoder_encode (pageNameValidEncoder . routeValidEncoder) newRoute
             in HistoryStateUpdate
                { _historyStateUpdate_state = DOM.SerializedScriptValue jsNull
-               , _historyStateUpdate_title = routeToTitle newRoute
+                 -- We always provide "" as the title.  On Firefox, Chrome, and
+                 -- Edge, this parameter does nothing.  On Safari, "" has the
+                 -- same behavior as other browsers (as far as I can tell), but
+                 -- anything else sets the title for the back button list item
+                 -- the *next* time pushState is called, unless the page title
+                 -- is changed in the interim.  Since the Safari functionality
+                 -- is near-pointless and also confusing, I'm not going to even
+                 -- bother exposing it; if there ends up being a real use case,
+                 -- we can change this function later to accommodate.
+                 -- See: https://github.com/whatwg/html/issues/2174
+               , _historyStateUpdate_title = ""
                , _historyStateUpdate_uri = Just $ nullURI
                  { uriPath = newPath
                  , uriQuery = newQuery

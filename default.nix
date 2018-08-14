@@ -55,8 +55,6 @@ let
 
       # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
       obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
-
-      optparse-applicative = self.callHackage "optparse-applicative" "0.14.0.0" {};
     });
   };
 
@@ -68,6 +66,32 @@ let
         rev = "480a73137e9b38ad3f1bc2c628847953d2fb3e25";
         sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
       }) {});
+
+    monoidal-containers =
+      let src = pkgs.fetchFromGitHub {
+            owner = "obsidiansystems";
+            repo = "monoidal-containers";
+            rev = "af5f6cedd1acd8725b19fd6a0277f83906603491";
+            sha256 = "11v20ing8lrb5ccf6g9iihwcw5d22yj2ifw15v04ypn19y8kariw";
+          };
+      in pkgs.haskell.lib.dontCheck (self.callCabal2nix "monoidal-containers" src {});
+
+    # Need deriveSomeUniverse
+    # PR: https://github.com/dmwit/universe/pull/32
+    universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "universe";
+      rev = "5a2fc823caa4163411d7e41aa80e67cefb15944a";
+      sha256 = "0ll2z0fh18z6x8jl8kbp7ldagwccz3wjmvrw1gw752z058n82yfa";
+    } + /template) {};
+
+    # Need ShowTag, EqTag, and OrdTag instances
+    dependent-sum-template = self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
+      owner = "mokus0";
+      repo = "dependent-sum-template";
+      rev = "bfe9c37f4eaffd8b17c03f216c06a0bfb66f7df7";
+      sha256 = "1w3s7nvw0iw5li3ry7s8r4651qwgd22hmgz6by0iw3rm64fy8x0y";
+    }) {};
   };
 
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -92,13 +116,6 @@ let
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
     obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
     obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
-
-    dependent-sum-template = self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
-      owner = "mokus0";
-      repo = "dependent-sum-template";
-      rev = "877aea7817f8b9a7ca90374692402cc505bbab25";
-      sha256 = "0x065vdvjnbn2fiw27kk1zbjgknfnbli9bjvn4pmdbdf8m9picpg";
-    }) {};
   };
 
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
@@ -164,13 +181,13 @@ rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
+      ln -s "${justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
-      ln -s "${config}" $out/config
+      cp -r ${config} $out/config
       ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps }:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, ... }:
     let system = "x86_64-linux";
         nixos = import (pkgs.path + /nixos);
         backendPort = 8000;
@@ -283,15 +300,15 @@ rec {
                 };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static configPath;
-      linuxExe = serverOn "x86_64-linux";
-    in projectOut system // {
-      inherit linuxExe;
+      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static config;
       # `exe` is project's backend executable, with frontend assets, config, etc.
       # `linuxExe` is the same but built for x86_64-linux.
-      exe = serverOn system;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps }:
-        server (args // { exe = linuxExe;});
+      exe = serverOn system configPath;
+      linuxExe = serverOn "x86_64-linux" configPath;
+    in projectOut system // {
+      inherit exe linuxExe;
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, config }:
+        server (args // { exe = serverOn "x86_64-linux" config;});
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {

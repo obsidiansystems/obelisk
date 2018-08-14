@@ -9,8 +9,10 @@ library
   build-depends:
     base,
     bytestring,
+    directory,
     filepath,
     reflex-dom,
     text
 
   exposed-modules: Obelisk.ExecutableConfig.Inject
+  ghc-options: -Wall

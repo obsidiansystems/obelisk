@@ -18,7 +18,9 @@ module Obelisk.Backend
   , runBackend
   ) where
 
+import Control.Monad
 import Control.Monad.Except
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
 import Data.Dependent.Sum
@@ -28,9 +30,9 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Obelisk.Asset.Serve.Snap (serveAsset)
+import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.Frontend
 import Obelisk.Route
-import Obelisk.Route.Frontend
 import Reflex.Dom
 import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, rqPathInfo,
              rqQueryString, writeBS, writeText)
@@ -47,28 +49,6 @@ data GhcjsApp route = GhcjsApp
   { _ghcjsApp_compiled :: !StaticAssets
   , _ghcjsApp_value :: !(Frontend route)
   }
-
-{-
---TODO: Expose the encoder check phase
--- | Start an Obelisk backend
-backend
-  :: ( Universe (R route) --TODO: This seems wrong - should be Universe (Some route)
-     , OrdTag route Identity
-     , ShowTag route Identity
-     , check ~ Either Text --TODO: Replace with MonadError Text check
-     )
-  => BackendConfig route
-  -> check (IO ())
-backend cfg = do
-  getRequestRoute <- checkGetRequestRoute $ _backendConfig_routeEncoder cfg --TODO: Report error better
-  return $ do
-    prettifyOutput
-
-    runSnapWithCommandLineArgs $ do
-      getRequestRoute >>= \case
-        Left e -> writeText e
-        Right r -> serveDefaultObeliskApp (_backendConfig_frontend cfg) r
--}
 
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
@@ -150,20 +130,9 @@ data GhcjsAppRoute :: (* -> *) -> * -> * where
 --TODO: Don't assume we're being served at "/"
 serveGhcjsApp :: MonadSnap m => GhcjsApp (R appRouteComponent) -> R (GhcjsAppRoute appRouteComponent) -> m ()
 serveGhcjsApp app = \case
-  GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest -> do
-    indexHtml <- liftIO $ fmap snd $ renderStatic $ fmap fst $ runEventWriterT $ flip runRoutedT (pure $ appRouteComponent :/ appRouteRest) $ blankLoader $ _frontend_head $ _ghcjsApp_value app
-    --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-    writeBS $ "<!DOCTYPE html>\n" <> indexHtml
+  GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest ->
+    writeBS <=< liftIO $ renderGhcjsFrontend (appRouteComponent :/ appRouteRest) $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
-
-blankLoader :: DomBuilder t m => m () -> m ()
-blankLoader headHtml = el "html" $ do
-  el "head" $ do
-    elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
-    headHtml
-  el "body" $ do
-    --TODO: Hash the all.js path
-    elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
 
 runBackend :: Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
 runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend of
@@ -175,3 +144,9 @@ runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend 
         Right r -> case r of
           InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
           InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp frontend $ obeliskRoute :/ a
+
+renderGhcjsFrontend :: route -> Frontend route -> IO ByteString
+renderGhcjsFrontend route f = do
+  let baseTag  = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+      ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
+  renderFrontendHtml route (_frontend_head f >> injectExecutableConfigs >> baseTag) (_frontend_body f >> ghcjsScript)

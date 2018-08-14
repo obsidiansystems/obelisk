@@ -17,7 +17,7 @@ library
 
 executable backend
   main-is: main.hs
-  hs-source-dirs: src
+  hs-source-dirs: src-bin
   if impl(ghcjs)
     buildable: False
   build-depends: base

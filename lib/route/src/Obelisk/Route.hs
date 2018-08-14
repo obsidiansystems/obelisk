@@ -28,12 +28,20 @@ module Obelisk.Route
   , pathComponentEncoder
   , enumEncoder
   , enum1Encoder
+  , checkEnum1EncoderFunc
   , endValidEncoder
   , pathOnlyValidEncoder
   , singletonListValidEncoder
   , unpackTextEncoder
   , prefixTextEncoder
-  , intercalateTextEncoder
+  , unsafeTshowValidEncoder
+  , someConstValidEncoder
+  , singlePathSegmentValidEncoder
+  , justValidEncoder
+  , nothingValidEncoder
+  , isoValidEncoder
+  , wrappedValidEncoder
+  , unwrappedValidEncoder
   , listToNonEmptyEncoder
   , prefixNonemptyTextEncoder
   , joinPairTextEncoder
@@ -66,9 +74,11 @@ import Control.Applicative
 import Control.Category (Category (..))
 import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
-import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?))
+import Control.Category.Associative
+import Control.Category.Monoidal
+import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, view, Wrapped (..))
 import Control.Monad.Except
-import Data.Dependent.Sum (DSum (..), ShowTag (..))
+import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Either.Validation (Validation (..))
@@ -77,7 +87,6 @@ import Data.Functor.Sum
 import Data.GADT.Compare
 import Data.GADT.Compare.TH
 import Data.GADT.Show
-import Data.GADT.Show.TH
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -88,7 +97,11 @@ import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Text.Encoding
 import Data.Universe
+import Network.HTTP.Types.URI
+import Obelisk.Route.TH
+import Text.Read (readMaybe)
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -170,13 +183,57 @@ instance (Applicative check, Monad parse) => QFunctor (,) (Encoder check parse) 
 instance (Applicative check, Monad parse) => Bifunctor (,) (Encoder check parse) (Encoder check parse) (Encoder check parse) where
   bimap f g = Encoder $ liftA2 bimap (checkEncoder f) (checkEncoder g)
 
+instance (Traversable f, Monad parse) => Cat.Functor f (ValidEncoder parse) (ValidEncoder parse) where
+  fmap ve = ValidEncoder
+    { _validEncoder_encode = fmap $ _validEncoder_encode ve
+    , _validEncoder_decode = traverse $ _validEncoder_decode ve
+    }
+
 instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder check parse) (Encoder check parse) where
   fmap e = Encoder $ do
     ve <- checkEncoder e
-    pure $ ValidEncoder
-      { _validEncoder_encode = fmap $ _validEncoder_encode ve
-      , _validEncoder_decode = traverse $ _validEncoder_decode ve
-      }
+    pure $ Cat.fmap ve
+
+instance Monad parse => Associative (ValidEncoder parse) (,) where
+  associate = ValidEncoder
+    { _validEncoder_encode = associate
+    , _validEncoder_decode = pure . disassociate
+    }
+  disassociate = ValidEncoder
+    { _validEncoder_encode = disassociate
+    , _validEncoder_decode = pure . associate
+    }
+
+instance Monad parse => Monoidal (ValidEncoder parse) (,) where
+  type Id (ValidEncoder parse) (,) = ()
+  idl = ValidEncoder
+    { _validEncoder_encode = idl
+    , _validEncoder_decode = pure . coidl
+    }
+  idr = ValidEncoder
+    { _validEncoder_encode = idr
+    , _validEncoder_decode = pure . coidr
+    }
+  coidl = ValidEncoder
+    { _validEncoder_encode = coidl
+    , _validEncoder_decode = pure . idl
+    }
+  coidr = ValidEncoder
+    { _validEncoder_encode = coidr
+    , _validEncoder_decode = pure . idr
+    }
+
+instance (Applicative check, Monad parse) => Associative (Encoder check parse) (,) where
+  associate = Encoder $ pure associate
+  disassociate = Encoder $ pure disassociate
+
+instance (Applicative check, Monad parse) => Monoidal (Encoder check parse) (,) where
+  type Id (Encoder check parse) (,) = ()
+  idl = Encoder $ pure idl
+  idr = Encoder $ pure idr
+  coidl = Encoder $ pure coidl
+  coidr = Encoder $ pure coidr
+
 
 --------------------------------------------------------------------------------
 -- Specific instances of encoders
@@ -184,9 +241,43 @@ instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder che
 
 -- | A path and query string, in which trailing slashes don't matter in the path
 -- and duplicate query parameters are not allowed
-type PageName = ([Text], Map Text Text)
+type PageName = ([Text], Map Text (Maybe Text))
 
 newtype Flip f a b = Flip { unFlip :: f b a }
+
+someConstValidEncoder :: Applicative parse => ValidEncoder parse (Some (Const a)) a
+someConstValidEncoder = ValidEncoder
+  { _validEncoder_encode = \(Some.This (Const a)) -> a
+  , _validEncoder_decode = pure . Some.This . Const
+  }
+
+-- | WARNING: This is only safe if the Show and Read instances for 'a' are
+-- inverses of each other
+unsafeTshowValidEncoder :: (Show a, Read a, MonadError Text parse) => ValidEncoder parse a Text
+unsafeTshowValidEncoder = ValidEncoder
+  { _validEncoder_encode = tshow
+  , _validEncoder_decode = \raw -> case readMaybe $ T.unpack raw of
+      Nothing -> throwError $ "unsafeTshowValidEncoder: couldn't decode " <> tshow raw
+      Just parsed -> pure parsed
+  }
+
+justValidEncoder :: MonadError Text parse => ValidEncoder parse a (Maybe a)
+justValidEncoder = prismValidEncoder _Just
+
+nothingValidEncoder :: MonadError Text parse => ValidEncoder parse () (Maybe a)
+nothingValidEncoder = prismValidEncoder _Nothing
+
+isoValidEncoder :: Applicative parse => Iso' a b -> ValidEncoder parse a b
+isoValidEncoder f = ValidEncoder
+  { _validEncoder_encode = view f
+  , _validEncoder_decode = pure . view (from f)
+  }
+
+wrappedValidEncoder :: (Wrapped a, Applicative parse) => ValidEncoder parse (Unwrapped a) a
+wrappedValidEncoder = isoValidEncoder $ from _Wrapped'
+
+unwrappedValidEncoder :: (Wrapped a, Applicative parse) => ValidEncoder parse a (Unwrapped a)
+unwrappedValidEncoder = isoValidEncoder _Wrapped'
 
 pathComponentEncoder :: forall check parse p. (Monad check, Monad parse) => (Encoder check parse (Some p) (Maybe Text)) -> (forall a. p a -> ValidEncoder parse a PageName) -> Encoder check parse (R p) PageName
 pathComponentEncoder this rest = chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consValidEncoder) this rest
@@ -306,6 +397,9 @@ endValidEncoder expected = ValidEncoder
   , _validEncoder_encode = \_ -> expected
   }
 
+singlePathSegmentValidEncoder :: MonadError Text parse => ValidEncoder parse Text PageName
+singlePathSegmentValidEncoder = pathOnlyValidEncoder . singletonListValidEncoder
+
 pathOnlyValidEncoder :: (MonadError Text parse) => ValidEncoder parse [Text] PageName
 pathOnlyValidEncoder = ValidEncoder
   { _validEncoder_decode = \(path, query) ->
@@ -323,16 +417,43 @@ singletonListValidEncoder = ValidEncoder
   , _validEncoder_encode = (:[])
   }
 
+splitTextNonEmpty :: Text -> Text -> NonEmpty Text
+splitTextNonEmpty separator v = case T.splitOn separator v of
+  [] -> error "splitTextNonEmpty: Data.Text.splitOn should never return an empty list"
+  h : t -> h :| t
+
 --TODO: To know this is reversible, we must know that the separator isn't included anywhere in the input text
-intercalateTextEncoder :: (MonadError Text check, Applicative parse) => Text -> Encoder check parse (NonEmpty Text) Text
-intercalateTextEncoder = Encoder . \case
-  "" -> throwError "splitOnTextEncoder: empty split string"
-  separator -> pure $ ValidEncoder
-    { _validEncoder_encode = T.intercalate separator . toList
-    , _validEncoder_decode = \r -> pure $ case T.splitOn separator r of
-        [] -> error "intercalateTextEncoder: Data.Text.splitOn should never return an empty list"
-        h : t -> h :| t
-    }
+pathSegmentsTextEncoder :: (MonadError Text check, Applicative parse) => Encoder check parse (NonEmpty Text) Text
+pathSegmentsTextEncoder = Encoder $ pure $ ValidEncoder
+  { _validEncoder_encode = T.intercalate "/" . fmap (urlEncodeText False) . toList
+  , _validEncoder_decode = pure . fmap (urlDecodeText False) . splitTextNonEmpty "/"
+  }
+
+queryParametersTextEncoder :: (Applicative check, Applicative parse) => Encoder check parse [(Text, Maybe Text)] Text
+queryParametersTextEncoder = Encoder $ pure $ ValidEncoder
+  { _validEncoder_encode = \case
+      [] -> ""
+      params -> T.intercalate "&" (fmap encodeParameter params)
+  , _validEncoder_decode = pure . \case
+      "" -> []
+      encoded ->
+        let h :| t = splitTextNonEmpty "&" encoded
+        in fmap decodeParameter $ h : t
+  }
+  where
+    encodeParameter (k, mv) = urlEncodeText True k <> case mv of
+      Nothing -> ""
+      Just v -> "=" <> urlEncodeText True v
+    decodeParameter t =
+      let (k, eqV) = T.breakOn "=" t
+          mv = T.stripPrefix "=" eqV
+      in (urlDecodeText True k, urlDecodeText True <$> mv)
+
+urlEncodeText :: Bool -> Text -> Text
+urlEncodeText q = decodeUtf8 . urlEncode q . encodeUtf8
+
+urlDecodeText :: Bool -> Text -> Text
+urlDecodeText q = decodeUtf8 . urlDecode q . encodeUtf8
 
 listToNonEmptyEncoder :: (Applicative check, Applicative parse, Monoid a, Eq a) => Encoder check parse [a] (NonEmpty a)
 listToNonEmptyEncoder = Encoder $ pure $ ValidEncoder
@@ -410,8 +531,8 @@ prismValidEncoder p = ValidEncoder
 pageNameValidEncoder :: MonadError Text parse => ValidEncoder parse PageName (String, String)
 pageNameValidEncoder = ve
   where Right ve = checkEncoder $ bimap
-          (unpackTextEncoder . prefixTextEncoder "/" . intercalateTextEncoder "/" . listToNonEmptyEncoder)
-          (unpackTextEncoder . prefixNonemptyTextEncoder "?" . intercalateTextEncoder "&" . listToNonEmptyEncoder . Cat.fmap (joinPairTextEncoder "=") . toListMapEncoder)
+          (unpackTextEncoder . prefixTextEncoder "/" . pathSegmentsTextEncoder . listToNonEmptyEncoder)
+          (unpackTextEncoder . prefixNonemptyTextEncoder "?" . queryParametersTextEncoder . toListMapEncoder)
 
 catchValidEncoder :: (e -> a) -> ValidEncoder (Either e) a b -> ValidEncoder Identity a b
 catchValidEncoder recover ve = ve
@@ -434,14 +555,6 @@ data ResourceRoute :: * -> * where
   ResourceRoute_Ghcjs :: ResourceRoute [Text]
   ResourceRoute_JSaddleWarp :: ResourceRoute (R JSaddleWarpRoute)
 
---TODO: Generate this
-instance Universe (Some ResourceRoute) where
-  universe =
-    [ Some.This ResourceRoute_Static
-    , Some.This ResourceRoute_Ghcjs
-    , Some.This ResourceRoute_JSaddleWarp
-    ]
-
 --TODO: Figure out a way to check this
 obeliskComponentEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (ObeliskRoute f)) (Either (Some ResourceRoute) (Some f))
 obeliskComponentEncoder = Encoder $ pure $ ValidEncoder
@@ -455,7 +568,7 @@ obeliskComponentEncoder = Encoder $ pure $ ValidEncoder
 
 newtype ValidEncoderFunc parse p r = ValidEncoderFunc { runValidEncoderFunc :: forall a. p a -> ValidEncoder parse a r }
 
-checkSomeUniverseEncoder
+checkEnum1EncoderFunc
   :: forall check parse p r.
      ( Universe (Some p)
      , GCompare p
@@ -463,9 +576,9 @@ checkSomeUniverseEncoder
      )
   => (forall a. p a -> Encoder check parse a r)
   -> check (ValidEncoderFunc parse p r)
-checkSomeUniverseEncoder f = do
+checkEnum1EncoderFunc f = do
   validEncoders :: DMap p (Flip (ValidEncoder parse) r) <- DMap.fromList <$> traverse (\(Some.This p) -> (p :=>) . Flip <$> checkEncoder (f p)) universe
-  pure $ ValidEncoderFunc $ \p -> unFlip $ DMap.findWithDefault (error "checkSomeUniverseEncoder: ValidEncoder not found (should be impossible)") p validEncoders
+  pure $ ValidEncoderFunc $ \p -> unFlip $ DMap.findWithDefault (error "checkEnum1EncoderFunc: ValidEncoder not found (should be impossible)") p validEncoders
 
 obeliskRouteEncoder
   :: forall check parse appRoute.
@@ -492,8 +605,8 @@ checkObeliskRouteRestEncoder
   => (forall a. appRoute a -> Encoder check parse a PageName)
   -> check (ValidEncoderFunc parse (ObeliskRoute appRoute) PageName)
 checkObeliskRouteRestEncoder appRouteEncoder = do
-  appRouteValidEncoder <- checkSomeUniverseEncoder appRouteEncoder
-  resourceRouteValidEncoder <- checkSomeUniverseEncoder resourceRouteEncoder
+  appRouteValidEncoder <- checkEnum1EncoderFunc appRouteEncoder
+  resourceRouteValidEncoder <- checkEnum1EncoderFunc resourceRouteEncoder
   return $ ValidEncoderFunc $ \case
     ObeliskRoute_App appRoute -> runValidEncoderFunc appRouteValidEncoder appRoute
     ObeliskRoute_Resource resRoute -> runValidEncoderFunc resourceRouteValidEncoder resRoute
@@ -523,13 +636,6 @@ data JSaddleWarpRoute :: * -> * where
   JSaddleWarpRoute_WebSocket :: JSaddleWarpRoute ()
   JSaddleWarpRoute_Sync :: JSaddleWarpRoute [Text]
 
-instance Universe (Some JSaddleWarpRoute) where
-  universe =
-    [ Some.This JSaddleWarpRoute_JavaScript
-    , Some.This JSaddleWarpRoute_WebSocket
-    , Some.This JSaddleWarpRoute_Sync
-    ]
-
 jsaddleWarpRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some JSaddleWarpRoute) (Maybe Text)
 jsaddleWarpRouteComponentEncoder = enum1Encoder $ \case
   JSaddleWarpRoute_JavaScript -> Just "jsaddle.js"
@@ -542,29 +648,6 @@ jsaddleWarpRouteEncoder = pathComponentEncoder jsaddleWarpRouteComponentEncoder 
   JSaddleWarpRoute_WebSocket -> endValidEncoder mempty
   JSaddleWarpRoute_Sync -> pathOnlyValidEncoder
 
-instance ShowTag appRoute Identity => ShowTag (ObeliskRoute appRoute) Identity where
-  showTaggedPrec = \case
-    ObeliskRoute_App a -> showTaggedPrec a
-    ObeliskRoute_Resource r -> showTaggedPrec r
-
-instance ShowTag ResourceRoute Identity where
-  showTaggedPrec = \case
-    ResourceRoute_Static -> showsPrec
-    ResourceRoute_Ghcjs -> showsPrec
-    ResourceRoute_JSaddleWarp -> showsPrec
-
-instance ShowTag JSaddleWarpRoute Identity where
-  showTaggedPrec = \case
-    JSaddleWarpRoute_JavaScript -> showsPrec
-    JSaddleWarpRoute_WebSocket -> showsPrec
-    JSaddleWarpRoute_Sync -> showsPrec
-
-instance Universe (Some appRoute) => Universe (Some (ObeliskRoute appRoute)) where
-  universe = mconcat
-    [ mapSome ObeliskRoute_App <$> universe
-    , mapSome ObeliskRoute_Resource <$> universe
-    ]
-
 instance GShow appRoute => GShow (ObeliskRoute appRoute) where
   gshowsPrec prec = \case
     ObeliskRoute_App appRoute -> showParen (prec > 10) $
@@ -576,20 +659,21 @@ instance GShow appRoute => GShow (ObeliskRoute appRoute) where
 data IndexOnlyRoute :: * -> * where
   IndexOnlyRoute :: IndexOnlyRoute ()
 
-instance Universe (Some IndexOnlyRoute) where
-  universe = [Some.This IndexOnlyRoute]
-
 indexOnlyRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some IndexOnlyRoute) (Maybe Text)
 indexOnlyRouteComponentEncoder = enum1Encoder $ \case
   IndexOnlyRoute -> Nothing
 
 indexOnlyRouteRestEncoder :: (Applicative check, MonadError Text parse) => IndexOnlyRoute a -> Encoder check parse a PageName
 indexOnlyRouteRestEncoder = \case
-  IndexOnlyRoute -> Encoder $ pure $ endValidEncoder mempty --TODO: Allow anything to parse
+  IndexOnlyRoute -> Encoder $ pure $ constLaxValidEncoder mempty
 
-instance ShowTag IndexOnlyRoute Identity where
-  showTaggedPrec = \case
-    IndexOnlyRoute -> showsPrec
+--TODO: Come up with a naming scheme that is better at describing how permissive
+--versus strict things are
+constLaxValidEncoder :: Applicative parse => a -> ValidEncoder parse () a
+constLaxValidEncoder a = ValidEncoder
+  { _validEncoder_encode = \_ -> a
+  , _validEncoder_decode = \_ -> pure ()
+  }
 
 someSumEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Sum a b)) (Either (Some a) (Some b))
 someSumEncoder = Encoder $ pure $ ValidEncoder
@@ -617,17 +701,13 @@ instance GShow Void1 where
   gshowsPrec _ = \case {}
 
 makePrisms ''ObeliskRoute
---TODO: Prevent deriveGShow from creating this warning:
--- Defined but not used: ‘p’
-deriveGShow ''ResourceRoute
-deriveGEq ''ResourceRoute
-deriveGCompare ''ResourceRoute
-deriveGShow ''JSaddleWarpRoute
-deriveGEq ''JSaddleWarpRoute
-deriveGCompare ''JSaddleWarpRoute
-deriveGShow ''IndexOnlyRoute
-deriveGEq ''IndexOnlyRoute
-deriveGCompare ''IndexOnlyRoute
+
+concat <$> mapM deriveRouteComponent
+  [ ''ResourceRoute
+  , ''JSaddleWarpRoute
+  , ''IndexOnlyRoute
+  ]
+
 deriveGEq ''Void1
 deriveGCompare ''Void1
 
