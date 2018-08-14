@@ -258,6 +258,7 @@ rec {
                           , packages ? {}
                           , overrides ? _: _: {}
                           , tools ? _: []
+                          , withHoogle ? false # Setting this to `true` makes shell reloading far slower
                           }:
               let frontendName = "frontend";
                   backendName = "backend";
@@ -278,7 +279,7 @@ rec {
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
               in {
-                inherit tools;
+                inherit tools withHoogle;
                 overrides = totalOverrides;
                 packages = combinedPackages;
                 shells = {
@@ -292,7 +293,6 @@ rec {
                     commonName
                   ];
                 };
-                withHoogle = false; # Setting this to `true` makes shell reloading far slower
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
