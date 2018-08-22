@@ -13,7 +13,7 @@ import Obelisk.Asset.Serve.Snap (serveAssets)
 import Obelisk.Snap
 import Reflex.Dom
 import System.IO (hSetBuffering, stderr, BufferMode (..))
-import Snap (httpServe, defaultConfig, commandLineConfig, route)
+import Snap (Snap, httpServe, defaultConfig, commandLineConfig, route)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 
 --TODO: Add a link to a large explanation of the idea of using 'def'
@@ -21,10 +21,11 @@ import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog
 -- use 'def'.
 data BackendConfig = BackendConfig
   { _backendConfig_head :: StaticWidget () ()
+  , _backendConfig_extraRoutes :: [(BSC8.ByteString, Snap ())]
   }
 
 instance Default BackendConfig where
-  def = BackendConfig (return ())
+  def = BackendConfig (return ()) []
 
 -- | Start an Obelisk backend
 backend :: BackendConfig -> IO ()
@@ -42,8 +43,8 @@ backend cfg = do
         }
       appCfg = def & appConfig_initialHead .~ headHtml
   -- Start the web server
-  httpServe httpConf $ route
+  httpServe httpConf $ route $
     [ ("", serveApp "" appCfg)
     , ("", serveAssets "frontend.jsexe.assets" "frontend.jsexe") --TODO: Can we prevent naming conflicts between frontend.jsexe and static?
     , ("", serveAssets "static.assets" "static")
-    ]
+    ] ++ _backendConfig_extraRoutes cfg
