@@ -8,9 +8,11 @@ library
   if impl(ghcjs)
     buildable: False
   build-depends: base
+               , bytestring
                , common
                , frontend
                , obelisk-backend
+               , snap
   exposed-modules:
     Backend
   ghc-options: -Wall
@@ -22,6 +24,7 @@ executable backend
     buildable: False
   build-depends: base
                , backend
+               , bytestring
                , common
                , frontend
                , lens
@@ -29,4 +32,5 @@ executable backend
                , obelisk-backend
                , obelisk-executable-config
                , obelisk-executable-config-inject
+               , snap
                , text
