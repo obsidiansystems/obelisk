@@ -10,7 +10,7 @@ library
     base,
     bytestring,
     filepath,
-    reflex-dom,
+    reflex-dom-core,
     text
 
   exposed-modules: Obelisk.ExecutableConfig.Inject
