@@ -21,9 +21,10 @@ executable frontend
   hs-source-dirs: src-bin
   build-depends: base
                , common
+               , obelisk-frontend
+               , obelisk-route
                , reflex-dom
                , static
-               , text
                , frontend
   --TODO: Make these ghc-options optional
   ghc-options: -threaded
