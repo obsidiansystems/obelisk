@@ -152,7 +152,7 @@ cd ~/code/myapp-deploy
 ob deploy push
 ```
 
-`ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance.
+`ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. The backend will live in `/var/lib/backend`.
 
 At this point you are done. Your app will be accessible at `${ROUTE}`.
 
