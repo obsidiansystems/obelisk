@@ -11,6 +11,7 @@ library
                , common
                , frontend
                , obelisk-backend
+               , obelisk-route
   exposed-modules:
     Backend
   ghc-options: -Wall
@@ -24,9 +25,4 @@ executable backend
                , backend
                , common
                , frontend
-               , lens
-               , modern-uri
                , obelisk-backend
-               , obelisk-executable-config
-               , obelisk-executable-config-inject
-               , text
