@@ -274,7 +274,14 @@ mkObeliskConfig = do
       isTerm <- hIsTerminalDevice stdout
       -- Running in bash/fish/zsh completion
       inShellCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
-      return $ isTerm && not inShellCompletion
+
+      -- Respect the user’s TERM environment variable. Dumb terminals
+      -- like Eshell cannot handle lots of control sequences that the
+      -- spinner uses.
+      termEnv <- lookupEnv "TERM"
+      let isDumb = termEnv == Just "dumb"
+
+      return $ isTerm && not inShellCompletion && not isDumb
 
 -- | For use from development obelisk repls
 --
