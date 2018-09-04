@@ -266,7 +266,7 @@ First, if you do not already have a keystore, create it as follows (for more inf
 nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
 ```
 
-(Besure to give an appropriate keystore filename and key alias string above.)
+(Be sure to give an appropriate keystore filename and key alias string above.)
 
 The `keytool` command will ask you for some details, including a keystore password and a key password (we will use these passwords further below). It will now have created a `myandroidkey.jks` file under the current directory. Move that to somewhere safe, and note down its full path.
 
