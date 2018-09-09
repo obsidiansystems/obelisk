@@ -1,6 +1,5 @@
 module Backend where
 
-import Common.Api
 import Frontend
 import qualified Obelisk.Backend as Ob
 
