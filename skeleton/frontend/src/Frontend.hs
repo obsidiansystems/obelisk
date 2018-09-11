@@ -7,7 +7,7 @@ import qualified Data.Text as T
 import Reflex.Dom.Core
 
 import Common.Api
-import Static
+import Obelisk.Generated.Static
 
 frontend :: (StaticWidget x (), Widget x ())
 frontend = (head', body)

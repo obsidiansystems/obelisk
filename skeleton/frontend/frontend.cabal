@@ -8,7 +8,7 @@ library
   build-depends: base
                , common
                , reflex-dom
-               , static
+               , obelisk-generated-static
                , text
   exposed-modules:
     Frontend
@@ -20,7 +20,7 @@ executable frontend
   build-depends: base
                , common
                , reflex-dom
-               , static
+               , obelisk-generated-static
                , text
                , frontend
   --TODO: Make these ghc-options optional
