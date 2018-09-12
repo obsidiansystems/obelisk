@@ -38,13 +38,18 @@ run = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
-    runGhcid dotGhciPath $ Just $ unwords ["main", show freePort]
+    runGhcid dotGhciPath $ Just $ unwords ["run", show freePort, "Backend.backend", "Frontend.frontend"]
 
 runRepl :: MonadObelisk m => m ()
 runRepl = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     runGhciRepl dotGhciPath
+
+runWatch :: MonadObelisk m => m ()
+runWatch = do
+  pkgs <- getLocalPkgs
+  withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath Nothing
 
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
@@ -98,7 +103,10 @@ withGhciScript pkgs f = do
 
   let dotGhci = unlines
         [ ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
-        , ":load ./devel/Devel.hs" -- TODO more robust filepath
+        , ":load Backend Frontend"
+        , "import Obelisk.Run"
+        , "import qualified Frontend"
+        , "import qualified Backend"
         ]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
