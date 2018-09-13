@@ -22,15 +22,22 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
         ```
     1. If you are using another operating system or linux distribution, ensure that these lines are present in `/etc/nix/nix.conf`:
         ```
-        sandbox = true
         substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
         trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
         ```
-		* If you are on MacOS, restart the nix daemon
-		```
-		sudo launchctl stop org.nixos.nix-daemon
-		sudo launchctl start org.nixos.nix-daemon
-		```
+        * other Linux: enable sandboxing (see https://github.com/obsidiansystems/obelisk/issues/6)
+          ```
+          sandbox = true
+          ```
+        * MacOS: disable sandboxing (there are still some impure dependencies for now)
+          ```
+          sandbox = false
+          ```
+          then restart the nix daemon
+          ```
+          sudo launchctl stop org.nixos.nix-daemon
+          sudo launchctl start org.nixos.nix-daemon
+          ```
 1. Install obelisk: `nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command`
 
 ### Contributing to Obelisk
@@ -145,7 +152,7 @@ cd ~/code/myapp-deploy
 ob deploy push
 ```
 
-`ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance.
+`ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. The backend will live in `/var/lib/backend`.
 
 At this point you are done. Your app will be accessible at `${ROUTE}`.
 
@@ -259,7 +266,7 @@ First, if you do not already have a keystore, create it as follows (for more inf
 nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
 ```
 
-(Besure to give an appropriate keystore filename and key alias string above.)
+(Be sure to give an appropriate keystore filename and key alias string above.)
 
 The `keytool` command will ask you for some details, including a keystore password and a key password (we will use these passwords further below). It will now have created a `myandroidkey.jks` file under the current directory. Move that to somewhere safe, and note down its full path.
 
