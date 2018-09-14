@@ -300,6 +300,10 @@ rec {
                 overrides = totalOverrides;
                 packages = combinedPackages;
                 shells = {
+                  ghcSavedSplices = (filter (x: hasAttr x combinedPackages) [
+                    commonName
+                    frontendName
+                  ]);
                   ghc = (filter (x: hasAttr x combinedPackages) [
                     backendName
                     commonName

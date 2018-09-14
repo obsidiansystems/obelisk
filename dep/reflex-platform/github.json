@@ -1,6 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "rev": "df2d29d34746c36d11444498c360da1173f31436",
-  "sha256": "15lqdqd23vpzhqnip7c235a0pyjyfbmljnssp7502gkgj09wxmmn"
+  "branch": "template-haskell",
+  "rev": "8ac37d441d243c6a91b404fcb5f5c5a2a2ec579f",
+  "sha256": "02780bmjlw19v9wfz6f6ni7hxprdcinxj5xhd5fdaj2lfhp3v8ih"
 }
