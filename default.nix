@@ -73,6 +73,9 @@ let
     });
   };
 
+  # Development environments for obelisk packages.
+  ghcObeliskEnvs = mapAttrs (n: v: reflex-platform.workOn ghcObelisk ghcObelisk.${v}) ghcObelisk;
+
   fixUpstreamPkgs = self: super: {
     heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
     modern-uri =
@@ -125,6 +128,7 @@ let
   };
 
   defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
+
 in
 with pkgs.lib;
 rec {
@@ -133,6 +137,7 @@ rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
+  obeliskEnvs = ghcObeliskEnvs;
   commandWithMigration = ghcObelisk.obelisk-command.overrideAttrs (drv: {
      postInstall = (drv.postInstall or "") +
                    ''cp -r ${./migration} $out/migration;'';
