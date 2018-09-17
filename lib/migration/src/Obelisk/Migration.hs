@@ -17,6 +17,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import System.Directory
 import System.FilePath
 
@@ -46,10 +47,10 @@ data MigrationError
   deriving (Eq, Ord, Show)
 
 class Action action where
-  parseEdgeMeta :: String -> action
+  parseEdgeMeta :: Text -> action
 
 instance Action Text where
-  parseEdgeMeta = T.pack
+  parseEdgeMeta = id
 
 -- | Get the directed-acylic graph of migration
 -- TODO: Consider calling getDag only when reading the graph for efficiency.
@@ -75,7 +76,7 @@ readGraph root name = doesDirectoryExist root >>= \case
       let f = root </> (T.unpack $ v1 <> "-" <> v2) </> T.unpack graph
       doesFileExist f >>= \case
         True -> do
-          c <- readFile f >>= pure . parseEdgeMeta
+          c <- parseEdgeMeta <$> T.readFile f
           return $ Just c
         False -> do
           return Nothing

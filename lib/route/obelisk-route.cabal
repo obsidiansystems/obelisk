@@ -23,7 +23,7 @@ library
                  primitive,
                  ref-tf,
                  reflex,
-                 reflex-dom,
+                 reflex-dom-core,
                  template-haskell,
                  text,
                  transformers,
