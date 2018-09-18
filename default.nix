@@ -76,12 +76,12 @@ let
     } + /template) {};
 
     # Need ShowTag, EqTag, and OrdTag instances
-    dependent-sum-template = self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
+    dependent-sum-template = pkgs.haskell.lib.dontCheck (self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
       owner = "mokus0";
       repo = "dependent-sum-template";
       rev = "bfe9c37f4eaffd8b17c03f216c06a0bfb66f7df7";
       sha256 = "1w3s7nvw0iw5li3ry7s8r4651qwgd22hmgz6by0iw3rm64fy8x0y";
-    }) {};
+    }) {});
   };
 
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
