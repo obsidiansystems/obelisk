@@ -118,9 +118,12 @@ withGhciScript pkgs f = do
     putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
 
   let extensions = packageInfos >>= _cabalPackageInfo_defaultExtensions
-      dotGhci = unlines
+      extensionsLine = if extensions == mempty
+        then ""
+        else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
+      dotGhci = unlines $
         [ ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
-        , ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
+        , extensionsLine
         , ":load Backend Frontend"
         , "import Obelisk.Run"
         , "import qualified Frontend"
