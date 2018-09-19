@@ -16,11 +16,13 @@ import Data.Maybe
 import qualified Data.Text as T
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
+import Distribution.Pretty
 import Distribution.Types.BuildInfo
 import Distribution.Types.CondTree
 import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Library
 import Distribution.Utils.Generic (withUTF8FileContents, toUTF8BS)
+import Language.Haskell.Extension
 import Network.Socket
 import System.Directory
 import System.FilePath
@@ -31,6 +33,14 @@ import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp (CliT (..), HasCliConfig, Severity (..), callCommand, failWith, getCliConfig, putLog,
                        runCli)
 import Obelisk.Command.Project (inProjectShell)
+
+data CabalPackageInfo = CabalPackageInfo
+  { _cabalPackageInfo_packageRoot :: FilePath
+  , _cabalPackageInfo_sourceDirs :: NE.NonEmpty FilePath
+    -- ^ List of hs src dirs of the library component
+  , _cabalPackageInfo_defaultExtensions :: [Extension]
+    -- ^ List of globally enable extensions of the library component
+  }
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
 run :: ObeliskT IO ()
@@ -56,11 +66,11 @@ runWatch = do
 getLocalPkgs :: Applicative f => f [FilePath]
 getLocalPkgs = pure ["backend", "common", "frontend"]
 
-parseHsSrcDir
+parseCabalPackage
   :: (MonadObelisk m)
   => FilePath -- ^ package cabal file path
-  -> m (Maybe (NE.NonEmpty FilePath)) -- ^ List of hs src dirs of the library component
-parseHsSrcDir cabalFp = do
+  -> m (Maybe CabalPackageInfo)
+parseCabalPackage cabalFp = do
   exists <- liftIO $ doesFileExist cabalFp
   if exists
     then do
@@ -71,7 +81,13 @@ parseHsSrcDir cabalFp = do
           Right gpkg -> do
             return $ do
               (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
-              pure $ fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
+              pure $ CabalPackageInfo
+                { _cabalPackageInfo_packageRoot = takeDirectory cabalFp
+                , _cabalPackageInfo_sourceDirs =
+                    fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
+                , _cabalPackageInfo_defaultExtensions =
+                    defaultExtensions $ libBuildInfo lib
+                }
           Left (_, errors) -> do
             putLog Error $ T.pack "Failed to parse cabal file: "
             mapM_ (putLog Error) $ fmap (T.pack . show) errors
@@ -90,19 +106,24 @@ withGhciScript
   -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporory .ghci
   -> m ()
 withGhciScript pkgs f = do
-  (pkgDirErrs, hsSrcDirs) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
+  (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
     let cabalFp = pkg </> pkg <.> "cabal"
-    flip fmap (parseHsSrcDir cabalFp) $ \case
+    flip fmap (parseCabalPackage cabalFp) $ \case
       Nothing -> Left pkg
-      Just hsSrcDirs -> Right $ toList $ fmap (pkg </>) hsSrcDirs
+      Just packageInfo -> Right packageInfo
 
-  when (null hsSrcDirs) $
+  when (null packageInfos) $
     failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
   unless (null pkgDirErrs) $
     putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
 
-  let dotGhci = unlines
-        [ ":set -i" <> intercalate ":" (mconcat hsSrcDirs)
+  let extensions = packageInfos >>= _cabalPackageInfo_defaultExtensions
+      extensionsLine = if extensions == mempty
+        then ""
+        else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
+      dotGhci = unlines $
+        [ ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
+        , extensionsLine
         , ":load Backend Frontend"
         , "import Obelisk.Run"
         , "import qualified Frontend"
@@ -112,6 +133,10 @@ withGhciScript pkgs f = do
     let dotGhciPath = fp </> ".ghci"
     liftIO $ writeFile dotGhciPath dotGhci
     f dotGhciPath
+
+  where
+    rootedSourceDirs pkg = NE.toList $
+      (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
 
 -- | Run ghci repl
 runGhciRepl
