@@ -15,7 +15,7 @@ get :: Text -> IO (Maybe Text)
 get name = bracket getAssets freeAssetManager $ \mgrObj -> do
   mgr <- assetManagerFromJava mgrObj
   let open = do
-        a <- withCString ("config" </> T.unpack name) $ \fn ->
+        a <- withCString (T.unpack name) $ \fn ->
           assetManager_open mgr fn 3
         return $ if unAAsset a == nullPtr
           then Nothing
