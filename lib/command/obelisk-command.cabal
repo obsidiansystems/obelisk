@@ -24,6 +24,7 @@ library
     , github
     , here
     , hit
+    , hpack
     , io-streams
     , exceptions
     , logging-effect
