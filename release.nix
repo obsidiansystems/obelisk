@@ -1,12 +1,12 @@
-{ self ? import ./. {}
-, pkgs ? self.nixpkgs
+{ local-self ? import ./. {}
+, local-pkgs ? local-self.nixpkgs
 }:
 
-with pkgs;
+with local-pkgs.lib;
 
-{
-  inherit (self) command;
-  built-skeleton = (import ./skeleton {}).all;
+genAttrs [ "x86_64-linux" "x86_64-darwin" ] (system: {
+  inherit (import ./. { inherit system; }) command;
+  built-skeleton = (import ./skeleton { inherit system; }).all;
   tests = {
     #TODO: Doesn't work; see discussion in https://www.pivotaltracker.com/story/show/157265140
     # ob-init = runCommand "ob-init" {
