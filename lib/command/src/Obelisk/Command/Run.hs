@@ -21,7 +21,10 @@ import Distribution.Types.BuildInfo
 import Distribution.Types.CondTree
 import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Library
-import Distribution.Utils.Generic (withUTF8FileContents, toUTF8BS)
+import Distribution.Utils.Generic
+import Hpack.Config
+import Hpack.Render
+import Hpack.Yaml
 import Language.Haskell.Extension
 import Network.Socket
 import System.Directory
@@ -68,31 +71,46 @@ getLocalPkgs = pure ["backend", "common", "frontend"]
 
 parseCabalPackage
   :: (MonadObelisk m)
-  => FilePath -- ^ package cabal file path
+  => FilePath -- ^ package directory
   -> m (Maybe CabalPackageInfo)
-parseCabalPackage cabalFp = do
-  exists <- liftIO $ doesFileExist cabalFp
-  if exists
+parseCabalPackage dir = do
+  let hpackFp = dir </> "package.yaml"
+      cabalFp = dir </> (takeBaseName dir <> ".cabal")
+  hasHpack <- liftIO $ doesFileExist hpackFp
+  mCabalContents <- if hasHpack
     then do
-      withUTF8FileContentsM cabalFp $ \cabal -> do
-        let (warnings, result) = runParseResult $ parseGenericPackageDescription cabal
-        mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
-        case result of
-          Right gpkg -> do
-            return $ do
-              (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
-              pure $ CabalPackageInfo
-                { _cabalPackageInfo_packageRoot = takeDirectory cabalFp
-                , _cabalPackageInfo_sourceDirs =
-                    fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
-                , _cabalPackageInfo_defaultExtensions =
-                    defaultExtensions $ libBuildInfo lib
-                }
-          Left (_, errors) -> do
-            putLog Error $ T.pack "Failed to parse cabal file: "
-            mapM_ (putLog Error) $ fmap (T.pack . show) errors
-            return Nothing
-    else return Nothing
+      let decodeOptions = DecodeOptions hpackFp Nothing decodeYaml
+      liftIO (readPackageConfig decodeOptions) >>= \case
+        Left err -> do
+          putLog Error $ T.pack $ "Failed to parse " <> hpackFp <> ": " <> err
+          return Nothing
+        Right (DecodeResult hpackPackage _ _) -> do
+          return $ Just $ renderPackage [] hpackPackage
+    else do
+      hasCabal <- liftIO $ doesFileExist cabalFp
+      if hasCabal
+        then Just <$> liftIO (readUTF8File cabalFp)
+        else return Nothing
+
+  fmap join $ forM mCabalContents $ \cabalContents -> do
+    let (warnings, result) = runParseResult $ parseGenericPackageDescription $
+          toUTF8BS $ cabalContents
+    mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
+    case result of
+      Right gpkg -> do
+        return $ do
+          (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
+          pure $ CabalPackageInfo
+            { _cabalPackageInfo_packageRoot = takeDirectory cabalFp
+            , _cabalPackageInfo_sourceDirs =
+                fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
+            , _cabalPackageInfo_defaultExtensions =
+                defaultExtensions $ libBuildInfo lib
+            }
+      Left (_, errors) -> do
+        putLog Error $ T.pack $ "Failed to parse " <> cabalFp <> ":"
+        mapM_ (putLog Error) $ fmap (T.pack . show) errors
+        return Nothing
 
 withUTF8FileContentsM :: (MonadIO m, HasCliConfig m) => FilePath -> (ByteString -> CliT IO a) -> m a
 withUTF8FileContentsM fp f = do
@@ -107,8 +125,7 @@ withGhciScript
   -> m ()
 withGhciScript pkgs f = do
   (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
-    let cabalFp = pkg </> pkg <.> "cabal"
-    flip fmap (parseCabalPackage cabalFp) $ \case
+    flip fmap (parseCabalPackage pkg) $ \case
       Nothing -> Left pkg
       Just packageInfo -> Right packageInfo
 

@@ -66,6 +66,10 @@ let
         sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
       }) {});
 
+    # Default hpack in the package set does not evaluate.
+    # TODO: Remove this override after reunification with upstream nixpkgs.
+    hpack = pkgs.haskell.lib.dontCheck (self.callHackage "hpack" "0.28.2" {});
+
     monoidal-containers =
       let src = pkgs.fetchFromGitHub {
             owner = "obsidiansystems";
