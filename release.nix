@@ -20,25 +20,26 @@ genAttrs [ "x86_64-linux" "x86_64-darwin" ] (system: {
     #  # ob init --symlink=${self.path}
     #'';
 
-    verify-migration = runCommand "verify-migration" {
-     nativeBuildInputs = [
-       self.command
-       nix  # obelisk uses `nix-hash`
-     ];
-    } ''
-     set -e
-     # Fix permissions so `removePathForcibly` works on copied-to-tmp paths
-     cp -a ${self.pathGit} $TMPDIR/obelisk
-     cd $TMPDIR/obelisk
-     chmod -R u+w .
-
-     (set -x;
-      ob internal hash;
-      ob internal verify-migration;
-     )
-
-     mkdir -p $out
-     touch $out/done
-    '';
+    #TODO: Re-enable this
+    #verify-migration = runCommand "verify-migration" {
+    # nativeBuildInputs = [
+    #   self.command
+    #   nix  # obelisk uses `nix-hash`
+    # ];
+    #} ''
+    # set -e
+    # # Fix permissions so `removePathForcibly` works on copied-to-tmp paths
+    # cp -a ${self.pathGit} $TMPDIR/obelisk
+    # cd $TMPDIR/obelisk
+    # chmod -R u+w .
+    #
+    # (set -x;
+    #  ob internal hash;
+    #  ob internal verify-migration;
+    # )
+    #
+    # mkdir -p $out
+    # touch $out/done
+    #'';
   };
-}
+})
