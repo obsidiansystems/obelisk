@@ -74,23 +74,23 @@ parseCabalPackage
   => FilePath -- ^ package directory
   -> m (Maybe CabalPackageInfo)
 parseCabalPackage dir = do
-  let hpackFp = dir </> "package.yaml"
-      cabalFp = dir </> (takeBaseName dir <> ".cabal")
+  let cabalFp = dir </> (takeBaseName dir <> ".cabal")
+      hpackFp = dir </> "package.yaml"
+  hasCabal <- liftIO $ doesFileExist cabalFp
   hasHpack <- liftIO $ doesFileExist hpackFp
-  mCabalContents <- if hasHpack
-    then do
-      let decodeOptions = DecodeOptions hpackFp Nothing decodeYaml
-      liftIO (readPackageConfig decodeOptions) >>= \case
-        Left err -> do
-          putLog Error $ T.pack $ "Failed to parse " <> hpackFp <> ": " <> err
-          return Nothing
-        Right (DecodeResult hpackPackage _ _) -> do
-          return $ Just $ renderPackage [] hpackPackage
-    else do
-      hasCabal <- liftIO $ doesFileExist cabalFp
-      if hasCabal
-        then Just <$> liftIO (readUTF8File cabalFp)
-        else return Nothing
+
+  mCabalContents <- if hasCabal
+    then Just <$> liftIO (readUTF8File cabalFp)
+    else if hasHpack
+      then do
+        let decodeOptions = DecodeOptions hpackFp Nothing decodeYaml
+        liftIO (readPackageConfig decodeOptions) >>= \case
+          Left err -> do
+            putLog Error $ T.pack $ "Failed to parse " <> hpackFp <> ": " <> err
+            return Nothing
+          Right (DecodeResult hpackPackage _ _) -> do
+            return $ Just $ renderPackage [] hpackPackage
+      else return Nothing
 
   fmap join $ forM mCabalContents $ \cabalContents -> do
     let (warnings, result) = runParseResult $ parseGenericPackageDescription $
