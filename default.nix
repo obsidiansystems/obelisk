@@ -115,7 +115,7 @@ let
     obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
     obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
     obelisk-executable-config = executableConfig.haskellPackage self;
-    obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
+    obelisk-executable-config-inject = executableConfig.platforms.web.inject self;
     obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
     obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
@@ -279,6 +279,12 @@ rec {
                     ${backendName} = addBuildDepend super.${backendName} self.obelisk-run;
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
+                  inherit (nixpkgs) lib;
+                  inherit (lib.strings) hasPrefix;
+                  privateConfigDirs = ["config/backend"];
+                  injectableConfig = builtins.filterSource (path: _:
+                    !(lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path)) privateConfigDirs)
+                  ) configPath;
               in {
                 inherit shellToolOverrides tools withHoogle;
                 overrides = totalOverrides;
@@ -297,13 +303,15 @@ rec {
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "assets" else null} = processedStatic.symlinked;
+                    ${if builtins.pathExists staticPath then "assets" else null} =
+                      executableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
                   } // android;
                 };
                 ios = {
                   ${if ios == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "staticSrc" else null} = processedStatic.symlinked;
+                    ${if builtins.pathExists staticPath then "staticSrc" else null} =
+                      executableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
               };
