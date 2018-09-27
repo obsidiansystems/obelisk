@@ -98,7 +98,7 @@ let
     obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
     obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {});
     obelisk-executable-config = executableConfig.haskellPackage self;
-    obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
+    obelisk-executable-config-inject = executableConfig.platforms.web.inject self;
     obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
     obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
     obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
@@ -120,8 +120,8 @@ rec {
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
   commandWithMigration = ghcObelisk.obelisk-command.overrideAttrs (drv: {
-     postInstall = (drv.postInstall or "") +
-                   ''cp -r ${./migration} $out/migration;'';
+    postInstall = (drv.postInstall or "") +
+                  ''cp -r ${./migration} $out/migration;'';
   });
   command = pkgs.runCommand commandWithMigration.name { nativeBuildInputs = [pkgs.makeWrapper]; } ''
     mkdir -p "$out/bin"
@@ -160,12 +160,79 @@ rec {
   '';
 
   compressedJs = frontend: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
-      mkdir $out
-      cd $out
-      ln -s "${justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-      closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
-      echo "//# sourceMappingURL=all.js.map" >> all.js
+    mkdir $out
+    cd $out
+    ln -s "${justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
+    closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+    echo "//# sourceMappingURL=all.js.map" >> all.js
   '';
+
+  serverModules = {
+    mkBaseEc2 = { hostName, routeHost, enableHttps, adminEmail, ... }: {...}: {
+      imports = [
+        (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+      ];
+      networking = {
+        inherit hostName;
+        firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
+      };
+      security.acme.certs = if enableHttps then {
+        "${routeHost}".email = adminEmail;
+      } else {};
+      ec2.hvm = true;
+    };
+
+    mkObeliskApp =
+      { exe
+      , routeHost
+      , enableHttps
+      , name ? "backend"
+      , user ? name
+      , group ? user
+      , baseUrl ? "/"
+      , internalPort ? 8000
+      , backendArgs ? ""
+      , ...
+      }: {...}: {
+      services.nginx = {
+        enable = true;
+        virtualHosts."${routeHost}" = {
+          enableACME = enableHttps;
+          forceSSL = enableHttps;
+          locations.${baseUrl} = {
+            proxyPass = "http://localhost:" + toString internalPort;
+          };
+        };
+      };
+      systemd.services.${name} = {
+        wantedBy = [ "multi-user.target" ];
+        after = [ "network.target" ];
+        restartIfChanged = true;
+        script = ''
+          ln -sft . '${exe}'/*
+          mkdir -p log
+          exec ./backend --port=${toString internalPort} ${backendArgs} >>backend.out 2>>backend.err </dev/null
+        '';
+        serviceConfig = {
+          User = user;
+          KillMode = "process";
+          WorkingDirectory = "~";
+          Restart = "always";
+          RestartSec = 5;
+        };
+      };
+      users = {
+        users.${user} = {
+          description = "${user} service";
+          home = "/var/lib/${user}";
+          createHome = true;
+          isSystemUser = true;
+          group = group;
+        };
+        groups.${group} = {};
+      };
+    };
+  };
 
   serverExe = backend: frontend: assets: config:
     pkgs.runCommand "serverExe" {} ''
@@ -177,58 +244,16 @@ rec {
       ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, ... }:
-    let system = "x86_64-linux";
-        nixos = import (pkgs.path + /nixos);
-        backendPort = 8000;
+  server = { exe, hostName, adminEmail, routeHost, enableHttps }@args:
+    let
+      nixos = import (pkgs.path + /nixos);
     in nixos {
-      inherit system;
-      configuration = args: {
+      system = "x86_64-linux";
+      configuration = {
         imports = [
-          (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+          (serverModules.mkBaseEc2 args)
+          (serverModules.mkObeliskApp args)
         ];
-        networking = {
-          inherit hostName;
-          firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
-        };
-        services.nginx = {
-          enable = true;
-          virtualHosts."${routeHost}" = {
-            enableACME = enableHttps;
-            forceSSL = enableHttps;
-            locations."/" = {
-              proxyPass = "http://127.0.0.1:" + toString backendPort;
-            };
-          };
-        };
-        security.acme.certs = if enableHttps then {
-          "${routeHost}".email = adminEmail;
-        } else { };
-        systemd.services.backend = {
-          wantedBy = [ "multi-user.target" ];
-          after = [ "network.target" ];
-          restartIfChanged = true;
-          script = ''
-            ln -sft . "${exe}"/*
-            mkdir -p log
-            exec ./backend >>backend.out 2>>backend.err </dev/null
-          '';
-          serviceConfig = {
-            User = "backend";
-            KillMode = "process";
-            WorkingDirectory = "~";
-            Restart = "always";
-            RestartSec = 5;
-          };
-        };
-        users.extraUsers.backend = {
-          description = "backend service";
-          home = "/var/lib/backend";
-          createHome = true;
-          isSystemUser = true;
-          group = "backend";
-        };
-        ec2.hvm = true;
       };
     };
 
@@ -264,6 +289,12 @@ rec {
                     ${backendName} = addBuildDepend super.${backendName} self.obelisk-run;
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
+                  inherit (nixpkgs) lib;
+                  inherit (lib.strings) hasPrefix;
+                  privateConfigDirs = ["config/backend"];
+                  injectableConfig = builtins.filterSource (path: _:
+                    !(lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path)) privateConfigDirs)
+                  ) configPath;
               in {
                 inherit shellToolOverrides tools withHoogle;
                 overrides = totalOverrides;
@@ -282,13 +313,15 @@ rec {
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "assets" else null} = processedStatic.symlinked;
+                    ${if builtins.pathExists staticPath then "assets" else null} =
+                      executableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
                   } // android;
                 };
                 ios = {
                   ${if ios == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "staticSrc" else null} = processedStatic.symlinked;
+                    ${if builtins.pathExists staticPath then "staticSrc" else null} =
+                      executableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
               };
