@@ -5,8 +5,8 @@
 let
   getReflexPlatform = sys: import ./dep/reflex-platform { inherit iosSdkVersion; system = sys; };
   reflex-platform = getReflexPlatform system;
-  inherit (reflex-platform) hackGet;
-  pkgs = reflex-platform.nixpkgs;
+  inherit (reflex-platform) hackGet nixpkgs;
+  pkgs = nixpkgs;
 in with pkgs.haskell.lib; with pkgs.lib;
 let
   # TODO: Remove this after updating nixpkgs: https://github.com/NixOS/nixpkgs/issues/37750
@@ -115,7 +115,7 @@ let
     obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
     obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
     obelisk-executable-config = executableConfig.haskellPackage self;
-    obelisk-executable-config-inject = executableConfig.platforms.web.inject self; # TODO handle platforms.{ios,android}
+    obelisk-executable-config-inject = executableConfig.platforms.web.inject self;
     obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
     obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
@@ -274,9 +274,9 @@ rec {
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
-    let assets = processAssets { src = base + "/static"; };
-        configPath = base + "/config";
-
+    let configPath = base + "/config";
+        static = base + "/static";
+        processedStatic = processAssets { src = static; };
         projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
@@ -300,10 +300,16 @@ rec {
                   };
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
-                    ${staticName} = dontHaddock (self.callCabal2nix "static" assets.haskellManifest {});
+                    ${staticName} = dontHaddock (self.callCabal2nix "static" processedStatic.haskellManifest {});
                     ${backendName} = addBuildDepend super.${backendName} self.obelisk-run;
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
+                  inherit (nixpkgs) lib;
+                  inherit (lib.strings) hasPrefix;
+                  privateConfigDirs = ["config/backend"];
+                  injectableConfig = builtins.filterSource (path: _:
+                    !(lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path)) privateConfigDirs)
+                  ) configPath;
               in {
                 inherit shellToolOverrides tools withHoogle;
                 overrides = totalOverrides;
@@ -322,19 +328,20 @@ rec {
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "assets" else null} = assets.symlinked;
+                    ${if builtins.pathExists staticPath then "assets" else null} =
+                      executableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
                   } // android;
                 };
                 ios = {
                   ${if ios == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "staticSrc" else null} = assets.symlinked;
+                    ${if builtins.pathExists staticPath then "staticSrc" else null} =
+                      executableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys:
-        serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend assets.symlinked configPath;
+      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static configPath;
       linuxExe = serverOn "x86_64-linux";
     in projectOut system // {
       inherit linuxExe;
