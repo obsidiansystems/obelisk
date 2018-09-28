@@ -191,7 +191,7 @@ rec {
       , group ? user
       , baseUrl ? "/"
       , internalPort ? 8000
-      , backendArgs ? ""
+      , backendArgs ? "--port=${toString internalPort}"
       , ...
       }: {...}: {
       services.nginx = {
@@ -211,7 +211,7 @@ rec {
         script = ''
           ln -sft . '${exe}'/*
           mkdir -p log
-          exec ./backend --port=${toString internalPort} ${backendArgs} >>backend.out 2>>backend.err </dev/null
+          exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
         '';
         serviceConfig = {
           User = user;
