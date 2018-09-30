@@ -304,14 +304,6 @@ rec {
                     commonName
                     frontendName
                   ]);
-                  ghcAndroidAarch64 = (filter (x: hasAttr x combinedPackages) [
-                    commonName
-                    frontendName
-                  ]);
-                  ghcIosAarch64 = (filter (x: hasAttr x combinedPackages) [
-                    commonName
-                    frontendName
-                  ]);
                   ghc = (filter (x: hasAttr x combinedPackages) [
                     backendName
                     commonName
