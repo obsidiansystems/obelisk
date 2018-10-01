@@ -1,5 +1,5 @@
 name: obelisk-route
-version: 0.1
+version: 0.2
 cabal-version: >= 1.2
 build-type: Simple
 
@@ -11,6 +11,7 @@ library
                  containers,
                  dependent-map,
                  dependent-sum,
+                 dependent-sum-universe-orphans,
                  dependent-sum-template,
                  either,
                  ghcjs-dom,

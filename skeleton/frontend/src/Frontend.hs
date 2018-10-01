@@ -18,5 +18,4 @@ frontend = Frontend
       text "Welcome to Obelisk!"
       el "p" $ text $ T.pack commonStuff
       elAttr "img" ("src" =: static @"obelisk.jpg") blank
-  , _frontend_notFoundRoute = const $ IndexOnlyRoute :/ ()
   }
