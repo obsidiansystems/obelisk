@@ -20,40 +20,47 @@ module Obelisk.Route
   ( R
   , pattern (:/)
   , PageName
-  , Encoder (..) --TODO: unsafe
+  , PathQuery
+  , Encoder (..)
   , checkEncoder
-  , ValidEncoder (..) --TODO: unsafe
-  , ValidEncoderFunc (..)
+  , EncoderImpl (..)
+  , EncoderFunc (..)
+  , unsafeMkEncoder
+  , encode
+  , decode
+  , tryDecode
+  , hoistCheck
+  , hoistParse
   , mapSome
+  , SegmentResult (..)
   , pathComponentEncoder
   , enumEncoder
   , enum1Encoder
   , checkEnum1EncoderFunc
-  , endValidEncoder
-  , pathOnlyValidEncoder
-  , singletonListValidEncoder
+  , unitEncoder
+  , pathOnlyEncoder
+  , singletonListEncoder
   , unpackTextEncoder
   , prefixTextEncoder
-  , unsafeTshowValidEncoder
-  , someConstValidEncoder
-  , singlePathSegmentValidEncoder
-  , justValidEncoder
-  , nothingValidEncoder
-  , isoValidEncoder
-  , wrappedValidEncoder
-  , unwrappedValidEncoder
+  , unsafeTshowEncoder
+  , someConstEncoder
+  , singlePathSegmentEncoder
+  , justEncoder
+  , nothingEncoder
+  , isoEncoder
+  , wrappedEncoder
+  , unwrappedEncoder
   , listToNonEmptyEncoder
   , prefixNonemptyTextEncoder
   , joinPairTextEncoder
   , toListMapEncoder
   , shadowEncoder
-  , prismValidEncoder
+  , prismEncoder
   , rPrism
   , obeliskRouteEncoder
-  , obeliskRouteComponentEncoder
-  , checkObeliskRouteRestEncoder
-  , pageNameValidEncoder
-  , catchValidEncoder
+  , obeliskRouteSegment
+  , pageNameEncoder
+  , handleEncoder
   , ObeliskRoute (..)
   , _ObeliskRoute_App
   , _ObeliskRoute_Resource
@@ -61,11 +68,13 @@ module Obelisk.Route
   , JSaddleWarpRoute (..)
   , jsaddleWarpRouteEncoder
   , IndexOnlyRoute (..)
-  , indexOnlyRouteComponentEncoder
-  , indexOnlyRouteRestEncoder
+  , indexOnlyRouteSegment
+  , indexOnlyRouteEncoder
   , someSumEncoder
   , Void1
   , void1Encoder
+  , pathSegmentsTextEncoder
+  , queryParametersTextEncoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -95,6 +104,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Some (Some)
 import qualified Data.Some as Some
+import Data.Some.Universe.Orphans ()
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
@@ -139,41 +149,80 @@ mapSome f (Some.This a) = Some.This $ f a
 -- Encoder fundamentals
 --------------------------------------------------------------------------------
 
-newtype Encoder check parse decoded encoded = Encoder { unEncoder :: check (ValidEncoder parse decoded encoded) }
+-- | This is the type of route encoder/decoders. It is parameterised over two monads: Firstly, the monad
+-- used to check the validity of the encoder (i.e. that it is total), secondly the monad used for parsing
+-- during the decode phase. The following two parameters are respectively the type of decoded data, and the
+-- encoded type.
+newtype Encoder check parse decoded encoded =
+  Encoder { unEncoder :: check (EncoderImpl parse decoded encoded) }
 
--- | Law:
--- forall p. _validEncoder_decode ve . _validEncoder_encode ve p == pure
--- Note that the reverse may not be the case: when parsing, a route may be canonicalized, and erroneous routes may be collapsed to a single 404 route.  However, as a consequence of the law, encode . decode must be idemponent.
-data ValidEncoder parse decoded encoded = ValidEncoder
-  { _validEncoder_decode :: !(encoded -> parse decoded) -- Can fail; can lose information; must always succeed on outputs of `_validEncoder_encode` and result in the original value
-  , _validEncoder_encode :: !(decoded -> encoded) -- Must be injective
+-- | The internal type used to construct primitive 'Encoder' values.
+-- Law:
+-- forall p. _encoderImpl_decode ve . _encoderImpl_encode ve p == pure
+-- Note that the reverse may not be the case: when parsing, a route may be canonicalized, and erroneous routes may be collapsed to a single 404 route.  However, as a consequence of the law, encode . decode must be idempotent.
+data EncoderImpl parse decoded encoded = EncoderImpl
+  { _encoderImpl_decode :: !(encoded -> parse decoded) -- Can fail; can lose information; must always succeed on outputs of `_encoderImpl_encode` and result in the original value
+  , _encoderImpl_encode :: !(decoded -> encoded) -- Must be injective
   }
 
-checkEncoder :: Encoder check parse decoded encoded -> check (ValidEncoder parse decoded encoded)
-checkEncoder = unEncoder
+-- | Once an 'Encoder' has been checked, so that its check monad has become 'Identity', and its parser is total
+-- so that its parse monad is also 'Identity', it may be used to actually decode by applying this function.
+decode :: Encoder Identity Identity decoded encoded -> encoded -> decoded
+decode e x = runIdentity (tryDecode e x)
+
+-- | Once an 'Encoder' has been checked, so that its check monad has become 'Identity', even if the same is not true of the
+-- parse monad, we may still attempt to decode with it in its parse monad.
+tryDecode :: Encoder Identity parse decoded encoded -> encoded -> parse decoded
+tryDecode (Encoder (Identity impl)) x = _encoderImpl_decode impl x
+
+-- | Similar to 'decode' above, once an encoder has been checked so that its check monad is Identity, it
+-- can be used to actually encode by using this. Note that while there's no constraint on the parse monad here,
+-- one should usually be applying decode and encode to the same 'Encoder'
+encode :: Encoder Identity parse decoded encoded -> decoded -> encoded
+encode (Encoder (Identity impl)) x = _encoderImpl_encode impl x
+
+-- | This is a primitive used to build encoders which can't fail to check. It should not be used unless one is
+-- reasonably certain that the law given for 'EncoderImpl' above holds.
+unsafeMkEncoder :: (Applicative check) => EncoderImpl parse decoded encoded -> Encoder check parse decoded encoded
+unsafeMkEncoder impl = Encoder (pure impl)
+
+-- | Transform the check monad of an 'Encoder' by applying a natural transformation.
+hoistCheck :: (forall t. check t -> check' t) -> Encoder check parse a b -> Encoder check' parse a b
+hoistCheck f (Encoder x) = Encoder (f x)
+
+-- | Transform the parse monad of an 'Encoder' by applying a natural transformation.
+hoistParse :: (Functor check)
+  => (forall t. parse t -> parse' t) -> Encoder check parse a b -> Encoder check parse' a b
+hoistParse f (Encoder x) = Encoder (fmap (\(EncoderImpl dec enc) -> EncoderImpl (f . dec) enc) x)
+
+-- | Check an 'Encoder', transforming it into one whose check monad is anything we want (usually Identity).
+checkEncoder :: (Applicative check', Functor check)
+  => Encoder check parse decoded encoded
+  -> check (Encoder check' parse decoded encoded)
+checkEncoder = fmap unsafeMkEncoder . unEncoder
 
 instance (Applicative check, Monad parse) => Category (Encoder check parse) where
   id = Encoder $ pure id
   Encoder f . Encoder g = Encoder $ liftA2 (.) f g
 
-instance Monad parse => Category (ValidEncoder parse) where
-  id = ValidEncoder
-    { _validEncoder_decode = pure
-    , _validEncoder_encode = id
+instance Monad parse => Category (EncoderImpl parse) where
+  id = EncoderImpl
+    { _encoderImpl_decode = pure
+    , _encoderImpl_encode = id
     }
-  f . g = ValidEncoder
-    { _validEncoder_decode = _validEncoder_decode g <=< _validEncoder_decode f
-    , _validEncoder_encode = _validEncoder_encode f . _validEncoder_encode g
+  f . g = EncoderImpl
+    { _encoderImpl_decode = _encoderImpl_decode g <=< _encoderImpl_decode f
+    , _encoderImpl_encode = _encoderImpl_encode f . _encoderImpl_encode g
     }
 
-instance Monad parse => PFunctor (,) (ValidEncoder parse) (ValidEncoder parse) where
+instance Monad parse => PFunctor (,) (EncoderImpl parse) (EncoderImpl parse) where
   first f = bimap f id
-instance Monad parse => QFunctor (,) (ValidEncoder parse) (ValidEncoder parse) where
+instance Monad parse => QFunctor (,) (EncoderImpl parse) (EncoderImpl parse) where
   second g = bimap id g
-instance Monad parse => Bifunctor (,) (ValidEncoder parse) (ValidEncoder parse) (ValidEncoder parse) where
-  bimap f g = ValidEncoder
-    { _validEncoder_encode = bimap (_validEncoder_encode f) (_validEncoder_encode g)
-    , _validEncoder_decode = \(a, b) -> liftA2 (,) (_validEncoder_decode f a) (_validEncoder_decode g b)
+instance Monad parse => Bifunctor (,) (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
+  bimap f g = EncoderImpl
+    { _encoderImpl_encode = bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
+    , _encoderImpl_decode = \(a, b) -> liftA2 (,) (_encoderImpl_decode f a) (_encoderImpl_decode g b)
     }
 
 instance (Applicative check, Monad parse) => PFunctor (,) (Encoder check parse) (Encoder check parse) where
@@ -181,46 +230,46 @@ instance (Applicative check, Monad parse) => PFunctor (,) (Encoder check parse) 
 instance (Applicative check, Monad parse) => QFunctor (,) (Encoder check parse) (Encoder check parse) where
   second g = bimap id g
 instance (Applicative check, Monad parse) => Bifunctor (,) (Encoder check parse) (Encoder check parse) (Encoder check parse) where
-  bimap f g = Encoder $ liftA2 bimap (checkEncoder f) (checkEncoder g)
+  bimap f g = Encoder $ liftA2 bimap (unEncoder f) (unEncoder g)
 
-instance (Traversable f, Monad parse) => Cat.Functor f (ValidEncoder parse) (ValidEncoder parse) where
-  fmap ve = ValidEncoder
-    { _validEncoder_encode = fmap $ _validEncoder_encode ve
-    , _validEncoder_decode = traverse $ _validEncoder_decode ve
+instance (Traversable f, Monad parse) => Cat.Functor f (EncoderImpl parse) (EncoderImpl parse) where
+  fmap ve = EncoderImpl
+    { _encoderImpl_encode = fmap $ _encoderImpl_encode ve
+    , _encoderImpl_decode = traverse $ _encoderImpl_decode ve
     }
 
 instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder check parse) (Encoder check parse) where
   fmap e = Encoder $ do
-    ve <- checkEncoder e
+    ve <- unEncoder e
     pure $ Cat.fmap ve
 
-instance Monad parse => Associative (ValidEncoder parse) (,) where
-  associate = ValidEncoder
-    { _validEncoder_encode = associate
-    , _validEncoder_decode = pure . disassociate
+instance Monad parse => Associative (EncoderImpl parse) (,) where
+  associate = EncoderImpl
+    { _encoderImpl_encode = associate
+    , _encoderImpl_decode = pure . disassociate
     }
-  disassociate = ValidEncoder
-    { _validEncoder_encode = disassociate
-    , _validEncoder_decode = pure . associate
+  disassociate = EncoderImpl
+    { _encoderImpl_encode = disassociate
+    , _encoderImpl_decode = pure . associate
     }
 
-instance Monad parse => Monoidal (ValidEncoder parse) (,) where
-  type Id (ValidEncoder parse) (,) = ()
-  idl = ValidEncoder
-    { _validEncoder_encode = idl
-    , _validEncoder_decode = pure . coidl
+instance Monad parse => Monoidal (EncoderImpl parse) (,) where
+  type Id (EncoderImpl parse) (,) = ()
+  idl = EncoderImpl
+    { _encoderImpl_encode = idl
+    , _encoderImpl_decode = pure . coidl
     }
-  idr = ValidEncoder
-    { _validEncoder_encode = idr
-    , _validEncoder_decode = pure . coidr
+  idr = EncoderImpl
+    { _encoderImpl_encode = idr
+    , _encoderImpl_decode = pure . coidr
     }
-  coidl = ValidEncoder
-    { _validEncoder_encode = coidl
-    , _validEncoder_decode = pure . idl
+  coidl = EncoderImpl
+    { _encoderImpl_encode = coidl
+    , _encoderImpl_decode = pure . idl
     }
-  coidr = ValidEncoder
-    { _validEncoder_encode = coidr
-    , _validEncoder_decode = pure . idr
+  coidr = EncoderImpl
+    { _encoderImpl_encode = coidr
+    , _encoderImpl_decode = pure . idr
     }
 
 instance (Applicative check, Monad parse) => Associative (Encoder check parse) (,) where
@@ -234,53 +283,99 @@ instance (Applicative check, Monad parse) => Monoidal (Encoder check parse) (,) 
   coidl = Encoder $ pure coidl
   coidr = Encoder $ pure coidr
 
-
 --------------------------------------------------------------------------------
 -- Specific instances of encoders
 --------------------------------------------------------------------------------
 
--- | A path and query string, in which trailing slashes don't matter in the path
--- and duplicate query parameters are not allowed
-type PageName = ([Text], Map Text (Maybe Text))
+-- | Given a valid 'Iso' from lens, construct an 'Encoder'
+isoEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
+isoEncoder f = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = view f
+  , _encoderImpl_decode = pure . view (from f)
+  }
 
-newtype Flip f a b = Flip { unFlip :: f b a }
+wrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse (Unwrapped a) a
+wrappedEncoder = isoEncoder $ from _Wrapped'
 
-someConstValidEncoder :: Applicative parse => ValidEncoder parse (Some (Const a)) a
-someConstValidEncoder = ValidEncoder
-  { _validEncoder_encode = \(Some.This (Const a)) -> a
-  , _validEncoder_decode = pure . Some.This . Const
+unwrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse a (Unwrapped a)
+unwrappedEncoder = isoEncoder _Wrapped'
+
+-- | Encodea a value by simply applying 'Just'
+justEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a (Maybe a)
+justEncoder = prismEncoder _Just
+
+-- |
+nothingEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse () (Maybe a)
+nothingEncoder = prismEncoder _Nothing
+
+someConstEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Const a)) a
+someConstEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = \(Some.This (Const a)) -> a
+  , _encoderImpl_decode = pure . Some.This . Const
   }
 
 -- | WARNING: This is only safe if the Show and Read instances for 'a' are
 -- inverses of each other
-unsafeTshowValidEncoder :: (Show a, Read a, MonadError Text parse) => ValidEncoder parse a Text
-unsafeTshowValidEncoder = ValidEncoder
-  { _validEncoder_encode = tshow
-  , _validEncoder_decode = \raw -> case readMaybe $ T.unpack raw of
-      Nothing -> throwError $ "unsafeTshowValidEncoder: couldn't decode " <> tshow raw
+unsafeTshowEncoder :: (Show a, Read a, Applicative check, MonadError Text parse) => Encoder check parse a Text
+unsafeTshowEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = tshow
+  , _encoderImpl_decode = \raw -> case readMaybe $ T.unpack raw of
+      Nothing -> throwError $ "unsafeTshowEncoderImpl: couldn't decode " <> tshow raw
       Just parsed -> pure parsed
   }
 
-justValidEncoder :: MonadError Text parse => ValidEncoder parse a (Maybe a)
-justValidEncoder = prismValidEncoder _Just
+newtype EncoderFunc check parse p r = EncoderFunc { runEncoderImplFunc :: forall a. p a -> Encoder check parse a r }
 
-nothingValidEncoder :: MonadError Text parse => ValidEncoder parse () (Maybe a)
-nothingValidEncoder = prismValidEncoder _Nothing
+newtype Flip f a b = Flip { unFlip :: f b a }
 
-isoValidEncoder :: Applicative parse => Iso' a b -> ValidEncoder parse a b
-isoValidEncoder f = ValidEncoder
-  { _validEncoder_encode = view f
-  , _validEncoder_decode = pure . view (from f)
-  }
+checkEnum1EncoderFunc
+  :: forall check check' parse p r.
+     ( Universe (Some p)
+     , GCompare p
+     , Monad check
+     , Applicative check'
+     )
+  => (forall a. p a -> Encoder check parse a r)
+  -> check (EncoderFunc check' parse p r)
+checkEnum1EncoderFunc f = do
+  (encoderImpls :: DMap p (Flip (EncoderImpl parse) r)) <- DMap.fromList <$>
+    traverse (\(Some.This p) -> (p :=>) . Flip <$> unEncoder (f p)) universe
+  pure $ EncoderFunc $ \p -> unsafeMkEncoder . unFlip $
+    DMap.findWithDefault (error "checkEnum1EncoderFunc: EncoderImpl not found (should be impossible)") p encoderImpls
 
-wrappedValidEncoder :: (Wrapped a, Applicative parse) => ValidEncoder parse (Unwrapped a) a
-wrappedValidEncoder = isoValidEncoder $ from _Wrapped'
+-- | This type is used by pathComponentEncoder to allow the user to indicate how to treat various cases when encoding a dependent sum of type `(R p)`.
+data SegmentResult check parse a =
+    PathEnd (Encoder check parse a (Map Text (Maybe Text))) -- ^ Indicate that the path is finished, with an Encoder that translates the corresponding value into query parameters
+  | PathSegment Text (Encoder check parse a PageName) -- ^ Indicate that the key should be represented by an additional path segment with the given 'Text', and give an Encoder for translating the corresponding value into the remainder of the route.
 
-unwrappedValidEncoder :: (Wrapped a, Applicative parse) => ValidEncoder parse a (Unwrapped a)
-unwrappedValidEncoder = isoValidEncoder _Wrapped'
+-- | Encode a dependent sum of type `(R p)` into a PageName (i.e. the path and query part of a URL) by using the
+-- supplied function to decide how to encode the constructors of p using the SegmentResult type. It is important
+-- that the number of values of type `(Some p)` be relatively small in order for checking to complete quickly.
+pathComponentEncoder
+  :: forall check parse p.
+     ( Universe (Some p)
+     , GShow p
+     , GCompare p
+     , MonadError Text check
+     , MonadError Text parse )
+  => (forall a. p a -> SegmentResult check parse a)
+  -> Encoder check parse (R p) PageName
+pathComponentEncoder f = Encoder $ do
+  let extractEncoder = \case
+        PathEnd e -> first (unitEncoder []) . coidl . e
+        PathSegment _ e -> e
+      extractPathSegment = \case
+        PathEnd _ -> Nothing
+        PathSegment t _ -> Just t
+  EncoderFunc f' <- checkEnum1EncoderFunc (extractEncoder . f)
+  unEncoder (pathComponentEncoderImpl (enum1Encoder (extractPathSegment . f)) f')
 
-pathComponentEncoder :: forall check parse p. (Monad check, Monad parse) => (Encoder check parse (Some p) (Maybe Text)) -> (forall a. p a -> ValidEncoder parse a PageName) -> Encoder check parse (R p) PageName
-pathComponentEncoder this rest = chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consValidEncoder) this rest
+pathComponentEncoderImpl :: forall check parse p. (Monad check, Monad parse)
+  => (Encoder check parse (Some p) (Maybe Text))
+  -> (forall a. p a -> Encoder Identity parse a PageName)
+  -> Encoder check parse (R p) PageName
+pathComponentEncoderImpl this rest =
+  chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consEncoder) this rest
 
 --NOTE: Naming convention in this module is to always talk about things in the *encoding* direction, never in the *decoding* direction
 
@@ -289,34 +384,40 @@ chainEncoder
      ( Monad check
      , Monad parse
      )
-  => ValidEncoder parse (b, r) r
+  => Encoder check parse (b, r) r
   -> Encoder check parse (Some p) b
-  -> (forall a. p a -> ValidEncoder parse a r)
+  -> (forall a. p a -> Encoder Identity parse a r)
   -> Encoder check parse (R p) r
 chainEncoder cons this rest = Encoder $ do
-  thisValid <- checkEncoder this
-  pure $ ValidEncoder
-    { _validEncoder_decode = \v -> do
-        (here, following) <- _validEncoder_decode cons v
-        Some.This r <- _validEncoder_decode thisValid here
-        (r :/) <$> _validEncoder_decode (rest r) following
-    , _validEncoder_encode = \(r :/ s) ->
-        _validEncoder_encode cons (_validEncoder_encode thisValid $ Some.This r, _validEncoder_encode (rest r) s)
+  consValid <- unEncoder cons
+  thisValid <- unEncoder this
+  pure $ EncoderImpl
+    { _encoderImpl_decode = \v -> do
+        (here, following) <- _encoderImpl_decode consValid v
+        Some.This r <- _encoderImpl_decode thisValid here
+        (r :/) <$> _encoderImpl_decode (runIdentity . unEncoder $ rest r) following
+    , _encoderImpl_encode = \(r :/ s) ->
+        _encoderImpl_encode consValid
+          ( _encoderImpl_encode thisValid $ Some.This r
+          , _encoderImpl_encode (runIdentity . unEncoder $ rest r) s)
     }
 
 --TODO: Do this in terms of a lens instead
-lensEncoder :: Monad parse => (b -> [a] -> b) -> (b -> [a]) -> ValidEncoder parse (c, [a]) [a] -> ValidEncoder parse (c, b) b
-lensEncoder set get g = ValidEncoder
-  { _validEncoder_encode = \(ma, b) -> set b $ _validEncoder_encode g (ma, get b)
-  , _validEncoder_decode = \b -> do
-      (ma, la) <- _validEncoder_decode g $ get b
-      pure (ma, set b la)
-  }
+lensEncoder :: (Applicative check, Monad parse)
+  => (b -> [a] -> b) -> (b -> [a]) -> Encoder check parse (c, [a]) [a] -> Encoder check parse (c, b) b
+lensEncoder set get g = Encoder $ do
+  gImpl <- unEncoder g
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \(ma, b) -> set b $ _encoderImpl_encode gImpl (ma, get b)
+    , _encoderImpl_decode = \b -> do
+        (ma, la) <- _encoderImpl_decode gImpl $ get b
+        pure (ma, set b la)
+    }
 
-consValidEncoder :: Applicative parse => ValidEncoder parse (Maybe a, [a]) [a] --TODO: Really shouldn't *always* have the [a], even in the Nothing case
-consValidEncoder = ValidEncoder
-  { _validEncoder_encode = \(h, t) -> maybeToList h <> t
-  , _validEncoder_decode = pure . \case
+consEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Maybe a, [a]) [a] --TODO: Really shouldn't *always* have the [a], even in the Nothing case
+consEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = \(h, t) -> maybeToList h <> t
+  , _encoderImpl_decode = pure . \case
       [] -> (Nothing, [])
       h:t -> (Just h, t)
   }
@@ -336,31 +437,31 @@ shadowEncoder
   -> Encoder check parse b c -- ^ Gets overlapped
   -> Encoder check parse (Either a b) c
 shadowEncoder f g = Encoder $ do
-  vf <- checkEncoder f
-  vg <- checkEncoder g
-  let gCanParse c = catchError (Just <$> _validEncoder_decode vg c) (\_ -> pure Nothing)
+  vf <- unEncoder f
+  vg <- unEncoder g
+  let gCanParse c = catchError (Just <$> _encoderImpl_decode vg c) (\_ -> pure Nothing)
   overlaps <- fmap catMaybes $ forM universe $ \a -> do
-    let c = _validEncoder_encode vf a
+    let c = _encoderImpl_encode vf a
     mb <- gCanParse c
     pure $ fmap (\b -> (a, b, c)) mb
   case overlaps of
     [] -> pure ()
     _ -> throwError $ "shadowEncoder: overlap detected: " <> T.unlines
       (flip fmap overlaps $ \(a, b, c) -> "first encoder encodes " <> tshow a <> " as " <> tshow c <> ", which second encoder decodes as " <> tshow b)
-  pure $ ValidEncoder
-    { _validEncoder_encode = \case
-        Left a -> _validEncoder_encode vf a
-        Right b -> _validEncoder_encode vg b
-    , _validEncoder_decode = \c -> (Left <$> _validEncoder_decode vf c) `catchError` \_ -> Right <$> _validEncoder_decode vg c
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \case
+        Left a -> _encoderImpl_encode vf a
+        Right b -> _encoderImpl_encode vg b
+    , _encoderImpl_decode = \c -> (Left <$> _encoderImpl_decode vf c) `catchError` \_ -> Right <$> _encoderImpl_decode vg c
     }
 
 enum1Encoder
   :: ( Universe (Some p)
      , GShow p
      , GCompare p
-     , Ord r
      , MonadError Text check
      , MonadError Text parse
+     , Ord r
      , Show r
      )
   => (forall a. p a -> r) -> Encoder check parse (Some p) r
@@ -381,40 +482,40 @@ enumEncoder f = Encoder $ do
   case itraverse checkSingleton reversed :: Validation (Map r (Set p)) (Map r p) of
     Failure ambiguousEntries -> throwError $ T.unlines $
       "enumEncoder: ambiguous encodings detected:" : concat (Map.elems $ imap showRedundant ambiguousEntries)
-    Success m -> pure $ ValidEncoder
-      { _validEncoder_decode = \r -> case Map.lookup r m of
+    Success m -> pure $ EncoderImpl
+      { _encoderImpl_decode = \r -> case Map.lookup r m of
           Just a -> pure a
           Nothing -> throwError $ "enumEncoder: not recognized: " <> tshow r --TODO: Report this as a better type
-      , _validEncoder_encode = f
+      , _encoderImpl_encode = f
       }
 
-endValidEncoder :: (MonadError Text parse, Show r, Eq r) => r -> ValidEncoder parse () r
-endValidEncoder expected = ValidEncoder
-  { _validEncoder_decode = \obtained ->
+unitEncoder :: (Applicative check, MonadError Text parse, Show r, Eq r) => r -> Encoder check parse () r
+unitEncoder expected = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_decode = \obtained ->
       if obtained == expected
       then pure ()
-      else throwError $ "endValidEncoder: expected " <> tshow expected <> ", got " <> tshow obtained
-  , _validEncoder_encode = \_ -> expected
+      else throwError $ "endEncoderImpl: expected " <> tshow expected <> ", got " <> tshow obtained
+  , _encoderImpl_encode = \_ -> expected
   }
 
-singlePathSegmentValidEncoder :: MonadError Text parse => ValidEncoder parse Text PageName
-singlePathSegmentValidEncoder = pathOnlyValidEncoder . singletonListValidEncoder
+singlePathSegmentEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse Text PageName
+singlePathSegmentEncoder = pathOnlyEncoder . singletonListEncoder
 
-pathOnlyValidEncoder :: (MonadError Text parse) => ValidEncoder parse [Text] PageName
-pathOnlyValidEncoder = ValidEncoder
-  { _validEncoder_decode = \(path, query) ->
+pathOnlyEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse [Text] PageName
+pathOnlyEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_decode = \(path, query) ->
       if query == mempty
       then pure path
-      else throwError "pathOnlyValidEncoder: query was provided"
-  , _validEncoder_encode = \path -> (path, mempty)
+      else throwError "pathOnlyEncoderImpl: query was provided"
+  , _encoderImpl_encode = \path -> (path, mempty)
   }
 
-singletonListValidEncoder :: (MonadError Text parse) => ValidEncoder parse a [a]
-singletonListValidEncoder = ValidEncoder
-  { _validEncoder_decode = \case
+singletonListEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a [a]
+singletonListEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_decode = \case
       [a] -> pure a
-      l -> throwError $ "singletonListValidEncoder: expected one item, got " <> tshow (length l)
-  , _validEncoder_encode = (:[])
+      l -> throwError $ "singletonListEncoderImpl: expected one item, got " <> tshow (length l)
+  , _encoderImpl_encode = (:[])
   }
 
 splitTextNonEmpty :: Text -> Text -> NonEmpty Text
@@ -423,18 +524,18 @@ splitTextNonEmpty separator v = case T.splitOn separator v of
   h : t -> h :| t
 
 --TODO: To know this is reversible, we must know that the separator isn't included anywhere in the input text
-pathSegmentsTextEncoder :: (MonadError Text check, Applicative parse) => Encoder check parse (NonEmpty Text) Text
-pathSegmentsTextEncoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = T.intercalate "/" . fmap (urlEncodeText False) . toList
-  , _validEncoder_decode = pure . fmap (urlDecodeText False) . splitTextNonEmpty "/"
+pathSegmentsTextEncoder :: (Applicative check, Applicative parse) => Encoder check parse (NonEmpty Text) Text
+pathSegmentsTextEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = T.intercalate "/" . fmap (urlEncodeText False) . toList
+  , _encoderImpl_decode = pure . fmap (urlDecodeText False) . splitTextNonEmpty "/"
   }
 
 queryParametersTextEncoder :: (Applicative check, Applicative parse) => Encoder check parse [(Text, Maybe Text)] Text
-queryParametersTextEncoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = \case
+queryParametersTextEncoder = Encoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = \case
       [] -> ""
       params -> T.intercalate "&" (fmap encodeParameter params)
-  , _validEncoder_decode = pure . \case
+  , _encoderImpl_decode = pure . \case
       "" -> []
       encoded ->
         let h :| t = splitTextNonEmpty "&" encoded
@@ -456,30 +557,30 @@ urlDecodeText :: Bool -> Text -> Text
 urlDecodeText q = decodeUtf8 . urlDecode q . encodeUtf8
 
 listToNonEmptyEncoder :: (Applicative check, Applicative parse, Monoid a, Eq a) => Encoder check parse [a] (NonEmpty a)
-listToNonEmptyEncoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = \case
+listToNonEmptyEncoder = Encoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = \case
       [] -> mempty :| []
       h : t -> h :| t
-  , _validEncoder_decode = \(h :| t) -> pure $
+  , _encoderImpl_decode = \(h :| t) -> pure $
       if h == mempty
       then []
       else h : t
   }
 
 prefixTextEncoder :: (Applicative check, MonadError Text parse) => Text -> Encoder check parse Text Text
-prefixTextEncoder p = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = mappend p
-  , _validEncoder_decode = \v -> case T.stripPrefix p v of
+prefixTextEncoder p = Encoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = mappend p
+  , _encoderImpl_decode = \v -> case T.stripPrefix p v of
       Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> tshow p <> ", got " <> tshow (T.take (T.length p) v)
       Just stripped -> pure stripped
   }
 
 prefixNonemptyTextEncoder :: (Applicative check, MonadError Text parse) => Text -> Encoder check parse Text Text
-prefixNonemptyTextEncoder p = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = \case
+prefixNonemptyTextEncoder p = Encoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = \case
       "" -> ""
       v -> p <> v
-  , _validEncoder_decode = \case
+  , _encoderImpl_decode = \case
       "" -> pure ""
       v -> case T.stripPrefix p v of
         Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> tshow p
@@ -487,23 +588,23 @@ prefixNonemptyTextEncoder p = Encoder $ pure $ ValidEncoder
   }
 
 unpackTextEncoder :: (Applicative check, Applicative parse) => Encoder check parse Text String
-unpackTextEncoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = T.unpack
-  , _validEncoder_decode = pure . T.pack
+unpackTextEncoder = Encoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = T.unpack
+  , _encoderImpl_decode = pure . T.pack
   }
 
 toListMapEncoder :: (Applicative check, Applicative parse, Ord k) => Encoder check parse (Map k v) [(k, v)]
-toListMapEncoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = Map.toList
-  , _validEncoder_decode = pure . Map.fromList --TODO: Should we be stricter about repeated keys?
+toListMapEncoder = Encoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = Map.toList
+  , _encoderImpl_decode = pure . Map.fromList --TODO: Should we be stricter about repeated keys?
   }
 
 joinPairTextEncoder :: (MonadError Text check, MonadError Text parse) => Text -> Encoder check parse (Text, Text) Text
 joinPairTextEncoder = Encoder . \case
   "" -> throwError "joinPairTextEncoder: empty separator"
-  separator -> pure $ ValidEncoder
-    { _validEncoder_encode = \(k, v) -> k <> separator <> v
-    , _validEncoder_decode = \r ->
+  separator -> pure $ EncoderImpl
+    { _encoderImpl_encode = \(k, v) -> k <> separator <> v
+    , _encoderImpl_decode = \r ->
         let (kt, vt) = T.breakOn separator r
         in case vt of
           -- The separator was not found
@@ -516,137 +617,121 @@ joinPairTextEncoder = Encoder . \case
 rPrism :: forall f g. (forall a. Prism' (f a) (g a)) -> Prism' (R f) (R g)
 rPrism p = prism (\(g :/ x) -> g ^. re p :/ x) (\(f :/ x) -> bimap (:/ x) (:/ x) $ matching p f)
 
--- An encoder that only works on the items available via the prism
-prismValidEncoder :: MonadError Text parse => Prism' b a -> ValidEncoder parse a b
-prismValidEncoder p = ValidEncoder
-  { _validEncoder_encode = (^. re p)
-  , _validEncoder_decode = \r -> case r ^? p of
+-- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
+-- if the prism doesn't match.
+prismEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
+prismEncoder p = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = (^. re p)
+  , _encoderImpl_decode = \r -> case r ^? p of
       Just a -> pure a
-      Nothing -> throwError "prismValidEncoder: value is not present in the prism"
+      Nothing -> throwError "prismEncoder: value is not present in the prism"
   }
 
+-- | A URL path and query string, in which trailing slashes don't matter in the path
+-- and duplicate query parameters are not allowed. A final goal of encoders using this library
+-- will frequently be to produce this.
+type PageName = ([Text], Map Text (Maybe Text))
 
--- | Encode a PageName into a path and query string, suitable for use in the
--- 'URI' type
-pageNameValidEncoder :: MonadError Text parse => ValidEncoder parse PageName (String, String)
-pageNameValidEncoder = ve
-  where Right ve = checkEncoder $ bimap
-          (unpackTextEncoder . prefixTextEncoder "/" . pathSegmentsTextEncoder . listToNonEmptyEncoder)
-          (unpackTextEncoder . prefixNonemptyTextEncoder "?" . queryParametersTextEncoder . toListMapEncoder)
+-- | A path (separated by slashes), and a query string.
+type PathQuery = (String, String)
 
-catchValidEncoder :: (e -> a) -> ValidEncoder (Either e) a b -> ValidEncoder Identity a b
-catchValidEncoder recover ve = ve
-  { _validEncoder_decode = \a -> pure $ case _validEncoder_decode ve a of
+-- | Encode a PageName into a path and query string.
+pageNameEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse PageName PathQuery
+pageNameEncoder = bimap
+  (unpackTextEncoder . prefixTextEncoder "/" . pathSegmentsTextEncoder . listToNonEmptyEncoder)
+  (unpackTextEncoder . prefixNonemptyTextEncoder "?" . queryParametersTextEncoder . toListMapEncoder)
+
+-- | Handle an error in parsing, for example, in order to redirect to a 404 page.
+handleEncoder
+  :: (Functor check)
+  => (e -> a)
+  -> Encoder check (Either e) a b
+  -> Encoder check Identity a b
+handleEncoder recover e = Encoder $ do
+  i <- unEncoder e
+  return $ i
+    { _encoderImpl_decode = \a -> pure $ case _encoderImpl_decode i a of
       Right r -> r
       Left err -> recover err
-  }
+    }
 
 --------------------------------------------------------------------------------
 -- Actual obelisk route info
 --------------------------------------------------------------------------------
 
+-- | A type which can represent Obelisk-specific resource routes, in addition to application specific routes which serve your
+-- frontend.
 data ObeliskRoute :: (* -> *) -> * -> * where
   -- We need to have the `f a` as an argument here, because otherwise we have no way to specifically check for overlap between us and the given encoder
   ObeliskRoute_App :: f a -> ObeliskRoute f a
   ObeliskRoute_Resource :: ResourceRoute a -> ObeliskRoute f a
 
+instance Universe (Some f) => Universe (Some (ObeliskRoute f)) where
+  universe = fmap (\(Some.This x) -> Some.This (ObeliskRoute_App x)) universe
+          ++ fmap (\(Some.This x) -> Some.This (ObeliskRoute_Resource x)) universe
+
+instance GEq f => GEq (ObeliskRoute f) where
+  geq (ObeliskRoute_App x) (ObeliskRoute_App y) = geq x y
+  geq (ObeliskRoute_Resource x) (ObeliskRoute_Resource y) = geq x y
+  geq _ _ = Nothing
+
+instance GCompare f => GCompare (ObeliskRoute f) where
+  gcompare (ObeliskRoute_App x) (ObeliskRoute_App y) = gcompare x y
+  gcompare (ObeliskRoute_Resource x) (ObeliskRoute_Resource y) = gcompare x y
+  gcompare (ObeliskRoute_App _) (ObeliskRoute_Resource _) = GLT
+  gcompare (ObeliskRoute_Resource _) (ObeliskRoute_App _) = GGT
+
+-- | A type representing the various resource routes served by Obelisk. These can in principle map to any physical routes you want,
+-- but sane defaults are provided by 'resourceRouteSegment'
 data ResourceRoute :: * -> * where
   ResourceRoute_Static :: ResourceRoute [Text] -- This [Text] represents the *path in our static files directory*, not necessarily the URL path that the asset gets served at (although that will often be "/static/this/text/thing")
   ResourceRoute_Ghcjs :: ResourceRoute [Text]
   ResourceRoute_JSaddleWarp :: ResourceRoute (R JSaddleWarpRoute)
 
---TODO: Figure out a way to check this
-obeliskComponentEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (ObeliskRoute f)) (Either (Some ResourceRoute) (Some f))
-obeliskComponentEncoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = \(Some.This o) -> case o of
-      ObeliskRoute_App r -> Right $ Some.This r
-      ObeliskRoute_Resource r -> Left $ Some.This r
-  , _validEncoder_decode = pure . \case
-      Right (Some.This r) -> Some.This $ ObeliskRoute_App r
-      Left (Some.This r) -> Some.This $ ObeliskRoute_Resource r
-  }
-
-newtype ValidEncoderFunc parse p r = ValidEncoderFunc { runValidEncoderFunc :: forall a. p a -> ValidEncoder parse a r }
-
-checkEnum1EncoderFunc
-  :: forall check parse p r.
-     ( Universe (Some p)
-     , GCompare p
-     , Monad check
-     )
-  => (forall a. p a -> Encoder check parse a r)
-  -> check (ValidEncoderFunc parse p r)
-checkEnum1EncoderFunc f = do
-  validEncoders :: DMap p (Flip (ValidEncoder parse) r) <- DMap.fromList <$> traverse (\(Some.This p) -> (p :=>) . Flip <$> checkEncoder (f p)) universe
-  pure $ ValidEncoderFunc $ \p -> unFlip $ DMap.findWithDefault (error "checkEnum1EncoderFunc: ValidEncoder not found (should be impossible)") p validEncoders
-
-obeliskRouteEncoder
-  :: forall check parse appRoute.
-     ( Universe (Some appRoute)
-     , GCompare appRoute
+-- | If there are no additional backend routes in your app (i.e. ObeliskRoute gives you all the routes you need),
+-- this constructs a suitable 'Encoder' to use for encoding routes to 'PageName's. If you do have additional backend routes,
+-- you'll want to use 'pathComponentEncoder' yourself, applied to a function that will likely use obeliskRouteSegment in order to
+-- handle the ObeliskRoute case (i.e. Obelisk resource routes and app frontend routes).
+obeliskRouteEncoder :: forall check parse appRoute.
+     ( Universe (Some (ObeliskRoute appRoute))
+     , GCompare (ObeliskRoute appRoute)
      , GShow appRoute
      , MonadError Text check
      , check ~ parse --TODO: Get rid of this
      )
-  => (Encoder check parse (Some appRoute) (Maybe Text))
-  -> (forall a. appRoute a -> Encoder check parse a PageName)
+  => (forall a. appRoute a -> SegmentResult check parse a)
   -> Encoder check parse (R (ObeliskRoute appRoute)) PageName
-obeliskRouteEncoder appComponentEncoder appRouteEncoder = Encoder $ do
-  let componentEncoder = obeliskRouteComponentEncoder appComponentEncoder
-  restEncoder <- checkObeliskRouteRestEncoder appRouteEncoder
-  checkEncoder $ pathComponentEncoder componentEncoder $ runValidEncoderFunc restEncoder
+obeliskRouteEncoder appRouteSegment = pathComponentEncoder (obeliskRouteSegment appRouteSegment)
 
-checkObeliskRouteRestEncoder
-  :: ( MonadError Text check
-     , MonadError Text parse
-     , Universe (Some appRoute)
-     , GCompare appRoute
-     )
-  => (forall a. appRoute a -> Encoder check parse a PageName)
-  -> check (ValidEncoderFunc parse (ObeliskRoute appRoute) PageName)
-checkObeliskRouteRestEncoder appRouteEncoder = do
-  appRouteValidEncoder <- checkEnum1EncoderFunc appRouteEncoder
-  resourceRouteValidEncoder <- checkEnum1EncoderFunc resourceRouteEncoder
-  return $ ValidEncoderFunc $ \case
-    ObeliskRoute_App appRoute -> runValidEncoderFunc appRouteValidEncoder appRoute
-    ObeliskRoute_Resource resRoute -> runValidEncoderFunc resourceRouteValidEncoder resRoute
+-- | From a function which explains how app-specific frontend routes translate into segments, produce a function which does the
+-- same for ObeliskRoute. This uses the given function for the 'ObeliskRoute_App' case, and 'resourceRouteSegment' for the
+-- 'ObeliskRoute_Resource' case.
+obeliskRouteSegment :: forall check parse appRoute.
+     (MonadError Text check, MonadError Text parse)
+  => (forall a. appRoute a -> SegmentResult check parse a)
+  -> (forall a. ObeliskRoute appRoute a -> SegmentResult check parse a)
+obeliskRouteSegment appRouteSegment = \case
+  ObeliskRoute_App appRoute -> appRouteSegment appRoute
+  ObeliskRoute_Resource resourceRoute -> resourceRouteSegment resourceRoute
 
-obeliskRouteComponentEncoder
-  :: ( MonadError Text parse
-     , GShow appRoute
-     , check ~ parse
-     )
-  => Encoder check parse (Some appRoute) (Maybe Text) -> Encoder check parse (Some (ObeliskRoute appRoute)) (Maybe Text)
-obeliskRouteComponentEncoder appComponentEncoder = (resourceComponentEncoder `shadowEncoder` appComponentEncoder) . obeliskComponentEncoder
-
-resourceComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some ResourceRoute) (Maybe Text)
-resourceComponentEncoder = enum1Encoder $ \case
-  ResourceRoute_Static -> Just "static"
-  ResourceRoute_Ghcjs -> Just "ghcjs"
-  ResourceRoute_JSaddleWarp -> Just "jsaddle"
-
-resourceRouteEncoder :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> Encoder check parse a PageName
-resourceRouteEncoder = \case
-  ResourceRoute_Static -> Encoder $ pure pathOnlyValidEncoder
-  ResourceRoute_Ghcjs -> Encoder $ pure pathOnlyValidEncoder
-  ResourceRoute_JSaddleWarp -> jsaddleWarpRouteEncoder
+-- | A function which gives a sane default for how to encode Obelisk resource routes. It's given in this form, because it will
+-- be combined with other such segment encoders before 'pathComponentEncoder' turns it into a proper 'Encoder'.
+resourceRouteSegment :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> SegmentResult check parse a
+resourceRouteSegment = \case
+  ResourceRoute_Static -> PathSegment "static" $ pathOnlyEncoder
+  ResourceRoute_Ghcjs -> PathSegment "ghcjs" $ pathOnlyEncoder
+  ResourceRoute_JSaddleWarp -> PathSegment "jsaddle" $ jsaddleWarpRouteEncoder
 
 data JSaddleWarpRoute :: * -> * where
   JSaddleWarpRoute_JavaScript :: JSaddleWarpRoute ()
   JSaddleWarpRoute_WebSocket :: JSaddleWarpRoute ()
   JSaddleWarpRoute_Sync :: JSaddleWarpRoute [Text]
 
-jsaddleWarpRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some JSaddleWarpRoute) (Maybe Text)
-jsaddleWarpRouteComponentEncoder = enum1Encoder $ \case
-  JSaddleWarpRoute_JavaScript -> Just "jsaddle.js"
-  JSaddleWarpRoute_WebSocket -> Nothing
-  JSaddleWarpRoute_Sync -> Just "sync"
-
 jsaddleWarpRouteEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (R JSaddleWarpRoute) PageName
-jsaddleWarpRouteEncoder = pathComponentEncoder jsaddleWarpRouteComponentEncoder $ \case
-  JSaddleWarpRoute_JavaScript -> endValidEncoder mempty
-  JSaddleWarpRoute_WebSocket -> endValidEncoder mempty
-  JSaddleWarpRoute_Sync -> pathOnlyValidEncoder
+jsaddleWarpRouteEncoder = pathComponentEncoder $ \case
+  JSaddleWarpRoute_JavaScript -> PathSegment "jsaddle.js" $ unitEncoder mempty
+  JSaddleWarpRoute_WebSocket ->  PathEnd $ unitEncoder mempty
+  JSaddleWarpRoute_Sync -> PathSegment "sync" $ pathOnlyEncoder
 
 instance GShow appRoute => GShow (ObeliskRoute appRoute) where
   gshowsPrec prec = \case
@@ -655,32 +740,22 @@ instance GShow appRoute => GShow (ObeliskRoute appRoute) where
     ObeliskRoute_Resource appRoute -> showParen (prec > 10) $
       showString "ObeliskRoute_Resource " . gshowsPrec 11 appRoute
 
-
 data IndexOnlyRoute :: * -> * where
   IndexOnlyRoute :: IndexOnlyRoute ()
 
-indexOnlyRouteComponentEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (Some IndexOnlyRoute) (Maybe Text)
-indexOnlyRouteComponentEncoder = enum1Encoder $ \case
-  IndexOnlyRoute -> Nothing
+indexOnlyRouteSegment :: (Applicative check, MonadError Text parse) => IndexOnlyRoute a -> SegmentResult check parse a
+indexOnlyRouteSegment = \case
+  IndexOnlyRoute -> PathEnd $ unitEncoder mempty
 
-indexOnlyRouteRestEncoder :: (Applicative check, MonadError Text parse) => IndexOnlyRoute a -> Encoder check parse a PageName
-indexOnlyRouteRestEncoder = \case
-  IndexOnlyRoute -> Encoder $ pure $ constLaxValidEncoder mempty
-
---TODO: Come up with a naming scheme that is better at describing how permissive
---versus strict things are
-constLaxValidEncoder :: Applicative parse => a -> ValidEncoder parse () a
-constLaxValidEncoder a = ValidEncoder
-  { _validEncoder_encode = \_ -> a
-  , _validEncoder_decode = \_ -> pure ()
-  }
+indexOnlyRouteEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse (R IndexOnlyRoute) PageName
+indexOnlyRouteEncoder = pathComponentEncoder indexOnlyRouteSegment
 
 someSumEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Sum a b)) (Either (Some a) (Some b))
-someSumEncoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = \(Some.This t) -> case t of
+someSumEncoder = Encoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = \(Some.This t) -> case t of
       InL l -> Left $ Some.This l
       InR r -> Right $ Some.This r
-  , _validEncoder_decode = pure . \case
+  , _encoderImpl_decode = pure . \case
       Left (Some.This l) -> Some.This (InL l)
       Right (Some.This r) -> Some.This (InR r)
   }
@@ -691,22 +766,22 @@ instance Universe (Some Void1) where
   universe = []
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
-void1Encoder = Encoder $ pure $ ValidEncoder
-  { _validEncoder_encode = \case
+void1Encoder = Encoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = \case
       Some.This f -> case f of {}
-  , _validEncoder_decode = \_ -> throwError "void1Encoder: can't decode anything"
+  , _encoderImpl_decode = \_ -> throwError "void1Encoder: can't decode anything"
   }
 
 instance GShow Void1 where
   gshowsPrec _ = \case {}
-
-makePrisms ''ObeliskRoute
 
 concat <$> mapM deriveRouteComponent
   [ ''ResourceRoute
   , ''JSaddleWarpRoute
   , ''IndexOnlyRoute
   ]
+
+makePrisms ''ObeliskRoute
 
 deriveGEq ''Void1
 deriveGCompare ''Void1
