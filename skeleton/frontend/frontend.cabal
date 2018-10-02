@@ -7,6 +7,7 @@ library
   hs-source-dirs: src
   build-depends: base
                , common
+               , dependent-sum
                , obelisk-frontend
                , obelisk-route
                , reflex-dom

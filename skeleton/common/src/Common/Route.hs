@@ -33,6 +33,7 @@ data BackendRoute :: * -> * where
 
 data FrontendRoute :: * -> * where
   FrontendRoute_Main :: FrontendRoute ()
+  FrontendRoute_Other :: FrontendRoute [Text]
   -- This type is used to define frontend routes, i.e. ones for which the backend will serve the frontend.
 
 backendRouteEncoder
@@ -46,7 +47,8 @@ backendRouteEncoder = handleEncoder (const (InL BackendRoute_Missing :/ ())) $
 frontendRouteSegment :: (Applicative check, MonadError Text parse)
   => FrontendRoute a -> SegmentResult check parse a
 frontendRouteSegment = \case
-  FrontendRoute_Main -> PathEnd $ unitEncoder mempty 
+  FrontendRoute_Main -> PathEnd $ unitEncoder mempty
+  FrontendRoute_Other -> PathSegment "other" pathOnlyEncoder
   -- The encoder given to PathEnd determines how to parse query parameters,
   -- in this example, we have none, so we insist on it.
 
