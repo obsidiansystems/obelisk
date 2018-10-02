@@ -1,0 +1,10 @@
+name: common
+version: '0.1'
+
+library:
+  source-dirs: src
+  dependencies:
+    - base
+    - obelisk-route
+    - mtl
+    - text

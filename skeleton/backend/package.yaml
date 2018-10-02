@@ -1,0 +1,29 @@
+name: backend
+version: '0.1'
+
+library:
+  source-dirs: src
+  ghc-options: -Wall
+  dependencies:
+    - base
+    - common
+    - frontend
+    - obelisk-backend
+    - obelisk-route
+  when:
+    - condition: impl(ghcjs -any)
+      buildable: false
+
+executables:
+  backend:
+    main: main.hs
+    source-dirs: src-bin
+    dependencies:
+      - backend
+      - base
+      - common
+      - frontend
+      - obelisk-backend
+    when:
+      - condition: impl(ghcjs -any)
+        buildable: false
