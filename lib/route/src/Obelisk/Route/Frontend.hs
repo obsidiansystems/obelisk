@@ -268,7 +268,7 @@ runRouteViewT routeEncoder a = do
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
       (result, changeState) <- runSetRouteT $ runRoutedT a route
-      let f oldRoute change =
+      let f (currentHistoryState, oldRoute) change =
             let newRoute = appEndo change oldRoute
                 (newPath, newQuery) = encode theEncoder newRoute
             in HistoryStateUpdate
@@ -284,10 +284,10 @@ runRouteViewT routeEncoder a = do
                  -- we can change this function later to accommodate.
                  -- See: https://github.com/whatwg/html/issues/2174
                , _historyStateUpdate_title = ""
-               , _historyStateUpdate_uri = Just $ nullURI
+               , _historyStateUpdate_uri = Just $ (_historyItem_uri currentHistoryState)
                  { uriPath = newPath
                  , uriQuery = newQuery
                  }
                }
-          setState = attachWith f (current route) changeState
+          setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
