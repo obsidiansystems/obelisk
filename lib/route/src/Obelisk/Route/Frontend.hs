@@ -267,7 +267,7 @@ runRouteViewT routeEncoder a = do
           -- is nonempty, but begins with a character that isn't '?'. Since we don't expect
           -- this ever to happen, we'll just handle it by failing completely with 'error'.
           route :: Dynamic t r
-          route = fmap (errorLeft . tryDecode theEncoder . (uriPath &&& uriQuery) . _historyItem_uri) historyState
+          route = fmap (errorLeft . tryDecode theEncoder . (adaptedUriPath &&& uriQuery) . _historyItem_uri) historyState
             where
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
@@ -288,9 +288,8 @@ runRouteViewT routeEncoder a = do
                  -- we can change this function later to accommodate.
                  -- See: https://github.com/whatwg/html/issues/2174
                , _historyStateUpdate_title = ""
-               , _historyStateUpdate_uri = Just $ (_historyItem_uri currentHistoryState)
-                 { uriPath = newPath
-                 , uriQuery = newQuery
+               , _historyStateUpdate_uri = Just $ setAdaptedUriPath newPath $ (_historyItem_uri currentHistoryState)
+                 { uriQuery = newQuery
                  }
                }
           setState = attachWith f ((,) <$> current historyState  <*> current route) changeState
