@@ -74,6 +74,10 @@ import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can
 import Reflex.Dom.Core
 import qualified GHCJS.DOM.Types as DOM
 import Network.URI
+#if defined(ios_HOST_OS)
+import Data.Maybe (fromMaybe)
+import qualified Data.List as L
+#endif
 
 import Unsafe.Coerce
 
@@ -271,7 +275,7 @@ runRouteViewT routeEncoder a = do
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
       (result, changeState) <- runSetRouteT $ runRoutedT a route
-      let f oldRoute change =
+      let f (currentHistoryState, oldRoute) change =
             let newRoute = appEndo change oldRoute
                 (newPath, newQuery) = encode theEncoder newRoute
             in HistoryStateUpdate
@@ -287,10 +291,34 @@ runRouteViewT routeEncoder a = do
                  -- we can change this function later to accommodate.
                  -- See: https://github.com/whatwg/html/issues/2174
                , _historyStateUpdate_title = ""
-               , _historyStateUpdate_uri = Just $ nullURI
+               , _historyStateUpdate_uri = Just $ (_historyItem_uri currentHistoryState)
                  { uriPath = newPath
                  , uriQuery = newQuery
                  }
                }
-          setState = attachWith f (current route) changeState
+          setState = attachWith f ((,) <$> current historyState  <*> current route) changeState
   return result
+
+-- On ios due to sandboxing on loading the page from a file adapt the path to be
+-- based on the hash.
+
+adaptedUriPath :: URI -> String
+#if defined(ios_HOST_OS)
+adaptedUriPath = hashToPath . uriFragment
+
+hashToPath :: String -> String
+hashToPath h = case L.stripPrefix "#" h of
+  Just x -> '/' : x
+  Nothing -> "/"
+#else
+adaptedUriPath = uriPath
+#endif
+
+setAdaptedUriPath :: String -> URI -> URI
+#if defined(ios_HOST_OS)
+setAdaptedUriPath s u = u { uriFragment = pathToHash s }
+
+pathToHash = ('#' :) . fromMaybe "" . L.stripPrefix "/"
+#else
+setAdaptedUriPath s u = u { uriPath = s }
+#endif
