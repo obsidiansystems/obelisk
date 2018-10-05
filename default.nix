@@ -196,6 +196,12 @@ rec {
       ec2.hvm = true;
     };
 
+    getRouteConfigPath = routePath:
+      let url = builtins.readFile routePath;
+          trimNewlines = builtins.replaceStrings ["\n"] [""];
+          getPath = uri: lib.concatStringsSep "/" (lib.drop 1 (lib.splitString "/" (lib.last (lib.splitString "//" uri))));
+      in "/" + getPath (trimNewlines url)
+
     mkObeliskApp =
       { exe
       , routeHost
@@ -203,7 +209,8 @@ rec {
       , name ? "backend"
       , user ? name
       , group ? user
-      , baseUrl ? "/"
+      , routePath ? null
+      , baseUrl ? if routePath == null then "/" else getRouteConfigPath routePath
       , internalPort ? 8000
       , backendArgs ? ""
       , ...
@@ -214,8 +221,9 @@ rec {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
-            extraConfig = "rewrite ^${baseUrl}/?(.*)$ /$1 break;";
             proxyPass = "http://localhost:" + toString internalPort;
+          } // lib.optionalAttrs (baseUrl != "/") {
+            extraConfig = "rewrite ^${baseUrl}/?(.*)$ /$1 break;";
           };
         };
       };
