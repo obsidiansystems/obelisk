@@ -81,7 +81,7 @@ serveStaticIndex cfg = do
       toHtmlRaw $ _appConfig_initialHead cfg
     body_ $ do -- <body>
       toHtmlRaw initialBody -- HtmlT monad wrapper
-      script_ [type_ "application/javascript", src_ (maybe "/all.js" T.pack appJsPath), defer_ "defer"] ("" :: String)
+      script_ [type_ "application/javascript", src_ (maybe "all.js" T.pack appJsPath), defer_ "defer"] ("" :: String)
 
 {- | Takes an AppConfig monad and uses it to generate & write Lazy ByteString
  to the body of the https response. This one comes with hard coded values
@@ -94,6 +94,6 @@ serveIndex cfg = do
       meta_ [charset_ "utf-8"]
       meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
     body_ $ do
-      script_ [type_ "application/javascript", src_ (maybe "/all.js" T.pack appJsPath), defer_ "defer"] ("" :: String)
+      script_ [type_ "application/javascript", src_ (maybe "all.js" T.pack appJsPath), defer_ "defer"] ("" :: String)
 
 makeLenses ''AppConfig

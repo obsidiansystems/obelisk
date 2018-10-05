@@ -6,14 +6,17 @@ module Obelisk.Run where
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((^?), _Just, _Right)
+import Control.Monad
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import Data.List (uncons)
+import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
+import Data.Text (Text)
 import qualified Data.Text as T
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
@@ -63,6 +66,7 @@ defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 runWidget :: RunConfig -> (StaticWidget () (), Widget () ()) -> IO ()
 runWidget conf (h, b) = do
   uri <- fromMaybe defAppUri <$> getConfigRoute
+  let uriSegments = fromMaybe [] $ fmap (fmap URI.unRText . NE.toList . snd) $ URI.uriPath uri
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
@@ -74,15 +78,18 @@ runWidget conf (h, b) = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp defaultConnectionOptions h b (fallbackProxy redirectHost redirectPort man)
+        app <- obeliskApp uriSegments defaultConnectionOptions h b (fallbackProxy redirectHost redirectPort man)
         runSettingsSocket settings skt app)
 
-obeliskApp :: ConnectionOptions -> StaticWidget () () -> Widget () () -> Application -> IO Application
-obeliskApp opts h b backend = do
+obeliskApp :: [Text] -> ConnectionOptions -> StaticWidget () () -> Widget () () -> Application -> IO Application
+obeliskApp servePathSegments opts h b backend = do
   html <- BSLC.fromStrict <$> indexHtml h
   let entryPoint = mainWidget' b >> syncPoint
+      flattenPath = mapMaybe $ \x -> do
+        guard $ not $ T.null x
+        return x
   jsaddle <- jsaddleOr opts entryPoint $ \req sendResponse -> case (W.requestMethod req, W.pathInfo req) of
-    ("GET", []) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
+    ("GET", xs) | flattenPath xs == servePathSegments -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
     ("GET", ["jsaddle.js"]) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs False
     _ -> backend req sendResponse
   -- Workaround jsaddleOr wanting to handle all websockets requests without

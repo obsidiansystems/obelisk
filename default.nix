@@ -214,6 +214,7 @@ rec {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
+            extraConfig = "rewrite ^${baseUrl}/?(.*)$ /$1 break;";
             proxyPass = "http://localhost:" + toString internalPort;
           };
         };
