@@ -110,7 +110,7 @@ initProject source = withSystemTempDirectory "ob-init" $ \tmpDir -> do
 --TODO: Allow the user to ignore our security concerns
 -- | Find the Obelisk implementation for the project at the given path
 findProjectObeliskCommand :: MonadObelisk m => FilePath -> m (Maybe FilePath)
-findProjectObeliskCommand target = withSpinnerNoTrail "Locating project obelisk" $ do
+findProjectObeliskCommand target = do
   myUid <- liftIO getRealUserID
   targetStat <- liftIO $ getFileStatus target
   (result, insecurePaths) <- flip runStateT [] $ walkToProjectRoot target targetStat myUid >>= \case
