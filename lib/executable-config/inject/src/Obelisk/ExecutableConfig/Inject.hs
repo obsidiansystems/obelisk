@@ -5,7 +5,7 @@ import Data.Semigroup ((<>))
 import Data.ByteString (ByteString)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import Reflex.Dom
+import Reflex.Dom.Core
 import System.FilePath ((</>))
 
 inject :: FilePath -> IO ByteString

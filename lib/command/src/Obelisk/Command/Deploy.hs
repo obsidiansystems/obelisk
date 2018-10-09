@@ -233,9 +233,6 @@ validateCommonRouteAndGetHost mustBeHttps uri = do
       (True, "https") -> pure ()
       _ -> throwM $ InvalidRoute_NotHttps uri
     _ -> throwM $ InvalidRoute_MissingScheme uri
-  case uri ^. uriPath of
-    [] -> pure ()
-    _path -> throwM $ InvalidRoute_HasPath uri
   case uri ^? uriAuthority . _Right . authPort of
     Just (Just _port) -> throwM $ InvalidRoute_HasPort uri
     _ -> pure ()
