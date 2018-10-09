@@ -181,6 +181,13 @@ rec {
     echo "//# sourceMappingURL=all.js.map" >> all.js
   '';
 
+  getRouteConfigPath = routePath:
+    let inherit (nixpkgs) lib;
+        url = builtins.readFile routePath;
+        trimNewlines = builtins.replaceStrings ["\n"] [""];
+        getPath = uri: lib.concatStringsSep "/" (lib.drop 1 (lib.splitString "/" (lib.last (lib.splitString "//" uri))));
+    in "/" + getPath (trimNewlines url);
+
   serverModules = {
     mkBaseEc2 = { hostName, routeHost, enableHttps, adminEmail, ... }: {...}: {
       imports = [
@@ -195,12 +202,6 @@ rec {
       } else {};
       ec2.hvm = true;
     };
-
-    getRouteConfigPath = routePath:
-      let url = builtins.readFile routePath;
-          trimNewlines = builtins.replaceStrings ["\n"] [""];
-          getPath = uri: lib.concatStringsSep "/" (lib.drop 1 (lib.splitString "/" (lib.last (lib.splitString "//" uri))));
-      in "/" + getPath (trimNewlines url)
 
     mkObeliskApp =
       { exe
@@ -222,7 +223,7 @@ rec {
           forceSSL = enableHttps;
           locations.${baseUrl} = {
             proxyPass = "http://localhost:" + toString internalPort;
-          } // lib.optionalAttrs (baseUrl != "/") {
+          } // nixpkgs.lib.optionalAttrs (baseUrl != "/") {
             extraConfig = "rewrite ^${baseUrl}/?(.*)$ /$1 break;";
           };
         };
@@ -267,7 +268,7 @@ rec {
       ln -s ${compressedJs frontend} $out/frontend.jsexe
     ''; #TODO: run frontend.jsexe through the asset processing pipeline
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, routePath }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -356,7 +357,7 @@ rec {
       inherit linuxExe;
       exe = serverOn system;
       server = args@{ hostName, adminEmail, routeHost, enableHttps }:
-        server (args // { exe = linuxExe; });
+        server (args // { exe = linuxExe; routePath = base + /config/common/route; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
