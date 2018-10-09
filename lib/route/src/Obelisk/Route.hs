@@ -21,7 +21,8 @@ module Obelisk.Route
   , pattern (:/)
   , PageName
   , PathQuery
-  , Encoder (..)
+  , Encoder
+  , unsafeEncoder
   , checkEncoder
   , EncoderImpl (..)
   , EncoderFunc (..)
@@ -155,6 +156,9 @@ mapSome f (Some.This a) = Some.This $ f a
 -- encoded type.
 newtype Encoder check parse decoded encoded =
   Encoder { unEncoder :: check (EncoderImpl parse decoded encoded) }
+
+unsafeEncoder :: check (EncoderImpl parse decoded encoded) -> Encoder check parse decoded encoded
+unsafeEncoder = Encoder
 
 -- | The internal type used to construct primitive 'Encoder' values.
 -- Law:
