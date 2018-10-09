@@ -366,7 +366,7 @@ pathComponentEncoder
   -> Encoder check parse (R p) PageName
 pathComponentEncoder f = Encoder $ do
   let extractEncoder = \case
-        PathEnd e -> first (unitEncoder []) . coidl . e
+        PathEnd e -> first (unitEncoder []) . coidl . e
         PathSegment _ e -> e
       extractPathSegment = \case
         PathEnd _ -> Nothing
