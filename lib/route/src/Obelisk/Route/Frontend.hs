@@ -205,6 +205,9 @@ class Reflex t => SetRoute t r m | m -> t r where
 instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
   modifyRoute = SetRouteT . tellEvent . fmap Endo
 
+instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
+  modifyRoute = lift . modifyRoute
+
 instance Prerender js m => Prerender js (SetRouteT t r m) where
   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
 
