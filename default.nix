@@ -241,7 +241,7 @@ rec {
       ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, config }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
