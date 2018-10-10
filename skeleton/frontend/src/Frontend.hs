@@ -18,7 +18,7 @@ frontend = (head', body)
     head' = do
       mbaseUrl <- liftIO $ get "common/route"
       forM_ mbaseUrl $ \baseUrl ->
-        elAttr "base" ("href" =: baseUrl) $ return ()
+        elAttr "base" ("href" =: T.strip baseUrl) $ return ()
       el "title" $ text "Obelisk Minimal Example"
     body = do
       text "Welcome to Obelisk!"
