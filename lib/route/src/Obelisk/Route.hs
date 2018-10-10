@@ -705,16 +705,18 @@ obeliskRouteEncoder :: forall check parse appRoute.
      )
   => (forall a. appRoute a -> SegmentResult check parse a)
   -> Encoder check parse (R (ObeliskRoute appRoute)) PageName
-obeliskRouteEncoder appRouteSegment = pathComponentEncoder (obeliskRouteSegment appRouteSegment)
+obeliskRouteEncoder appRouteSegment = pathComponentEncoder $ \r ->
+  obeliskRouteSegment r appRouteSegment
 
 -- | From a function which explains how app-specific frontend routes translate into segments, produce a function which does the
 -- same for ObeliskRoute. This uses the given function for the 'ObeliskRoute_App' case, and 'resourceRouteSegment' for the
 -- 'ObeliskRoute_Resource' case.
-obeliskRouteSegment :: forall check parse appRoute.
+obeliskRouteSegment :: forall check parse appRoute a.
      (MonadError Text check, MonadError Text parse)
-  => (forall a. appRoute a -> SegmentResult check parse a)
-  -> (forall a. ObeliskRoute appRoute a -> SegmentResult check parse a)
-obeliskRouteSegment appRouteSegment = \case
+  => ObeliskRoute appRoute a
+  -> (forall a. appRoute a -> SegmentResult check parse a)
+  -> SegmentResult check parse a
+obeliskRouteSegment r appRouteSegment = case r of
   ObeliskRoute_App appRoute -> appRouteSegment appRoute
   ObeliskRoute_Resource resourceRoute -> resourceRouteSegment resourceRoute
 
