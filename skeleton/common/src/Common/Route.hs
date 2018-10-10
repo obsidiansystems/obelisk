@@ -17,7 +17,6 @@ import Prelude hiding (id, (.))
 import Control.Category
 -}
 
-import Control.Monad.Except
 import Data.Text (Text)
 import Data.Functor.Identity
 import Data.Functor.Sum
@@ -41,14 +40,11 @@ backendRouteEncoder = handleEncoder (const (InL BackendRoute_Missing :/ ())) $
   pathComponentEncoder $ \case
     InL backendRoute -> case backendRoute of
       BackendRoute_Missing -> PathSegment "missing" $ unitEncoder mempty
-    InR obeliskRoute -> obeliskRouteSegment frontendRouteSegment obeliskRoute
+    InR obeliskRoute -> obeliskRouteSegment obeliskRoute $ \case
+      -- The encoder given to PathEnd determines how to parse query parameters,
+      -- in this example, we have none, so we insist on it.
+      FrontendRoute_Main -> PathEnd $ unitEncoder mempty
 
-frontendRouteSegment :: (Applicative check, MonadError Text parse)
-  => FrontendRoute a -> SegmentResult check parse a
-frontendRouteSegment = \case
-  FrontendRoute_Main -> PathEnd $ unitEncoder mempty 
-  -- The encoder given to PathEnd determines how to parse query parameters,
-  -- in this example, we have none, so we insist on it.
 
 concat <$> mapM deriveRouteComponent
   [ ''BackendRoute
