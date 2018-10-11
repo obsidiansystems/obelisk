@@ -7,11 +7,21 @@ library
   hs-source-dirs: src
   build-depends: base,
                  bytestring,
+                 categories,
                  data-default,
+                 dependent-sum,
+                 dependent-sum-template,
                  lens,
+                 mtl,
                  obelisk-asset-serve-snap,
+                 obelisk-executable-config-inject,
+                 obelisk-frontend,
+                 obelisk-route,
                  obelisk-snap,
                  reflex-dom,
                  snap,
-                 snap-server
+                 snap-server,
+                 text,
+                 universe
   exposed-modules: Obelisk.Backend
+  ghc-options: -Wall
