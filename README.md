@@ -5,6 +5,8 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
 - [Deploying](#deploying)
+  - [Locally](#locally)
+  - [EC2](#ec2)
 - [Mobile](#mobile)
   - [iOS](#ios)
   - [Android](#android)
@@ -20,15 +22,22 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
         ```
     1. If you are using another operating system or linux distribution, ensure that these lines are present in `/etc/nix/nix.conf`:
         ```
-        sandbox = true
         substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
         trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
         ```
-		* If you are on MacOS, restart the nix daemon
-		```
-		sudo launchctl stop org.nixos.nix-daemon
-		sudo launchctl start org.nixos.nix-daemon
-		```
+        * other Linux: enable sandboxing (see https://github.com/obsidiansystems/obelisk/issues/6)
+          ```
+          sandbox = true
+          ```
+        * MacOS: disable sandboxing (there are still some impure dependencies for now)
+          ```
+          sandbox = false
+          ```
+          then restart the nix daemon
+          ```
+          sudo launchctl stop org.nixos.nix-daemon
+          sudo launchctl start org.nixos.nix-daemon
+          ```
 1. Install obelisk: `nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command`
 
 ### Contributing to Obelisk
@@ -90,28 +99,51 @@ Every time you change the Haskell source files in frontend, common or backend, `
 
 ## Deploying
 
+### Locally
+
+Build everything:
+
+```
+nix-build -A exe -o result-exe
+```
+
+Run the server:
+
+```
+cd result-exe
+./backend
+```
+
+### EC2
+
 In this section we will demonstrate how to deploy your Obelisk app to an Amazon EC2 instance.
 
 First create a new EC2 instance:
 
-1. Launch a NixOS 17.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-40bee63a)) 
+1. Launch a NixOS 17.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-40bee63a))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
-1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80.
+1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and 443.
 
-At this stage your instance should be booting and become accessible shortly. Note down the hostname of your instance. It should look like this:
-
-```
-INSTANCE_HOSTNAME=ec2-??-??-??-??.ca-central-1.compute.amazonaws.com
-```
+At this stage your instance should be booting and become accessible shortly. Note down the hostname of your EC2 instance.
 
 Now go to your Obelisk project directory (`~/code/myapp`), and initialize a deployment config (`~/code/myapp-deploy`):
 Your project directory must be "thunkable", i.e. something on which `ob thunk pack` can be called. Usually it will be a git repository whose current revision has been pushed upstream.
 
 ```
 cd ~/code/myapp
-ob deploy init --ssh-key ~/myaws.pem --hostname ${INSTANCE_HOSTNAME} ~/code/myapp-deploy
+SERVER=ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
+ROUTE=https://myapp.com   # Publicly accessible route to your app
+EMAIL=myname@myapp.com
+ob deploy init \
+  --ssh-key ~/myaws.pem \
+  --hostname $SERVER \
+  --route $ROUTE \
+  --admin-email $EMAIL \
+  ~/code/myapp-deploy
 ```
+
+NOTE: HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
 
 Then go to that created deployment configuration directory, and initiate the deployment:
 
@@ -120,9 +152,9 @@ cd ~/code/myapp-deploy
 ob deploy push
 ```
 
-`ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. It will also configure Nginx so that the public port 80 proxies to the running app.
+`ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. The backend will live in `/var/lib/backend`.
 
-At this point you are done. Your app will be accessible at `http://${HOSTNAME}`!
+At this point you are done. Your app will be accessible at `${ROUTE}`.
 
 ### Deploying an updated version
 
@@ -153,7 +185,7 @@ Install Xcode 8.2 (contains iOS SDK 10.2) and open it so that it runs its post i
 These versions will work out of the box but iOS SDKs prior to 11.3 should also work. You can choose another installed version in `default.nix`
 
 More recent Xcodes should also work, as long as one of the SDKs mentioned above has been used.
-To add another SDK to your current Xcode, [download](https://developer.apple.com/download/more/) the corresponding Xcode, extract it and copy its SDK folder next to the installed one, e.g. 
+To add another SDK to your current Xcode, [download](https://developer.apple.com/download/more/) the corresponding Xcode, extract it and copy its SDK folder next to the installed one, e.g.
 ```
 open -W Xcode_9.2.xip
 sudo cp -R Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS11.2.sdk
@@ -167,7 +199,7 @@ xcodebuild -showsdks
 
 ##### Certificates
 To deploy and/or package apps, you'll need to inform Apple of your development devices and permissions by
-adding credentials to the correct provisioning profile via the Apple Developer portal. 
+adding credentials to the correct provisioning profile via the Apple Developer portal.
 
 1. Open up XCode and go to Preferences - Accounts. Select the organization
 Member role, click Manage Certificates, and add an iOS Development
@@ -234,7 +266,7 @@ First, if you do not already have a keystore, create it as follows (for more inf
 nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
 ```
 
-(Besure to give an appropriate keystore filename and key alias string above.)
+(Be sure to give an appropriate keystore filename and key alias string above.)
 
 The `keytool` command will ask you for some details, including a keystore password and a key password (we will use these passwords further below). It will now have created a `myandroidkey.jks` file under the current directory. Move that to somewhere safe, and note down its full path.
 
@@ -244,8 +276,8 @@ Now edit your project's `default.nix` and tell Obelisk of your app's keystore fi
   ...
   android.applicationId = "com.example.myapp";
   android.displayName = "My App";
-  android.releaseKey = 
-    { storeFile = /path/to/myandroidkey.jks;  
+  android.releaseKey =
+    { storeFile = /path/to/myandroidkey.jks;
       storePassword = "abcd1234";
       keyAlias = "myandroidalias";
       keyPassword = "abcd1234";

@@ -22,11 +22,11 @@ import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import System.Console.ANSI (Color (Red, White, Yellow), ColorIntensity (Vivid),
+import System.Console.ANSI (Color (Red, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (SetColor, SetConsoleIntensity), clearLine)
 import System.Exit (ExitCode (..), exitWith)
-import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stdin, stdout)
+import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stderr, stdin, stdout)
 
 import qualified Obelisk.CliApp.TerminalString as TS
 import Obelisk.CliApp.Types
@@ -36,7 +36,7 @@ newCliConfig sev noColor noSpinner = do
   level <- newIORef sev
   lock <- newMVar False
   tipDisplayed <- newIORef False
-  stack <- newIORef []
+  stack <- newIORef ([], [])
   return $ CliConfig level noColor noSpinner lock tipDisplayed stack
 
 runCli :: MonadIO m => CliConfig -> CliT m a -> m a
@@ -137,15 +137,16 @@ withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
 writeLog:: (MonadIO m, MonadMask m) => Bool -> Bool -> WithSeverity Text -> m ()
 writeLog withNewLine noColor (WithSeverity severity s)
   | noColor && severity <= Warning = liftIO $ putFn $ T.pack (show severity) <> ": " <> s
-  | not noColor && severity <= Error = TS.putStrWithSGR errorColors withNewLine s
-  | not noColor && severity <= Warning = TS.putStrWithSGR warningColors withNewLine s
-  | not noColor && severity >= Debug = TS.putStrWithSGR debugColors withNewLine s
+  | not noColor && severity <= Error = TS.putStrWithSGR errorColors h withNewLine s
+  | not noColor && severity <= Warning = TS.putStrWithSGR warningColors h withNewLine s
+  | not noColor && severity >= Debug = TS.putStrWithSGR debugColors h withNewLine s
   | otherwise = liftIO $ putFn s
   where
-    putFn = if withNewLine then T.putStrLn else T.putStr
+    putFn = if withNewLine then (T.hPutStrLn h) else (T.hPutStr h)
+    h = if severity <= Error then stderr else stdout
     errorColors = [SetColor Foreground Vivid Red]
     warningColors = [SetColor Foreground Vivid Yellow]
-    debugColors = [SetColor Foreground Vivid White, SetConsoleIntensity FaintIntensity]
+    debugColors = [SetConsoleIntensity FaintIntensity]
 
 -- | Allow the user to immediately switch to verbose logging upon pressing a particular key.
 --
@@ -163,7 +164,7 @@ allowUserToMakeLoggingVerbose keyCode = bracket showTip (liftIO . killThread) $ 
   where
     showTip = fork $ unlessVerbose $ do
       conf <- getCliConfig
-      liftIO $ threadDelay $ 3*1000000  -- Only show tip for actions taking too long (3 seconds or more)
+      liftIO $ threadDelay $ 10*1000000  -- Only show tip for actions taking too long (10 seconds or more)
       tipDisplayed <- liftIO $ atomicModifyIORef' (_cliConfig_tipDisplayed conf) $ (,) True
       unless tipDisplayed $ unlessVerbose $ do -- Check again in case the user had pressed Ctrl+e recently
         putLog Notice "Tip: Press Ctrl+e to display full output"

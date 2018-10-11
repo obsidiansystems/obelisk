@@ -9,7 +9,8 @@
 -- | An extension of `System.Process` that integrates with logging (`Obelisk.CLI.Logging`)
 -- and is thus spinner friendly.
 module Obelisk.CliApp.Process
-  ( readProcessAndLogStderr
+  ( ProcessFailed (..)
+  , readProcessAndLogStderr
   , callProcessAndLogOutput
   , createProcess
   , createProcess_
@@ -19,9 +20,8 @@ module Obelisk.CliApp.Process
 
 import Control.Applicative (liftA2)
 import Control.Monad (void, (<=<))
-import Control.Monad.Catch (MonadMask)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Reader (MonadIO)
+import Control.Monad.Catch (Exception, MonadMask, throwM)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.ByteString.Char8 as BSC
 import Data.Function (fix)
 import Data.Monoid ((<>))
@@ -38,10 +38,14 @@ import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmd
 import qualified System.Process as Process
 
 import Control.Monad.Log (Severity (..))
-import Obelisk.CliApp.Logging (failWith, putLog, putLogRaw)
+import Obelisk.CliApp.Logging (putLog, putLogRaw)
 import Obelisk.CliApp.Types (Cli)
 
--- | Like `System.Process.readProcess` but logs the stderr instead of letting the external process inherit it.
+data ProcessFailed = ProcessFailed Process.CmdSpec Int -- exit code
+  deriving Show
+
+instance Exception ProcessFailed
+
 readProcessAndLogStderr
   :: (MonadIO m, MonadMask m, Cli m)
   => Severity -> CreateProcess -> m String
@@ -73,7 +77,7 @@ createProcess
   :: (MonadIO m, Cli m)
   => CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess p = do
-  putLog Debug $ "Creating process: " <> T.pack (show p)
+  putLog Debug $ "Creating process: " <> T.pack (show $ cmdspec p)
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.createProcess_` but also logs (debug) the process being run
@@ -81,7 +85,7 @@ createProcess_
   :: (MonadIO m, Cli m)
   => String -> CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess_ name p = do
-  putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (show p)
+  putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (show $ cmdspec p)
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.callProcess` but also logs (debug) the process being run
@@ -104,7 +108,6 @@ withProcess
   :: (MonadIO m, MonadMask m, Cli m)
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
 withProcess process f = do -- TODO: Use bracket.
-  let procTitle = T.pack $ show $ cmdspec process
   -- FIXME: Using `withCreateProcess` here leads to something operating illegally on closed handles.
   (_, Just out, Just err, p) <- createProcess $ process
     { std_out = CreatePipe , std_err = CreatePipe }
@@ -112,12 +115,8 @@ withProcess process f = do -- TODO: Use bracket.
   f out err  -- Pass the handles to the passed function
 
   liftIO (waitForProcess p) >>= \case
-    ExitSuccess -> return ()
-    ExitFailure code -> do
-      -- Log an error. We also fail immediately; however we should probably let the caller control that.
-      failWith $ procTitle <> " failed with exit code: " <> T.pack (show code)
-  return (out, err)  -- Return the handles
-
+    ExitSuccess -> return (out, err)
+    ExitFailure code -> throwM $ ProcessFailed (cmdspec process) code
 
 -- Create an input stream from the file handle, associating each item with the given severity.
 streamHandle :: Severity -> Handle -> IO (InputStream (Severity, BSC.ByteString))

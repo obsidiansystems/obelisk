@@ -18,7 +18,6 @@ import qualified Data.Sequence as Seq
 import Control.Monad.Trans.Writer
 import System.FilePath
 import System.Directory
-import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -63,11 +62,17 @@ staticModuleFile moduleName paths = do
     , "{-# LANGUAGE FlexibleInstances #-}"
     , "{-# LANGUAGE KindSignatures #-}"
     , "{-# LANGUAGE OverloadedStrings #-}"
+    , "{-# LANGUAGE ScopedTypeVariables #-}"
+    , "{-# LANGUAGE TypeApplications #-}"
     , "module " <> moduleName <> " where"
     , ""
     , "import qualified GHC.Types"
-    , "import Data.Text ()"
+    , "import Data.Text (Text)"
     , "import qualified Data.Text.Internal"
+    , "import Data.Monoid ((<>))"
+    , ""
+    , "static :: forall a. StaticFile a => Text"
+    , "static = \"static/\" <> hashedPath @a" --TODO: Use obelisk-route to generate this in a more consistent way
     , ""
     , T.pack $ pprint decs
     ]
@@ -96,7 +101,7 @@ staticClass :: WriterT (Seq Dec) Q StaticContext
 staticClass = do
   let n x = Name (OccName x) NameS
       className = n "StaticFile"
-      methodName = n "static"
+      methodName = n "hashedPath"
       cls = ClassD [] className [KindedTV (n "s") (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
   tell $ Seq.singleton cls
   return $ StaticContext

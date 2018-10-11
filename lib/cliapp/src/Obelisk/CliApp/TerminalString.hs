@@ -18,9 +18,9 @@ import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import System.Console.ANSI (Color, ColorIntensity (Vivid), ConsoleLayer (Foreground), SGR (Reset, SetColor),
-                            SGR, setSGR, setSGRCode)
+import System.Console.ANSI
 import qualified System.Console.Terminal.Size as TerminalSize
+import System.IO (Handle)
 
 -- | Printable text on terminals
 --
@@ -65,11 +65,11 @@ colorizeText color s = mconcat
   ]
 
 -- | Safely print the string with the given ANSI control codes, resetting in the end.
-putStrWithSGR :: MonadIO m => [SGR] -> Bool -> Text -> m ()
-putStrWithSGR sgr withNewLine s = liftIO $ bracket_ (setSGR sgr) reset $ T.putStr s
+putStrWithSGR :: MonadIO m => [SGR] -> Handle -> Bool -> Text -> m ()
+putStrWithSGR sgr h withNewLine s = liftIO $ bracket_ (hSetSGR h sgr) reset $ T.hPutStr h s
   where
-    reset = setSGR [Reset] >> newline -- New line should come *after* reset (to reset cursor color).
-    newline = when withNewLine $ T.putStrLn ""
+    reset = hSetSGR h [Reset] >> newline -- New line should come *after* reset (to reset cursor color).
+    newline = when withNewLine $ T.hPutStrLn h ""
 
 -- | Code for https://en.wikipedia.org/wiki/Enquiry_character
 enquiryCode :: String

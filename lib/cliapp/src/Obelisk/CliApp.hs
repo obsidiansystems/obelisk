@@ -12,9 +12,12 @@ module Obelisk.CliApp
   , CliConfig
   , HasCliConfig
   , getCliConfig
+  , Output
 
   -- .Spinner
   , withSpinner
+  , withSpinnerNoTrail
+  , withSpinner'
 
   -- .Logging
   , newCliConfig
@@ -27,6 +30,7 @@ module Obelisk.CliApp
   , Severity (..)
 
   -- .Process
+  , ProcessFailed (..)
   , readProcessAndLogStderr
   , callProcessAndLogOutput
   , createProcess_

@@ -1,14 +1,15 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.SelfTest where
 
-import Control.Exception (Exception, throw, bracket)
+import Control.Exception (bracket, throw)
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Bool (bool)
 import Data.Function (fix)
-import Data.Maybe (isJust)
 import Data.Semigroup (Semigroup, (<>))
 import qualified Data.Set as Set
 import Data.String
@@ -21,15 +22,17 @@ import qualified Network.Socket as Socket
 import Shelly
 import System.Directory (withCurrentDirectory)
 import System.Environment
-import System.Exit (ExitCode (..), exitWith)
+import System.Exit (ExitCode (..))
 import System.Info
 import System.IO (Handle, hClose)
 import System.IO.Temp
+import System.Process (readProcessWithExitCode)
 import System.Timeout
 import Test.Hspec
 import Test.HUnit.Base
-import System.Process (readProcessWithExitCode)
 
+import Obelisk.CliApp hiding (runCli)
+import qualified Obelisk.CliApp as CliApp
 import Obelisk.Run (getConfigRoute)
 
 data ObRunState
@@ -50,18 +53,44 @@ commit msg = void $ run "git"
   , doubleQuotes msg
   ]
 
+runCli :: MonadIO m => CliT IO a -> m a
+runCli f = liftIO $ do
+  c <- newCliConfig Notice False False
+  CliApp.runCli c f
+
+tshow :: Show a => a -> Text
+tshow = T.pack . show
+
+-- | Like `shelly` but used when running `ob` commands
+--
+-- This tests the NIX_REMOTE workaround, whether that gets printed
+-- on failure, and whether retrying with the suggested workaround
+-- leads to the test succeeding.
+shellyOb :: MonadIO m => (Sh a -> Sh a) -> Sh a -> m a
+shellyOb f obTest = shelly $ f $ do
+  obTest `catch_sh` \(e :: RunFailed) -> do
+    obStderr <- lastStderr
+    if T.isInfixOf "export NIX_REMOTE" obStderr
+      then do
+      runCli $ do
+        putLog Notice "Detected NIX_REMOTE suggestion in stderr of failed ob"
+        putLog Warning "Retrying this test with NIX_REMOTE=daemon"
+      setenv "NIX_REMOTE" "daemon"
+      f obTest
+      else throw e
+
 main :: IO ()
 main = do
-  isVerbose <- getArgs >>= \case
-    ["-v"] -> pure True
-    []     -> putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output" *> pure False
-    _      -> putStrLn "Usage: selftest [-v]" *> exitWith (ExitFailure 2)
+  -- Note: you can pass hspec arguments as well, eg: `-m <pattern>`
+  isVerbose <- (elem "-v") <$> getArgs
+  unless isVerbose $
+    putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output"
   let verbosity = bool silently verbosely isVerbose
   obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
   withSystemTempDirectory "blank-project" $ \blankProject ->
     hspec $ do
-      let shelly_ = void . shelly . verbosity
+      let shelly_ = void . shellyOb verbosity
 
           inProj :: Sh a -> IO ()
           inProj = shelly_ . chdir (fromString blankProject)
@@ -75,7 +104,7 @@ main = do
           revParseHead = T.strip <$> run "git" ["rev-parse", "HEAD"]
 
           commitAll = do
-            run "git" ["add", "."]
+            run_ "git" ["add", "."]
             commit "checkpoint"
             revParseHead
 
@@ -92,31 +121,32 @@ main = do
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
 
         it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
-          errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
+          void $ errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
         it "produces a valid route config" $ inTmp $ \tmp -> do
-          run "ob" ["init"]
+          run_ "ob" ["init"]
           liftIO $ withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ getConfigRoute `shouldNotReturn` Nothing
 
       describe "ob run" $ do
         it "works in root directory" $ inTmp $ \_ -> do
-          run "ob" ["init"]
+          run_ "ob" ["init"]
           testObRunInDir Nothing httpManager
         it "works in sub directory" $ inTmp $ \_ -> do
-          run "ob" ["init"]
+          run_ "ob" ["init"]
           testObRunInDir (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
         it "can build obelisk command"  $ shelly_ $ run "nix-build" ["-A", "command" , obeliskImpl]
         it "can build obelisk skeleton" $ shelly_ $ run "nix-build" ["-A", "skeleton", obeliskImpl]
         it "can build obelisk shell"    $ shelly_ $ run "nix-build" ["-A", "shell",    obeliskImpl]
-        it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
+        -- See https://github.com/obsidiansystems/obelisk/issues/101
+        -- it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
 
       describe "blank initialized project" $ do
         it "can be created" $ inProj $ do
-          run "ob" ["init"]
-          run "git" ["init"]
+          run_ "ob" ["init"]
+          run_ "git" ["init"]
           commitAll
 
         it "can build ghc.backend" $ inProj $ do
@@ -131,7 +161,7 @@ main = do
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
             shell = "shells." <> compiler
-            inShell cmd = run "nix-shell" ["-A", fromString shell, "--run", cmd]
+            inShell cmd' = run "nix-shell" ["-A", fromString shell, "--run", cmd']
           it ("can enter "    <> shell) $ inProj $ inShell "exit"
           it ("can build in " <> shell) $ inProj $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
@@ -156,15 +186,15 @@ main = do
           assertRevNE e  eu
 
         it "can pack and unpack plain git repos" $ do
-          withSystemTempDirectory "git-repo" $ \dir -> shelly_ $ do
+          shelly_ $ withSystemTempDirectory "git-repo" $ \dir -> do
             let repo = toTextIgnore $ dir </> ("repo" :: String)
-            run_ "git" ["clone", "https://git.haskell.org/packages/primitive.git", repo]
+            run_ "git" ["clone", "https://github.com/haskell/process.git", repo]
             origHash <- chdir (fromText repo) revParseHead
 
             run_ "ob" ["thunk", "pack", repo]
             packedFiles <- Set.fromList <$> ls (fromText repo)
-            liftIO $ assertEqual "" packedFiles $
-              Set.fromList $ (repo </>) <$> ["default.nix", "git.json", ".attr-cache" :: String]
+            liftIO $ assertEqual "" packedFiles $ Set.fromList $ (repo </>) <$>
+              ["default.nix", "github.json", ".attr-cache" :: String]
 
             run_ "ob" ["thunk", "unpack", repo]
             chdir (fromText repo) $ do
@@ -174,7 +204,7 @@ main = do
             testThunkPack $ fromText repo
 
         it "aborts thunk pack when there are uncommitted files" $ inProj $ do
-          unpack
+          void $ unpack
           testThunkPack (blankProject </> thunk)
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
@@ -191,33 +221,31 @@ testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> 
     maybe id (\_ -> chdir "..") mdir $ alterRouteTo newUri stdout
     (_, runningUri) <- handleObRunStdout httpManager stdout
     if runningUri /= newUri
-    then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
-    else exit 0
+      then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
+      else exit 0
 
 testThunkPack :: Shelly.FilePath -> Sh ()
-testThunkPack path = withTempFile (T.unpack $ toTextIgnore path) "test-file" $ \file handle -> do
-  let try_sh :: Exception e => Sh a -> Sh (Either e a)
-      try_sh a = catch_sh (a >>= pure . Right) (pure . Left)
-      pack' = readProcessWithExitCode "ob" ["thunk", "pack", T.unpack $ toTextIgnore path] ""
-      ensureThunkPackFails err = liftIO $ pack' >>= \case
-        (code, out, _err)
+testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
+  let pack' = readProcessWithExitCode "ob" ["thunk", "pack", T.unpack $ toTextIgnore path'] ""
+      ensureThunkPackFails q = liftIO $ pack' >>= \case
+        (code, out, err)
           | code == ExitSuccess -> fail "ob thunk pack succeeded when it should have failed"
-          | err `T.isInfixOf` T.pack out -> pure ()
-          | otherwise -> fail $ "ob thunk pack failed for an unexpected reason: " <> show out
-      git = chdir path . run "git"
+          | q `T.isInfixOf` T.pack (out <> err) -> pure ()
+          | otherwise -> fail $ "ob thunk pack failed for an unexpected reason: " <> show out <> "\nstderr: " <> err
+      git = chdir path' . run "git"
   -- Untracked files
-  ensureThunkPackFails "unsaved modifications"
-  git ["add", T.pack file]
+  ensureThunkPackFails "Untracked files"
+  void $ git ["add", T.pack file]
   -- Uncommitted files (staged)
-  ensureThunkPackFails "unsaved modifications"
-  chdir path $ commit "test commit"
+  ensureThunkPackFails "unsaved"
+  chdir path' $ commit "test commit"
   -- Non-pushed commits in any branch
   ensureThunkPackFails "not been pushed"
   -- Uncommitted files (unstaged)
   liftIO $ T.hPutStrLn handle "test file" >> hClose handle
-  ensureThunkPackFails "unsaved modifications"
+  ensureThunkPackFails "modified"
   -- Existing stashes
-  git ["stash"]
+  void $ git ["stash"]
   ensureThunkPackFails "has stashes"
 
 -- | Blocks until a non-empty line is available

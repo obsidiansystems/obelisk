@@ -20,7 +20,6 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
 import Data.Bits
 import Data.Function (on)
-import Data.Monoid
 import qualified Data.Text as T
 import System.Directory
 import System.FilePath
@@ -33,9 +32,9 @@ import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, createProcess_, failWith, putLog, withSpinner)
+import Obelisk.CliApp
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (cp)
+import Obelisk.Command.Nix (withNixRemoteCheck)
 --TODO: Make this module resilient to random exceptions
 
 --TODO: Don't hardcode this
@@ -86,7 +85,7 @@ initProject source = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
 
     callProcessAndLogOutput (Notice, Error) $
-      cp
+      proc "cp"
         [ "-r"
         , "--preserve=links"
         , obDir
@@ -96,7 +95,7 @@ initProject source = withSystemTempDirectory "ob-init" $ \tmpDir -> do
 
   withSpinner "Copying project skeleton" $ do
     callProcessAndLogOutput (Notice, Error) $
-      cp --TODO: Make this package depend on nix-prefetch-url properly
+      proc "cp"
         [ "-r"
         , "--no-preserve=mode"
         , "-T"
@@ -202,7 +201,7 @@ inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
   projectShell root False shellName command
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> String -> m ()
-projectShell root isPure shellName command = do
+projectShell root isPure shellName command = withNixRemoteCheck $ do
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
      [ "--pure" | isPure ] <>
      [ "-A"

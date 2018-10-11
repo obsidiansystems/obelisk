@@ -10,6 +10,9 @@ library
       attoparsec
     , base
     , bytestring
+    , dependent-sum
+    , dependent-sum-template
+    , ghcjs-dom
     , http-client
     , http-reverse-proxy
     , http-types
@@ -17,15 +20,25 @@ library
     , jsaddle-warp
     , lens
     , modern-uri
+    , mtl
     , network
+    , obelisk-backend
     , obelisk-executable-config
+    , obelisk-executable-config-inject
+    , obelisk-frontend
+    , obelisk-route
     , process
+    , ref-tf
+    , reflex
     , reflex-dom
+    , snap-core
     , streaming-commons
     , text
+    , universe
     , wai
+    , wai-websockets
     , warp
     , websockets
   exposed-modules:
       Obelisk.Run
-  ghc-options: -Wall
+  ghc-options: -Wall -fwarn-redundant-constraints

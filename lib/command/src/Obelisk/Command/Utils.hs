@@ -1,48 +1,82 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command.Utils where
 
-import qualified Data.List as L
+import Control.Applicative (liftA2)
+import Data.Bool (bool)
 import Data.Semigroup ((<>))
+import Data.Text (Text)
 import qualified Data.Text as T
+import System.Directory (canonicalizePath)
+import System.Environment (getExecutablePath)
 import qualified System.Process as P
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, readProcessAndLogStderr)
+import Obelisk.CliApp
+
+getObeliskExe :: IO FilePath
+getObeliskExe = getExecutablePath >>= canonicalizePath
 
 -- Check whether the working directory is clean
-checkGitCleanStatus :: MonadObelisk m => FilePath -> m Bool
-checkGitCleanStatus repo = do
-  out <- readProcessAndLogStderr Debug $ git repo [["status", "--porcelain", "--ignored"], ["diff"]]
-  pure $ null out
+checkGitCleanStatus :: MonadObelisk m => FilePath -> Bool -> m Bool
+checkGitCleanStatus repo withIgnored = do
+  let
+    runGit = readProcessAndLogStderr Debug . gitProc repo
+    gitStatus = runGit $ ["status", "--porcelain"] <> bool [] ["--ignored"] withIgnored
+    gitDiff = runGit ["diff"]
+  null <$> liftA2 (<>) gitStatus gitDiff
+
+-- | Ensure that git repo is clean
+ensureCleanGitRepo :: MonadObelisk m => FilePath -> Bool -> Text -> m ()
+ensureCleanGitRepo path withIgnored s =
+  withSpinnerNoTrail ("Ensuring clean git repo at " <> T.pack path) $ do
+    checkGitCleanStatus path withIgnored >>= \case
+      False -> do
+        statusDebug <- readGitProcess path $ ["status"] <> bool [] ["--ignored"] withIgnored
+        putLog Warning "Working copy is unsaved; git status:"
+        putLog Notice statusDebug
+        failWith s
+      True -> pure ()
 
 initGit :: MonadObelisk m => FilePath -> m ()
-initGit dir = callProcessAndLogOutput (Debug, Debug) $ git dir
-  [ ["init"]
-  , ["add", "."]
-  , ["commit", "-m", "Initial commit."]
-  ]
+initGit repo = do
+  let git = callProcessAndLogOutput (Debug, Debug) . gitProc repo
+  git ["init"]
+  git ["add", "."]
+  git ["commit", "-m", "Initial commit."]
 
-git :: FilePath -> [[String]] -> P.CreateProcess
-git repo argss =
-  inNixShell ["git"] $ L.intercalate "; " $
-    map (processToShellString "git" . runGitInDir) $ filter (not . null) argss
+gitProc :: FilePath -> [String] -> P.CreateProcess
+gitProc repo argsRaw =
+  P.proc "git" $ runGitInDir argsRaw
   where
     runGitInDir args' = case filter (not . null) args' of
       args@("clone":_) -> args <> [repo]
       args -> ["-C", repo] <> args
 
--- | Like `System.Process.proc` but with the specified Nix packages installed
-procWithPackages :: [String] -> FilePath -> [String] -> P.CreateProcess
-procWithPackages pkgs cmd args = inNixShell pkgs $ processToShellString cmd args
+-- | Recursively copy a directory using `cp -a`
+copyDir :: FilePath -> FilePath -> P.CreateProcess
+copyDir src dest =
+  (P.proc "cp" ["-a", ".", dest]) { P.cwd = Just src }
 
-inNixShell :: [String] -> String -> P.CreateProcess
-inNixShell pkgs cmd = P.proc "nix-shell" $ "-p" : pkgs <> ["--run", cmd]
+readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
+readGitProcess repo = fmap T.pack . readProcessAndLogStderr Notice . gitProc repo
 
 processToShellString :: FilePath -> [String] -> String
 processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
   where quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
 
--- | Portable `cp` command.
-cp :: [String] -> P.CreateProcess
-cp = procWithPackages ["coreutils"] "cp"
+-- | A simpler wrapper for CliApp's most used process function with sensible defaults.
+runProc :: MonadObelisk m => P.CreateProcess -> m ()
+runProc = callProcessAndLogOutput (Notice, Error)
+
+-- | Like runProc, but all output goes to Debug logging level
+runProcSilently :: MonadObelisk m => P.CreateProcess -> m ()
+runProcSilently = callProcessAndLogOutput (Debug, Debug)
+
+-- | A simpler wrapper for CliApp's readProcessAndLogStderr with sensible defaults.
+readProc :: MonadObelisk m => P.CreateProcess -> m Text
+readProc = fmap T.pack . readProcessAndLogStderr Error
+
+tshow :: Show a => a -> Text
+tshow = T.pack . show
