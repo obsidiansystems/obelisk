@@ -63,10 +63,11 @@ import Obelisk.Backend
 
 run
   :: Int -- ^ Port to run the backend
+  -> FilePath -- ^ Path where the static assets live
   -> Backend fullRoute frontendRoute -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
-run port backend frontend = do
+run port assetsPath backend frontend = do
   prettifyOutput
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
@@ -79,9 +80,14 @@ run port backend frontend = do
             getRouteWith validFullEncoder >>= \case
               Identity r -> case r of
                 InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-                InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp frontend $ obeliskRoute :/ a
+                InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp' staticAssets frontend $ obeliskRoute :/ a
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf frontend validFullEncoder `finally` killThread backendTid
+  where
+    staticAssets = StaticAssets
+      { _staticAssets_processed = assetsPath <> ".assets"
+      , _staticAssets_unprocessed = assetsPath
+      }
 
 getConfigRoute :: IO (Maybe URI)
 getConfigRoute = get "config/common/route" >>= \case
