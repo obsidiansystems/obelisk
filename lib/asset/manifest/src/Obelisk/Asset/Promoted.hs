@@ -10,6 +10,7 @@ module Obelisk.Asset.Promoted
 import Obelisk.Asset.Gather
 
 import Data.Foldable
+import qualified Data.List as L
 import Language.Haskell.TH (runQ, pprint)
 import Language.Haskell.TH.Syntax hiding (lift)
 import GHC.TypeLits
@@ -31,11 +32,15 @@ data StaticConfig = StaticConfig
 
 writeStaticProject :: Map FilePath FilePath -> FilePath -> StaticConfig -> IO ()
 writeStaticProject paths target cfg = do
-  createDirectoryIfMissing True $ target </> "src"
+  createDirectoryIfMissing True target
   T.writeFile (target </> T.unpack (_staticConfig_packageName cfg) <.> "cabal") $ staticCabalFile cfg
   let modName = _staticConfig_moduleName cfg
+      (modName', moduleDirPath) = case L.uncons (reverse $ T.splitOn "." modName) of
+        Nothing -> error $ "writeStaticProject: invalid module name " <> T.unpack modName
+        Just (name, parents) -> (name, target </> "src" </> T.unpack (T.intercalate "/" $ reverse parents))
+  createDirectoryIfMissing True moduleDirPath
   modContents <- staticModuleFile modName paths
-  T.writeFile (target </> "src" </> T.unpack modName <.> "hs") modContents
+  T.writeFile (moduleDirPath </> T.unpack modName' <.> "hs") modContents
 
 staticCabalFile :: StaticConfig -> Text
 staticCabalFile cfg = T.unlines

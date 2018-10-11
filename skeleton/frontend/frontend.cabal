@@ -10,7 +10,7 @@ library
                , obelisk-frontend
                , obelisk-route
                , reflex-dom
-               , static
+               , obelisk-generated-static
                , text
   exposed-modules:
     Frontend
@@ -24,7 +24,7 @@ executable frontend
                , obelisk-frontend
                , obelisk-route
                , reflex-dom
-               , static
+               , obelisk-generated-static
                , frontend
   --TODO: Make these ghc-options optional
   ghc-options: -threaded
