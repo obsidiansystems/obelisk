@@ -51,7 +51,7 @@ run = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
-    runGhcid dotGhciPath $ Just $ unwords ["run", show freePort, "Static.staticRootPath", "Backend.backend", "Frontend.frontend"]
+    runGhcid dotGhciPath $ Just $ unwords ["run", show freePort, "(runServeAsset Static.staticRootPath)", "Backend.backend", "Frontend.frontend"]
 
 runRepl :: MonadObelisk m => m ()
 runRepl = do

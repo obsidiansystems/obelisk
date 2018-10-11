@@ -48,11 +48,13 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
+import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.ExecutableConfig (get)
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
+import Snap.Core (Snap)
 import System.Environment
 import System.IO
 import System.Process
@@ -63,11 +65,11 @@ import Obelisk.Backend
 
 run
   :: Int -- ^ Port to run the backend
-  -> FilePath -- ^ Path where the static assets live
+  -> ([Text] -> Snap ()) -- ^ Static asset handler
   -> Backend fullRoute frontendRoute -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
-run port assetsPath backend frontend = do
+run port serveStaticAsset backend frontend = do
   prettifyOutput
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
@@ -80,14 +82,13 @@ run port assetsPath backend frontend = do
             getRouteWith validFullEncoder >>= \case
               Identity r -> case r of
                 InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-                InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp' staticAssets frontend $ obeliskRoute :/ a
+                InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp serveStaticAsset frontend $ obeliskRoute :/ a
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf frontend validFullEncoder `finally` killThread backendTid
-  where
-    staticAssets = StaticAssets
-      { _staticAssets_processed = assetsPath <> ".assets"
-      , _staticAssets_unprocessed = assetsPath
-      }
+
+-- Convenience wrapper to handle path segments for 'Snap.serveAsset'
+runServeAsset :: FilePath -> [Text] -> Snap ()
+runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
 
 getConfigRoute :: IO (Maybe URI)
 getConfigRoute = get "config/common/route" >>= \case
