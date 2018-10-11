@@ -74,6 +74,10 @@ import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can
 import Reflex.Dom.Core
 import qualified GHCJS.DOM.Types as DOM
 import Network.URI
+#if defined(ios_HOST_OS)
+import Data.Maybe (fromMaybe)
+import qualified Data.List as L
+#endif
 
 import Unsafe.Coerce
 
@@ -201,7 +205,7 @@ class Reflex t => SetRoute t r m | m -> t r where
 instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
   modifyRoute = SetRouteT . tellEvent . fmap Endo
 
-instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r m) where
+instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
   modifyRoute = lift . modifyRoute
 
 instance Prerender js m => Prerender js (SetRouteT t r m) where
@@ -266,12 +270,12 @@ runRouteViewT routeEncoder a = do
           -- is nonempty, but begins with a character that isn't '?'. Since we don't expect
           -- this ever to happen, we'll just handle it by failing completely with 'error'.
           route :: Dynamic t r
-          route = fmap (errorLeft . tryDecode theEncoder . (uriPath &&& uriQuery) . _historyItem_uri) historyState
+          route = fmap (errorLeft . tryDecode theEncoder . (adaptedUriPath &&& uriQuery) . _historyItem_uri) historyState
             where
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
       (result, changeState) <- runSetRouteT $ runRoutedT a route
-      let f oldRoute change =
+      let f (currentHistoryState, oldRoute) change =
             let newRoute = appEndo change oldRoute
                 (newPath, newQuery) = encode theEncoder newRoute
             in HistoryStateUpdate
@@ -287,10 +291,32 @@ runRouteViewT routeEncoder a = do
                  -- we can change this function later to accommodate.
                  -- See: https://github.com/whatwg/html/issues/2174
                , _historyStateUpdate_title = ""
-               , _historyStateUpdate_uri = Just $ nullURI
-                 { uriPath = newPath
-                 , uriQuery = newQuery
+               , _historyStateUpdate_uri = Just $ setAdaptedUriPath newPath $ (_historyItem_uri currentHistoryState)
+                 { uriQuery = newQuery
                  }
                }
-          setState = attachWith f (current route) changeState
+          setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
+
+-- On ios due to sandboxing when loading the page from a file adapt the
+-- path to be based on the hash.
+
+adaptedUriPath :: URI -> String
+#if defined(ios_HOST_OS)
+adaptedUriPath = hashToPath . uriFragment
+
+hashToPath :: String -> String
+hashToPath = ('/' :) . fromMaybe "" . L.stripPrefix "#"
+#else
+adaptedUriPath = uriPath
+#endif
+
+setAdaptedUriPath :: String -> URI -> URI
+#if defined(ios_HOST_OS)
+setAdaptedUriPath s u = u { uriFragment = pathToHash s }
+
+pathToHash :: String -> String
+pathToHash = ('#' :) . fromMaybe "" . L.stripPrefix "/"
+#else
+setAdaptedUriPath s u = u { uriPath = s }
+#endif

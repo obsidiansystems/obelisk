@@ -88,7 +88,20 @@ let
     obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
     obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
     obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-    obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {});
+    obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).overrideAttrs
+      (drv: {
+        buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
+        postInstall = ''
+          ${drv.postInstall or ""}
+          # Install migrations
+          cp -r ${./migration} $out/migration;
+        '';
+        postFixup = ''
+          ${drv.postFixup or ""}
+          # Make `ob` reference its runtime dependencies.
+          wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
+        '';
+      });
     obelisk-executable-config = executableConfig.haskellPackage self;
     obelisk-executable-config-inject = executableConfig.platforms.web.inject self;
     obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
@@ -111,15 +124,7 @@ rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  commandWithMigration = ghcObelisk.obelisk-command.overrideAttrs (drv: {
-    postInstall = (drv.postInstall or "") +
-                  ''cp -r ${./migration} $out/migration;'';
-  });
-  command = pkgs.runCommand commandWithMigration.name { nativeBuildInputs = [pkgs.makeWrapper]; } ''
-    mkdir -p "$out/bin"
-    ln -s '${commandWithMigration}/bin/ob' "$out/bin/ob"
-    wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
-  '';
+  command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
 
   selftest = pkgs.writeScript "selftest" ''
@@ -236,7 +241,7 @@ rec {
       ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, config }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {

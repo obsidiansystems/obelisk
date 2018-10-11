@@ -149,10 +149,6 @@ runFrontend validFullEncoder frontend = do
     mapRoutedT (mapSetRouteT appendHead) $ _frontend_head frontend
     mapRoutedT (mapSetRouteT appendBody) $ _frontend_body frontend
 
-instance PrimMonad m => PrimMonad (EventWriterT t w m) where
-  type PrimState (EventWriterT t w m) = PrimState m
-  primitive = lift . primitive
-
 renderFrontendHtml
   :: (t ~ SpiderTimeline Global)
   => r
