@@ -263,7 +263,7 @@ rec {
                           , ios ? null #TODO: Better error when missing
                           , packages ? {}
                           , overrides ? _: _: {}
-                          , staticPath ? base + /static
+                          , staticFiles ? base + /static
                           , tools ? _: []
                           , shellToolOverrides ? _: _: {}
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
@@ -272,7 +272,7 @@ rec {
                   backendName = "backend";
                   commonName = "common";
                   staticName = "static";
-                  processedStatic = processAssets { src = staticPath; };
+                  processedStatic = processAssets { src = staticFiles; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
@@ -313,14 +313,14 @@ rec {
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "assets" else null} =
+                    ${if builtins.pathExists staticFiles then "assets" else null} =
                       executableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
                   } // android;
                 };
                 ios = {
                   ${if ios == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "staticSrc" else null} =
+                    ${if builtins.pathExists staticFiles then "staticSrc" else null} =
                       executableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
