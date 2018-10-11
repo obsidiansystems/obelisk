@@ -27,6 +27,7 @@ import qualified Data.Map as Map
 data StaticConfig = StaticConfig
   { _staticConfig_packageName :: Text --TODO: Better type
   , _staticConfig_moduleName :: Text --TODO: Better type
+  , _staticConfig_rootPath :: FilePath
   }
 
 writeStaticProject :: Map FilePath FilePath -> FilePath -> StaticConfig -> IO ()
@@ -35,7 +36,14 @@ writeStaticProject paths target cfg = do
   T.writeFile (target </> T.unpack (_staticConfig_packageName cfg) <.> "cabal") $ staticCabalFile cfg
   let modName = _staticConfig_moduleName cfg
   modContents <- staticModuleFile modName paths
-  T.writeFile (target </> "src" </> T.unpack modName <.> "hs") modContents
+  T.writeFile (target </> "src" </> T.unpack modName <.> "hs") $ appendRootPath (_staticConfig_rootPath cfg) modContents
+
+appendRootPath :: FilePath -> Text -> Text
+appendRootPath fp txt = T.unlines
+  [ txt
+  , "staticRootPath :: FilePath"
+  , "staticRootPath = \"" <> T.pack fp <> "\""
+  ]
 
 staticCabalFile :: StaticConfig -> Text
 staticCabalFile cfg = T.unlines

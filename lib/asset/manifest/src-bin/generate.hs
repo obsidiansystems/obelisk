@@ -12,5 +12,6 @@ main = do
   writeStaticProject paths haskellTarget $ StaticConfig
     { _staticConfig_packageName = T.pack packageName
     , _staticConfig_moduleName = T.pack moduleName
+    , _staticConfig_rootPath = root
     }
   copyAndSymlink paths root fileTarget
