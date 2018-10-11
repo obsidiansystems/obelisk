@@ -20,7 +20,7 @@ module Obelisk.CliApp.Process
 
 import Control.Applicative (liftA2)
 import Control.Monad (void, (<=<))
-import Control.Monad.Catch (Exception, MonadMask, throwM)
+import Control.Monad.Catch (Exception(..), MonadMask, throwM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.ByteString.Char8 as BSC
 import Data.Function (fix)
@@ -44,7 +44,9 @@ import Obelisk.CliApp.Types (Cli)
 data ProcessFailed = ProcessFailed Process.CmdSpec Int -- exit code
   deriving Show
 
-instance Exception ProcessFailed
+instance Exception ProcessFailed where
+  displayException (ProcessFailed spec exitCode) =
+    unwords ["ProcessFailed", reconstructCommand spec, show exitCode]
 
 readProcessAndLogStderr
   :: (MonadIO m, MonadMask m, Cli m)
@@ -77,7 +79,7 @@ createProcess
   :: (MonadIO m, Cli m)
   => CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess p = do
-  putLog Debug $ "Creating process: " <> T.pack (show $ cmdspec p)
+  putLog Debug $ "Creating process: " <> T.pack (reconstructCommand (cmdspec p))
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.createProcess_` but also logs (debug) the process being run
@@ -85,7 +87,7 @@ createProcess_
   :: (MonadIO m, Cli m)
   => String -> CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess_ name p = do
-  putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (show $ cmdspec p)
+  putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (reconstructCommand (cmdspec p))
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.callProcess` but also logs (debug) the process being run
@@ -130,3 +132,10 @@ streamToLog stream = fix $ \loop -> do
   liftIO (Streams.read stream) >>= \case
     Nothing -> return ()
     Just (sev, line) -> putLogRaw sev (decodeUtf8 line) >> loop
+
+reconstructCommand :: Process.CmdSpec -> String
+reconstructCommand (Process.ShellCommand str) = str
+reconstructCommand (Process.RawCommand c as) = processToShellString c as
+  where
+    processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
+    quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
