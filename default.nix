@@ -144,7 +144,7 @@ rec {
   nullIfAbsent = p: if pathExists p then p else null;
   haskellOverrides = addLibs;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
-  processAssets = { src, packageName ? "static", moduleName ? "Static" }: pkgs.runCommand "asset-manifest" {
+  processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static" }: pkgs.runCommand "asset-manifest" {
     inherit src;
     outputs = [ "out" "haskellManifest" "symlinked" ];
     buildInputs = [
@@ -271,7 +271,7 @@ rec {
               let frontendName = "frontend";
                   backendName = "backend";
                   commonName = "common";
-                  staticName = "static";
+                  staticName = "obelisk-generated-static";
                   processedStatic = processAssets { src = staticFiles; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = filterAttrs (_: x: x != null) {
