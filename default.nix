@@ -272,7 +272,7 @@ rec {
               let frontendName = "frontend";
                   backendName = "backend";
                   commonName = "common";
-                  staticName = "static";
+                  staticName = "obelisk-generated-static";
                   staticPath = base + "/static";
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = filterAttrs (_: x: x != null) {
