@@ -11,6 +11,7 @@ module Obelisk.Command.Nix
   , OutLink (..)
   , Arg (..)
   , boolArg
+  , rawArg
   , strArg
   ) where
 
@@ -56,6 +57,9 @@ data Arg
 
 strArg :: String -> String -> Arg
 strArg k = Arg_Str k
+
+rawArg :: String -> String -> Arg
+rawArg k = Arg_Expr k
 
 boolArg :: String -> Bool -> Arg
 boolArg k = Arg_Expr k . bool "false" "true"

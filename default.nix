@@ -52,53 +52,28 @@ let
         enableLibraryProfiling = profiling;
       });
 
-      #TODO: Eliminate this when https://github.com/phadej/github/pull/307 makes its way to reflex-platform
-      github = overrideCabal super.github (drv: {
-        src = pkgs.fetchFromGitHub {
-          owner = "ryantrinkle";
-          repo = "github";
-          rev = "8f543cdc07876bfb7b924d3722e3dbc1df4b02ca";
-          sha256 = "0vcnx9cxqd821kmjx1r4cvj95zs742qm1pwqnb52vw3djplbqd86";
-        };
-        sha256 = null;
-        revision = null;
-        editedCabalFile = null;
-      });
-
       # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
       obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
-
-      optparse-applicative = self.callHackage "optparse-applicative" "0.14.0.0" {};
     });
   };
 
   fixUpstreamPkgs = self: super: {
-    heist = doJailbreak super.heist; #TODO: Move up to reflex-platform; create tests for r-p supported packages
-    modern-uri =
-      let src = pkgs.fetchFromGitHub {
-            owner = "mrkkrp";
-            repo = "modern-uri";
-            rev = "21064285deb284cb3328094c69c34f9f67919cc9";
-            sha256 = "0vddw8r9sb31h1fz1anzxrs9p3a3p8ygpxlj398z5j47wmr86cmi";
-          };
-      in (overrideCabal (self.callCabal2nix "modern-uri" src {}) (drv: {
-            doCheck = false;
-            postPatch = (drv.postPatch or "") + ''
-              substituteInPlace Text/URI/Types.hs \
-                --replace "instance Arbitrary (NonEmpty (RText 'PathPiece)) where" "" \
-                --replace "  arbitrary = (:|) <$> arbitrary <*> arbitrary" ""
-            '';
-          })).override { megaparsec = super.megaparsec_6_1_1; };
-    algebraic-graphs =
-      let src = pkgs.fetchFromGitHub {
-            owner = "snowleopard";
-            repo = "alga";
-            rev = "480a73137e9b38ad3f1bc2c628847953d2fb3e25";
-            sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
-          };
-      in pkgs.haskell.lib.dontCheck (self.callCabal2nix "algebraic-graphs" src {});
-    network-transport = self.callHackage "network-transport" "0.5.2" {};
-    network-transport-tcp = self.callHackage "network-transport-tcp" "0.6.0" {};
+    algebraic-graphs = pkgs.haskell.lib.doJailbreak
+      (self.callCabal2nix "algebraic-graphs" (pkgs.fetchFromGitHub {
+        owner = "snowleopard";
+        repo = "alga";
+        rev = "480a73137e9b38ad3f1bc2c628847953d2fb3e25";
+        sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
+      }) {});
+
+    # Need deriveSomeUniverse
+    # PR: https://github.com/dmwit/universe/pull/32
+    universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "universe";
+      rev = "5a2fc823caa4163411d7e41aa80e67cefb15944a";
+      sha256 = "0ll2z0fh18z6x8jl8kbp7ldagwccz3wjmvrw1gw752z058n82yfa";
+    } + /template) {};
   };
 
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -113,15 +88,32 @@ let
     obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
     obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
     obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-    obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).override { Cabal = super.Cabal_2_0_0_2; };
+    obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).overrideAttrs
+      (drv: {
+        buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
+        postInstall = ''
+          ${drv.postInstall or ""}
+          # Install migrations
+          cp -r ${./migration} $out/migration;
+        '';
+        postFixup = ''
+          ${drv.postFixup or ""}
+          # Make `ob` reference its runtime dependencies.
+          wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
+        '';
+      });
     obelisk-executable-config = executableConfig.haskellPackage self;
     obelisk-executable-config-inject = executableConfig.platforms.web.inject self;
+    obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
     obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
     obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
+    obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
     obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
     obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
   };
+
+  inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
 
   defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
 in
@@ -132,16 +124,7 @@ rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  commandWithMigration = ghcObelisk.obelisk-command.overrideAttrs (drv: {
-    postInstall = (drv.postInstall or "") +
-                  ''cp -r ${./migration} $out/migration;'';
-  });
-  command = pkgs.runCommand commandWithMigration.name { nativeBuildInputs = [pkgs.makeWrapper]; } ''
-    mkdir -p "$out/bin"
-    ln -s '${commandWithMigration}/bin/ob' "$out/bin/ob"
-    wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
-  '';
-  commandEnv = ghcObelisk.obelisk-command.env;
+  command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
 
   selftest = pkgs.writeScript "selftest" ''
@@ -177,7 +160,7 @@ rec {
     mkdir $out
     cd $out
     ln -s "${justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-    closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+    closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
     echo "//# sourceMappingURL=all.js.map" >> all.js
   '';
 
@@ -205,7 +188,7 @@ rec {
       , group ? user
       , baseUrl ? "/"
       , internalPort ? 8000
-      , backendArgs ? ""
+      , backendArgs ? "--port=${toString internalPort}"
       , ...
       }: {...}: {
       services.nginx = {
@@ -225,7 +208,7 @@ rec {
         script = ''
           ln -sft . '${exe}'/*
           mkdir -p log
-          exec ./backend --port=${toString internalPort} ${backendArgs} >>backend.out 2>>backend.err </dev/null
+          exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
         '';
         serviceConfig = {
           User = user;
@@ -252,13 +235,13 @@ rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${justStaticExecutables backend}"/bin/backend $out/backend
-      ln -s "${assets}" $out/static
-      ln -s "${config}" $out/config
-      ln -s ${compressedJs frontend} $out/frontend.jsexe
-    ''; #TODO: run frontend.jsexe through the asset processing pipeline
+      ln -s "${justStaticExecutables backend}"/bin/* $out/
+      ln -s "${mkAssets assets}" $out/static.assets
+      cp -r ${config} $out/config
+      ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
+    '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, config }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -291,7 +274,6 @@ rec {
                   commonName = "common";
                   staticName = "static";
                   staticPath = base + "/static";
-                  assets = processAssets { src = base + "/static"; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
@@ -315,6 +297,10 @@ rec {
                 overrides = totalOverrides;
                 packages = combinedPackages;
                 shells = {
+                  ghcSavedSplices = (filter (x: hasAttr x combinedPackages) [
+                    commonName
+                    frontendName
+                  ]);
                   ghc = (filter (x: hasAttr x combinedPackages) [
                     backendName
                     commonName
@@ -341,13 +327,15 @@ rec {
                 };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static configPath;
-      linuxExe = serverOn "x86_64-linux";
+      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static config;
+      # `exe` is project's backend executable, with frontend assets, config, etc.
+      # `linuxExe` is the same but built for x86_64-linux.
+      exe = serverOn system configPath;
+      linuxExe = serverOn "x86_64-linux" configPath;
     in projectOut system // {
-      inherit linuxExe;
-      exe = serverOn system;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps }:
-        server (args // { exe = linuxExe; });
+      inherit exe linuxExe;
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, config }:
+        server (args // { exe = serverOn "x86_64-linux" config;});
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {

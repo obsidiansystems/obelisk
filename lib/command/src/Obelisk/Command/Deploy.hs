@@ -13,7 +13,6 @@ import Data.Bits
 import Data.Default
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
@@ -94,7 +93,7 @@ deployPush deployPath getNixBuilders = do
         buildOutput <- nixBuild $ def
           { _nixBuildConfig_target = Target
             { _target_path = srcPath
-            , _target_attr = Just "server"
+            , _target_attr = Just "server.system"
             }
           , _nixBuildConfig_outLink = OutLink_None
           , _nixBuildConfig_args =
@@ -102,6 +101,7 @@ deployPush deployPath getNixBuilders = do
             , strArg "adminEmail" adminEmail
             , strArg "routeHost" routeHost
             , boolArg "enableHttps" enableHttps
+            , rawArg "config" $ deployPath </> "config"
             ]
           , _nixBuildConfig_builders = builders
           }
