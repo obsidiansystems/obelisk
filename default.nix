@@ -337,6 +337,6 @@ in rec {
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
-    inherit (reflex-platform) ghc;
+    inherit (reflex-platform) ghc ghcjs;
   };
 }
