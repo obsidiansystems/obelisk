@@ -8,6 +8,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Backend
   ( Backend (..)
+  , StaticAssets (..)
+  , serveDefaultObeliskApp'
   -- * Re-exports
   , Default (def)
   , getPageName
@@ -56,7 +58,10 @@ data GhcjsApp route = GhcjsApp
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
 serveDefaultObeliskApp :: MonadSnap m => Frontend (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
-serveDefaultObeliskApp frontend = serveObeliskApp defaultStaticAssets frontendApp
+serveDefaultObeliskApp = serveDefaultObeliskApp' defaultStaticAssets
+
+serveDefaultObeliskApp' :: MonadSnap m => StaticAssets -> Frontend (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
+serveDefaultObeliskApp' staticAssets frontend = serveObeliskApp staticAssets frontendApp
   where frontendApp = GhcjsApp
           { _ghcjsApp_compiled = defaultFrontendGhcjsAssets
           , _ghcjsApp_value = frontend
