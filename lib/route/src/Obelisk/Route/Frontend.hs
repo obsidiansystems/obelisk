@@ -85,7 +85,7 @@ infixr 5 :~
 pattern (:~) :: Reflex t => f a -> Dynamic t a -> DSum f (Compose (Dynamic t) Identity)
 pattern a :~ b <- a :=> (coerceDynamic . getCompose -> b)
 
-class Routed t r m where
+class Routed t r m | m -> t r where
   askRoute :: m (Dynamic t r)
 
 instance Monad m => Routed t r (RoutedT t r m) where
