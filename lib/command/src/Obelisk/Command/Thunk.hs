@@ -40,6 +40,7 @@ import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.Aeson.Types as Aeson
+import Data.Bifunctor
 import qualified Data.ByteString.Lazy as LBS
 import Data.Default
 import Data.Either.Combinators (rightToMaybe)
@@ -743,11 +744,15 @@ getThunkPtr' checkClean thunkDir upstream = do
             localHeads = Map.fromList $ catMaybes $ fmap
               (\(x,y) -> (,) x <$> T.stripPrefix "refs/heads/" y)
               refs
-            currentUpstreamBranch = Map.lookup currentHead remoteHeads
-                                <|> Map.lookup currentHead localHeads
+            mCurrentUpstreamBranch = Map.lookup currentHead remoteHeads
+                                 <|> Map.lookup currentHead localHeads
         if isGithubThunk remoteUri
-          then githubThunkPtr remoteUri currentHead currentUpstreamBranch
-          else gitThunkPtr remoteUri currentHead currentUpstreamBranch
+          then githubThunkPtr remoteUri currentHead mCurrentUpstreamBranch
+          else do
+          currentUpstreamBranch <- case mCurrentUpstreamBranch of
+            Just b -> pure b
+            Nothing -> failWith "Need explicit branch for git remote"
+          gitThunkPtr remoteUri currentHead currentUpstreamBranch
  where
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
@@ -788,16 +793,13 @@ githubThunkPtr u commit' branch' = do
       }
     }
 
-gitThunkPtr :: MonadObelisk m => URI -> Text -> Maybe Text -> m ThunkPtr
-gitThunkPtr u commit branch' = do
+gitThunkPtr :: MonadObelisk m => URI -> Text -> Text -> m ThunkPtr
+gitThunkPtr u commit branch = do
   let protocols = ["https:", "ssh:", "git:"]
   unless (T.toLower (T.pack $ uriScheme u) `elem` protocols) $
     failWith $ "thunk pack: obelisk currently only supports "
       <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
   hash <- nixPrefetchGit u commit False
-  branch <- case branch' of
-    Nothing -> failWith "thunk pack: git thunks must track a branch"
-    Just b -> pure $ N b
   pure $ ThunkPtr
     { _thunkPtr_rev = ThunkRev
       { _thunkRev_commit = commitNameToRef (N commit)
@@ -805,24 +807,24 @@ gitThunkPtr u commit branch' = do
       }
     , _thunkPtr_source = ThunkSource_Git $ GitSource
       { _gitSource_url = u
-      , _gitSource_branch = branch
+      , _gitSource_branch = N branch
       , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
       }
     }
 
 uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mbranch = do
-  let ref = maybe GitRef_Head GitRef_Branch mbranch
-  (commit, mref) <- do
-    res <- liftIO $ gitLsRemoteRef (show uri) ref
-    return $ either fail id res
-  let branch = case (ref, mref) of
-        (GitRef_Head, Just (GitRef_Branch b)) -> Just b
-        (GitRef_Branch b, _) -> Just b
-        _ -> Nothing
+  bothMaps <- rethrowE =<< liftIO (gitLsRemote (show uri) (GitRef_Branch <$> mbranch))
+  branch <- rethrowE $ first (("In repo from " <> T.pack (show uri) <> ": ") <>) $
+    case mbranch of
+      Nothing -> gitLookupDefaultBranch bothMaps
+      Just b -> pure b
+  commit <- rethrowE $ gitLookupCommitForRef bothMaps (GitRef_Branch branch)
   if isGithubThunk uri
-    then githubThunkPtr uri commit branch
+    then githubThunkPtr uri commit mbranch
     else gitThunkPtr uri commit branch
+  where
+    rethrowE = either failWith pure
 
 parseGitUri :: Text -> Maybe URI
 parseGitUri x = parseURIReference (T.unpack x) <|> parseSshShorthand x
