@@ -33,6 +33,9 @@ module Obelisk.Route.Frontend
   , mapRoutedT
   , subRoute
   , subRoute_
+  , maybeRoute
+  , maybeRoute_
+  , maybeRouted
   , runRouteViewT
   , SetRouteT(..)
   , SetRoute(..)
@@ -164,6 +167,22 @@ subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
+maybeRoute_ :: (MonadFix m, MonadHold t m, Adjustable t m) => m () -> RoutedT t r m () -> RoutedT t (Maybe r) m ()
+maybeRoute_ n j = maybeRouted $ strictDynWidget_ $ \case
+  Nothing -> n
+  Just r -> runRoutedT j r
+
+maybeRoute :: (MonadFix m, MonadHold t m, Adjustable t m) => m a -> RoutedT t r m a -> RoutedT t (Maybe r) m (Dynamic t a)
+maybeRoute n j = maybeRouted $ strictDynWidget $ \case
+  Nothing -> n
+  Just r -> runRoutedT j r
+
+{-
+maybeRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => m a -> RoutedT t r m a -> RoutedT t (Maybe r) m a
+maybeRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
+  runRoutedT (f c) r'
+-}
+
 dsumValueCoercion :: Coercion f g -> Coercion (DSum k f) (DSum k g)
 dsumValueCoercion Coercion = Coercion
 
@@ -174,6 +193,11 @@ factorRouted :: (Reflex t, MonadFix m, MonadHold t m, GEq f) => RoutedT t (DSum 
 factorRouted r = RoutedT $ ReaderT $ \d -> do
   d' <- factorDyn d
   runRoutedT r $ (coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d')
+
+maybeRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Maybe (Dynamic t a)) m b -> RoutedT t (Maybe a) m b
+maybeRouted r = RoutedT $ ReaderT $ \d -> do
+  d' <- maybeDyn d
+  runRoutedT r d'
 
 -- | WARNING: The input 'Dynamic' must be fully constructed when this is run
 strictDynWidget :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
