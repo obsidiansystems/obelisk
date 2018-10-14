@@ -746,29 +746,31 @@ getThunkPtr' checkClean thunkDir upstream = do
               refs
             mCurrentUpstreamBranch = Map.lookup currentHead remoteHeads
                                  <|> Map.lookup currentHead localHeads
-        if isGithubThunk remoteUri
-          then githubThunkPtr remoteUri currentHead mCurrentUpstreamBranch
-          else do
-          currentUpstreamBranch <- case mCurrentUpstreamBranch of
-            Just b -> pure b
-            Nothing -> failWith "Need explicit branch for git remote"
-          gitThunkPtr remoteUri currentHead currentUpstreamBranch
+        case isGithubThunk remoteUri of
+          Just (owner, repo) -> githubThunkPtr owner repo currentHead mCurrentUpstreamBranch
+          Nothing -> do
+            currentUpstreamBranch <- case mCurrentUpstreamBranch of
+              Just b -> pure b
+              Nothing -> failWith "Need explicit branch for git remote"
+            gitThunkPtr remoteUri currentHead currentUpstreamBranch
  where
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
 
-isGithubThunk :: URI -> Bool
+-- Just comes with "proof" with the decomposed URL.x
+isGithubThunk :: URI -> Maybe (String, String)
 isGithubThunk u
   | Just uriAuth <- uriAuthority u
-  = case uriScheme u of
+  , case uriScheme u of
        "ssh:" -> uriAuth == URIAuth "git@" "github.com" ""
        s -> s `L.elem` [ "git:", "https:", "http:" ] -- "http:" just redirects to "https:"
          && uriRegName uriAuth == "github.com"
-  | otherwise = False
+  , ["/", owner', repo'] <- splitDirectories (uriPath u)
+  = Just (owner', repo')
+  | otherwise = Nothing
 
-githubThunkPtr :: MonadObelisk m => URI -> Text -> Maybe Text -> m ThunkPtr
-githubThunkPtr u commit' branch' = do
-  ["/", owner', repo'] <- return $ splitDirectories (uriPath u)
+githubThunkPtr :: MonadObelisk m => String -> String -> Text -> Maybe Text -> m ThunkPtr
+githubThunkPtr owner' repo' commit' branch' = do
   let owner = N (T.pack owner')
       repo = N (T.pack (dropExtension repo'))
       commit = N commit'
@@ -820,9 +822,9 @@ uriThunkPtr uri mbranch = do
       Nothing -> gitLookupDefaultBranch bothMaps
       Just b -> pure b
   commit <- rethrowE $ gitLookupCommitForRef bothMaps (GitRef_Branch branch)
-  if isGithubThunk uri
-    then githubThunkPtr uri commit mbranch
-    else gitThunkPtr uri commit branch
+  case isGithubThunk uri of
+    Just (owner, repo) -> githubThunkPtr owner repo commit mbranch
+    Nothing -> gitThunkPtr uri commit branch
   where
     rethrowE = either failWith pure
 
