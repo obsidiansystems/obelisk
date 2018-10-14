@@ -40,7 +40,6 @@ import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.Aeson.Types as Aeson
-import Data.Bifunctor
 import qualified Data.ByteString.Lazy as LBS
 import Data.Default
 import Data.Either.Combinators (rightToMaybe)
@@ -120,7 +119,7 @@ data GitHubSource = GitHubSource
 
 data GitSource = GitSource
   { _gitSource_url :: URI
-  , _gitSource_branch :: Name Branch
+  , _gitSource_branch :: Maybe (Name Branch)
   , _gitSource_fetchSubmodules :: Bool
   }
   deriving (Show, Eq, Ord)
@@ -128,7 +127,7 @@ data GitSource = GitSource
 getThunkGitBranch :: ThunkPtr -> Maybe Text
 getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
   ThunkSource_GitHub s -> _gitHubSource_branch s
-  ThunkSource_Git s -> Just $ _gitSource_branch s
+  ThunkSource_Git s -> _gitSource_branch s
 
 commitNameToRef :: Name Commit -> Ref
 commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
@@ -159,29 +158,14 @@ nixPrefetchGit uri rev fetchSubmodules =
       Just x -> pure x
 
 getLatestGitRev :: MonadObelisk m => GitSource -> m ThunkRev
-getLatestGitRev s = withSystemTempDirectory "git-clone" $ \tmpDir -> do
-  withExitFailMessage ("Unable to determine latest git revision for branch " <> branch) $ do
-    let git = readProcessAndLogStderr Debug . gitProc tmpDir
-    out <- liftA2 (<>)
-      (git ["clone", "--no-checkout", show $ _gitSource_url s]) -- Might be able to use --bare here instead to go faster.
-      (git ["log", T.unpack branch, "--max-count=1", "--format=%H"])
-
-    case T.strip <$> safeLast (T.lines out) of
-      Nothing -> failWith $ "Unable to parse git log: " <> out
-      Just rev -> do
-        putLog Debug $ "Latest commit in " <> branch <> " is " <> rev
-        sha <- nixPrefetchGit (_gitSource_url s) rev (_gitSource_fetchSubmodules s)
-        putLog Debug $ "Nix sha256 is " <> sha
-        pure $ ThunkRev
-          { _thunkRev_commit = Ref.fromHexString $ T.unpack rev
-          , _thunkRev_nixSha256 = sha
-          }
-  where
-    remote :: Text = "origin"
-    branch :: Text = remote <> "/" <> untagName (_gitSource_branch s)
-
-    safeLast [] = Nothing
-    safeLast xs = Just $ last xs
+getLatestGitRev s = do
+  (_, commit) <- gitGetCommitBranch (_gitSource_url s) (untagName <$> _gitSource_branch s)
+  sha <- nixPrefetchGit (_gitSource_url s) commit (_gitSource_fetchSubmodules s)
+  putLog Debug $ "Nix sha256 is " <> sha
+  pure $ ThunkRev
+    { _thunkRev_commit = Ref.fromHexString $ T.unpack commit
+    , _thunkRev_nixSha256 = sha
+    }
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
@@ -327,7 +311,7 @@ parseGitHubSource v = do
 parseGitSource :: Aeson.Object -> Aeson.Parser GitSource
 parseGitSource v = do
   Just url <- parseGitUri <$> v Aeson..: "url"
-  branch <- v Aeson..: "branch"
+  branch <- v Aeson..:! "branch"
   fetchSubmodules <- v Aeson..:! "fetchSubmodules"
   pure $ GitSource
     { _gitSource_url = url
@@ -356,9 +340,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
   ThunkSource_GitHub s -> encodePretty' githubCfg $ Aeson.object $ catMaybes
     [ Just $ "owner" .= _gitHubSource_owner s
     , Just $ "repo" .= _gitHubSource_repo s
-    , case _gitHubSource_branch s of
-        Just b -> Just $ "branch" .= b
-        Nothing -> Nothing
+    , ("branch" .=) <$> _gitHubSource_branch s
     , if _gitHubSource_private s
       then Just $ "private" .= True
       else Nothing
@@ -369,7 +351,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     --TODO: Is this safe? read/show is jank for `URI`
     [ Just $ "url" .= show (_gitSource_url s)
     , Just $ "rev" .= Ref.toHexString (_thunkRev_commit rev)
-    , Just $ "branch" .= _gitSource_branch s
+    , ("branch" .=) <$> _gitSource_branch s
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
     , Just $ "fetchSubmodules" .= _gitSource_fetchSubmodules s
     ]
@@ -665,7 +647,9 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
             git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
             when (_gitSource_fetchSubmodules s) $
               git ["submodule", "update", "--recursive", "--init"]
-            git ["branch", "-u", "origin/" <> T.unpack (untagName $ _gitSource_branch s)]
+            case _gitSource_branch s of
+              Just b -> git ["branch", "-u", "origin/" <> T.unpack (untagName $ b)]
+              Nothing -> pure ()
 
             liftIO $ createDirectory obGitDir
             callProcessAndLogOutput (Notice, Error) $
@@ -746,13 +730,10 @@ getThunkPtr' checkClean thunkDir upstream = do
               refs
             mCurrentUpstreamBranch = Map.lookup currentHead remoteHeads
                                  <|> Map.lookup currentHead localHeads
-        case isGithubThunk remoteUri of
-          Just (owner, repo) -> githubThunkPtr owner repo currentHead mCurrentUpstreamBranch
-          Nothing -> do
-            currentUpstreamBranch <- case mCurrentUpstreamBranch of
-              Just b -> pure b
-              Nothing -> failWith "Need explicit branch for git remote"
-            gitThunkPtr remoteUri currentHead currentUpstreamBranch
+        f <- case isGithubThunk remoteUri of
+          Just (owner, repo) -> githubThunkPtr owner repo currentHead
+          Nothing -> gitThunkPtr remoteUri currentHead
+        pure $ f mCurrentUpstreamBranch
  where
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
@@ -769,64 +750,88 @@ isGithubThunk u
   = Just (owner', repo')
   | otherwise = Nothing
 
-githubThunkPtr :: MonadObelisk m => String -> String -> Text -> Maybe Text -> m ThunkPtr
-githubThunkPtr owner' repo' commit' branch' = do
+-- Funny signature indicates no effects depend on the optional branch name.
+githubThunkPtr
+  :: MonadObelisk m
+  => String
+  -> String
+  -> Text
+  -> m (Maybe Text -> ThunkPtr)
+githubThunkPtr owner' repo' commit = do
   let owner = N (T.pack owner')
       repo = N (T.pack (dropExtension repo'))
-      commit = N commit'
-      branch = N <$> branch'
   mauth <- liftIO $ getHubAuth "github.com"
   repoResult <- liftIO $ executeRequestMaybe mauth $ repositoryR owner repo
   repoIsPrivate <- either (liftIO . throwIO) (return . repoPrivate) repoResult
   archiveResult <- liftIO $ executeRequestMaybe mauth $
-    archiveForR owner repo ArchiveFormatTarball (Just (untagName commit))
+    archiveForR owner repo ArchiveFormatTarball (Just commit)
   archiveUri <- either (liftIO . throwIO) return archiveResult
   hash <- getNixSha256ForUriUnpacked archiveUri
-  return $ ThunkPtr
+  return $ \mbranch -> ThunkPtr
     { _thunkPtr_rev = ThunkRev
-      { _thunkRev_commit = commitNameToRef commit
+      { _thunkRev_commit = commitNameToRef $ N commit
       , _thunkRev_nixSha256 = hash
       }
     , _thunkPtr_source = ThunkSource_GitHub $ GitHubSource
       { _gitHubSource_owner = owner
       , _gitHubSource_repo = repo
-      , _gitHubSource_branch = branch
+      , _gitHubSource_branch = N <$> mbranch
       , _gitHubSource_private = repoIsPrivate
       }
     }
 
-gitThunkPtr :: MonadObelisk m => URI -> Text -> Text -> m ThunkPtr
-gitThunkPtr u commit branch = do
+gitThunkPtr
+  :: MonadObelisk m
+  => URI
+  -> Text
+  -> m (Maybe Text -> ThunkPtr)
+gitThunkPtr u commit = do
   let protocols = ["https:", "ssh:", "git:"]
   unless (T.toLower (T.pack $ uriScheme u) `elem` protocols) $
     failWith $ "thunk pack: obelisk currently only supports "
       <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
   hash <- nixPrefetchGit u commit False
-  pure $ ThunkPtr
+  pure $ \mbranch -> ThunkPtr
     { _thunkPtr_rev = ThunkRev
       { _thunkRev_commit = commitNameToRef (N commit)
       , _thunkRev_nixSha256 = hash
       }
     , _thunkPtr_source = ThunkSource_Git $ GitSource
       { _gitSource_url = u
-      , _gitSource_branch = N branch
+      , _gitSource_branch = N <$> mbranch
       , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
       }
     }
 
-uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
-uriThunkPtr uri mbranch = do
-  bothMaps <- rethrowE =<< liftIO (gitLsRemote (show uri) (GitRef_Branch <$> mbranch))
-  branch <- rethrowE $ first (("In repo from " <> T.pack (show uri) <> ": ") <>) $
-    case mbranch of
-      Nothing -> gitLookupDefaultBranch bothMaps
-      Just b -> pure b
-  commit <- rethrowE $ gitLookupCommitForRef bothMaps (GitRef_Branch branch)
+commitThunkPtr :: MonadObelisk m => URI -> Text -> m (Maybe Text -> ThunkPtr)
+commitThunkPtr uri commit = do
   case isGithubThunk uri of
-    Just (owner, repo) -> githubThunkPtr owner repo commit mbranch
-    Nothing -> gitThunkPtr uri commit branch
+    Just (owner, repo) -> githubThunkPtr owner repo commit
+    Nothing -> gitThunkPtr uri commit
+
+gitGetCommitBranch
+  :: MonadObelisk m => URI -> Maybe Text -> m (Text, Text)
+gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
+  bothMaps <- rethrowE =<< liftIO (gitLsRemote (show uri) (GitRef_Branch <$> mbranch))
+  branch <- case mbranch of
+    Nothing -> withExitFailMessage "Failed to find default branch" $ do
+      b <- rethrowE $ gitLookupDefaultBranch bothMaps
+      putLog Debug $ "Default branch for remote repo " <> uriMsg <> " is " <> b
+      pure b
+    Just b -> pure b
+  commit <- rethrowE $ gitLookupCommitForRef bothMaps (GitRef_Branch branch)
+  putLog Debug $ "Latest commit in branch " <> branch
+    <> " from remote repo " <> uriMsg
+    <> " is " <> commit
+  pure (branch, commit)
   where
     rethrowE = either failWith pure
+    uriMsg = T.pack $ show uri
+
+uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
+uriThunkPtr uri mbranch = do
+  (_, commit) <- gitGetCommitBranch uri mbranch
+  commitThunkPtr uri commit <*> pure mbranch
 
 parseGitUri :: Text -> Maybe URI
 parseGitUri x = parseURIReference (T.unpack x) <|> parseSshShorthand x

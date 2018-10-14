@@ -100,18 +100,18 @@ gitLookupDefaultBranch (refs, _) = do
   ref <- case M.lookup GitRef_Head refs of
     Just ref -> pure ref
     Nothing -> throwError
-      "gitLookupDefaultBranch: No symref entry for HEAD. \
+      "No symref entry for HEAD. \
       \ Is your git version at least 1.8.5? \
       \ Otherwise `git ls-remote --symref` will not work."
   case ref of
     GitRef_Branch b -> pure b
     _ -> throwError $
-      "gitLookupDefaultBranch: Default ref " <> showGitRef ref <> " is not a branch!"
+      "Default ref " <> showGitRef ref <> " is not a branch!"
 
 gitLookupCommitForRef :: GitLsRemoteMaps -> GitRef -> Either Text CommitId
 gitLookupCommitForRef (_, commits) ref = case M.lookup ref commits of
   Just a -> pure a
-  Nothing -> throwError $ "gitLookupCommitForRef: Did not find " <> showGitRef ref
+  Nothing -> throwError $ "Did not find commit for" <> showGitRef ref
 
 gitLsRemote
   :: String
