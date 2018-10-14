@@ -156,16 +156,6 @@ nixPrefetchGit uri rev fetchSubmodules =
       Nothing -> failWith $ "nix-prefetch-git: unrecognized output " <> out
       Just x -> pure x
 
-getLatestGitRev :: MonadObelisk m => GitSource -> m ThunkRev
-getLatestGitRev s = do
-  (_, commit) <- gitGetCommitBranch (_gitSource_url s) (untagName <$> _gitSource_branch s)
-  sha <- nixPrefetchGit (_gitSource_url s) commit (_gitSource_fetchSubmodules s)
-  putLog Debug $ "Nix sha256 is " <> sha
-  pure $ ThunkRev
-    { _thunkRev_commit = Ref.fromHexString $ T.unpack commit
-    , _thunkRev_nixSha256 = sha
-    }
-
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
 getLatestRev = \case
@@ -189,7 +179,9 @@ getLatestRev = \case
       { _thunkRev_commit = commitNameToRef commit
       , _thunkRev_nixSha256 = nixSha256
       }
-  ThunkSource_Git s -> getLatestGitRev s
+  ThunkSource_Git s -> do
+    (_, commit) <- gitGetCommitBranch (_gitSource_url s) (untagName <$> _gitSource_branch s)
+    gitThunkPtr s commit
 
 --TODO: Pretty print these
 data ReadThunkError
@@ -724,81 +716,74 @@ getThunkPtr' checkClean thunkDir upstream = do
               refs
             mCurrentUpstreamBranch = Map.lookup currentHead remoteHeads
                                  <|> Map.lookup currentHead localHeads
-        f <- case isGithubThunk remoteUri of
-          Just (owner, repo) -> githubThunkPtr owner repo currentHead
-          Nothing -> gitThunkPtr remoteUri currentHead
-        pure $ f mCurrentUpstreamBranch
+        let src = uriToThunkSource remoteUri mCurrentUpstreamBranch
+        rev <- case src of
+          ThunkSource_GitHub s -> githubThunkPtr s currentHead
+          ThunkSource_Git s -> gitThunkPtr s currentHead
+        pure $ ThunkPtr
+          { _thunkPtr_rev = rev
+          , _thunkPtr_source = src
+          }
  where
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
 
--- Just comes with "proof" with the decomposed URL.x
-isGithubThunk :: URI -> Maybe (String, String)
-isGithubThunk u
+-- | N.B. Cannot infer all fields.
+uriToThunkSource :: URI -> Maybe Text -> ThunkSource
+uriToThunkSource u
   | Just uriAuth <- uriAuthority u
   , case uriScheme u of
        "ssh:" -> uriAuth == URIAuth "git@" "github.com" ""
        s -> s `L.elem` [ "git:", "https:", "http:" ] -- "http:" just redirects to "https:"
          && uriRegName uriAuth == "github.com"
-  , ["/", owner', repo'] <- splitDirectories (uriPath u)
-  = Just (owner', repo')
-  | otherwise = Nothing
+  , ["/", owner, repo] <- splitDirectories (uriPath u)
+  = \mbranch -> ThunkSource_GitHub $ GitHubSource
+    { _gitHubSource_owner = N $ T.pack owner
+    , _gitHubSource_repo = N $ T.pack repo
+    , _gitHubSource_branch = N <$> mbranch
+    }
+
+  | otherwise = \mbranch -> ThunkSource_Git $ GitSource
+    { _gitSource_url = u
+    , _gitSource_branch = N <$> mbranch
+    , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
+    }
 
 -- Funny signature indicates no effects depend on the optional branch name.
 githubThunkPtr
   :: MonadObelisk m
-  => String
-  -> String
+  => GitHubSource
   -> Text
-  -> m (Maybe Text -> ThunkPtr)
-githubThunkPtr owner' repo' commit = do
-  let owner = N (T.pack owner')
-      repo = N (T.pack (dropExtension repo'))
+  -> m ThunkRev
+githubThunkPtr s commit = do
   mauth <- liftIO $ getHubAuth "github.com"
   archiveResult <- liftIO $ executeRequestMaybe mauth $
-    archiveForR owner repo ArchiveFormatTarball (Just commit)
+    archiveForR (_gitHubSource_owner s) (_gitHubSource_repo s) ArchiveFormatTarball (Just commit)
   archiveUri <- either (liftIO . throwIO) return archiveResult
   hash <- getNixSha256ForUriUnpacked archiveUri
-  return $ \mbranch -> ThunkPtr
-    { _thunkPtr_rev = ThunkRev
-      { _thunkRev_commit = commitNameToRef $ N commit
-      , _thunkRev_nixSha256 = hash
-      }
-    , _thunkPtr_source = ThunkSource_GitHub $ GitHubSource
-      { _gitHubSource_owner = owner
-      , _gitHubSource_repo = repo
-      , _gitHubSource_branch = N <$> mbranch
-      }
+  putLog Debug $ "Nix sha256 is " <> hash
+  return $ ThunkRev
+    { _thunkRev_commit = commitNameToRef $ N commit
+    , _thunkRev_nixSha256 = hash
     }
 
 gitThunkPtr
   :: MonadObelisk m
-  => URI
+  => GitSource
   -> Text
-  -> m (Maybe Text -> ThunkPtr)
-gitThunkPtr u commit = do
-  let protocols = ["https:", "ssh:", "git:"]
+  -> m ThunkRev
+gitThunkPtr s commit = do
+  let u = _gitSource_url s
+      protocols = ["https:", "ssh:", "git:"]
   unless (T.toLower (T.pack $ uriScheme u) `elem` protocols) $
-    failWith $ "thunk pack: obelisk currently only supports "
+    failWith $ "obelisk currently only supports "
       <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
-  hash <- nixPrefetchGit u commit False
-  pure $ \mbranch -> ThunkPtr
-    { _thunkPtr_rev = ThunkRev
-      { _thunkRev_commit = commitNameToRef (N commit)
-      , _thunkRev_nixSha256 = hash
-      }
-    , _thunkPtr_source = ThunkSource_Git $ GitSource
-      { _gitSource_url = u
-      , _gitSource_branch = N <$> mbranch
-      , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
-      }
+  hash <- nixPrefetchGit u commit $ _gitSource_fetchSubmodules s
+  putLog Debug $ "Nix sha256 is " <> hash
+  pure $ ThunkRev
+    { _thunkRev_commit = commitNameToRef (N commit)
+    , _thunkRev_nixSha256 = hash
     }
-
-commitThunkPtr :: MonadObelisk m => URI -> Text -> m (Maybe Text -> ThunkPtr)
-commitThunkPtr uri commit = do
-  case isGithubThunk uri of
-    Just (owner, repo) -> githubThunkPtr owner repo commit
-    Nothing -> gitThunkPtr uri commit
 
 gitGetCommitBranch
   :: MonadObelisk m => URI -> Maybe Text -> m (Text, Text)
@@ -822,7 +807,14 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
 uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mbranch = do
   (_, commit) <- gitGetCommitBranch uri mbranch
-  commitThunkPtr uri commit <*> pure mbranch
+  let src = uriToThunkSource uri mbranch
+  rev <- case src of
+        ThunkSource_GitHub s -> githubThunkPtr s commit
+        ThunkSource_Git s -> gitThunkPtr s commit
+  pure $ ThunkPtr
+    { _thunkPtr_rev = rev
+    , _thunkPtr_source = src
+    }
 
 parseGitUri :: Text -> Maybe URI
 parseGitUri x = parseURIReference (T.unpack x) <|> parseSshShorthand x
