@@ -113,7 +113,6 @@ data GitHubSource = GitHubSource
   { _gitHubSource_owner :: Name Owner
   , _gitHubSource_repo :: Name Repo
   , _gitHubSource_branch :: Maybe (Name Branch)
-  , _gitHubSource_private :: Bool
   }
   deriving (Show, Eq, Ord)
 
@@ -300,12 +299,10 @@ parseGitHubSource v = do
   owner <- v Aeson..: "owner"
   repo <- v Aeson..: "repo"
   branch <- v Aeson..:! "branch"
-  mPrivate <- v Aeson..:! "private"
   pure $ GitHubSource
     { _gitHubSource_owner = owner
     , _gitHubSource_repo = repo
     , _gitHubSource_branch = branch
-    , _gitHubSource_private = fromMaybe False mPrivate
     }
 
 parseGitSource :: Aeson.Object -> Aeson.Parser GitSource
@@ -341,9 +338,6 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     [ Just $ "owner" .= _gitHubSource_owner s
     , Just $ "repo" .= _gitHubSource_repo s
     , ("branch" .=) <$> _gitHubSource_branch s
-    , if _gitHubSource_private s
-      then Just $ "private" .= True
-      else Nothing
     , Just $ "rev" .= Ref.toHexString (_thunkRev_commit rev)
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
     ]
@@ -761,8 +755,6 @@ githubThunkPtr owner' repo' commit = do
   let owner = N (T.pack owner')
       repo = N (T.pack (dropExtension repo'))
   mauth <- liftIO $ getHubAuth "github.com"
-  repoResult <- liftIO $ executeRequestMaybe mauth $ repositoryR owner repo
-  repoIsPrivate <- either (liftIO . throwIO) (return . repoPrivate) repoResult
   archiveResult <- liftIO $ executeRequestMaybe mauth $
     archiveForR owner repo ArchiveFormatTarball (Just commit)
   archiveUri <- either (liftIO . throwIO) return archiveResult
@@ -776,7 +768,6 @@ githubThunkPtr owner' repo' commit = do
       { _gitHubSource_owner = owner
       , _gitHubSource_repo = repo
       , _gitHubSource_branch = N <$> mbranch
-      , _gitHubSource_private = repoIsPrivate
       }
     }
 
