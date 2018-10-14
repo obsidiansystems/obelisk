@@ -172,13 +172,7 @@ getLatestRev = \case
     commitInfo : _ <- return $ toList commitInfos
     let commit = commitSha commitInfo
     putLog Debug $ "Latest commit is " <> untagName commit
-    Right archiveUri <- liftIO $ executeRequestMaybe auth $ archiveForR (_gitHubSource_owner s) (_gitHubSource_repo s) ArchiveFormatTarball $ Just $ untagName commit
-    nixSha256 <- getNixSha256ForUriUnpacked archiveUri
-    putLog Debug $ "Nix sha256 is " <> nixSha256
-    return $ ThunkRev
-      { _thunkRev_commit = commitNameToRef commit
-      , _thunkRev_nixSha256 = nixSha256
-      }
+    githubThunkPtr s $ untagName commit
   ThunkSource_Git s -> do
     (_, commit) <- gitGetCommitBranch (_gitSource_url s) (untagName <$> _gitSource_branch s)
     gitThunkPtr s commit
