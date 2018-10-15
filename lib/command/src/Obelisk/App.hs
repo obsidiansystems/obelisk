@@ -9,11 +9,10 @@ module Obelisk.App where
 
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
-import Control.Monad.Trans.Class (lift)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 import Control.Monad.Log (MonadLog)
 
-import Obelisk.CliApp (CliConfig, CliT, HasCliConfig, getCliConfig, runCli, Output)
+import Obelisk.CliApp (CliConfig, CliT, HasCliConfig, runCli, Output)
 
 newtype Obelisk = Obelisk
   { _obelisk_cliConfig :: CliConfig
@@ -33,9 +32,6 @@ class HasObelisk m where
 
 instance Monad m => HasObelisk (ReaderT Obelisk m) where
   getObelisk = ask
-
-instance HasCliConfig m => HasCliConfig (ReaderT Obelisk m) where
-  getCliConfig = lift getCliConfig
 
 runObelisk :: MonadIO m => Obelisk -> ObeliskT m a -> m a
 runObelisk c =

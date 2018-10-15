@@ -9,6 +9,10 @@ import Control.Concurrent.MVar (MVar)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Log (LoggingT, MonadLog, Severity (..), WithSeverity (..))
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask)
+import Control.Monad.Writer (WriterT)
+import Control.Monad.State (StateT)
+import Control.Monad.Except (ExceptT)
+import Control.Monad.Trans (lift)
 import Data.IORef (IORef)
 import Data.Text (Text)
 
@@ -47,3 +51,15 @@ class Monad m => HasCliConfig m where
 
 instance Monad m => HasCliConfig (CliT m) where
   getCliConfig = CliT ask
+
+instance HasCliConfig m => HasCliConfig (ReaderT r m) where
+  getCliConfig = lift getCliConfig
+
+instance (Monoid w, HasCliConfig m) => HasCliConfig (WriterT w m) where
+  getCliConfig = lift getCliConfig
+
+instance HasCliConfig m => HasCliConfig (StateT s m) where
+  getCliConfig = lift getCliConfig
+
+instance HasCliConfig m => HasCliConfig (ExceptT e m) where
+  getCliConfig = lift getCliConfig
