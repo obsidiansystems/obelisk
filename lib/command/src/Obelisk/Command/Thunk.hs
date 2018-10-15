@@ -33,6 +33,7 @@ module Obelisk.Command.Thunk
 
 import Control.Applicative
 import Control.Exception (displayException, throwIO, try)
+import Control.Lens.Indexed hiding ((<.>))
 import Control.Monad
 import Control.Monad.Catch (handle)
 import Control.Monad.Except
@@ -49,6 +50,7 @@ import qualified Data.Git.Ref as Ref
 import qualified Data.List as L
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Set (Set)
@@ -555,7 +557,7 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
   p' <- copyThunkToTmp tmpDir p
   unpackThunk' True p'
   result <- f p'
-  updateThunkFromTmp p' "origin"  -- TODO: stop hardcoding remote
+  updateThunkFromTmp p'
   return result
   where
     copyThunkToTmp tmpDir thunkDir = readThunk thunkDir >>= \case
@@ -566,8 +568,8 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
           proc "cp" ["-r", "-T", thunkDir, tmpThunk]
         return tmpThunk
       Right _ -> failWith $ "Thunk is not packed"
-    updateThunkFromTmp p' remote = do
-      packThunk' True p' remote
+    updateThunkFromTmp p' = do
+      packThunk' True p'
       callProcessAndLogOutput (Notice, Error) $
         proc "cp" ["-r", "-T", p', p]
 
@@ -595,7 +597,7 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
             Just c -> return $ T.unpack $ getUrl c
 
           withSpinner' ("Fetching thunk " <> T.pack thunkDir)
-                       ( finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkDir) $ do
+                       (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkDir) $ do
             callProcessAndLogOutput (Debug, Debug) $
               proc "hub" ["clone", "-n", githubURI, tmpRepo]
             --If this directory already exists then something is weird and we should fail
@@ -641,86 +643,123 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
 
 --TODO: add force mode to pack even if changes are present
 --TODO: add a rollback mode to pack to the original thunk
-packThunk :: MonadObelisk m => FilePath -> Text -> m ()
+packThunk :: MonadObelisk m => FilePath -> m ()
 packThunk = packThunk' False
 
-packThunk' :: MonadObelisk m => Bool -> FilePath -> Text -> m ()
-packThunk' noTrail thunkDir upstream = readThunk thunkDir >>= \case
+packThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
+packThunk' noTrail thunkDir = readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
     withSpinner' ("Packing thunk " <> T.pack thunkDir)
                  (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
-      thunkPtr <- getThunkPtr thunkDir upstream
+      thunkPtr <- getThunkPtr thunkDir
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
 
-getThunkPtr :: MonadObelisk m => FilePath -> Text -> m ThunkPtr
+getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
 getThunkPtr = getThunkPtr' True
 
-getThunkPtr' :: MonadObelisk m => Bool -> FilePath -> Text -> m ThunkPtr
-getThunkPtr' checkClean thunkDir upstream = do
-    when checkClean $ ensureCleanGitRepo thunkDir True $
-      "thunk pack: thunk checkout contains unsaved modifications"
+getThunkPtr' :: forall m. MonadObelisk m => Bool -> FilePath -> m ThunkPtr
+getThunkPtr' checkClean thunkDir = do
+  when checkClean $ ensureCleanGitRepo thunkDir True $
+    "thunk pack: thunk checkout contains unsaved modifications"
 
-    -- Check whether there are any stashes
-    stashOutput <- readGitProcess thunkDir ["stash", "list"]
-    when checkClean $ case T.null stashOutput of
-      False -> do
-        failWith $ T.unlines $
-          [ "thunk pack: thunk checkout has stashes"
-          , "git stash list:"
-          ] ++ T.lines stashOutput
-      True -> return ()
+  -- Check whether there are any stashes
+  stashOutput <- readGitProcess thunkDir ["stash", "list"]
+  when checkClean $ case T.null stashOutput of
+    False -> do
+      failWith $ T.unlines $
+        [ "thunk pack: thunk checkout has stashes"
+        , "git stash list:"
+        ] ++ T.lines stashOutput
+    True -> return ()
 
-    --Check whether all local heads are pushed
-    repoHeads <- T.lines <$> readGitProcess thunkDir ["for-each-ref", "--format=%(refname:short)", "refs/heads/"]
-    remotes <- T.lines <$> readGitProcess thunkDir ["remote"]
-    --Check that the upstream specified actually exists
-    case L.find (== upstream) remotes of
-      Nothing -> failWith $ "thunk pack: upstream " <> upstream <> " does not exist. Available upstreams are " <> T.intercalate ", " remotes
-      Just _ -> return ()
-    -- iterate over cartesian product
-    when checkClean $ forM_ repoHeads $ \hd -> do
-      [localRev] <- T.lines <$> readGitProcess thunkDir ["rev-parse", T.unpack hd]
-      forM_ remotes $ \rm -> do
-        --TODO: The error you get if a branch isn't pushed anywhere could be made more user friendly
-        [remoteMergeRev] <- fmap T.lines $ readGitProcess thunkDir
-          ["merge-base", T.unpack localRev, "remotes/" <> T.unpack rm <> "/" <> T.unpack hd]
-        case remoteMergeRev == localRev of
-          False -> failWith $ mconcat [ "thunk unpack: branch ", hd, " has not been pushed to ", rm ]
-          True -> return ()
+  -- Get information on all branches and their (optional) designated upstream
+  -- correspondents
+  (headDump :: [Text]) <- T.lines <$> readGitProcess thunkDir
+    [ "for-each-ref"
+    , "--format=%(refname:short) %(upstream:short)"
+    , "refs/heads/"
+    ]
+  (headInfo :: Map Text (Maybe Text)) <- fmap Map.fromList $ forM headDump $ \line -> do
+    (branch : restOfLine) <- pure $ T.words line
+    mUpstream <- case restOfLine of
+      [] -> pure Nothing
+      [u] -> pure $ Just u
+      (_:_) -> failWith "git for-each-ref invalid output"
+    pure (branch, mUpstream)
 
-    --We assume it's safe to pack the thunk at this point
-    [remoteUri'] <- fmap T.lines $ readGitProcess thunkDir ["config", "--get", "remote." <> T.unpack upstream <> ".url"]
+  let errorMap :: Map Text ()
+      headUpstream :: Map Text Text
+      (errorMap, headUpstream) = flip Map.mapEither headInfo $ \case
+        Nothing -> Left ()
+        Just b -> Right b
 
-    let uriParseFailure = "Could not identify git remote: " <> remoteUri'
-        mRemoteUri = parseGitUri remoteUri'
-    case mRemoteUri of
-      Nothing -> failWith uriParseFailure
-      Just remoteUri -> do
-        refs <- fmap (map (refsToTuples . T.words) . T.lines) $ readGitProcess thunkDir ["show-ref", "--head"]
-        -- safe because exactly one hash is associated with HEAD
-        let Just currentHead = fst <$> L.find ((== "HEAD") . snd) refs
-            remoteHeads = Map.fromList $ catMaybes $ fmap
-              (\(x,y) -> (,) x <$> T.stripPrefix ("refs/remotes/" <> upstream <> "/") y)
-              refs
-            localHeads = Map.fromList $ catMaybes $ fmap
-              (\(x,y) -> (,) x <$> T.stripPrefix "refs/heads/" y)
-              refs
-            mCurrentUpstreamBranch = Map.lookup currentHead remoteHeads
-                                 <|> Map.lookup currentHead localHeads
-        let src = uriToThunkSource remoteUri mCurrentUpstreamBranch
-        rev <- case src of
-          ThunkSource_GitHub s -> githubThunkRev s currentHead
-          ThunkSource_Git s -> gitThunkRev s currentHead
-        pure $ ThunkPtr
-          { _thunkPtr_rev = rev
-          , _thunkPtr_source = src
-          }
- where
-  refsToTuples [x, y] = (x, y)
-  refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
+  -- Check that every branch has a remote equivalent
+  when checkClean $ do
+    let untrackedBranches = Map.keys errorMap
+    when (not $ L.null untrackedBranches) $ failWith $ T.unlines $
+      [ "thunk pack: Certain branches in the thunk have no upstream branch \
+        \ set. This means don't know to check whether all your work is \
+        \ saved. The offending branches are:"
+      , ""
+      , T.unwords untrackedBranches
+      , ""
+      , "To fix this, you probably want to do:"
+      , ""
+      ] ++
+      ((\branch -> "git push -u origin " <> branch) <$> untrackedBranches) ++
+      [ ""
+      , "These will push the branches to the default remote under the same \
+        \ name, and (thanks to the `-u`) remember that choice so you don't \
+        \ get this error again."
+      ]
+
+    -- loosely by https://stackoverflow.com/questions/7773939/show-git-ahead-and-behind-info-for-all-branches-including-remotes
+    stats <- iforM headUpstream $ \branch upstream -> do
+      (stat :: [Text]) <- T.lines <$> readGitProcess thunkDir
+        [ "rev-list", "--left-right"
+        , T.unpack branch <> "..." <> T.unpack upstream
+        ]
+      let ahead = length $ [ () | Just ('<', _) <- T.uncons <$> stat ]
+          behind = length $ [ () | Just ('>', _) <- T.uncons <$> stat ]
+      pure (upstream, (ahead, behind))
+
+    -- Those branches which have commits ahead of, i.e. not on, the upstream
+    -- branch. Purely being behind is fine.
+    let nonGood = Map.filter ((/= 0) . fst . snd) stats
+
+    when (not $ Map.null nonGood) $ failWith $ T.unlines $
+      [ "thunk pack: Certain branches in the thunk have commits not yet pushed upstream:"
+      , ""
+      ] ++
+      (flip map (Map.toList nonGood) $ \(branch, (upstream, (ahead, behind))) -> mconcat
+        ["  ", branch, " ahead: ", T.pack (show ahead), " behind: ", T.pack (show behind), " remote branch ", upstream]) ++
+      [ ""
+      , "Please push these upstream and try again."
+      ]
+
+  -- We assume it's safe to pack the thunk at this point
+
+  -- Get current branch `git rev-parse --abbrev-ref HEAD`
+  mCurrentBranch <- listToMaybe
+    <$> T.lines
+    <$> readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
+
+  let remote = maybe "origin" id $
+        flip Map.lookup headUpstream =<< mCurrentBranch
+
+  [remoteUri'] <- fmap T.lines $ readGitProcess thunkDir
+    [ "config"
+    , "--get"
+    , "remote." <> T.unpack remote <> ".url"
+    ]
+
+  remoteUri <- case parseGitUri remoteUri' of
+    Nothing -> failWith $ "Could not identify git remote: " <> remoteUri'
+    Just uri -> pure uri
+  uriThunkPtr remoteUri mCurrentBranch
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
