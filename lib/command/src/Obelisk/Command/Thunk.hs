@@ -725,19 +725,37 @@ getLatestRev os = do
     ThunkSource_GitHub s -> githubThunkRev s commit
     ThunkSource_Git s -> gitThunkRev s commit
 
+-- | Convert a URI to a thunk
+--
+-- If the URL is a github URL, we try to just download an archive for
+-- performance. If that doesn't work (e.g. authentication issue), we fall back
+-- on just doing things the normal way for git repos in general, and save it as
+-- a regular git thunk.
 uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mbranch = do
   (_, commit) <- gitGetCommitBranch uri mbranch
-  let src = uriToThunkSource uri mbranch
-  rev <- case src of
-        ThunkSource_GitHub s -> githubThunkRev s commit
-        ThunkSource_Git s -> gitThunkRev s commit
+  (src, rev) <- case uriToThunkSource uri mbranch of
+    ThunkSource_GitHub s -> do
+      rev <- runExceptT $ githubThunkRev s commit
+      case rev of
+        Right r -> pure (ThunkSource_GitHub s, r)
+        Left e -> do
+          putLog Alert $ " \
+\ Failed to fetch archive from GitHub. This is probably a private repo. \
+\ Falling back on normal fetchgit. Original failure:\n\n" <> T.pack (show e)
+          let s' = forgetGithub s
+          (,) (ThunkSource_Git s') <$> gitThunkRev s' commit
+    ThunkSource_Git s -> (,) (ThunkSource_Git s) <$> gitThunkRev s commit
   pure $ ThunkPtr
     { _thunkPtr_rev = rev
     , _thunkPtr_source = src
     }
 
 -- | N.B. Cannot infer all fields.
+--
+-- If the thunk is a GitHub thunk and fails, we do *not* fall back like with
+-- `uriThunkPtr`. Unlike a plain URL, a thunk src explicitly states which method
+-- should be employed, and so we respect that.
 uriToThunkSource :: URI -> Maybe Text -> ThunkSource
 uriToThunkSource u
   | Right uriAuth <- uriAuthority u
