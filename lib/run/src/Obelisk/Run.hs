@@ -1,19 +1,40 @@
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-} -- Due to instance HasJS x (EventWriterT t w m)
 module Obelisk.Run where
 
+import Prelude hiding ((.), id)
+
+import Control.Category
 import Control.Concurrent
 import Control.Exception
-import Control.Lens ((^?), _Just, _Right)
+import Control.Lens ((%~), (^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy.Char8 as BSLC
+import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Identity
+import Data.Functor.Sum
 import Data.List (uncons)
 import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
+import Data.Text (Text)
 import qualified Data.Text as T
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
@@ -28,6 +49,9 @@ import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import Obelisk.ExecutableConfig (get)
+import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
+import Obelisk.Frontend
+import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import System.Environment
 import System.IO
@@ -35,28 +59,44 @@ import System.Process
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
+import Obelisk.Backend
 
-run :: Int -- ^ Port to run the backend
-    -> IO () -- ^ Backend
-    -> (StaticWidget () (), Widget () ()) -- ^ Frontend widget (head, body)
-    -> IO ()
+run
+  :: Int -- ^ Port to run the backend
+  -> Backend fullRoute frontendRoute -- ^ Backend
+  -> Frontend (R frontendRoute) -- ^ Frontend
+  -> IO ()
 run port backend frontend = do
-  let handleBackendErr (_ :: IOException) = hPutStrLn stderr "backend stopped; make a change to your code to reload"
-  backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] backend
-  putStrLn $ "Backend running on port " <> show port
-  let conf = defRunConfig { _runConfig_redirectPort = port }
-  runWidget conf frontend `finally` killThread backendTid
+  prettifyOutput
+  let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
+  --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
+  case checkEncoder $ _backend_routeEncoder backend of
+    Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
+    Right validFullEncoder -> do
+      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
+        _backend_run backend $ \serveRoute -> do
+          runSnapWithCommandLineArgs $ do
+            getRouteWith validFullEncoder >>= \case
+              Identity r -> case r of
+                InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
+                InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp frontend $ obeliskRoute :/ a
+      let conf = defRunConfig { _runConfig_redirectPort = port }
+      runWidget conf frontend validFullEncoder `finally` killThread backendTid
 
 getConfigRoute :: IO (Maybe URI)
-getConfigRoute = do
-  mroute <- get "common/route"
-  return $ URI.mkURI =<< mroute
+getConfigRoute = get "config/common/route" >>= \case
+  Just r -> case URI.mkURI $ T.strip r of
+    Just route -> pure $ Just route
+    Nothing -> do
+      putStrLn $ "Route is invalid: " <> show r
+      pure Nothing
+  Nothing -> pure Nothing
 
 defAppUri :: URI
 defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 
-runWidget :: RunConfig -> (StaticWidget () (), Widget () ()) -> IO ()
-runWidget conf (h, b) = do
+runWidget :: RunConfig -> Frontend (R route) -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> IO ()
+runWidget conf frontend validFullEncoder = do
   uri <- fromMaybe defAppUri <$> getConfigRoute
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
@@ -69,25 +109,40 @@ runWidget conf (h, b) = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp defaultConnectionOptions h b (fallbackProxy redirectHost redirectPort man)
+        app <- obeliskApp defaultConnectionOptions frontend validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
         runSettingsSocket settings skt app)
 
-obeliskApp :: ConnectionOptions -> StaticWidget () () -> Widget () () -> Application -> IO Application
-obeliskApp opts h b backend = do
-  html <- BSLC.fromStrict <$> indexHtml h
-  let entryPoint = mainWidget' b >> syncPoint
-  jsaddleOr opts entryPoint $ \req sendResponse -> case (W.requestMethod req, W.pathInfo req) of
-    ("GET", []) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] html
-    ("GET", ["jsaddle.js"]) -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs False
-    _ -> backend req sendResponse
+obeliskApp
+  :: forall route backendRoute. ConnectionOptions
+  -> Frontend (R route)
+  -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
+  -> URI
+  -> Application
+  -> IO Application
+obeliskApp opts frontend validFullEncoder uri backend = do
+  let entryPoint = do
+        runFrontend validFullEncoder frontend
+        syncPoint
+  jsaddlePath <- URI.mkPathPiece "jsaddle"
+  let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
+  Right (jsaddleWarpRouteValidEncoder :: Encoder Identity (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
+  jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
+  return $ \req sendResponse -> case tryDecode validFullEncoder (W.pathInfo req, mempty) of --TODO: Query strings
+    Identity r -> case r of
+      InR (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :=> Identity jsaddleRoute -> case jsaddleRoute of
+        JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just jsaddleUri) False
+        _ -> flip jsaddle sendResponse $ req
+          { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder jsaddleRoute
+          }
+      InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
+        html <- renderJsaddleFrontend (appRouteComponent :/ appRouteRest) frontend
+        sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] $ BSLC.fromStrict html
+      _ -> backend req sendResponse
 
-indexHtml :: StaticWidget () () -> IO ByteString
-indexHtml h = do
-  ((), bs) <- renderStatic $ el "html" $ do
-    el "head" $ h
-    el "body" $ return ()
-    elAttr "script" ("src" =: "/jsaddle.js") $ return ()
-  return $ "<!DOCTYPE html>" <> bs
+renderJsaddleFrontend :: route -> Frontend route -> IO ByteString
+renderJsaddleFrontend r f =
+  let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
+  in renderFrontendHtml r (_frontend_head f >> injectExecutableConfigs) (_frontend_body f >> jsaddleScript)
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings

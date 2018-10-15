@@ -7,11 +7,12 @@ library
   hs-source-dirs: src
 
   build-depends:
-    base, 
+    base,
     bytestring,
+    directory,
     filepath,
-    reflex-dom,
-    text,
-    transformers
+    reflex-dom-core,
+    text
 
   exposed-modules: Obelisk.ExecutableConfig.Inject
+  ghc-options: -Wall

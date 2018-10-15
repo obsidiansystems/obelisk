@@ -14,7 +14,7 @@ import System.IO.Error
 
 get :: Text -> IO (Maybe Text)
 get name = fmap join $ mainBundleResourcePath >>= \mp -> forM mp $ \p -> 
-  catchDoesNotExist  $ T.readFile $ T.unpack (T.decodeUtf8 p) </> "config" </> T.unpack name
+  catchDoesNotExist  $ T.readFile $ T.unpack (T.decodeUtf8 p) </> T.unpack name
 
 catchDoesNotExist :: IO a -> IO (Maybe a)
 catchDoesNotExist f = catchJust doesNotExist (Just <$> f) $ const $ return Nothing

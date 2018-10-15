@@ -10,21 +10,26 @@ library
     , ansi-terminal
     , Cabal
     , aeson-pretty
-    , attoparsec
     , base
     , base16-bytestring
     , binary
     , bytestring
+    , obelisk-cliapp
+    , obelisk-migration
     , containers
     , data-default
     , directory
     , either
     , filepath
     , github
+    , here
     , hit
+    , hpack
     , io-streams
     , exceptions
     , logging-effect
+    , lens
+    , modern-uri
     , monad-loops
     , mtl
     , network
@@ -41,21 +46,16 @@ library
     , yaml
   exposed-modules:
     Obelisk.App
-    Obelisk.CLI
-    Obelisk.CLI.Demo
     Obelisk.Command
     Obelisk.Command.Deploy
     Obelisk.Command.Nix
     Obelisk.Command.Project
     Obelisk.Command.Run
     Obelisk.Command.Thunk
+    Obelisk.Command.Upgrade
+    Obelisk.Command.Upgrade.Hash
     Obelisk.Command.Utils
-  other-modules:
-    Obelisk.CLI.Logging
-    Obelisk.CLI.Process
-    Obelisk.CLI.Spinner
-    Obelisk.CLI.TerminalString
-    Obelisk.CLI.Types
+    Obelisk.Command.VmBuilder
   -- -fobject-code is so that the StaticPointers extension can work in ghci
   ghc-options: -Wall -fobject-code
 

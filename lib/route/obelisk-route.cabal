@@ -1,0 +1,36 @@
+name: obelisk-route
+version: 0.2
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  hs-source-dirs: src
+  build-depends: base,
+                 categories,
+                 constraints,
+                 containers,
+                 dependent-map,
+                 dependent-sum,
+                 dependent-sum-universe-orphans,
+                 dependent-sum-template,
+                 either,
+                 ghcjs-dom,
+                 http-types,
+                 jsaddle,
+                 lens,
+                 monad-control,
+                 mtl,
+                 network-uri,
+                 primitive,
+                 ref-tf,
+                 reflex,
+                 reflex-dom-core,
+                 template-haskell,
+                 text,
+                 transformers,
+                 universe,
+                 universe-template
+  exposed-modules: Obelisk.Route
+                   Obelisk.Route.TH
+                   Obelisk.Route.Frontend
+  ghc-options: -Wall -fwarn-redundant-constraints
