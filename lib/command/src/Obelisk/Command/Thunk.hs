@@ -32,7 +32,7 @@ module Obelisk.Command.Thunk
   ) where
 
 import Control.Applicative
-import Control.Exception (displayException, throwIO, try)
+import Control.Exception (displayException, try)
 import Control.Lens.Indexed hiding ((<.>))
 import Control.Monad
 import Control.Monad.Catch (handle)
@@ -44,7 +44,6 @@ import qualified Data.Aeson.Types as Aeson
 import qualified Data.ByteString.Lazy as LBS
 import Data.Default
 import Data.Either.Combinators (fromRight', rightToMaybe)
-import Data.Foldable
 import Data.Git.Ref (Ref)
 import qualified Data.Git.Ref as Ref
 import qualified Data.List as L
@@ -60,8 +59,7 @@ import qualified Data.Text as T
 import Data.Text.Encoding
 import qualified Data.Text.IO as T
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import Data.Yaml (parseMaybe, (.:))
-import qualified Data.Yaml as Yaml
+import Data.Yaml (parseMaybe)
 import GitHub
 import GitHub.Data.Name
 import Obelisk.Command.Nix
@@ -465,20 +463,6 @@ plainGitStandaloneLoaderV2 = T.unlines
 thunkFileNames :: [FilePath]
 thunkFileNames = ["default.nix", "github.json", "git.json"]
 
--- | Look for authentication info from the 'hub' command
-getHubAuth
-  :: Text -- ^ Domain name
-  -> IO (Maybe Auth)
-getHubAuth domain = do
-  hubConfig <- getXdgDirectory XdgConfig "hub"
-  Yaml.decodeFileEither hubConfig >>= \case
-    Left _ -> return Nothing
-    Right v -> return $ flip parseMaybe v $ \v' -> do
-      Yaml.Array domainConfigs <- v' .: domain --TODO: Determine what multiple domainConfigs means
-      [Yaml.Object domainConfig] <- return $ toList domainConfigs
-      token <- domainConfig .: "oauth_token"
-      return $ OAuth $ encodeUtf8 token
-
 --TODO: when checking something out, make a shallow clone
 
 -- | Checks a cache directory to see if there is a fresh symlink
@@ -587,41 +571,10 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
   Right (ThunkData_Packed tptr) -> do
     let (thunkParent, thunkName) = splitFileName thunkDir
     withTempDirectory thunkParent thunkName $ \tmpRepo -> do
-      let obGitDir = tmpRepo </> ".git" </> "obelisk"
-      case _thunkPtr_source tptr of
-        ThunkSource_GitHub s -> do
-          mauth <- liftIO $ getHubAuth "github.com"
-          repoResult <- liftIO $ executeRequestMaybe mauth $ repositoryR (_gitHubSource_owner s) (_gitHubSource_repo s)
-          githubURI <- either (liftIO . throwIO) (return . repoSshUrl) repoResult >>= \case
-            Nothing -> failWith "Cannot determine clone URI for thunk source"
-            Just c -> return $ T.unpack $ getUrl c
-
-          withSpinner' ("Fetching thunk " <> T.pack thunkDir)
-                       (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkDir) $ do
-            callProcessAndLogOutput (Debug, Debug) $
-              proc "hub" ["clone", "-n", githubURI, tmpRepo]
-            --If this directory already exists then something is weird and we should fail
-            liftIO $ createDirectory obGitDir
-            callProcessAndLogOutput (Debug, Error) $
-              proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
-
-            -- Checkout
-            putLog Debug $ "Checking out " <> T.pack (show $ maybe "" untagName $ _gitHubSource_branch s)
-            callProcessAndLogOutput (Debug, Debug) $
-              proc "hub" $ concat
-                [ ["-C", tmpRepo]
-                , pure "checkout"
-                , maybe [] (\n -> ["-B", T.unpack (untagName n)]) (_gitHubSource_branch s)
-                , pure $ Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr
-                ]
-            -- Set upstream branch
-            forM_ (_gitHubSource_branch s) $ \branch ->
-              callProcessAndLogOutput (Debug, Error) $
-                proc "hub" ["-C", tmpRepo, "branch", "-u", "origin/" <> T.unpack (untagName branch)]
-            callProcessAndLogOutput (Notice, Error) $ proc "rm" ["-r", thunkDir]
-            callProcessAndLogOutput (Notice, Error) $ proc "mv" ["-T", tmpRepo, thunkDir]
-
-        ThunkSource_Git s -> do
+          let obGitDir = tmpRepo </> ".git" </> "obelisk"
+              s = case _thunkPtr_source tptr of
+                ThunkSource_GitHub s' -> forgetGithub s'
+                ThunkSource_Git s' -> s'
           withSpinner' ("Fetching thunk " <> T.pack thunkName)
                        (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
             let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
