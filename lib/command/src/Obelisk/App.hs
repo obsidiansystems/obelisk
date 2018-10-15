@@ -9,10 +9,14 @@ module Obelisk.App where
 
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
+import Control.Monad.Writer (WriterT)
+import Control.Monad.State (StateT)
+import Control.Monad.Except (ExceptT)
+import Control.Monad.Trans.Class (MonadTrans, lift)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 import Control.Monad.Log (MonadLog)
 
-import Obelisk.CliApp (CliConfig, CliT, HasCliConfig, runCli, Output)
+import Obelisk.CliApp (CliConfig, CliT (..), HasCliConfig, runCli, Output)
 
 newtype Obelisk = Obelisk
   { _obelisk_cliConfig :: CliConfig
@@ -23,15 +27,30 @@ newtype ObeliskT m a = ObeliskT
   }
   deriving
     ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask
-    , HasObelisk, HasCliConfig)
+    , HasCliConfig)
 
 deriving instance Monad m => MonadLog Output (ObeliskT m)
 
-class HasObelisk m where
+class Monad m => HasObelisk m where
   getObelisk :: m Obelisk
 
-instance Monad m => HasObelisk (ReaderT Obelisk m) where
-  getObelisk = ask
+instance MonadTrans ObeliskT where
+  lift = ObeliskT . lift . lift
+
+instance Monad m => HasObelisk (ObeliskT m) where
+  getObelisk = ObeliskT ask
+
+instance HasObelisk m => HasObelisk (ReaderT r m) where
+  getObelisk = lift getObelisk
+
+instance (Monoid w, HasObelisk m) => HasObelisk (WriterT w m) where
+  getObelisk = lift getObelisk
+
+instance HasObelisk m => HasObelisk (StateT r m) where
+  getObelisk = lift getObelisk
+
+instance HasObelisk m => HasObelisk (ExceptT e m) where
+  getObelisk = lift getObelisk
 
 runObelisk :: MonadIO m => Obelisk -> ObeliskT m a -> m a
 runObelisk c =

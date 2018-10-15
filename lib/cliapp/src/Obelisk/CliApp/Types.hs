@@ -12,7 +12,7 @@ import Control.Monad.Reader (MonadIO, ReaderT (..), ask)
 import Control.Monad.Writer (WriterT)
 import Control.Monad.State (StateT)
 import Control.Monad.Except (ExceptT)
-import Control.Monad.Trans (lift)
+import Control.Monad.Trans (MonadTrans, lift)
 import Data.IORef (IORef)
 import Data.Text (Text)
 
@@ -45,6 +45,9 @@ newtype CliT m a = CliT
     , MonadThrow, MonadCatch, MonadMask
     , MonadLog Output
     )
+
+instance MonadTrans CliT where
+  lift = CliT . lift . lift
 
 class Monad m => HasCliConfig m where
   getCliConfig :: m CliConfig
