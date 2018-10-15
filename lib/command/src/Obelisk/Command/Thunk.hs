@@ -712,8 +712,8 @@ getThunkPtr' checkClean thunkDir upstream = do
                                  <|> Map.lookup currentHead localHeads
         let src = uriToThunkSource remoteUri mCurrentUpstreamBranch
         rev <- case src of
-          ThunkSource_GitHub s -> githubThunkPtr s currentHead
-          ThunkSource_Git s -> gitThunkPtr s currentHead
+          ThunkSource_GitHub s -> githubThunkRev s currentHead
+          ThunkSource_Git s -> gitThunkRev s currentHead
         pure $ ThunkPtr
           { _thunkPtr_rev = rev
           , _thunkPtr_source = src
@@ -730,16 +730,16 @@ getLatestRev os = do
         ThunkSource_Git s -> s
   (_, commit) <- gitGetCommitBranch (_gitSource_url gitS) (untagName <$> _gitSource_branch gitS)
   case os of
-    ThunkSource_GitHub s -> githubThunkPtr s commit
-    ThunkSource_Git s -> gitThunkPtr s commit
+    ThunkSource_GitHub s -> githubThunkRev s commit
+    ThunkSource_Git s -> gitThunkRev s commit
 
 uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mbranch = do
   (_, commit) <- gitGetCommitBranch uri mbranch
   let src = uriToThunkSource uri mbranch
   rev <- case src of
-        ThunkSource_GitHub s -> githubThunkPtr s commit
-        ThunkSource_Git s -> gitThunkPtr s commit
+        ThunkSource_GitHub s -> githubThunkRev s commit
+        ThunkSource_Git s -> gitThunkRev s commit
   pure $ ThunkPtr
     { _thunkPtr_rev = rev
     , _thunkPtr_source = src
@@ -776,13 +776,13 @@ uriToThunkSource u
     }
 
 -- Funny signature indicates no effects depend on the optional branch name.
-githubThunkPtr
+githubThunkRev
   :: forall m
   .  MonadObelisk m
   => GitHubSource
   -> Text
   -> m ThunkRev
-githubThunkPtr s commit = do
+githubThunkRev s commit = do
   owner <- forcePP $ _gitHubSource_owner s
   repo <- forcePP $ _gitHubSource_repo s
   revTarball <- mkPathPiece $ commit <> ".tar.gz"
@@ -809,12 +809,12 @@ githubThunkPtr s commit = do
     forcePP :: Name entity -> m (RText 'PathPiece)
     forcePP = mkPathPiece . untagName
 
-gitThunkPtr
+gitThunkRev
   :: MonadObelisk m
   => GitSource
   -> Text
   -> m ThunkRev
-gitThunkPtr s commit = do
+gitThunkRev s commit = do
   let u = _gitSource_url s
       protocols = ["https", "ssh", "git"]
   Just scheme <- pure $ unRText <$> uriScheme u
@@ -828,13 +828,13 @@ gitThunkPtr s commit = do
     , _thunkRev_nixSha256 = hash
     }
 
--- | Given the URI to a git remote, and an optional branch name, return the
--- commit hash of the tip of that branch along with the name of the branch.
+-- | Given the URI to a git remote, and an optional branch name, return the name
+-- of the branch along with the hash of the commit at tip of that branch.
 --
 -- If the branch name is passed in, it is returned exactly as-is. If it is not
 -- passed it, the default branch of the repo is used instead.
 gitGetCommitBranch
-  :: MonadObelisk m => URI -> Maybe Text -> m (Text, Text)
+  :: MonadObelisk m => URI -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
   bothMaps <- rethrowE =<< liftIO (gitLsRemote (show uri) (GitRef_Branch <$> mbranch))
   branch <- case mbranch of
