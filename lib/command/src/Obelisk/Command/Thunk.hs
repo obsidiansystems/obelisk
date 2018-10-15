@@ -42,7 +42,7 @@ import Data.Aeson.Encode.Pretty
 import qualified Data.Aeson.Types as Aeson
 import qualified Data.ByteString.Lazy as LBS
 import Data.Default
-import Data.Either.Combinators (rightToMaybe)
+import Data.Either.Combinators (fromRight', rightToMaybe)
 import Data.Foldable
 import Data.Git.Ref (Ref)
 import qualified Data.Git.Ref as Ref
@@ -62,8 +62,6 @@ import Data.Yaml (parseMaybe, (.:))
 import qualified Data.Yaml as Yaml
 import GitHub
 import GitHub.Data.Name
-import GitHub.Endpoints.Repos.Contents (archiveForR)
-import Network.URI
 import Obelisk.Command.Nix
 import System.Directory
 import System.FilePath
@@ -71,6 +69,7 @@ import System.IO.Error
 import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
 import System.Process (proc)
+import Text.URI
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
@@ -123,6 +122,28 @@ data GitSource = GitSource
   }
   deriving (Show, Eq, Ord)
 
+-- | Convert a GitHub source to a regular Git source. Assumes no submodules.
+forgetGithub :: GitHubSource -> GitSource
+forgetGithub s = GitSource
+  { _gitSource_url = URI
+    { uriScheme = Just $ fromRight' $ mkScheme "https"
+    , uriAuthority = Right $ Authority
+        { authUserInfo = Nothing
+        , authHost = fromRight' $ mkHost "github.com"
+        , authPort = Nothing
+        }
+    , uriPath = Just ( False
+                     , fromRight' . mkPathPiece <$>
+                       untagName (_gitHubSource_owner s)
+                       :| [ untagName (_gitHubSource_repo s) <> ".git" ]
+                     )
+    , uriQuery = []
+    , uriFragment = Nothing
+    }
+  , _gitSource_branch = _gitHubSource_branch s
+  , _gitSource_fetchSubmodules = False
+  }
+
 getThunkGitBranch :: ThunkPtr -> Maybe Text
 getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
   ThunkSource_GitHub s -> _gitHubSource_branch s
@@ -155,27 +176,6 @@ nixPrefetchGit uri rev fetchSubmodules =
     case parseMaybe (Aeson..: "sha256") =<< Aeson.decodeStrict (encodeUtf8 out) of
       Nothing -> failWith $ "nix-prefetch-git: unrecognized output " <> out
       Just x -> pure x
-
--- | Get the latest revision available from the given source
-getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
-getLatestRev = \case
-  ThunkSource_GitHub s -> do
-    auth <- liftIO $ getHubAuth "github.com"
-    commitsResult <- liftIO $ executeRequestMaybe auth $ commitsWithOptionsForR
-      (_gitHubSource_owner s)
-      (_gitHubSource_repo s)
-      (FetchAtLeast 1)
-      $ case _gitHubSource_branch s of
-          Nothing -> []
-          Just b -> [CommitQuerySha $ untagName b]
-    commitInfos <- either (liftIO . throwIO) return commitsResult
-    commitInfo : _ <- return $ toList commitInfos
-    let commit = commitSha commitInfo
-    putLog Debug $ "Latest commit is " <> untagName commit
-    githubThunkPtr s $ untagName commit
-  ThunkSource_Git s -> do
-    (_, commit) <- gitGetCommitBranch (_gitSource_url s) (untagName <$> _gitSource_branch s)
-    gitThunkPtr s commit
 
 --TODO: Pretty print these
 data ReadThunkError
@@ -722,18 +722,50 @@ getThunkPtr' checkClean thunkDir upstream = do
   refsToTuples [x, y] = (x, y)
   refsToTuples x = error $ "thunk pack: cannot parse ref " <> show x
 
+-- | Get the latest revision available from the given source
+getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
+getLatestRev os = do
+  let gitS = case os of
+        ThunkSource_GitHub s -> forgetGithub s
+        ThunkSource_Git s -> s
+  (_, commit) <- gitGetCommitBranch (_gitSource_url gitS) (untagName <$> _gitSource_branch gitS)
+  case os of
+    ThunkSource_GitHub s -> githubThunkPtr s commit
+    ThunkSource_Git s -> gitThunkPtr s commit
+
+uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
+uriThunkPtr uri mbranch = do
+  (_, commit) <- gitGetCommitBranch uri mbranch
+  let src = uriToThunkSource uri mbranch
+  rev <- case src of
+        ThunkSource_GitHub s -> githubThunkPtr s commit
+        ThunkSource_Git s -> gitThunkPtr s commit
+  pure $ ThunkPtr
+    { _thunkPtr_rev = rev
+    , _thunkPtr_source = src
+    }
+
 -- | N.B. Cannot infer all fields.
 uriToThunkSource :: URI -> Maybe Text -> ThunkSource
 uriToThunkSource u
-  | Just uriAuth <- uriAuthority u
-  , case uriScheme u of
-       "ssh:" -> uriAuth == URIAuth "git@" "github.com" ""
-       s -> s `L.elem` [ "git:", "https:", "http:" ] -- "http:" just redirects to "https:"
-         && uriRegName uriAuth == "github.com"
-  , ["/", owner, repo] <- splitDirectories (uriPath u)
+  | Right uriAuth <- uriAuthority u
+  , Just scheme <- unRText <$> uriScheme u
+  , case scheme of
+      "ssh" -> uriAuth == Authority
+        { authUserInfo = Just $ UserInfo (fromRight' $ mkUsername "git") Nothing
+        , authHost = fromRight' $ mkHost "github.com"
+        , authPort = Nothing
+        }
+      s -> s `L.elem` [ "git", "https", "http" ] -- "http:" just redirects to "https:"
+        && unRText (authHost uriAuth) == "github.com"
+  , Just (_, owner :| [repoish]) <- uriPath u
   = \mbranch -> ThunkSource_GitHub $ GitHubSource
-    { _gitHubSource_owner = N $ T.pack owner
-    , _gitHubSource_repo = N $ T.pack repo
+    { _gitHubSource_owner = N $ unRText owner
+    , _gitHubSource_repo = N $ let
+        repoish' = unRText repoish
+      in case T.stripSuffix ".git" repoish' of
+        Just repo -> repo
+        Nothing -> repoish'
     , _gitHubSource_branch = N <$> mbranch
     }
 
@@ -745,21 +777,37 @@ uriToThunkSource u
 
 -- Funny signature indicates no effects depend on the optional branch name.
 githubThunkPtr
-  :: MonadObelisk m
+  :: forall m
+  .  MonadObelisk m
   => GitHubSource
   -> Text
   -> m ThunkRev
 githubThunkPtr s commit = do
-  mauth <- liftIO $ getHubAuth "github.com"
-  archiveResult <- liftIO $ executeRequestMaybe mauth $
-    archiveForR (_gitHubSource_owner s) (_gitHubSource_repo s) ArchiveFormatTarball (Just commit)
-  archiveUri <- either (liftIO . throwIO) return archiveResult
+  owner <- forcePP $ _gitHubSource_owner s
+  repo <- forcePP $ _gitHubSource_repo s
+  revTarball <- mkPathPiece $ commit <> ".tar.gz"
+  let archiveUri =  URI
+        { uriScheme = Just $ fromRight' $ mkScheme "https"
+        , uriAuthority = Right $ Authority
+          { authUserInfo = Nothing
+          , authHost = fromRight' $ mkHost "github.com"
+          , authPort = Nothing
+          }
+        , uriPath = Just ( False
+                         , owner :| [ repo, fromRight' $ mkPathPiece "archive", revTarball ]
+                     )
+    , uriQuery = []
+    , uriFragment = Nothing
+    }
   hash <- getNixSha256ForUriUnpacked archiveUri
   putLog Debug $ "Nix sha256 is " <> hash
   return $ ThunkRev
     { _thunkRev_commit = commitNameToRef $ N commit
     , _thunkRev_nixSha256 = hash
     }
+  where
+    forcePP :: Name entity -> m (RText 'PathPiece)
+    forcePP = mkPathPiece . untagName
 
 gitThunkPtr
   :: MonadObelisk m
@@ -768,8 +816,9 @@ gitThunkPtr
   -> m ThunkRev
 gitThunkPtr s commit = do
   let u = _gitSource_url s
-      protocols = ["https:", "ssh:", "git:"]
-  unless (T.toLower (T.pack $ uriScheme u) `elem` protocols) $
+      protocols = ["https", "ssh", "git"]
+  Just scheme <- pure $ unRText <$> uriScheme u
+  unless (T.toLower scheme `elem` protocols) $
     failWith $ "obelisk currently only supports "
       <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
   hash <- nixPrefetchGit u commit $ _gitSource_fetchSubmodules s
@@ -779,6 +828,11 @@ gitThunkPtr s commit = do
     , _thunkRev_nixSha256 = hash
     }
 
+-- | Given the URI to a git remote, and an optional branch name, return the
+-- commit hash of the tip of that branch along with the name of the branch.
+--
+-- If the branch name is passed in, it is returned exactly as-is. If it is not
+-- passed it, the default branch of the repo is used instead.
 gitGetCommitBranch
   :: MonadObelisk m => URI -> Maybe Text -> m (Text, Text)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
@@ -798,20 +852,8 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
     rethrowE = either failWith pure
     uriMsg = T.pack $ show uri
 
-uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
-uriThunkPtr uri mbranch = do
-  (_, commit) <- gitGetCommitBranch uri mbranch
-  let src = uriToThunkSource uri mbranch
-  rev <- case src of
-        ThunkSource_GitHub s -> githubThunkPtr s commit
-        ThunkSource_Git s -> gitThunkPtr s commit
-  pure $ ThunkPtr
-    { _thunkPtr_rev = rev
-    , _thunkPtr_source = src
-    }
-
 parseGitUri :: Text -> Maybe URI
-parseGitUri x = parseURIReference (T.unpack x) <|> parseSshShorthand x
+parseGitUri x = mkURI x <|> parseSshShorthand x
 
 parseSshShorthand :: Text -> Maybe URI
 parseSshShorthand uri = do
@@ -826,4 +868,4 @@ parseSshShorthand uri = do
   -- This check is used to disambiguate a filepath containing a colon from shorthand
   guard $ isNothing (T.findIndex (=='/') authAndHostname)
         && not (T.null colonAndPath)
-  parseURI $ T.unpack properUri
+  mkURI properUri
