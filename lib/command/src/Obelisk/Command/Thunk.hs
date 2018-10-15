@@ -571,28 +571,28 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
   Right (ThunkData_Packed tptr) -> do
     let (thunkParent, thunkName) = splitFileName thunkDir
     withTempDirectory thunkParent thunkName $ \tmpRepo -> do
-          let obGitDir = tmpRepo </> ".git" </> "obelisk"
-              s = case _thunkPtr_source tptr of
-                ThunkSource_GitHub s' -> forgetGithub s'
-                ThunkSource_Git s' -> s'
-          withSpinner' ("Fetching thunk " <> T.pack thunkName)
-                       (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
-            let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
-            git ["clone", if _gitSource_fetchSubmodules s then "--recursive" else "", show (_gitSource_url s)]
-            git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
-            when (_gitSource_fetchSubmodules s) $
-              git ["submodule", "update", "--recursive", "--init"]
-            case _gitSource_branch s of
-              Just b -> git ["branch", "-u", "origin/" <> T.unpack (untagName $ b)]
-              Nothing -> pure ()
+      let obGitDir = tmpRepo </> ".git" </> "obelisk"
+          s = case _thunkPtr_source tptr of
+            ThunkSource_GitHub s' -> forgetGithub s'
+            ThunkSource_Git s' -> s'
+      withSpinner' ("Fetching thunk " <> T.pack thunkName)
+                   (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
+        let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
+        git ["clone", if _gitSource_fetchSubmodules s then "--recursive" else "", show (_gitSource_url s)]
+        git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
+        when (_gitSource_fetchSubmodules s) $
+          git ["submodule", "update", "--recursive", "--init"]
+        case _gitSource_branch s of
+          Just b -> git ["branch", "-u", "origin/" <> T.unpack (untagName $ b)]
+          Nothing -> pure ()
 
-            liftIO $ createDirectory obGitDir
-            callProcessAndLogOutput (Notice, Error) $
-              proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
-            callProcessAndLogOutput (Notice, Error) $
-              proc "rm" ["-r", thunkDir]
-            callProcessAndLogOutput (Notice, Error) $
-              proc "mv" ["-T", tmpRepo, thunkDir]
+        liftIO $ createDirectory obGitDir
+        callProcessAndLogOutput (Notice, Error) $
+          proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
+        callProcessAndLogOutput (Notice, Error) $
+          proc "rm" ["-r", thunkDir]
+        callProcessAndLogOutput (Notice, Error) $
+          proc "mv" ["-T", tmpRepo, thunkDir]
 
 --TODO: add force mode to pack even if changes are present
 --TODO: add a rollback mode to pack to the original thunk
