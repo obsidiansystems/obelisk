@@ -66,10 +66,14 @@ toImplDir :: FilePath -> FilePath
 toImplDir p = toObeliskDir p </> "impl"
 
 -- | Create a new project rooted in the current directory
-initProject :: MonadObelisk m => InitSource -> m ()
-initProject source = withSystemTempDirectory "ob-init" $ \tmpDir -> do
+initProject :: MonadObelisk m => InitSource -> Bool -> m ()
+initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
   let implDir = toImplDir tmpDir
       obDir   = toObeliskDir tmpDir
+  liftIO (listDirectory ".") >>= \case
+    [] -> pure ()
+    _ | force -> putLog Warning "Initializing in non-empty directory"
+      | otherwise -> failWith "ob init requires an empty directory. Use the flag --force to init anyway, potentially overwriting files."
   skeleton <- withSpinner "Setting up obelisk" $ do
     liftIO $ createDirectory obDir
     case source of
