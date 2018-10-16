@@ -328,14 +328,14 @@ rec {
               };
           in mkProject (projectDefinition args));
       serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static config;
-      # `exe` is project's backend executable, with frontend assets, config, etc.
-      # `linuxExe` is the same but built for x86_64-linux.
-      exe = serverOn system configPath;
-      linuxExe = serverOn "x86_64-linux" configPath;
+      linuxExe = serverOn "x86_64-linux";
     in projectOut system // {
-      inherit exe linuxExe;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, config }:
-        server (args // { exe = serverOn "x86_64-linux" config;});
+      linuxExeConfigurable = linuxExe;
+      linuxExe = linuxExe (base + "/config");
+      exe = serverOn system (base + "/config") ;
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, config }: let
+        injectableConfig = builtins.filterSource (path: _: !(hasPrefix (toString config + "/backend") (toString path))) config;
+      in server (args // { exe = linuxExe injectableConfig; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {

@@ -398,9 +398,11 @@ ob = \case
           enableHttps = _deployInitOpts_enableHttps deployOpts
       deployInit thunkPtr (root </> "config") deployDir
         sshKeyPath hostname route adminEmail enableHttps
-    DeployCommand_Push remoteBuilder -> deployPush "." $ case remoteBuilder of
-      Nothing -> pure []
-      Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
+    DeployCommand_Push remoteBuilder -> do
+      deployPath <- liftIO $ canonicalizePath "."
+      deployPush deployPath $ case remoteBuilder of
+        Nothing -> pure []
+        Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test Android -> deployMobile "android" []
     DeployCommand_Test (IOS teamID) -> deployMobile "ios" [teamID]
