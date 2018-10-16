@@ -11,12 +11,13 @@ import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Writer (WriterT)
 import Control.Monad.State (StateT)
-import Control.Monad.Except (ExceptT)
+import Control.Monad.Except (ExceptT, MonadError)
 import Control.Monad.Trans.Class (MonadTrans, lift)
+import Data.Text (Text)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 import Control.Monad.Log (MonadLog)
 
-import Obelisk.CliApp (CliConfig, CliT (..), HasCliConfig, runCli, Output)
+import Obelisk.CliApp (CliConfig, CliLog, CliThrow, CliT (..), HasCliConfig, runCli, Output)
 
 newtype Obelisk = Obelisk
   { _obelisk_cliConfig :: CliConfig
@@ -27,15 +28,13 @@ newtype ObeliskT m a = ObeliskT
   }
   deriving
     ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask
-    , HasCliConfig)
-
-deriving instance Monad m => MonadLog Output (ObeliskT m)
-
-class Monad m => HasObelisk m where
-  getObelisk :: m Obelisk
+    , MonadLog Output, MonadError Text, HasCliConfig)
 
 instance MonadTrans ObeliskT where
   lift = ObeliskT . lift . lift
+
+class Monad m => HasObelisk m where
+  getObelisk :: m Obelisk
 
 instance Monad m => HasObelisk (ObeliskT m) where
   getObelisk = ObeliskT ask
@@ -59,7 +58,8 @@ runObelisk c =
   . unObeliskT
 
 type MonadObelisk m =
-  ( MonadLog Output m
+  ( CliLog m
+  , CliThrow m
   , HasCliConfig m
   , HasObelisk m
   , MonadIO m
