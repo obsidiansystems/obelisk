@@ -34,6 +34,7 @@ module Obelisk.CliApp
   -- .Process
   , ProcessFailed (..)
   , readProcessAndLogStderr
+  , readProcessAndLogOutput
   , callProcessAndLogOutput
   , createProcess_
   , callProcess

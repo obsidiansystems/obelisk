@@ -81,7 +81,7 @@ instance Default NixBuildConfig where
 
 nixBuild :: MonadObelisk m => NixBuildConfig -> m FilePath
 nixBuild cfg = withSpinner' ("Running nix-build on " <> desc) (Just $ const $ "Built " <> desc) $ do
-  withNixRemoteCheck $ readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
+  withNixRemoteCheck $ fmap T.unpack $ readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
     [[path], attrArg, args, outLink, buildersArg]
   where
     path = _target_path $ _nixBuildConfig_target cfg

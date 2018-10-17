@@ -39,7 +39,6 @@ import qualified Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.Aeson.Types as Aeson
 import qualified Data.ByteString.Lazy as LBS
-import qualified Data.ByteString.Lazy.Char8 as LBSC
 import Data.Default
 import Data.Either.Combinators (rightToMaybe)
 import Data.Foldable
@@ -135,7 +134,7 @@ commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 getNixSha256ForUriUnpacked :: MonadObelisk m => URI -> m NixSha256
 getNixSha256ForUriUnpacked uri =
   withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> T.pack (show uri)) $ do
-    fmap T.pack $ withNixRemoteCheck $ readProcessAndLogStderr Debug $
+    withNixRemoteCheck $ readProcessAndLogStderr Debug $
       proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
 
 nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
@@ -149,14 +148,14 @@ nixPrefetchGit uri rev fetchSubmodules =
         , "--quiet"
         ]
 
-    case parseMaybe (Aeson..: "sha256") =<< Aeson.decode (LBSC.pack out) of
-      Nothing -> failWith $ "nix-prefetch-git: unrecognized output " <> T.pack out
+    case parseMaybe (Aeson..: "sha256") =<< Aeson.decodeStrict (encodeUtf8 out) of
+      Nothing -> failWith $ "nix-prefetch-git: unrecognized output " <> out
       Just x -> pure x
 
 getLatestGitRev :: MonadObelisk m => GitSource -> m ThunkRev
 getLatestGitRev s = withSystemTempDirectory "git-clone" $ \tmpDir -> do
   withExitFailMessage ("Unable to determine latest git revision for branch " <> branch) $ do
-    let git = fmap T.pack . readProcessAndLogStderr Debug . gitProc tmpDir
+    let git = readProcessAndLogStderr Debug . gitProc tmpDir
     out <- liftA2 (<>)
       (git ["clone", "--no-checkout", show $ _gitSource_url s]) -- Might be able to use --bare here instead to go faster.
       (git ["log", T.unpack branch, "--max-count=1", "--format=%H"])

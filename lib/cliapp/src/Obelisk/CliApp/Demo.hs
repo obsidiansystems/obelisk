@@ -40,7 +40,7 @@ cliDemo = withSpinner "CLI Demo" $ do
   withSpinner "Looking around" $ do
     delay
     output <- readProcessAndLogStderr Notice $ proc "ls" ["-l", "/"]
-    putLog Notice $ "Output was: " <> T.pack output
+    putLog Notice $ "Output was: " <> output
     delay
     callProcessAndLogOutput (Notice, Error) $ proc "ls" ["-l", "/does-not-exist"]
     delay

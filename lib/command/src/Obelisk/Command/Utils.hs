@@ -25,7 +25,7 @@ checkGitCleanStatus repo withIgnored = do
     runGit = readProcessAndLogStderr Debug . gitProc repo
     gitStatus = runGit $ ["status", "--porcelain"] <> bool [] ["--ignored"] withIgnored
     gitDiff = runGit ["diff"]
-  null <$> liftA2 (<>) gitStatus gitDiff
+  T.null <$> liftA2 (<>) gitStatus gitDiff
 
 -- | Ensure that git repo is clean
 ensureCleanGitRepo :: MonadObelisk m => FilePath -> Bool -> Text -> m ()
@@ -60,7 +60,7 @@ copyDir src dest =
   (P.proc "cp" ["-a", ".", dest]) { P.cwd = Just src }
 
 readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
-readGitProcess repo = fmap T.pack . readProcessAndLogStderr Notice . gitProc repo
+readGitProcess repo = readProcessAndLogStderr Notice . gitProc repo
 
 processToShellString :: FilePath -> [String] -> String
 processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
@@ -76,7 +76,7 @@ runProcSilently = callProcessAndLogOutput (Debug, Debug)
 
 -- | A simpler wrapper for CliApp's readProcessAndLogStderr with sensible defaults.
 readProc :: MonadObelisk m => P.CreateProcess -> m Text
-readProc = fmap T.pack . readProcessAndLogStderr Error
+readProc = readProcessAndLogStderr Error
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show

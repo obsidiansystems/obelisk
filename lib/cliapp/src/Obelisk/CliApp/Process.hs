@@ -11,6 +11,7 @@
 module Obelisk.CliApp.Process
   ( ProcessFailed (..)
   , readProcessAndLogStderr
+  , readProcessAndLogOutput
   , callProcessAndLogOutput
   , createProcess
   , createProcess_
@@ -18,16 +19,18 @@ module Obelisk.CliApp.Process
   , callCommand
   ) where
 
-import Control.Applicative (liftA2)
-import Control.Monad (void, (<=<))
+import Control.Monad ((<=<), join, void)
 import Control.Monad.Catch (Exception(..), MonadMask, throwM)
+import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import Data.Function (fix)
 import Data.Monoid ((<>))
+import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
-import qualified Data.Text.IO as T
+import qualified Data.Text.Encoding as T
+--import qualified Data.Text.IO as T
 import System.Exit (ExitCode (..))
 import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
@@ -50,26 +53,52 @@ instance Exception ProcessFailed where
 
 readProcessAndLogStderr
   :: (MonadIO m, MonadMask m, Cli m)
-  => Severity -> CreateProcess -> m String
+  => Severity -> CreateProcess -> m Text
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
     streamToLog =<< liftIO (streamHandle sev err)
-  -- TODO: Why are we using Text here?
-  liftIO $ T.unpack . T.strip <$> T.hGetContents out
+  liftIO $ T.decodeUtf8 <$> BS.hGetContents out
 
--- | Like `System.Process.callProcess` but logs the combined output--stdout and stderr with the corresponding
--- severity.
+-- | Like `System.Process.readProcess` but logs the combined output (stdout and stderr)
+-- with the corresponding severity.
 --
--- Usually this function is called as `callProcessAndLogOutput (Debug, Error)`. However some processes
--- are known to spit out diagnostic or informative messages in stderr, in which case it is advisable to call
--- it with a non-Error severity for stderr, like `callProcessAndLogOutput (Debug, Debug)`.
+-- Usually this function is called as `callProcessAndLogOutput (Debug, Error)`. However
+-- some processes are known to spit out diagnostic or informative messages in stderr, in
+-- which case it is advisable to call it with a non-Error severity for stderr, like
+-- `callProcessAndLogOutput (Debug, Debug)`.
+
+readProcessAndLogOutput
+  :: (MonadIO m, MonadMask m, Cli m)
+  => (Severity, Severity) -> CreateProcess -> m Text
+readProcessAndLogOutput (sev_out, sev_err) process = do
+  (_, Just out, Just err, p) <- createProcess $ process
+    { std_out = CreatePipe , std_err = CreatePipe }
+
+  -- TODO interleave stdout and stderr in log correctly
+  streamToLog =<< liftIO (streamHandle sev_err err)
+  outText <- liftIO $ T.decodeUtf8 <$> BS.hGetContents out
+  putLogRaw sev_out outText
+
+  liftIO (waitForProcess p) >>= \case
+    ExitSuccess -> pure outText
+    ExitFailure code -> throwError $ T.pack $ show $ ProcessFailed (cmdspec process) code
+
+-- | Like `System.Process.callProcess` but logs the combined output (stdout and stderr)
+-- with the corresponding severity.
+--
+-- Usually this function is called as `callProcessAndLogOutput (Debug, Error)`. However
+-- some processes are known to spit out diagnostic or informative messages in stderr, in
+-- which case it is advisable to call it with a non-Error severity for stderr, like
+-- `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
+
   :: (MonadIO m, MonadMask m, Cli m)
   => (Severity, Severity) -> CreateProcess -> m ()
-callProcessAndLogOutput (sev_out, sev_err) process = do
+callProcessAndLogOutput (sev_out, sev_err) process =
   void $ withProcess process $ \out err -> do
-    stream <- liftIO $ do
-      uncurry combineStream =<< liftA2 (,) (streamHandle sev_out out) (streamHandle sev_err err)
+    stream <- liftIO $ join $ combineStream
+      <$> streamHandle sev_out out
+      <*> streamHandle sev_err err
     streamToLog stream
   where
     combineStream s1 s2 = concurrentMerge [s1, s2]
@@ -131,7 +160,7 @@ streamToLog
 streamToLog stream = fix $ \loop -> do
   liftIO (Streams.read stream) >>= \case
     Nothing -> return ()
-    Just (sev, line) -> putLogRaw sev (decodeUtf8 line) >> loop
+    Just (sev, line) -> putLogRaw sev (T.decodeUtf8 line) >> loop
 
 reconstructCommand :: Process.CmdSpec -> String
 reconstructCommand (Process.ShellCommand str) = str
