@@ -281,7 +281,7 @@ rec {
                   };
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
-                    ${staticName} = dontHaddock (self.callCabal2nix "static" processedStatic.haskellManifest {});
+                    ${staticName} = dontHaddock (self.callCabal2nix staticName processedStatic.haskellManifest {});
                     ${backendName} = addBuildDepend super.${backendName} self.obelisk-run;
                   };
                   totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
