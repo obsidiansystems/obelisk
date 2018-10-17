@@ -9,11 +9,15 @@ module Obelisk.App where
 
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
-import Control.Monad.Trans.Class (lift)
+import Control.Monad.Writer (WriterT)
+import Control.Monad.State (StateT)
+import Control.Monad.Except (ExceptT, MonadError)
+import Control.Monad.Trans.Class (MonadTrans, lift)
+import Data.Text (Text)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 import Control.Monad.Log (MonadLog)
 
-import Obelisk.CliApp (CliConfig, CliT, HasCliConfig, getCliConfig, runCli, Output)
+import Obelisk.CliApp (CliConfig, CliLog, CliThrow, CliT (..), HasCliConfig, runCli, Output)
 
 newtype Obelisk = Obelisk
   { _obelisk_cliConfig :: CliConfig
@@ -24,18 +28,28 @@ newtype ObeliskT m a = ObeliskT
   }
   deriving
     ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask
-    , HasObelisk, HasCliConfig)
+    , MonadLog Output, MonadError Text, HasCliConfig)
 
-deriving instance Monad m => MonadLog Output (ObeliskT m)
+instance MonadTrans ObeliskT where
+  lift = ObeliskT . lift . lift
 
-class HasObelisk m where
+class Monad m => HasObelisk m where
   getObelisk :: m Obelisk
 
-instance Monad m => HasObelisk (ReaderT Obelisk m) where
-  getObelisk = ask
+instance Monad m => HasObelisk (ObeliskT m) where
+  getObelisk = ObeliskT ask
 
-instance HasCliConfig m => HasCliConfig (ReaderT Obelisk m) where
-  getCliConfig = lift getCliConfig
+instance HasObelisk m => HasObelisk (ReaderT r m) where
+  getObelisk = lift getObelisk
+
+instance (Monoid w, HasObelisk m) => HasObelisk (WriterT w m) where
+  getObelisk = lift getObelisk
+
+instance HasObelisk m => HasObelisk (StateT r m) where
+  getObelisk = lift getObelisk
+
+instance HasObelisk m => HasObelisk (ExceptT e m) where
+  getObelisk = lift getObelisk
 
 runObelisk :: MonadIO m => Obelisk -> ObeliskT m a -> m a
 runObelisk c =
@@ -44,7 +58,8 @@ runObelisk c =
   . unObeliskT
 
 type MonadObelisk m =
-  ( MonadLog Output m
+  ( CliLog m
+  , CliThrow m
   , HasCliConfig m
   , HasObelisk m
   , MonadIO m

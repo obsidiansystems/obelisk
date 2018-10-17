@@ -31,7 +31,6 @@ import Data.ByteString (ByteString)
 import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Sum
 import Data.IORef
-import Data.Monoid hiding (Sum)
 import GHCJS.DOM hiding (bracket, catch)
 import GHCJS.DOM.Document
 import GHCJS.DOM.Node

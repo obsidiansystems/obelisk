@@ -6,7 +6,9 @@
 module Obelisk.CliApp
   (
   -- .Types
-    Cli
+    CliLog
+  , CliThrow
+  , Cli
   , CliT(..)
   , runCli
   , CliConfig
