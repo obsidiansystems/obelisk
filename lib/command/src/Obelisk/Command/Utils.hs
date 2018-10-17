@@ -60,9 +60,11 @@ initGit repo = do
   git ["add", "."]
   git ["commit", "-m", "Initial commit."]
 
+gitProcNoRepo :: [String] -> P.CreateProcess
+gitProcNoRepo = P.proc "git"
+
 gitProc :: FilePath -> [String] -> P.CreateProcess
-gitProc repo argsRaw =
-  P.proc "git" $ runGitInDir argsRaw
+gitProc repo = gitProcNoRepo . runGitInDir
   where
     runGitInDir args' = case filter (not . null) args' of
       args@("clone":_) -> args <> [repo]
@@ -74,7 +76,7 @@ copyDir src dest =
   (P.proc "cp" ["-a", ".", dest]) { P.cwd = Just src }
 
 readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
-readGitProcess repo = readProcessAndLogStderr Notice . gitProc repo
+readGitProcess repo = readProcessAndLogOutput (Debug, Notice) . gitProc repo
 
 processToShellString :: FilePath -> [String] -> String
 processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
@@ -90,7 +92,7 @@ runProcSilently = callProcessAndLogOutput (Debug, Debug)
 
 -- | A simpler wrapper for CliApp's readProcessAndLogStderr with sensible defaults.
 readProc :: MonadObelisk m => P.CreateProcess -> m Text
-readProc = readProcessAndLogStderr Error
+readProc = readProcessAndLogOutput (Debug, Error)
 
 tshow :: Show a => a -> Text
 tshow = T.pack . show
@@ -111,21 +113,22 @@ gitLookupDefaultBranch (refs, _) = do
 gitLookupCommitForRef :: GitLsRemoteMaps -> GitRef -> Either Text CommitId
 gitLookupCommitForRef (_, commits) ref = case M.lookup ref commits of
   Just a -> pure a
-  Nothing -> throwError $ "Did not find commit for" <> showGitRef ref
+  Nothing -> throwError $ "Did not find commit for " <> showGitRef ref
 
 gitLsRemote
-  :: String
+  :: MonadObelisk m
+  => String
   -> Maybe GitRef
-  -> IO (Either Text GitLsRemoteMaps)
+  -> m GitLsRemoteMaps
 gitLsRemote repository mRef = do
-  res <- P.readProcess "git"
-    (["ls-remote", "--symref", repository]
-     ++ (maybeToList $ T.unpack . showGitRef <$> mRef))
-    mempty
-  let t = T.pack res
-  return $ first (T.pack . MP.parseErrorPretty' t)
-         $ bimap M.fromList M.fromList . partitionEithers
-         <$> MP.runParser (many parseLsRemote) "" t
+  t <- readProc $ gitProcNoRepo $
+    ["ls-remote", "--symref", repository]
+    ++ (maybeToList $ T.unpack . showGitRef <$> mRef)
+  maps <- case MP.runParser parseLsRemote "" t of
+    Left err -> failWith $ T.pack $ MP.parseErrorPretty' t err
+    Right table -> pure $ bimap M.fromList M.fromList $ partitionEithers $ table
+  putLog Debug $ "git ls-remote maps: " <> T.pack (show maps)
+  pure maps
 
 lexeme :: Parsec Void Text a -> Parsec Void Text a
 lexeme = ML.lexeme space
@@ -133,8 +136,9 @@ lexeme = ML.lexeme space
 -- $ git ls-remote --symref git@github.com:obsidiansystems/obelisk.git HEAD
 -- ref: refs/heads/master	HEAD
 -- d0a8d25dc93f0acd096bc4ff2f550da9e2d0c8f5	refs/heads/master
-parseLsRemote :: Parsec Void Text (Either (GitRef, GitRef) (GitRef, CommitId))
-parseLsRemote = try $ fmap Left parseRef <|> fmap Right parseCommit
+parseLsRemote :: Parsec Void Text [Either (GitRef, GitRef) (GitRef, CommitId)]
+parseLsRemote =
+  many ((fmap Left (try parseRef) <|> fmap Right parseCommit) <* try MP.eol) <* MP.eof
   where
     parseRef :: Parsec Void Text (GitRef, GitRef)
     parseRef = do
@@ -143,7 +147,6 @@ parseLsRemote = try $ fmap Left parseRef <|> fmap Right parseCommit
         $ not . isSpace
       symbolicRef <- lexeme $ MP.takeWhileP (Just "symbolic ref")
         $ not . isSpace
-      _ <- MP.eol
       return (toGitRef symbolicRef, toGitRef ref)
     parseCommit :: Parsec Void Text (GitRef, CommitId)
     parseCommit = do
@@ -151,7 +154,6 @@ parseLsRemote = try $ fmap Left parseRef <|> fmap Right parseCommit
         $ not . isSpace
       ref <- lexeme $ MP.takeWhileP (Just "ref")
         $ not . isSpace
-      _ <- MP.eol
       return (toGitRef ref, commitId)
 
 data GitRef

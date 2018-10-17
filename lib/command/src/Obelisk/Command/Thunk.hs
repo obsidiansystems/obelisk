@@ -158,16 +158,16 @@ getNixSha256ForUriUnpacked
   => URI
   -> m NixSha256
 getNixSha256ForUriUnpacked uri =
-  withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> T.pack (show uri)) $ do
-    withNixRemoteCheck $ readProcessAndLogStderr Debug $
-      proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
+  withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> render uri) $ do
+    withNixRemoteCheck $ readProcessAndLogOutput (Debug, Debug) $
+      proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , T.unpack $ render uri]
 
 nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
-  withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> T.pack (show uri) <> " at " <> rev) $ do
+  withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> render uri <> " at " <> rev) $ do
     out <- withNixRemoteCheck $ readProcessAndLogStderr Debug $
       proc "nix-prefetch-git" $ filter (/="")
-        [ "--url", show uri
+        [ "--url", T.unpack $ render uri
         , "--rev", T.unpack rev
         , if fetchSubmodules then "--fetch-submodules" else ""
         , "--quiet"
@@ -578,7 +578,9 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
       withSpinner' ("Fetching thunk " <> T.pack thunkName)
                    (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
         let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
-        git ["clone", if _gitSource_fetchSubmodules s then "--recursive" else "", show (_gitSource_url s)]
+        git $ [ "clone" ]
+          ++  ("--recursive" <$ guard (_gitSource_fetchSubmodules s))
+          ++  [ T.unpack $ render $ _gitSource_url s ]
         git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
         when (_gitSource_fetchSubmodules s) $
           git ["submodule", "update", "--recursive", "--init"]
@@ -632,22 +634,28 @@ getThunkPtr' checkClean thunkDir = do
   -- correspondents
   (headDump :: [Text]) <- T.lines <$> readGitProcess thunkDir
     [ "for-each-ref"
-    , "--format=%(refname:short) %(upstream:short)"
+    , "--format=%(refname:short) %(upstream:short) %(upstream:remotename)"
     , "refs/heads/"
     ]
-  (headInfo :: Map Text (Maybe Text)) <- fmap Map.fromList $ forM headDump $ \line -> do
-    (branch : restOfLine) <- pure $ T.words line
-    mUpstream <- case restOfLine of
-      [] -> pure Nothing
-      [u] -> pure $ Just u
-      (_:_) -> failWith "git for-each-ref invalid output"
-    pure (branch, mUpstream)
+
+  (headInfo :: Map Text (Maybe (Text, Text)))
+    <- fmap Map.fromList $ forM headDump $ \line -> do
+      (branch : restOfLine) <- pure $ T.words line
+      mUpstream <- case restOfLine of
+        [] -> pure Nothing
+        [u, r] -> pure $ Just (u, r)
+        (_:_) -> failWith "git for-each-ref invalid output"
+      pure (branch, mUpstream)
+
+  putLog Debug $ "branches: " <> T.pack (show headInfo)
 
   let errorMap :: Map Text ()
-      headUpstream :: Map Text Text
+      headUpstream :: Map Text (Text, Text)
       (errorMap, headUpstream) = flip Map.mapEither headInfo $ \case
         Nothing -> Left ()
         Just b -> Right b
+
+  putLog Debug $ "branches with upstream branch set: " <> T.pack (show headUpstream)
 
   -- Check that every branch has a remote equivalent
   when checkClean $ do
@@ -670,7 +678,7 @@ getThunkPtr' checkClean thunkDir = do
       ]
 
     -- loosely by https://stackoverflow.com/questions/7773939/show-git-ahead-and-behind-info-for-all-branches-including-remotes
-    stats <- iforM headUpstream $ \branch upstream -> do
+    stats <- iforM headUpstream $ \branch (upstream, _remote) -> do
       (stat :: [Text]) <- T.lines <$> readGitProcess thunkDir
         [ "rev-list", "--left-right"
         , T.unpack branch <> "..." <> T.unpack upstream
@@ -695,13 +703,12 @@ getThunkPtr' checkClean thunkDir = do
 
   -- We assume it's safe to pack the thunk at this point
 
-  -- Get current branch `git rev-parse --abbrev-ref HEAD`
+  -- Get current branch ``
   mCurrentBranch <- listToMaybe
     <$> T.lines
     <$> readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
 
-  let remote = maybe "origin" id $
-        flip Map.lookup headUpstream =<< mCurrentBranch
+  let remote = maybe "origin" snd $ flip Map.lookup headUpstream =<< mCurrentBranch
 
   [remoteUri'] <- fmap T.lines $ readGitProcess thunkDir
     [ "config"
@@ -740,9 +747,10 @@ uriThunkPtr uri mbranch = do
       case rev of
         Right r -> pure (ThunkSource_GitHub s, r)
         Left e -> do
-          putLog Alert $ " \
-\ Failed to fetch archive from GitHub. This is probably a private repo. \
-\ Falling back on normal fetchgit. Original failure:\n\n" <> T.pack (show e)
+          putLog Warning $ " \
+\Failed to fetch archive from GitHub. This is probably a private repo. \
+\Falling back on normal fetchgit. Original failure:\n\n"
+          errorToWarning e
           let s' = forgetGithub s
           (,) (ThunkSource_Git s') <$> gitThunkRev s' commit
     ThunkSource_Git s -> (,) (ThunkSource_Git s) <$> gitThunkRev s commit
@@ -846,7 +854,9 @@ gitThunkRev s commit = do
 gitGetCommitBranch
   :: MonadObelisk m => URI -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
-  bothMaps <- rethrowE =<< liftIO (gitLsRemote (show uri) (GitRef_Branch <$> mbranch))
+  bothMaps <- gitLsRemote
+    (T.unpack $ render uri)
+    (GitRef_Branch <$> mbranch)
   branch <- case mbranch of
     Nothing -> withExitFailMessage "Failed to find default branch" $ do
       b <- rethrowE $ gitLookupDefaultBranch bothMaps
@@ -860,10 +870,10 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
   pure (branch, commit)
   where
     rethrowE = either failWith pure
-    uriMsg = T.pack $ show uri
+    uriMsg = render uri
 
 parseGitUri :: Text -> Maybe URI
-parseGitUri x = mkURI x <|> parseSshShorthand x
+parseGitUri x = parseSshShorthand x <|> mkURI x
 
 parseSshShorthand :: Text -> Maybe URI
 parseSshShorthand uri = do
