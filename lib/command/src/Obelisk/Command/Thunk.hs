@@ -123,12 +123,13 @@ data GitSource = GitSource
   deriving (Show, Eq, Ord)
 
 -- | Convert a GitHub source to a regular Git source. Assumes no submodules.
-forgetGithub :: GitHubSource -> GitSource
-forgetGithub s = GitSource
+forgetGithub :: Bool -> GitHubSource -> GitSource
+forgetGithub useSsh s = GitSource
   { _gitSource_url = URI
-    { uriScheme = Just $ fromRight' $ mkScheme "https"
+    { uriScheme = Just $ fromRight' $ mkScheme $ if useSsh then "ssh" else "https"
     , uriAuthority = Right $ Authority
-        { authUserInfo = Nothing
+        { authUserInfo = UserInfo (fromRight' $ mkUsername "git") Nothing
+          <$ guard useSsh
         , authHost = fromRight' $ mkHost "github.com"
         , authPort = Nothing
         }
@@ -573,7 +574,7 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
     withTempDirectory thunkParent thunkName $ \tmpRepo -> do
       let obGitDir = tmpRepo </> ".git" </> "obelisk"
           s = case _thunkPtr_source tptr of
-            ThunkSource_GitHub s' -> forgetGithub s'
+            ThunkSource_GitHub s' -> forgetGithub False s'
             ThunkSource_Git s' -> s'
       withSpinner' ("Fetching thunk " <> T.pack thunkName)
                    (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
@@ -727,7 +728,7 @@ getThunkPtr' checkClean thunkDir = do
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
 getLatestRev os = do
   let gitS = case os of
-        ThunkSource_GitHub s -> forgetGithub s
+        ThunkSource_GitHub s -> forgetGithub False s
         ThunkSource_Git s -> s
   (_, commit) <- gitGetCommitBranch (_gitSource_url gitS) (untagName <$> _gitSource_branch gitS)
   case os of
@@ -749,11 +750,11 @@ uriThunkPtr uri mbranch = do
       case rev of
         Right r -> pure (ThunkSource_GitHub s, r)
         Left e -> do
-          putLog Warning $ " \
+          putLog Warning $ "\
 \Failed to fetch archive from GitHub. This is probably a private repo. \
 \Falling back on normal fetchgit. Original failure:\n\n"
           errorToWarning e
-          let s' = forgetGithub s
+          let s' = forgetGithub True s
           (,) (ThunkSource_Git s') <$> gitThunkRev s' commit
     ThunkSource_Git s -> (,) (ThunkSource_Git s) <$> gitThunkRev s commit
   pure $ ThunkPtr
