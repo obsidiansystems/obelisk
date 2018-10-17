@@ -3,7 +3,7 @@
 , iosSdkVersion ? "10.2"
 }:
 let
-  getReflexPlatform = sys: import ./dep/reflex-platform { inherit iosSdkVersion; system = sys; };
+  getReflexPlatform = sys: import ./dep/reflex-platform { inherit iosSdkVersion; system = sys; enableLibraryProfiling = profiling; };
   reflex-platform = getReflexPlatform system;
   inherit (reflex-platform) hackGet nixpkgs;
   pkgs = nixpkgs;
@@ -48,10 +48,6 @@ let
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
   ghcObelisk = reflex-platform.ghc.override {
     overrides = composeExtensions defaultHaskellOverrides (self: super: {
-      mkDerivation = args: super.mkDerivation (args // {
-        enableLibraryProfiling = profiling;
-      });
-
       # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
       obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
     });
