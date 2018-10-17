@@ -329,8 +329,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
     ]
   ThunkSource_Git s -> encodePretty' plainGitCfg $ Aeson.object $ catMaybes
-    --TODO: Is this safe? read/show is jank for `URI`
-    [ Just $ "url" .= show (_gitSource_url s)
+    [ Just $ "url" .= render (_gitSource_url s)
     , Just $ "rev" .= Ref.toHexString (_thunkRev_commit rev)
     , ("branch" .=) <$> _gitSource_branch s
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
