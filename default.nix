@@ -324,10 +324,10 @@ rec {
                       executableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle; };
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static config;
+      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend (projectOut sys).passthru.staticFiles config;
       linuxExe = serverOn "x86_64-linux";
     in projectOut system // {
       linuxExeConfigurable = linuxExe;
