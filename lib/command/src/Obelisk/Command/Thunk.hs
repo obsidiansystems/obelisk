@@ -698,10 +698,12 @@ getThunkPtr' checkClean thunkDir = do
       (flip map (Map.toList nonGood) $ \(branch, (upstream, (ahead, behind))) -> mconcat
         ["  ", branch, " ahead: ", T.pack (show ahead), " behind: ", T.pack (show behind), " remote branch ", upstream]) ++
       [ ""
-      , "Please push these upstream and try again."
+      , "Please push these upstream and try again. (Or just fetch, if they are somehow \
+        \ pushed but this repo's remote tracking branches don't know it.)"
       ]
 
   -- We assume it's safe to pack the thunk at this point
+  putLog Informational $ "All changes safe in git remotes. OK to pack thunk."
 
   -- Get current branch ``
   mCurrentBranch <- listToMaybe
@@ -840,7 +842,7 @@ gitThunkRev s commit = do
     failWith $ "obelisk currently only supports "
       <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
   hash <- nixPrefetchGit u commit $ _gitSource_fetchSubmodules s
-  putLog Debug $ "Nix sha256 is " <> hash
+  putLog Informational $ "Nix sha256 is " <> hash
   pure $ ThunkRev
     { _thunkRev_commit = commitNameToRef (N commit)
     , _thunkRev_nixSha256 = hash
@@ -864,7 +866,7 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
       pure b
     Just b -> pure b
   commit <- rethrowE $ gitLookupCommitForRef bothMaps (GitRef_Branch branch)
-  putLog Debug $ "Latest commit in branch " <> branch
+  putLog Informational $ "Latest commit in branch " <> branch
     <> " from remote repo " <> uriMsg
     <> " is " <> commit
   pure (branch, commit)

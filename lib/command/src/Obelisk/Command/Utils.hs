@@ -131,7 +131,8 @@ gitLsRemote repository mRef = do
   pure maps
 
 lexeme :: Parsec Void Text a -> Parsec Void Text a
-lexeme = ML.lexeme space
+lexeme = ML.lexeme $ void $ MP.takeWhileP (Just "within-line white space") $
+  flip elem [' ', '\t']
 
 -- $ git ls-remote --symref git@github.com:obsidiansystems/obelisk.git HEAD
 -- ref: refs/heads/master	HEAD
@@ -141,19 +142,15 @@ parseLsRemote =
   many ((fmap Left (try parseRef) <|> fmap Right parseCommit) <* try MP.eol) <* MP.eof
   where
     parseRef :: Parsec Void Text (GitRef, GitRef)
-    parseRef = do
+    parseRef = MP.label "ref and symbolic ref" $ do
       _ <- lexeme "ref:"
-      ref <- lexeme $ MP.takeWhileP (Just "ref")
-        $ not . isSpace
-      symbolicRef <- lexeme $ MP.takeWhileP (Just "symbolic ref")
-        $ not . isSpace
+      ref <- lexeme $ MP.takeWhileP (Just "ref") $ not . isSpace
+      symbolicRef <- lexeme $ MP.takeWhileP (Just "symbolic ref") $ not . isSpace
       return (toGitRef symbolicRef, toGitRef ref)
     parseCommit :: Parsec Void Text (GitRef, CommitId)
-    parseCommit = do
-      commitId <- lexeme $ MP.takeWhileP (Just "commit id")
-        $ not . isSpace
-      ref <- lexeme $ MP.takeWhileP (Just "ref")
-        $ not . isSpace
+    parseCommit = MP.label "commit and ref" $ do
+      commitId <- lexeme $ MP.takeWhileP (Just "commit id") $ not . isSpace
+      ref <- lexeme $ MP.takeWhileP (Just "ref") $ not . isSpace
       return (toGitRef ref, commitId)
 
 data GitRef
