@@ -112,7 +112,7 @@ parseCabalPackage dir = do
         mapM_ (putLog Error) $ fmap (T.pack . show) errors
         return Nothing
 
-withUTF8FileContentsM :: (MonadIO m, HasCliConfig m) => FilePath -> (ByteString -> CliT IO a) -> m a
+withUTF8FileContentsM :: (MonadIO m, HasCliConfig e m) => FilePath -> (ByteString -> CliT e IO a) -> m a
 withUTF8FileContentsM fp f = do
   c <- getCliConfig
   liftIO $ withUTF8FileContents fp $ runCli c . f . toUTF8BS

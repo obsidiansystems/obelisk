@@ -131,7 +131,10 @@ commitNameToRef :: Name Commit -> Ref
 commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 
 -- TODO: Use spinner here.
-getNixSha256ForUriUnpacked :: MonadObelisk m => URI -> m NixSha256
+getNixSha256ForUriUnpacked
+  :: MonadObelisk m
+  => URI
+  -> m NixSha256
 getNixSha256ForUriUnpacked uri =
   withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> T.pack (show uri)) $ do
     withNixRemoteCheck $ readProcessAndLogStderr Debug $

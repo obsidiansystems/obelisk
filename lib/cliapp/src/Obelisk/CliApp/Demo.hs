@@ -13,7 +13,10 @@ import Control.Monad.Catch (MonadMask)
 
 import Obelisk.CliApp
 
-cliDemo :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m) => m ()
+cliDemo
+  :: ( MonadIO m, MonadMask m
+     , CliLog m, HasCliConfig e m, CliThrow e m, AsProcessFailure e, AsUnstructuredError e)
+  => m ()
 cliDemo = withSpinner "CLI Demo" $ do
   putLog Notice "This demo will showcase the CLI library functionality"
   _ <- withSpinner' "Searching long for something" (Just $ \c -> "Discovered " <> T.pack (show c) <> " objects") $ do
