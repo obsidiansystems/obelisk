@@ -20,7 +20,6 @@ module Obelisk.CliApp.Process
   ) where
 
 import Control.Monad ((<=<), join, void)
-import Control.Monad.Catch (Exception(..), MonadMask, throwM)
 import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.ByteString as BS
@@ -42,17 +41,10 @@ import qualified System.Process as Process
 
 import Control.Monad.Log (Severity (..))
 import Obelisk.CliApp.Logging (putLog, putLogRaw)
-import Obelisk.CliApp.Types (Cli)
-
-data ProcessFailed = ProcessFailed Process.CmdSpec Int -- exit code
-  deriving Show
-
-instance Exception ProcessFailed where
-  displayException (ProcessFailed spec exitCode) =
-    unwords ["ProcessFailed", reconstructCommand spec, show exitCode]
+import Obelisk.CliApp.Types (Cli, ProcessFailed (..), reconstructCommand)
 
 readProcessAndLogStderr
-  :: (MonadIO m, MonadMask m, Cli m)
+  :: (MonadIO m, Cli m)
   => Severity -> CreateProcess -> m Text
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
@@ -68,7 +60,7 @@ readProcessAndLogStderr sev process = do
 -- `callProcessAndLogOutput (Debug, Debug)`.
 
 readProcessAndLogOutput
-  :: (MonadIO m, MonadMask m, Cli m)
+  :: (MonadIO m, Cli m)
   => (Severity, Severity) -> CreateProcess -> m Text
 readProcessAndLogOutput (sev_out, sev_err) process = do
   (_, Just out, Just err, p) <- createProcess $ process
@@ -81,7 +73,7 @@ readProcessAndLogOutput (sev_out, sev_err) process = do
 
   liftIO (waitForProcess p) >>= \case
     ExitSuccess -> pure outText
-    ExitFailure code -> throwError $ T.pack $ show $ ProcessFailed (cmdspec process) code
+    ExitFailure code -> throwError $ Right $ ProcessFailed (cmdspec process) code
 
 -- | Like `System.Process.callProcess` but logs the combined output (stdout and stderr)
 -- with the corresponding severity.
@@ -92,7 +84,7 @@ readProcessAndLogOutput (sev_out, sev_err) process = do
 -- `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
 
-  :: (MonadIO m, MonadMask m, Cli m)
+  :: (MonadIO m, Cli m)
   => (Severity, Severity) -> CreateProcess -> m ()
 callProcessAndLogOutput (sev_out, sev_err) process =
   void $ withProcess process $ \out err -> do
@@ -108,7 +100,7 @@ createProcess
   :: (MonadIO m, Cli m)
   => CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess p = do
-  putLog Debug $ "Creating process: " <> T.pack (reconstructCommand (cmdspec p))
+  putLog Debug $ "Creating process: " <> reconstructCommand (cmdspec p)
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.createProcess_` but also logs (debug) the process being run
@@ -116,7 +108,7 @@ createProcess_
   :: (MonadIO m, Cli m)
   => String -> CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess_ name p = do
-  putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (reconstructCommand (cmdspec p))
+  putLog Debug $ "Creating process " <> T.pack name <> ": " <> reconstructCommand (cmdspec p)
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.callProcess` but also logs (debug) the process being run
@@ -136,7 +128,7 @@ callCommand cmd = do
   liftIO $ Process.callCommand cmd
 
 withProcess
-  :: (MonadIO m, MonadMask m, Cli m)
+  :: (MonadIO m, Cli m)
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
 withProcess process f = do -- TODO: Use bracket.
   -- FIXME: Using `withCreateProcess` here leads to something operating illegally on closed handles.
@@ -147,7 +139,7 @@ withProcess process f = do -- TODO: Use bracket.
 
   liftIO (waitForProcess p) >>= \case
     ExitSuccess -> return (out, err)
-    ExitFailure code -> throwM $ ProcessFailed (cmdspec process) code
+    ExitFailure code -> throwError $ Right $ ProcessFailed (cmdspec process) code
 
 -- Create an input stream from the file handle, associating each item with the given severity.
 streamHandle :: Severity -> Handle -> IO (InputStream (Severity, BSC.ByteString))
@@ -155,16 +147,9 @@ streamHandle sev = Streams.map (sev,) <=< handleToInputStream
 
 -- | Read from an input stream and log its contents
 streamToLog
-  :: (MonadIO m, MonadMask m, Cli m)
+  :: (MonadIO m, Cli m)
   => InputStream (Severity, BSC.ByteString) -> m ()
 streamToLog stream = fix $ \loop -> do
   liftIO (Streams.read stream) >>= \case
     Nothing -> return ()
     Just (sev, line) -> putLogRaw sev (T.decodeUtf8 line) >> loop
-
-reconstructCommand :: Process.CmdSpec -> String
-reconstructCommand (Process.ShellCommand str) = str
-reconstructCommand (Process.RawCommand c as) = processToShellString c as
-  where
-    processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
-    quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"

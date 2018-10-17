@@ -1,8 +1,10 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Obelisk.CliApp.Types where
 
 import Control.Concurrent.MVar (MVar)
@@ -16,7 +18,9 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans (MonadTrans, lift)
 import Data.IORef (IORef)
 import Data.Text (Text)
+import qualified Data.Text as T
 import System.Exit (ExitCode (..), exitWith)
+import qualified System.Process as Process
 
 import Obelisk.CliApp.TerminalString (TerminalString)
 
@@ -32,7 +36,7 @@ data Output
 
 type CliLog m = MonadLog Output m
 
-type CliThrow m = MonadError Text m
+type CliThrow m = MonadError (Either Text ProcessFailed) m
 
 -- TODO could remove for granularity
 type Cli m = (CliLog m, CliThrow m)
@@ -42,6 +46,19 @@ type Cli m = (CliLog m, CliThrow m)
 -- Logs safely even if there are ongoing spinners.
 putLog :: Cli m => Severity -> Text -> m ()
 putLog sev = logMessage . Output_Log . WithSeverity sev
+
+-- TODO put back in `Obelisk.CliApp.Process` and use prisms for extensible exceptions
+data ProcessFailed = ProcessFailed Process.CmdSpec Int -- exit code
+  deriving Show
+
+-- TODO put back in `Obelisk.CliApp.Process`
+reconstructCommand :: Process.CmdSpec -> Text
+reconstructCommand (Process.ShellCommand str) = T.pack str
+reconstructCommand (Process.RawCommand c as) = processToShellString c as
+  where
+    processToShellString cmd args = T.unwords $ map quoteAndEscape (cmd : args)
+    quoteAndEscape x = "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
+
 
 newtype DieT m a = DieT { unDieT :: LoggingT Output m a }
   deriving
@@ -55,10 +72,14 @@ instance MonadTrans DieT where
   lift = DieT . lift
 
 -- TODO generalize to bigger error types
-instance MonadIO m => MonadError Text (DieT m) where
-  throwError s = do
-    putLog Alert s
-    liftIO $ exitWith $ ExitFailure 2
+instance MonadIO m => MonadError (Either Text ProcessFailed) (DieT m) where
+  throwError = \case
+    Left s -> do
+      putLog Alert s
+      liftIO $ exitWith $ ExitFailure 2
+    Right (ProcessFailed p code) -> do
+      putLog Alert $ "Process exited with code " <> T.pack (show code) <> "; " <> T.pack (show p)
+      liftIO $ exitWith $ ExitFailure 2
 
   -- Cannot catch
   catchError m _ = m
@@ -103,7 +124,7 @@ newtype CliT m a = CliT
   deriving
     ( Functor, Applicative, Monad, MonadIO
     , MonadThrow, MonadCatch, MonadMask
-    , MonadLog Output, MonadError Text, MonadReader CliConfig
+    , MonadLog Output, MonadError (Either Text ProcessFailed), MonadReader CliConfig
     )
 
 instance MonadTrans CliT where

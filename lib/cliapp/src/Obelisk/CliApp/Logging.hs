@@ -29,7 +29,7 @@ import Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
 import Control.Concurrent.MVar (modifyMVar_, newMVar)
 import Control.Monad (unless, void, when)
 import Control.Monad.Catch (MonadCatch, MonadMask, bracket, catch, throwM)
-import Control.Monad.Except (MonadError, throwError)
+import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Log (Severity (..), WithSeverity (..), logMessage, runLoggingT)
 import Control.Monad.Loops (iterateUntil)
@@ -130,8 +130,8 @@ putLogRaw :: Cli m => Severity -> Text -> m ()
 putLogRaw sev = logMessage . Output_LogRaw . WithSeverity sev
 
 -- | Like `putLog Alert` but also abrupts the program.
-failWith :: MonadError Text m => Text -> m a
-failWith = throwError
+failWith :: CliThrow m => Text -> m a
+failWith = throwError . Left
 
 -- | Intercept ExitFailure exceptions and log the given alert before exiting.
 --

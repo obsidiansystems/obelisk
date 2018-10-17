@@ -1,8 +1,12 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Nix
   ( nixBuild
   , withNixRemoteCheck
@@ -15,18 +19,20 @@ module Obelisk.Command.Nix
   , strArg
   ) where
 
-import Control.Monad.Catch (catch, throwM)
+--import Control.Monad.Catch (catch, throwM)
+import Control.Monad.Except (ExceptT, runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Data.Bool (bool)
 import Data.Default
 import Data.List (intercalate)
 import Data.Monoid ((<>))
+import Data.Text (Text)
 import qualified Data.Text as T
 import System.Directory
 import System.Environment
 import System.Process (proc)
 
-import Obelisk.App (MonadObelisk)
+import Obelisk.App (MonadInfallibleObelisk, MonadObelisk)
 import Obelisk.CliApp
 
 -- | Where to put nix-build output
@@ -103,19 +109,27 @@ nixBuild cfg = withSpinner' ("Running nix-build on " <> desc) (Just $ const $ "B
 -- tell the user what to do.
 --
 -- Added: June, 2018. Consider removing this eventually.
-withNixRemoteCheck :: MonadObelisk m => m a -> m a
-withNixRemoteCheck f = f `catch` \e@(ProcessFailed _ _) -> do
-  liftIO (lookupEnv "NIX_REMOTE") >>= \case
-    Just _ -> throwM e
-    Nothing -> liftIO (writable <$> getPermissions "/nix/var/nix/db") >>= \case
-      True -> throwM e
-      False -> do
-        putLog Error "!!! "
-        putLog Error "!!! A nix command failed to run. You might need to set the NIX_REMOTE environment variable"
-        putLog Error "!!! to `daemon`. To do this, run the following before running obelisk:"
-        putLog Error "!!! "
-        putLog Error "!!!     export NIX_REMOTE=daemon"
-        putLog Error "!!! "
-        putLog Error "!!! For details, see https://github.com/NixOS/nixpkgs/issues/5713"
-        putLog Error "!!! "
-  throwM e
+withNixRemoteCheck
+  :: MonadObelisk m
+  => (forall m'. MonadInfallibleObelisk m' => ExceptT (Either Text ProcessFailed) m' a)
+  -> m a
+withNixRemoteCheck f = do
+  status <- runExceptT f
+  case status of
+    Right a -> pure a
+    Left (Left t) -> throwError $ Left t
+    Left (Right e) -> do
+      liftIO (lookupEnv "NIX_REMOTE") >>= \case
+        Just _ -> throwError $ Right e
+        Nothing -> liftIO (writable <$> getPermissions "/nix/var/nix/db") >>= \case
+          True -> throwError $ Right e
+          False -> do
+            putLog Error "!!! "
+            putLog Error "!!! A nix command failed to run. You might need to set the NIX_REMOTE environment variable"
+            putLog Error "!!! to `daemon`. To do this, run the following before running obelisk:"
+            putLog Error "!!! "
+            putLog Error "!!!     export NIX_REMOTE=daemon"
+            putLog Error "!!! "
+            putLog Error "!!! For details, see https://github.com/NixOS/nixpkgs/issues/5713"
+            putLog Error "!!! "
+      throwError $ Right e

@@ -8,7 +8,6 @@
 module Obelisk.Command where
 
 import Control.Monad
-import Control.Monad.Catch (catch)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Binary as Binary
 import Data.Bool (bool)
@@ -309,8 +308,6 @@ main' argsCfg = do
     ]
 
   (mainWithHandOff argsCfg <=< parseHandoff) =<< liftIO getArgs
-  `catch`
-  \(ProcessFailed p code) -> failWith $ "Process exited with code " <> tshow code <> "; " <> tshow p
 
 -- Type representing the result of a handoff calculation.
 data HandOff m
