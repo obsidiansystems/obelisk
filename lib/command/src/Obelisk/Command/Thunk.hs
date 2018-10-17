@@ -875,7 +875,13 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
     uriMsg = render uri
 
 parseGitUri :: Text -> Maybe URI
-parseGitUri x = parseSshShorthand x <|> mkURI x
+parseGitUri x = parseAbsoluteURI x <|> parseSshShorthand x
+
+parseAbsoluteURI :: Text -> Maybe URI
+parseAbsoluteURI uri = do
+  parsedUri <- mkURI uri
+  guard $ isPathAbsolute parsedUri
+  pure $ parsedUri
 
 parseSshShorthand :: Text -> Maybe URI
 parseSshShorthand uri = do
