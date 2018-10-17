@@ -662,8 +662,8 @@ getThunkPtr' checkClean thunkDir = do
     let untrackedBranches = Map.keys errorMap
     when (not $ L.null untrackedBranches) $ failWith $ T.unlines $
       [ "thunk pack: Certain branches in the thunk have no upstream branch \
-        \ set. This means don't know to check whether all your work is \
-        \ saved. The offending branches are:"
+        \set. This means don't know to check whether all your work is \
+        \saved. The offending branches are:"
       , ""
       , T.unwords untrackedBranches
       , ""
@@ -673,8 +673,8 @@ getThunkPtr' checkClean thunkDir = do
       ((\branch -> "git push -u origin " <> branch) <$> untrackedBranches) ++
       [ ""
       , "These will push the branches to the default remote under the same \
-        \ name, and (thanks to the `-u`) remember that choice so you don't \
-        \ get this error again."
+        \name, and (thanks to the `-u`) remember that choice so you don't \
+        \get this error again."
       ]
 
     -- loosely by https://stackoverflow.com/questions/7773939/show-git-ahead-and-behind-info-for-all-branches-including-remotes
@@ -699,7 +699,7 @@ getThunkPtr' checkClean thunkDir = do
         ["  ", branch, " ahead: ", T.pack (show ahead), " behind: ", T.pack (show behind), " remote branch ", upstream]) ++
       [ ""
       , "Please push these upstream and try again. (Or just fetch, if they are somehow \
-        \ pushed but this repo's remote tracking branches don't know it.)"
+        \pushed but this repo's remote tracking branches don't know it.)"
       ]
 
   -- We assume it's safe to pack the thunk at this point
