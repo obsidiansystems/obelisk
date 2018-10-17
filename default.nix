@@ -324,6 +324,7 @@ rec {
                       executableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle; };
               };
           in mkProject (projectDefinition args));
       serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static config;
