@@ -137,8 +137,9 @@ getNixSha256ForUriUnpacked
   -> m NixSha256
 getNixSha256ForUriUnpacked uri =
   withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> T.pack (show uri)) $ do
-    withNixRemoteCheck $ readProcessAndLogStderr Debug $
+    [hash] <- fmap T.lines $ withNixRemoteCheck $ readProcessAndLogStderr Debug $
       proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , show uri]
+    pure hash
 
 nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
