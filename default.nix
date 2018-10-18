@@ -3,9 +3,54 @@
 , iosSdkVersion ? "10.2"
 }:
 let
-  getReflexPlatform = sys: import ./dep/reflex-platform { inherit iosSdkVersion; system = sys; enableLibraryProfiling = profiling; };
-  reflex-platform = getReflexPlatform system;
-  inherit (reflex-platform) hackGet nixpkgs;
+  getReflexPlatform = sys: import ./dep/reflex-platform {
+    inherit iosSdkVersion;
+    system = sys;
+    enableLibraryProfiling = profiling;
+    haskellOverlays = [
+      # Fix misc upstream packages
+      (self: super: {
+        # Need deriveSomeUniverse
+        # PR: https://github.com/dmwit/universe/pull/32
+        universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
+          owner = "obsidiansystems";
+          repo = "universe";
+          rev = "5a2fc823caa4163411d7e41aa80e67cefb15944a";
+          sha256 = "0ll2z0fh18z6x8jl8kbp7ldagwccz3wjmvrw1gw752z058n82yfa";
+        } + /template) {};
+      })
+      # Add obelisk packages
+      (self: super: {
+        obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
+        obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
+        obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
+        obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
+        obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).overrideAttrs
+          (drv: {
+            buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
+            postFixup = ''
+              ${drv.postFixup or ""}
+              # Make `ob` reference its runtime dependencies.
+              wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
+            '';
+          });
+        obelisk-executable-config = executableConfig.haskellPackage self;
+        obelisk-executable-config-inject = executableConfig.platforms.web.inject self;
+        obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
+        obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
+        obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
+        obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
+        obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
+        obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
+      })
+      # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
+        (self: super: {
+          obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables super.obelisk-command);
+        })
+    ];
+  };
+    reflex-platform = getReflexPlatform system;
+    inherit (reflex-platform) hackGet nixpkgs;
   pkgs = nixpkgs;
 in with pkgs.haskell.lib; with pkgs.lib;
 let
@@ -47,21 +92,7 @@ let
 
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
   ghcObelisk = reflex-platform.ghc.override {
-    overrides = composeExtensions defaultHaskellOverrides (self: super: {
-      # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
-      obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
-    });
-  };
-
-  fixUpstreamPkgs = self: super: {
-    # Need deriveSomeUniverse
-    # PR: https://github.com/dmwit/universe/pull/32
-    universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
-      owner = "obsidiansystems";
-      repo = "universe";
-      rev = "5a2fc823caa4163411d7e41aa80e67cefb15944a";
-      sha256 = "0ll2z0fh18z6x8jl8kbp7ldagwccz3wjmvrw1gw752z058n82yfa";
-    } + /template) {};
+    overrides = composeExtensions defaultHaskellOverrides ;
   };
 
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -70,30 +101,6 @@ let
   ));
 
   executableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
-
-  addLibs = self: super: {
-    obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
-    obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
-    obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
-    obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-    obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).overrideAttrs
-      (drv: {
-        buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
-        postFixup = ''
-          ${drv.postFixup or ""}
-          # Make `ob` reference its runtime dependencies.
-          wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
-        '';
-      });
-    obelisk-executable-config = executableConfig.haskellPackage self;
-    obelisk-executable-config-inject = executableConfig.platforms.web.inject self;
-    obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
-    obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
-    obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
-    obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
-    obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
-    obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
-  };
 
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
 
