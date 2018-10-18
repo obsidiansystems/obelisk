@@ -8,7 +8,6 @@
 module Obelisk.Command where
 
 import Control.Monad
-import Control.Monad.Catch (catch)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Binary as Binary
 import Data.Bool (bool)
@@ -270,7 +269,22 @@ mkObeliskConfig = do
   -- This function should not use argument parser (full argument parsing happens post handoff)
   let logLevel = toLogLevel $ "-v" `elem` cliArgs
   notInteractive <- not <$> isInteractiveTerm
-  cliConf <- newCliConfig logLevel notInteractive notInteractive
+-- instance MonadIO m => MonadError (Either Text ProcessFailed) (DieT m) where
+--   throwError = \case
+--     Left s -> do
+--       putLog Alert s
+--       liftIO $ exitWith $ ExitFailure 2
+--     Right (ProcessFailed p code) -> do
+--       putLog Alert $ "Process exited with code " <> T.pack (show code) <> "; " <> T.pack (show p)
+--       liftIO $ exitWith $ ExitFailure 2
+  cliConf <- newCliConfig logLevel notInteractive notInteractive $ \case
+    ObeliskError_ProcessError (ProcessFailure p code) ann ->
+      ( "Process exited with code " <> T.pack (show code) <> "; " <> T.pack (show p)
+        <> maybe "" ("\n\n" <>) ann
+      , 2
+      )
+    ObeliskError_Unstructured msg -> (msg, 2)
+
   return $ Obelisk cliConf
   where
     toLogLevel = bool Notice Debug
@@ -309,8 +323,6 @@ main' argsCfg = do
     ]
 
   (mainWithHandOff argsCfg <=< parseHandoff) =<< liftIO getArgs
-  `catch`
-  \(ProcessFailed p code) -> failWith $ "Process exited with code " <> tshow code <> "; " <> tshow p
 
 -- Type representing the result of a handoff calculation.
 data HandOff m

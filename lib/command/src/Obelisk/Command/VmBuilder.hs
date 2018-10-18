@@ -43,7 +43,7 @@ containerName = "obelisk-docker-nix-builder"
 -- | Check to see if the Docker container exists. This will exit with a helpful message if Docker is not installed.
 containerExists :: MonadObelisk m => m Bool
 containerExists = withExitFailMessage needDockerMsg $ do
-  containerNames <- fmap (map T.strip . T.lines . T.pack) $
+  containerNames <- fmap (map T.strip . T.lines) $
     readProcessAndLogStderr Error $
       proc "docker" ["container", "list", "--all", "--format", "{{.Names}}"]
   pure $ containerName `elem` containerNames
@@ -81,7 +81,7 @@ setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> con
     , "--restart", "always"
     , "--detach"
     , "--publish", show containerSshPort <> ":22"
-    , "--name", containerName, containerId
+    , "--name", T.unpack containerName, T.unpack containerId
     ]
   exists <- containerExists
   unless exists $
