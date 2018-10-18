@@ -87,8 +87,11 @@ instance Default NixBuildConfig where
 
 nixBuild :: MonadObelisk m => NixBuildConfig -> m FilePath
 nixBuild cfg = withSpinner' ("Running nix-build on " <> desc) (Just $ const $ "Built " <> desc) $ do
-  withNixRemoteCheck $ fmap T.unpack $ readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
+  output <- withNixRemoteCheck $ readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
     [[path], attrArg, args, outLink, buildersArg]
+  -- Remove final newline that Nix appends
+  Just (outPath, '\n') <- pure $ T.unsnoc output
+  pure $ T.unpack outPath
   where
     path = _target_path $ _nixBuildConfig_target cfg
     attr = _target_attr $ _nixBuildConfig_target cfg
