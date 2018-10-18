@@ -115,7 +115,6 @@ let
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
 
   defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
-
 in
 with pkgs.lib;
 rec {
@@ -125,9 +124,7 @@ rec {
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
   obeliskEnvs = ghcObeliskEnvs;
-  
   command = ghcObelisk.obelisk-command;
-
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
 
   selftest = pkgs.writeScript "selftest" ''
