@@ -1,3 +1,4 @@
+{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
@@ -14,6 +15,7 @@ import Data.Semigroup (Semigroup, (<>))
 import qualified Data.Set as Set
 import Data.String
 import Data.Text (Text)
+import Data.Void
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Network.HTTP.Client as HTTP
@@ -53,9 +55,10 @@ commit msg = void $ run "git"
   , doubleQuotes msg
   ]
 
-runCli :: MonadIO m => CliT IO a -> m a
+-- TODO replace Void and stop using loosely typed synchronous exceptions
+runCli :: MonadIO m => CliT Void IO a -> m a
 runCli f = liftIO $ do
-  c <- newCliConfig Notice False False
+  c <- newCliConfig Notice False False (\case {})
   CliApp.runCli c f
 
 tshow :: Show a => a -> Text
