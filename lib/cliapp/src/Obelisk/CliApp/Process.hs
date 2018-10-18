@@ -31,7 +31,6 @@ import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
---import qualified Data.Text.IO as T
 import System.Exit (ExitCode (..))
 import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
