@@ -13,7 +13,6 @@ import Data.Char
 import Data.Digest.Pure.SHA
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid
 import qualified Data.Text as T
 import Data.Text.Encoding
 import qualified Data.Vector.Unboxed as UV

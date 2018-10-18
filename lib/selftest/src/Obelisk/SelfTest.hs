@@ -26,7 +26,7 @@ import System.Exit (ExitCode (..))
 import System.Info
 import System.IO (Handle, hClose)
 import System.IO.Temp
-import System.Process (readProcessWithExitCode)
+import System.Process (readProcessWithExitCode, CreateProcess(cwd), readCreateProcessWithExitCode, proc)
 import System.Timeout
 import Test.Hspec
 import Test.HUnit.Base
@@ -119,6 +119,12 @@ main = do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
+        it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init" $ \dir -> do
+          let p force = (proc "ob" $ "--no-handoff" : "init" : if force then ["--force"] else []) { cwd = Just dir }
+          (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
+          (ExitFailure _, _, _) <- readCreateProcessWithExitCode (p False) ""
+          (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p True) ""
+          pure ()
 
         it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
           void $ errExit False $ run "ob" ["init", "--symlink", "/dev/null"]

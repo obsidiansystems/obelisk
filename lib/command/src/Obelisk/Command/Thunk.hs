@@ -50,7 +50,6 @@ import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Monoid
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)

@@ -1,10 +1,15 @@
+{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeFamilies #-}
 module Backend where
 
-import Common.Api
-import Frontend
-import qualified Obelisk.Backend as Ob
+import Common.Route
+import Obelisk.Backend
 
-backend :: IO ()
-backend = Ob.backend Ob.def
-  { Ob._backendConfig_head = fst frontend
+backend :: Backend BackendRoute FrontendRoute
+backend = Backend
+  { _backend_run = \serve -> serve $ const $ return ()
+  , _backend_routeEncoder = backendRouteEncoder
   }

@@ -16,7 +16,6 @@ import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
 import Data.List
 import Data.Maybe (catMaybes, listToMaybe)
-import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
@@ -87,12 +86,16 @@ initSource = foldl1 (<|>)
   , InitSource_Symlink <$> strOption (long "symlink" <> action "directory" <> metavar "PATH")
   ]
 
+initForce :: Parser Bool
+initForce = switch (long "force" <> help "Allow ob init to overwrite files")
+
 data ObCommand
-   = ObCommand_Init InitSource
+   = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
    | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
+   | ObCommand_Watch
    | ObCommand_Upgrade (Maybe Text)
    | ObCommand_Internal ObInternal
    deriving Show
@@ -127,11 +130,12 @@ inNixShell' p = withProjectRoot "." $ \root -> do
 obCommand :: ArgsConfig -> Parser ObCommand
 obCommand cfg = hsubparser
     (mconcat
-      [ command "init" $ info (ObCommand_Init <$> initSource) $ progDesc "Initialize an Obelisk project"
+      [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
       , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
+      , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
       , command "upgrade" $ info (ObCommand_Upgrade <$> argument (maybeReader $ Just . Just . T.pack) (action "branch" <> metavar "GITBRANCH" <> value Nothing <> help "Git branch of obelisk to update to (defaults to the thunk's branch)")) $ progDesc "Upgrade Obelisk in the project"
       ])
   <|> subparser
@@ -274,7 +278,14 @@ mkObeliskConfig = do
       isTerm <- hIsTerminalDevice stdout
       -- Running in bash/fish/zsh completion
       inShellCompletion <- liftIO $ isInfixOf "completion" . unwords <$> getArgs
-      return $ isTerm && not inShellCompletion
+
+      -- Respect the user’s TERM environment variable. Dumb terminals
+      -- like Eshell cannot handle lots of control sequences that the
+      -- spinner uses.
+      termEnv <- lookupEnv "TERM"
+      let isDumb = termEnv == Just "dumb"
+
+      return $ isTerm && not inShellCompletion && not isDumb
 
 -- | For use from development obelisk repls
 --
@@ -361,7 +372,7 @@ parseHandoff as' = case hasNoHandoff as' of
 
 ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
-  ObCommand_Init source -> initProject source
+  ObCommand_Init source force -> initProject source force
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
       let deployDir = _deployInitOpts_outputDir deployOpts
@@ -387,9 +398,11 @@ ob = \case
           enableHttps = _deployInitOpts_enableHttps deployOpts
       deployInit thunkPtr (root </> "config") deployDir
         sshKeyPath hostname route adminEmail enableHttps
-    DeployCommand_Push remoteBuilder -> deployPush "." $ case remoteBuilder of
-      Nothing -> pure []
-      Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
+    DeployCommand_Push remoteBuilder -> do
+      deployPath <- liftIO $ canonicalizePath "."
+      deployPush deployPath $ case remoteBuilder of
+        Nothing -> pure []
+        Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test Android -> deployMobile "android" []
     DeployCommand_Test (IOS teamID) -> deployMobile "ios" [teamID]
@@ -400,6 +413,7 @@ ob = \case
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir (T.pack upstream)
   ObCommand_Repl -> runRepl
+  ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Upgrade branch -> do
     upgradeObelisk "." branch
   ObCommand_Internal icmd -> case icmd of

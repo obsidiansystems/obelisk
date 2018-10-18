@@ -6,12 +6,15 @@
 module Obelisk.CliApp
   (
   -- .Types
-    Cli
+    CliLog
+  , CliThrow
+  , Cli
   , CliT(..)
   , runCli
   , CliConfig
   , HasCliConfig
   , getCliConfig
+  , Output
 
   -- .Spinner
   , withSpinner

@@ -33,7 +33,7 @@ import Obelisk.Command.Upgrade.Hash
 import Obelisk.Migration
 
 newtype HandOffAction = HandoffAction Any
-  deriving (Monoid, Ord, Eq, Show)
+  deriving (Monoid, Semigroup, Ord, Eq, Show)
 
 instance Action HandOffAction where
   parseEdgeMeta = HandoffAction . Any . (== "True")
