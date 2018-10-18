@@ -14,8 +14,7 @@ import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
 import Data.List
-import Data.Maybe (catMaybes, listToMaybe)
-import Data.Text (Text)
+import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import GHC.StaticPtr
@@ -34,11 +33,8 @@ import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
-import Obelisk.Command.Upgrade
-import Obelisk.Command.Upgrade.Hash (getDirectoryHash, getHashAtGitRevision)
 import Obelisk.Command.Utils
 import qualified Obelisk.Command.VmBuilder as VmBuilder
-import Obelisk.Migration (Hash)
 
 
 data Args = Args
@@ -95,16 +91,11 @@ data ObCommand
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
    | ObCommand_Watch
-   | ObCommand_Upgrade (Maybe Text)
    | ObCommand_Internal ObInternal
    deriving Show
 
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
-   | ObInternal_Hash (Maybe Text)
-   | ObInternal_CreateMigration
-   | ObInternal_VerifyMigration
-   | ObInternal_Migrate Hash
    | ObInternal_CLIDemo
    deriving Show
 
@@ -135,7 +126,6 @@ obCommand cfg = hsubparser
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
       , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
-      , command "upgrade" $ info (ObCommand_Upgrade <$> argument (maybeReader $ Just . Just . T.pack) (action "branch" <> metavar "GITBRANCH" <> value Nothing <> help "Git branch of obelisk to update to (defaults to the thunk's branch)")) $ progDesc "Upgrade Obelisk in the project"
       ])
   <|> subparser
     (mconcat
@@ -211,10 +201,6 @@ data DeployInitOpts = DeployInitOpts
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
   [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
-  , command "hash" $ info (ObInternal_Hash <$> argument (maybeReader $ Just . Just . T.pack) (action "rev" <> metavar "GITREVISION" <> value Nothing <> help "Calculate for the specified git revision (defaults to working copy")) $ progDesc "Computes hash of working directory (or git revision)"
-  , command "create-migration" $ info (pure ObInternal_CreateMigration) mempty
-  , command "verify-migration" $ info (pure ObInternal_VerifyMigration) mempty
-  , command "migrate" $ info (ObInternal_Migrate <$> strArgument (action "fromHash" <> metavar "FROMHASH" <> help "Migrate from this hash")) $ progDesc "Perform a migrate from the given hash to HEAD of obelisk thunk"
   , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
 
@@ -322,65 +308,29 @@ main' argsCfg = do
     , "logging-level=" <> show logLevel
     ]
 
-  (mainWithHandOff argsCfg <=< parseHandoff) =<< liftIO getArgs
-
--- Type representing the result of a handoff calculation.
-data HandOff m
-  = HandOff_Yes FilePath [String] -- Handoff immediately to the given impl with the given args
-  | HandOff_Decide (m Bool) FilePath [String]  -- Handoff only if the action returns True
-  | HandOff_No [String]  -- Do not handoff, and continue with the given args
-
-mainWithHandOff :: MonadObelisk m => ArgsConfig -> HandOff m -> m ()
-mainWithHandOff argsCfg = \case
-  HandOff_Yes impl as -> do
-    putLog Debug $ "Handing off to project obelisk " <> T.pack impl
-    liftIO $ executeFile impl False ("--no-handoff" : as) Nothing
-  HandOff_Decide f impl as -> do
-    withSpinner' "Deciding whether to handoff"
-      (Just $ bool
-        "Continuing in ambient obelisk without handing off"
-        "Handed off to project obelisk") f >>= \case
-      True -> mainWithHandOff argsCfg $ HandOff_Yes impl as
-      False -> mainWithHandOff argsCfg $ HandOff_No as
-  HandOff_No as -> do
-    putLog Debug $ "Not handing off"
-    args' <- liftIO $ parseCLIArgs argsCfg as
-    warnIfExtraneousFlag args'
-    ob $ _args_command args'
-  where
-    warnIfExtraneousFlag a = case _args_noHandOffPassed a of
-      False -> return ()
-      True -> putLog Warning $
-        "Ignoring unexpected --no-handoff (should only be passed once and as the first argument)"
-
--- Handoff logic
-parseHandoff :: MonadObelisk m => [String] -> m (HandOff m)
-parseHandoff as' = case hasNoHandoff as' of
-  (True, as) ->
-    pure $ HandOff_No as
-  (False, as) -> findProjectObeliskCommand "." >>= \case
-    Nothing -> do
-      putLog Debug "Not in a project; no need to hand off"
-      pure $ HandOff_No as
-    Just impl -> case getSubCommand as of
-      Just "upgrade" ->
-        pure $ HandOff_Decide (decideHandOffToProjectOb ".") impl as
-      _ ->
-        pure $ HandOff_Yes impl as
-  where
-    getSubCommand = listToMaybe . filter (not . isPrefixOf "-")
-    hasNoHandoff = \case
-      "--no-handoff" : xs ->
-        -- If we've been told not to hand off, don't hand off
-        (True, xs)
-      x:xs
-        -- Otherwise bash completion would always hand-off even if the user isn't trying to
-        | "--bash-completion" `isPrefixOf` x && "--no-handoff" `elem` xs ->
-          (True, x:xs)
-        | otherwise ->
-          (False, x:xs)
-      xs ->
-        (False, xs)
+  --TODO: We'd like to actually use the parser to determine whether to hand off,
+  --but in the case where this implementation of 'ob' doesn't support all
+  --arguments being passed along, this could fail.  For now, we don't bother
+  --with optparse-applicative until we've done the handoff.
+  let go as = do
+        args' <- liftIO $ handleParseResult (execParserPure parserPrefs (argsInfo argsCfg) as)
+        case _args_noHandOffPassed args' of
+          False -> return ()
+          True -> putLog Warning "--no-handoff should only be passed once and as the first argument; ignoring"
+        ob $ _args_command args'
+      handoffAndGo as = findProjectObeliskCommand "." >>= \case
+        Nothing -> go as -- If not in a project, just run ourselves
+        Just impl -> do
+          -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
+          putLog Debug $ "Handing off to " <> T.pack impl
+          liftIO $ executeFile impl False ("--no-handoff" : myArgs) Nothing
+  case myArgs of
+    "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
+    a:as -- Otherwise bash completion would always hand-off even if the user isn't trying to
+      | "--bash-completion" `isPrefixOf` a
+      && "--no-handoff" `elem` as -> go (a:as)
+      | otherwise -> handoffAndGo (a:as)
+    as -> handoffAndGo as
 
 ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
@@ -426,25 +376,12 @@ ob = \case
     ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir (T.pack upstream)
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
-  ObCommand_Upgrade branch -> do
-    upgradeObelisk "." branch
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> do
         c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
-    ObInternal_Hash revM -> do
-      hash <- case revM of
-        Nothing -> getDirectoryHash [migrationDirName] "."
-        Just rev -> fmap head $ getHashAtGitRevision [rev] [migrationDirName] "."
-      putLog Notice hash
-    ObInternal_CreateMigration ->
-      createMigrationEdgeFromHEAD "."
-    ObInternal_VerifyMigration ->
-      verifyMigration "."
-    ObInternal_Migrate fromHash ->
-      migrateObelisk "." fromHash
     ObInternal_CLIDemo -> cliDemo
 
 --TODO: Clean up all the magic strings throughout this codebase
