@@ -40,6 +40,7 @@ module Obelisk.Route
   , checkEnum1EncoderFunc
   , unitEncoder
   , pathOnlyEncoder
+  , pathOnlyEncoderIgnoringQuery
   , singletonListEncoder
   , unpackTextEncoder
   , prefixTextEncoder
@@ -505,6 +506,12 @@ unitEncoder expected = unsafeMkEncoder $ EncoderImpl
 singlePathSegmentEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse Text PageName
 singlePathSegmentEncoder = pathOnlyEncoder . singletonListEncoder
 
+pathOnlyEncoderIgnoringQuery :: (Applicative check, MonadError Text parse) => Encoder check parse [Text] PageName
+pathOnlyEncoderIgnoringQuery = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_decode = \(path, _query) -> pure path
+  , _encoderImpl_encode = \path -> (path, mempty)
+  }
+
 pathOnlyEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse [Text] PageName
 pathOnlyEncoder = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_decode = \(path, query) ->
@@ -724,7 +731,7 @@ obeliskRouteSegment r appRouteSegment = case r of
 -- be combined with other such segment encoders before 'pathComponentEncoder' turns it into a proper 'Encoder'.
 resourceRouteSegment :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> SegmentResult check parse a
 resourceRouteSegment = \case
-  ResourceRoute_Static -> PathSegment "static" $ pathOnlyEncoder
+  ResourceRoute_Static -> PathSegment "static" $ pathOnlyEncoderIgnoringQuery
   ResourceRoute_Ghcjs -> PathSegment "ghcjs" $ pathOnlyEncoder
   ResourceRoute_JSaddleWarp -> PathSegment "jsaddle" $ jsaddleWarpRouteEncoder
 
