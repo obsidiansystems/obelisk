@@ -54,14 +54,6 @@ let
   };
 
   fixUpstreamPkgs = self: super: {
-    algebraic-graphs = pkgs.haskell.lib.doJailbreak
-      (self.callCabal2nix "algebraic-graphs" (pkgs.fetchFromGitHub {
-        owner = "snowleopard";
-        repo = "alga";
-        rev = "480a73137e9b38ad3f1bc2c628847953d2fb3e25";
-        sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
-      }) {});
-
     # Need deriveSomeUniverse
     # PR: https://github.com/dmwit/universe/pull/32
     universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
@@ -87,11 +79,6 @@ let
     obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).overrideAttrs
       (drv: {
         buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
-        postInstall = ''
-          ${drv.postInstall or ""}
-          # Install migrations
-          cp -r ${./migration} $out/migration;
-        '';
         postFixup = ''
           ${drv.postFixup or ""}
           # Make `ob` reference its runtime dependencies.
@@ -101,7 +88,6 @@ let
     obelisk-executable-config = executableConfig.haskellPackage self;
     obelisk-executable-config-inject = executableConfig.platforms.web.inject self;
     obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
-    obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
     obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
     obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
     obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
