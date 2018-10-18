@@ -721,7 +721,7 @@ obeliskRouteEncoder appRouteSegment = pathComponentEncoder $ \r ->
 obeliskRouteSegment :: forall check parse appRoute a.
      (MonadError Text check, MonadError Text parse)
   => ObeliskRoute appRoute a
-  -> (forall a. appRoute a -> SegmentResult check parse a)
+  -> (forall a'. appRoute a' -> SegmentResult check parse a')
   -> SegmentResult check parse a
 obeliskRouteSegment r appRouteSegment = case r of
   ObeliskRoute_App appRoute -> appRouteSegment appRoute
