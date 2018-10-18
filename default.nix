@@ -1,6 +1,7 @@
 { system ? builtins.currentSystem
 , profiling ? false
 , iosSdkVersion ? "10.2"
+, __useLegacyCompilers ? false
 }:
 let
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -16,8 +17,9 @@ let
     openssh
   ];
 
-  getReflexPlatform = sys: import ./dep/reflex-platform {
-    inherit iosSdkVersion;
+  getReflexPlatform = getReflexPlatform' __useLegacyCompilers;
+  getReflexPlatform' = __useLegacyCompilers: sys: import ./dep/reflex-platform {
+    inherit iosSdkVersion __useLegacyCompilers;
     system = sys;
     enableLibraryProfiling = profiling;
 
@@ -102,7 +104,7 @@ let
     ];
   };
 
-  reflex-platform = getReflexPlatform system;
+  reflex-platform = getReflexPlatform' false system;
   inherit (reflex-platform) hackGet nixpkgs;
   pkgs = nixpkgs;
 
