@@ -54,7 +54,7 @@ let
   };
 
   # Development environments for obelisk packages.
-  ghcObeliskEnvs = mapAttrs (n: v: reflex-platform.workOn ghcObelisk ghcObelisk.${v}) ghcObelisk;
+  ghcObeliskEnvs = mapAttrs (n: v: reflex-platform.workOn ghcObelisk v) ghcObelisk;
 
   fixUpstreamPkgs = self: super: {
     algebraic-graphs = pkgs.haskell.lib.doJailbreak
