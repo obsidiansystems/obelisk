@@ -8,6 +8,7 @@ module Backend where
 import Common.Route
 import Obelisk.Backend
 import Obelisk.Route
+import Obelisk.Api.Pipeline
 
 backend :: Backend Void1 IndexOnlyRoute
 backend = Backend

@@ -57,6 +57,20 @@ let
     });
   };
 
+  beam-src = pkgs.fetchFromGitHub {
+    owner = "obsidiansystems";
+    repo = "beam";
+    rev = "6c9b08d57951083c1f7e4bd49d941619603127f4";
+    sha256 = "1k4sdz0dxjafwkwlpfcdxkgvvv591nfwc97g1fq23wrs271jr2sm";
+  };
+
+  gargoyle-src = pkgs.fetchFromGitHub {
+    owner = "obsidiansystems";
+    repo = "gargoyle";
+    rev = "2c19c569325ad76694526e9b688ccdbf148df980";
+    sha256 = "0257p0qd8xx900ngghkjbmjnvn7pjv05g0jm5kkrm4p6alrlhfyl";
+  };
+
   fixUpstreamPkgs = self: super: {
     algebraic-graphs = pkgs.haskell.lib.doJailbreak
       (self.callCabal2nix "algebraic-graphs" (pkgs.fetchFromGitHub {
@@ -69,19 +83,39 @@ let
     # Need deriveSomeUniverse
     # PR: https://github.com/dmwit/universe/pull/32
     universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
-      owner = "obsidiansystems";
+      owner = "dmwit";
       repo = "universe";
-      rev = "5a2fc823caa4163411d7e41aa80e67cefb15944a";
-      sha256 = "0ll2z0fh18z6x8jl8kbp7ldagwccz3wjmvrw1gw752z058n82yfa";
+      rev = "75764f400eca25c45bb1887ac3e1dcc2d99c92b1";
+      sha256 = "1kf3f77jw5shwy5s3iq5h7lqzr775c44ia883ycm0m441c311pan";
     } + /template) {};
 
     # Need ShowTag, EqTag, and OrdTag instances
-    dependent-sum-template = pkgs.haskell.lib.dontCheck (self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
+    dependent-sum-template = self.callCabal2nix "dependent-sum-template" (pkgs.fetchFromGitHub {
       owner = "mokus0";
       repo = "dependent-sum-template";
-      rev = "bfe9c37f4eaffd8b17c03f216c06a0bfb66f7df7";
-      sha256 = "1w3s7nvw0iw5li3ry7s8r4651qwgd22hmgz6by0iw3rm64fy8x0y";
-    }) {});
+      rev = "dcb92a98d35d79f712b9a398c8c356acc979ecff";
+      sha256 = "1v337d810d88jzfriw07pr16d34nibm6q2zkw787lc3sfn07glp5";
+    }) {};
+
+    beam-core = self.callCabal2nix "beam-core" (beam-src + /beam-core) {};
+    beam-postgres = dontCheck (self.callCabal2nix "beam-postgres" (beam-src + /beam-postgres) {});
+    beam-migrate = self.callCabal2nix "beam-migrate" (beam-src + /beam-migrate) {};
+
+    websockets = self.callCabal2nix "websockets" (pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "websockets";
+      rev = "b750edf10fc6f532f9fb36588904491af87606c7";
+      sha256 = "1wd0gkx8a4x6n5cdkra96zvpv8l49i0z90amvrng70ybnzbxpfi5";
+    }) {};
+
+    gargoyle = doJailbreak (self.callCabal2nix "gargoyle" (gargoyle-src + /gargoyle) {});
+    gargoyle-postgresql-nix = pkgs.haskell.lib.addBuildTool
+      (self.callCabal2nix "gargoyle-postgresql-nix" (gargoyle-src + /gargoyle-postgresql-nix) {})
+      pkgs.postgresql; # `staticWhich` requires `psql` on PATH during build time
+    gargoyle-postgresql = addBuildDepend (doJailbreak (self.callCabal2nix "gargoyle-postgresql" (gargoyle-src + /gargoyle-postgresql) {})) pkgs.postgresql;
+    postgresql-libpq = enableCabalFlag (overrideCabal super.postgresql-libpq (drv: {
+      pkgconfigDepends = (drv.pkgconfigDepends or []) ++ [pkgs.postgresql]; #TODO: Obelisk should probably provide this version of postgresql
+    })) "use-pkg-config";
   };
 
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
