@@ -1,45 +1,81 @@
 { local-self ? import ./. {}
-, local-pkgs ? local-self.nixpkgs
 }:
 
-with local-pkgs.lib;
+let
+  inherit (local-self.nixpkgs) lib runCommand nix;
 
-genAttrs [ "x86_64-linux" "x86_64-darwin" ] (system: {
-  inherit (import ./. { inherit system; }) command;
-  built-skeleton = (import ./skeleton { inherit system; }).all;
-  tests = {
-    #TODO: Doesn't work; see discussion in https://www.pivotaltracker.com/story/show/157265140
-    # ob-init = runCommand "ob-init" {
-    #  nativeBuildInputs = [
-    #    self.command
-    #    nix
-    #  ];
-    # } ''
-    #  # mkdir $out
-    #  # cd $out
-    #  # ob init --symlink=${self.path}
-    #'';
+  cacheBuildSystems = [ "x86_64-linux" "x86_64-darwin" ];
 
-    #TODO: Re-enable this
-    #verify-migration = runCommand "verify-migration" {
-    # nativeBuildInputs = [
-    #   self.command
-    #   nix  # obelisk uses `nix-hash`
-    # ];
-    #} ''
-    # set -e
-    # # Fix permissions so `removePathForcibly` works on copied-to-tmp paths
-    # cp -a ${self.pathGit} $TMPDIR/obelisk
-    # cd $TMPDIR/obelisk
-    # chmod -R u+w .
-    #
-    # (set -x;
-    #  ob internal hash;
-    #  ob internal verify-migration;
-    # )
-    #
-    # mkdir -p $out
-    # touch $out/done
-    #'';
-  };
-})
+  obeliskPackagesCommon = [
+    "obelisk-frontend"
+    "obelisk-route"
+    "obelisk-executable-config"
+  ];
+
+  obeliskPackagesBackend = obeliskPackagesCommon ++ [
+    "obelisk-asset-manifest"
+    "obelisk-asset-serve-snap"
+    "obelisk-backend"
+    "obelisk-cliapp"
+    "obelisk-command"
+    "obelisk-executable-config-inject"
+    "obelisk-frontend"
+    "obelisk-run"
+    "obelisk-route"
+    "obelisk-selftest"
+    "obelisk-snap"
+    "obelisk-snap-extras"
+  ];
+
+  pnameToAttrs = pkgsSet: pnames:
+    lib.listToAttrs (map
+      (name: { inherit name; value = pkgsSet.${name}; })
+      pnames);
+
+  concatDepends = let
+    extractDeps = x: (x.override {
+      mkDerivation = drv: {
+        out = builtins.concatLists [
+          (drv.buildDepends or [])
+          (drv.libraryHaskellDepends or [])
+          (drv.executableHaskellDepends or [])
+        ];
+      };
+    }).out;
+  in pkgAttrs: builtins.concatLists (map extractDeps (builtins.attrValues pkgAttrs));
+
+  perPlatform = lib.genAttrs cacheBuildSystems (system: let
+    obelisk = import ./. { inherit system; };
+    reflex-platform = obelisk.reflex-platform;
+    ghc = pnameToAttrs
+      obelisk.haskellPackageSets.ghc
+      obeliskPackagesBackend;
+    ghcjs = pnameToAttrs
+      obelisk.haskellPackageSets.ghcjs
+      obeliskPackagesCommon;
+    cachePackages = builtins.concatLists [
+      (builtins.attrValues ghc)
+      (builtins.attrValues ghcjs)
+      (concatDepends ghc)
+      (concatDepends ghcjs)
+    ];
+    command = local-self.command;
+    serverExeSkeleton = (import ./skeleton {}).exe;
+    builtSkeleton = (import ./skeleton {}).all;
+  in {
+    inherit
+      command
+      ghc ghcjs
+      serverExeSkeleton builtSkeleton;
+    cache = reflex-platform.pinBuildInputs
+      "obelisk-${system}"
+      cachePackages
+      [command serverExeSkeleton builtSkeleton];
+  });
+
+  metaCache = local-self.pinBuildInputs
+    "obelisk-everywhere"
+    (map (a: a.cache) (builtins.attrValues perPlatform))
+    [];
+
+in perPlatform // { inherit metaCache; }

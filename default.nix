@@ -91,9 +91,11 @@ let
       in {
         # Dynamic linking with split objects dramatically increases startup time (about
         # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.
-        obelisk-command = (addOptparseApplicativeCompletionScripts "ob"
-          (haskellLib.justStaticExecutables super.obelisk-command)).overrideAttrs (drv: {
-            buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
+        obelisk-command = haskellLib.overrideCabal
+          (addOptparseApplicativeCompletionScripts "ob"
+            (haskellLib.justStaticExecutables super.obelisk-command))
+          (drv: {
+            buildTools = (drv.buildTools or []) ++ [ pkgs.buildPackages.makeWrapper ];
             postFixup = ''
               ${drv.postFixup or ""}
               # Make `ob` reference its runtime dependencies.
@@ -337,6 +339,6 @@ in rec {
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
-    inherit (reflex-platform) ghc;
+    inherit (reflex-platform) ghc ghcjs;
   };
 }
