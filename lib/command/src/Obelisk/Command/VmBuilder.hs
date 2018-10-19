@@ -5,10 +5,9 @@
 module Obelisk.Command.VmBuilder where
 
 import Control.Applicative (liftA2)
-import Control.Monad (unless)
-import Control.Monad.Catch (try, handle)
+import Control.Monad (when, unless)
+import Control.Monad.Catch (handle)
 import Control.Monad.IO.Class (liftIO)
-import Data.Either (isRight)
 import Data.Monoid ((<>))
 import Data.String (IsString)
 import Data.String.Here.Uninterpolated (hereLit)
@@ -16,7 +15,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory (createDirectoryIfMissing)
-import System.Exit (ExitCode)
+import System.Exit (ExitCode(..))
 import System.FilePath ((<.>), (</>))
 import qualified System.Info
 import System.Process (proc)
@@ -29,7 +28,7 @@ import Obelisk.Command.Nix (withNixRemoteCheck)
 getNixBuildersArg :: MonadObelisk m => m String
 getNixBuildersArg = do
   stateDir <- liftIO getDockerBuilderStateDir
-  exists <- containerExists
+  exists <- containerExists stateDir
   if exists then startContainer else setupNixDocker stateDir
   pure $ nixBuildersArgString stateDir
 
@@ -42,12 +41,14 @@ containerName :: IsString str => str
 containerName = "obelisk-docker-nix-builder"
 
 -- | Check to see if the Docker container exists. This will exit with a helpful message if Docker is not installed.
-containerExists :: MonadObelisk m => m Bool
-containerExists = handle (\(_ :: IOError) -> failWith needDockerMsg) $ do
+containerExists :: MonadObelisk m => FilePath -> m Bool
+containerExists stateDir = handle (\(_ :: IOError) -> failWith needDockerMsg) $ do
   containerNames <- fmap (map T.strip . T.lines) $
     readProcessAndLogStderr Error $
       proc "docker" ["container", "list", "--all", "--format", "{{.Names}}"]
-  pure $ containerName `elem` containerNames
+  let exists = containerName `elem` containerNames
+  when exists $ testLinuxBuild stateDir
+  pure exists
   where
     needDockerMsg = T.intercalate "\n"
       [ "This feature requires that you have Docker installed and the `docker` command available on your PATH."
@@ -87,16 +88,11 @@ setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> con
     , "--publish", show containerSshPort <> ":22"
     , "--name", T.unpack containerName, T.unpack containerId
     ]
-  exists <- containerExists
+  exists <- containerExists stateDir
   unless exists $
     failWith $ "Expected to see docker container named " <> containerName <> " but it does not exist."
 
-  linuxBuildWorked <- if System.Info.os == "linux"
-    then pure False -- The Linux test is useless on Linux so just assume the setup is incomplete.
-    else testLinuxBuild stateDir
-  unless linuxBuildWorked $ do
-    let sshIdFile = stateDir </> sshKeyFileName
-    failWith $ setupInstructions sshIdFile
+  testLinuxBuild stateDir
 
 -- | The instructions for setting up SSH access to the container for the Nix daemon.
 setupInstructions :: FilePath -> Text
@@ -133,13 +129,18 @@ getDockerBuilderStateDir :: IO FilePath
 getDockerBuilderStateDir = liftA2 (</>) getObeliskUserStateDir (pure "nix-docker-builder")
 
 -- | Run a test build to see if a Linux build can finish successfully.
-testLinuxBuild :: MonadObelisk m => FilePath -> m Bool
-testLinuxBuild stateDir =
-  fmap (isRight :: Either ExitCode () -> Bool) $ try $ withNixRemoteCheck $
-  callProcessAndLogOutput (Debug, Debug) $ proc "nix-build"
-    [ "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
-    , "--builders", nixBuildersArgString stateDir
-    ]
+testLinuxBuild :: MonadObelisk m => FilePath -> m ()
+testLinuxBuild stateDir
+  | System.Info.os == "linux" = failWith "Using the docker builder is not necessary on linux."
+  | otherwise = withNixRemoteCheck $ do
+    (exitCode, _stdout, stderr) <- readCreateProcessWithExitCode $ proc "nix-build"
+      [ "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
+      , "--builders", nixBuildersArgString stateDir
+      ]
+    unless (exitCode == ExitSuccess) $ do
+      let sshIdFile = stateDir </> sshKeyFileName
+      putLog Error $ T.pack stderr
+      failWith $ setupInstructions sshIdFile
 
 -- Copied from https://raw.githubusercontent.com/LnL7/nix-docker/bf28b99aebd8e403d2fc2171f4fa8878f857171c/ssh/Dockerfile
 -- Renamed "insecure_rsa" to 'sshKeyFileName'
