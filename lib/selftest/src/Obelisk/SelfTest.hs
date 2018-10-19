@@ -1,3 +1,4 @@
+{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
@@ -14,6 +15,7 @@ import Data.Semigroup (Semigroup, (<>))
 import qualified Data.Set as Set
 import Data.String
 import Data.Text (Text)
+import Data.Void
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Network.HTTP.Client as HTTP
@@ -27,7 +29,6 @@ import System.Info
 import System.IO (Handle, hClose)
 import System.IO.Temp
 import System.Process (readProcessWithExitCode, CreateProcess(cwd), readCreateProcessWithExitCode, proc)
-import System.Timeout
 import Test.Hspec
 import Test.HUnit.Base
 
@@ -38,7 +39,7 @@ import Obelisk.Run (getConfigRoute)
 data ObRunState
   = ObRunState_Init
   | ObRunState_Startup
-  | ObRunState_BackendStarted Text -- Port of backend
+  | ObRunState_BackendStarted
   deriving (Eq, Show)
 
 doubleQuotes :: (IsString a, Semigroup a) => a -> a
@@ -53,9 +54,10 @@ commit msg = void $ run "git"
   , doubleQuotes msg
   ]
 
-runCli :: MonadIO m => CliT IO a -> m a
+-- TODO replace Void and stop using loosely typed synchronous exceptions
+runCli :: MonadIO m => CliT Void IO a -> m a
 runCli f = liftIO $ do
-  c <- newCliConfig Notice False False
+  c <- newCliConfig Notice False False (\case {})
   CliApp.runCli c f
 
 tshow :: Show a => a -> Text
@@ -220,12 +222,12 @@ testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> 
   writefile "config/common/route" . uri =<< liftIO getFreePort -- Use a free port initially
   maybe id chdir mdir $ runHandle "ob" ["run"] $ \stdout -> do
     freePort <- liftIO getFreePort
-    (_, firstUri) <- handleObRunStdout httpManager stdout
+    firstUri <- handleObRunStdout httpManager stdout
     let newUri = uri freePort
     when (firstUri == newUri) $ errorExit $
       "Startup URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
     maybe id (\_ -> chdir "..") mdir $ alterRouteTo newUri stdout
-    (_, runningUri) <- handleObRunStdout httpManager stdout
+    runningUri <- handleObRunStdout httpManager stdout
     if runningUri /= newUri
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
@@ -272,32 +274,28 @@ alterRouteTo uri stdout = do
     "Reloading failed: " <> T.pack (show t)
 
 -- | Handle stdout of `ob run`: check that the frontend and backend servers are started correctly
-handleObRunStdout :: HTTP.Manager -> Handle -> Sh (Text, Text)
+handleObRunStdout :: HTTP.Manager -> Handle -> Sh Text
 handleObRunStdout httpManager stdout = flip fix ObRunState_Init $ \loop state -> do
   liftIO (T.hGetLine stdout) >>= \t -> case state of
     ObRunState_Init
-      | "Running test..." `T.isPrefixOf` t -> loop ObRunState_Startup
+      | "Running test..." `T.isPrefixOf` t -> loop ObRunState_BackendStarted
     ObRunState_Startup
       | t == "backend stopped; make a change to your code to reload" -> loop ObRunState_Startup
-      | Just port <- "Backend running on port " `T.stripPrefix` t -> loop $ ObRunState_BackendStarted port
+      -- | Just port <- "Backend running on port " `T.stripPrefix` t -> loop $ ObRunState_BackendStarted port
       | not (T.null t) -> errorExit $ "Startup: " <> t -- If theres any other output here, startup failed
-    ObRunState_BackendStarted port
+    ObRunState_BackendStarted
       | Just uri <- "Frontend running on " `T.stripPrefix` t -> do
-        obRunCheck httpManager stdout port uri
-        pure (port, uri)
+        obRunCheck httpManager stdout uri
+        pure uri
       | not (T.null t) -> errorExit $ "Started: " <> t -- If theres any other output here, startup failed
     _ -> loop state
 
 -- | Make requests to frontend/backend servers to check they are working properly
-obRunCheck :: HTTP.Manager -> Handle -> Text -> Text -> Sh ()
-obRunCheck httpManager stdout backendPort frontendUri = do
+obRunCheck :: HTTP.Manager -> Handle -> Text -> Sh ()
+obRunCheck httpManager _stdout frontendUri = do
   let req uri = liftIO $ HTTP.parseRequest (T.unpack uri) >>= flip HTTP.httpLbs httpManager
   req frontendUri >>= \r -> when (HTTP.responseStatus r /= HTTP.ok200) $ errorExit $
     "Request to frontend server failed: " <> T.pack (show r)
-  void $ req $ "http://localhost:" <> backendPort
-  liftIO (timeout 1000000 $ T.hGetLine stdout) >>= \case
-    Just t | "127.0.0.1" `T.isPrefixOf` t -> pure () -- Backend request logged
-    x -> errorExit $ "Couldn't get backend request log: " <> T.pack (show x)
 
 getFreePort :: IO Socket.PortNumber
 getFreePort = Socket.withSocketsDo $ do

@@ -9,25 +9,29 @@
 -- | An extension of `System.Process` that integrates with logging (`Obelisk.CLI.Logging`)
 -- and is thus spinner friendly.
 module Obelisk.CliApp.Process
-  ( ProcessFailed (..)
+  ( ProcessFailure (..)
+  , AsProcessFailure (..)
   , readProcessAndLogStderr
+  , readProcessAndLogOutput
   , callProcessAndLogOutput
   , createProcess
   , createProcess_
   , callProcess
   , callCommand
+  , reconstructCommand
   ) where
 
-import Control.Applicative (liftA2)
-import Control.Monad (void, (<=<))
-import Control.Monad.Catch (Exception(..), MonadMask, throwM)
+import Control.Monad ((<=<), join, void)
+import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Lens (Prism', review)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import Data.Function (fix)
 import Data.Monoid ((<>))
+import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
-import qualified Data.Text.IO as T
+import qualified Data.Text.Encoding as T
 import System.Exit (ExitCode (..))
 import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
@@ -39,60 +43,90 @@ import qualified System.Process as Process
 
 import Control.Monad.Log (Severity (..))
 import Obelisk.CliApp.Logging (putLog, putLogRaw)
-import Obelisk.CliApp.Types (Cli)
+import Obelisk.CliApp.Types (CliLog, CliThrow)
 
-data ProcessFailed = ProcessFailed Process.CmdSpec Int -- exit code
+-- TODO put back in `Obelisk.CliApp.Process` and use prisms for extensible exceptions
+data ProcessFailure = ProcessFailure Process.CmdSpec Int -- exit code
   deriving Show
 
-instance Exception ProcessFailed where
-  displayException (ProcessFailed spec exitCode) =
-    unwords ["ProcessFailed", reconstructCommand spec, show exitCode]
+-- | Indicates arbitrary process failures form one variant (or conceptual projection) of
+-- the error type.
+class AsProcessFailure e where
+  asProcessFailure :: Prism' e ProcessFailure
+
+instance AsProcessFailure ProcessFailure where
+  asProcessFailure = id
 
 readProcessAndLogStderr
-  :: (MonadIO m, MonadMask m, Cli m)
-  => Severity -> CreateProcess -> m String
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
+  => Severity -> CreateProcess -> m Text
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
     streamToLog =<< liftIO (streamHandle sev err)
-  -- TODO: Why are we using Text here?
-  liftIO $ T.unpack . T.strip <$> T.hGetContents out
+  liftIO $ T.decodeUtf8 <$> BS.hGetContents out
 
--- | Like `System.Process.callProcess` but logs the combined output--stdout and stderr with the corresponding
--- severity.
+-- | Like `System.Process.readProcess` but logs the combined output (stdout and stderr)
+-- with the corresponding severity.
 --
--- Usually this function is called as `callProcessAndLogOutput (Debug, Error)`. However some processes
--- are known to spit out diagnostic or informative messages in stderr, in which case it is advisable to call
--- it with a non-Error severity for stderr, like `callProcessAndLogOutput (Debug, Debug)`.
+-- Usually this function is called as `callProcessAndLogOutput (Debug, Error)`. However
+-- some processes are known to spit out diagnostic or informative messages in stderr, in
+-- which case it is advisable to call it with a non-Error severity for stderr, like
+-- `callProcessAndLogOutput (Debug, Debug)`.
+readProcessAndLogOutput
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
+  => (Severity, Severity) -> CreateProcess -> m Text
+readProcessAndLogOutput (sev_out, sev_err) process = do
+  (_, Just out, Just err, p) <- createProcess $ process
+    { std_out = CreatePipe , std_err = CreatePipe }
+
+  -- TODO interleave stdout and stderr in log correctly
+  streamToLog =<< liftIO (streamHandle sev_err err)
+  outText <- liftIO $ T.decodeUtf8 <$> BS.hGetContents out
+  putLogRaw sev_out outText
+
+  liftIO (waitForProcess p) >>= \case
+    ExitSuccess -> pure outText
+    ExitFailure code -> throwError $ review asProcessFailure $ ProcessFailure (cmdspec process) code
+
+-- | Like `System.Process.callProcess` but logs the combined output (stdout and stderr)
+-- with the corresponding severity.
+--
+-- Usually this function is called as `callProcessAndLogOutput (Debug, Error)`. However
+-- some processes are known to spit out diagnostic or informative messages in stderr, in
+-- which case it is advisable to call it with a non-Error severity for stderr, like
+-- `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
-  :: (MonadIO m, MonadMask m, Cli m)
+
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
   => (Severity, Severity) -> CreateProcess -> m ()
-callProcessAndLogOutput (sev_out, sev_err) process = do
+callProcessAndLogOutput (sev_out, sev_err) process =
   void $ withProcess process $ \out err -> do
-    stream <- liftIO $ do
-      uncurry combineStream =<< liftA2 (,) (streamHandle sev_out out) (streamHandle sev_err err)
+    stream <- liftIO $ join $ combineStream
+      <$> streamHandle sev_out out
+      <*> streamHandle sev_err err
     streamToLog stream
   where
     combineStream s1 s2 = concurrentMerge [s1, s2]
 
 -- | Like `System.Process.createProcess` but also logs (debug) the process being run
 createProcess
-  :: (MonadIO m, Cli m)
+  :: (MonadIO m, CliLog m)
   => CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess p = do
-  putLog Debug $ "Creating process: " <> T.pack (reconstructCommand (cmdspec p))
+  putLog Debug $ "Creating process: " <> reconstructCommand (cmdspec p)
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.createProcess_` but also logs (debug) the process being run
 createProcess_
-  :: (MonadIO m, Cli m)
+  :: (MonadIO m, CliLog m)
   => String -> CreateProcess -> m (Maybe Handle, Maybe Handle, Maybe Handle, ProcessHandle)
 createProcess_ name p = do
-  putLog Debug $ "Creating process " <> T.pack name <> ": " <> T.pack (reconstructCommand (cmdspec p))
+  putLog Debug $ "Creating process " <> T.pack name <> ": " <> reconstructCommand (cmdspec p)
   liftIO $ Process.createProcess p
 
 -- | Like `System.Process.callProcess` but also logs (debug) the process being run
 callProcess
-  :: (MonadIO m, Cli m)
+  :: (MonadIO m, CliLog m)
   => String -> [String] -> m ()
 callProcess exe args = do
   putLog Debug $ "Calling process " <> T.pack exe <> " with args: " <> T.pack (show args)
@@ -100,14 +134,14 @@ callProcess exe args = do
 
 -- | Like `System.Process.callCommand` but also logs (debug) the command being run
 callCommand
-  :: (MonadIO m, Cli m)
+  :: (MonadIO m, CliLog m)
   => String -> m ()
 callCommand cmd = do
   putLog Debug $ "Calling command " <> T.pack cmd
   liftIO $ Process.callCommand cmd
 
 withProcess
-  :: (MonadIO m, MonadMask m, Cli m)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
 withProcess process f = do -- TODO: Use bracket.
   -- FIXME: Using `withCreateProcess` here leads to something operating illegally on closed handles.
@@ -118,7 +152,7 @@ withProcess process f = do -- TODO: Use bracket.
 
   liftIO (waitForProcess p) >>= \case
     ExitSuccess -> return (out, err)
-    ExitFailure code -> throwM $ ProcessFailed (cmdspec process) code
+    ExitFailure code -> throwError $ review asProcessFailure $ ProcessFailure (cmdspec process) code
 
 -- Create an input stream from the file handle, associating each item with the given severity.
 streamHandle :: Severity -> Handle -> IO (InputStream (Severity, BSC.ByteString))
@@ -126,16 +160,17 @@ streamHandle sev = Streams.map (sev,) <=< handleToInputStream
 
 -- | Read from an input stream and log its contents
 streamToLog
-  :: (MonadIO m, MonadMask m, Cli m)
+  :: (MonadIO m, CliLog m)
   => InputStream (Severity, BSC.ByteString) -> m ()
 streamToLog stream = fix $ \loop -> do
   liftIO (Streams.read stream) >>= \case
     Nothing -> return ()
-    Just (sev, line) -> putLogRaw sev (decodeUtf8 line) >> loop
+    Just (sev, line) -> putLogRaw sev (T.decodeUtf8 line) >> loop
 
-reconstructCommand :: Process.CmdSpec -> String
-reconstructCommand (Process.ShellCommand str) = str
+-- | Pretty print a 'CmdSpec'
+reconstructCommand :: Process.CmdSpec -> Text
+reconstructCommand (Process.ShellCommand str) = T.pack str
 reconstructCommand (Process.RawCommand c as) = processToShellString c as
   where
-    processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
-    quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
+    processToShellString cmd args = T.unwords $ map quoteAndEscape (cmd : args)
+    quoteAndEscape x = "'" <> T.replace "'" "'\''" (T.pack x) <> "'"

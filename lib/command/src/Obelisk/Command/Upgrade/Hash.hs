@@ -102,15 +102,14 @@ tidyUpGitWorkingCopy :: MonadObelisk m => FilePath -> m ()
 tidyUpGitWorkingCopy dir = withSpinnerNoTrail "Tidying up git working copy" $ do
   ignored <- gitLsFiles dir ["--ignored", "--exclude-standard", "--others"]
   untracked <- gitLsFiles dir ["--exclude-standard", "--others"]
-  putLog Debug $ T.pack $ "Ignored: " <> show (length ignored) <> " files."
-  putLog Debug $ T.pack $ "Untracked files:\n" <> unlines untracked
+  putLog Debug $ "Ignored: " <> T.pack (show $ length ignored) <> " files."
+  putLog Debug $ "Untracked files:\n" <> T.unlines untracked
   withSpinnerNoTrail "Removing untracked and ignored files" $ do
-    forM_ (fmap (dir </>) $ ignored <> untracked) $
+    forM_ (fmap ((dir </>) . T.unpack) $ ignored <> untracked) $
       liftIO . removePathForcibly
   -- Empty directories won't be included in these lists. Git doesn't track them
   -- So we must delete these separately.
   runProc $ proc "find" [dir, "-depth", "-empty", "-type", "d", "-delete"]
   where
-    gitLsFiles pwd opts = fmap lines $ readProcessAndLogStderr Error $
+    gitLsFiles pwd opts = fmap T.lines $ readProc $
       (proc "git" $ ["ls-files", "."] <> opts) { cwd = Just pwd }
-

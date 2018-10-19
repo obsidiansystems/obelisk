@@ -1,20 +1,13 @@
 { system ? builtins.currentSystem
 , profiling ? false
 , iosSdkVersion ? "10.2"
+, __useLegacyCompilers ? false
 }:
 let
-  getReflexPlatform = sys: import ./dep/reflex-platform { inherit iosSdkVersion; system = sys; };
-  reflex-platform = getReflexPlatform system;
-  inherit (reflex-platform) hackGet nixpkgs;
-  pkgs = nixpkgs;
-in with pkgs.haskell.lib; with pkgs.lib;
-let
-  # TODO: Remove this after updating nixpkgs: https://github.com/NixOS/nixpkgs/issues/37750
-  justStaticExecutables' = drv: let
-      drv' = justStaticExecutables drv;
-    in if pkgs.stdenv.isDarwin
-      then removeConfigureFlag drv' "--ghc-option=-optl=-dead_strip"
-      else drv';
+  cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
+    builtins.match "^\\.ghc\\.environment.*" baseName != null ||
+    baseName == "cabal.project.local"
+  ));
 
   commandRuntimeDeps = pkgs: with pkgs; [
     coreutils
@@ -24,103 +17,108 @@ let
     openssh
   ];
 
-  #TODO: Upstream
-  # Modify a Haskell package to add completion scripts for the given
-  # executable produced by it.  These completion scripts will be picked up
-  # automatically if the resulting derivation is installed, e.g. by
-  # `nix-env -i`.
-  addOptparseApplicativeCompletionScripts = exeName: pkg: overrideCabal pkg (drv: {
-    postInstall = (drv.postInstall or "") + ''
-      BASH_COMP_DIR="$out/share/bash-completion/completions"
-      mkdir -p "$BASH_COMP_DIR"
-      "$out/bin/${exeName}" --bash-completion-script "$out/bin/${exeName}" >"$BASH_COMP_DIR/ob"
+  getReflexPlatform = getReflexPlatform' __useLegacyCompilers;
+  getReflexPlatform' = __useLegacyCompilers: sys: import ./dep/reflex-platform {
+    inherit iosSdkVersion __useLegacyCompilers;
+    system = sys;
+    enableLibraryProfiling = profiling;
 
-      ZSH_COMP_DIR="$out/share/zsh/vendor-completions"
-      mkdir -p "$ZSH_COMP_DIR"
-      "$out/bin/${exeName}" --zsh-completion-script "$out/bin/${exeName}" >"$ZSH_COMP_DIR/_ob"
+    nixpkgsOverlays = [
+      (self: super: {
+        obeliskExecutableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
+      })
+    ];
 
-      FISH_COMP_DIR="$out/share/fish/vendor_completions.d"
-      mkdir -p "$FISH_COMP_DIR"
-      "$out/bin/${exeName}" --fish-completion-script "$out/bin/${exeName}" >"$FISH_COMP_DIR/ob.fish"
-    '';
-  });
+    haskellOverlays = [
 
-  # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
-  ghcObelisk = reflex-platform.ghc.override {
-    overrides = composeExtensions defaultHaskellOverrides (self: super: {
-      mkDerivation = args: super.mkDerivation (args // {
-        enableLibraryProfiling = profiling;
-      });
+      # Fix misc upstream packages
+      (self: super: let
+        pkgs = self.callPackage ({ pkgs }: pkgs) {};
+      in {
+        # Need deriveSomeUniverse
+        # PR: https://github.com/dmwit/universe/pull/32
+        universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
+          owner = "obsidiansystems";
+          repo = "universe";
+          rev = "5a2fc823caa4163411d7e41aa80e67cefb15944a";
+          sha256 = "0ll2z0fh18z6x8jl8kbp7ldagwccz3wjmvrw1gw752z058n82yfa";
+        } + /template) {};
+      })
+
+      # Add obelisk packages
+      (self: super: let
+        pkgs = self.callPackage ({ pkgs }: pkgs) {};
+      in {
+        obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
+        obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
+        obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
+        obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
+        obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).overrideAttrs
+          (drv: {
+            buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
+            postFixup = ''
+              ${drv.postFixup or ""}
+              # Make `ob` reference its runtime dependencies.
+              wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
+            '';
+          });
+        obelisk-executable-config = pkgs.obeliskExecutableConfig.haskellPackage self;
+        obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
+        obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
+        obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
+        obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
+        obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
+        obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
+        obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
+      })
 
       # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
-      obelisk-command = addOptparseApplicativeCompletionScripts "ob" (justStaticExecutables' super.obelisk-command);
-    });
+      (self: super: let
+        pkgs = self.callPackage ({ pkgs }: pkgs) {};
+        haskellLib = pkgs.haskell.lib;
+        #TODO: Upstream
+        # Modify a Haskell package to add completion scripts for the given
+        # executable produced by it.  These completion scripts will be picked up
+        # automatically if the resulting derivation is installed, e.g. by
+        # `nix-env -i`.
+        addOptparseApplicativeCompletionScripts = exeName: pkg: haskellLib.overrideCabal pkg (drv: {
+          postInstall = (drv.postInstall or "") + ''
+            BASH_COMP_DIR="$out/share/bash-completion/completions"
+            mkdir -p "$BASH_COMP_DIR"
+            "$out/bin/${exeName}" --bash-completion-script "$out/bin/${exeName}" >"$BASH_COMP_DIR/ob"
+
+            ZSH_COMP_DIR="$out/share/zsh/vendor-completions"
+            mkdir -p "$ZSH_COMP_DIR"
+            "$out/bin/${exeName}" --zsh-completion-script "$out/bin/${exeName}" >"$ZSH_COMP_DIR/_ob"
+
+            FISH_COMP_DIR="$out/share/fish/vendor_completions.d"
+            mkdir -p "$FISH_COMP_DIR"
+            "$out/bin/${exeName}" --fish-completion-script "$out/bin/${exeName}" >"$FISH_COMP_DIR/ob.fish"
+          '';
+        });
+      in {
+        obelisk-command = addOptparseApplicativeCompletionScripts "ob" (haskellLib.justStaticExecutables super.obelisk-command);
+        obelisk-selftest = haskellLib.justStaticExecutables super.obelisk-selftest;
+      })
+
+    ];
   };
 
-  fixUpstreamPkgs = self: super: {
-    algebraic-graphs = pkgs.haskell.lib.doJailbreak
-      (self.callCabal2nix "algebraic-graphs" (pkgs.fetchFromGitHub {
-        owner = "snowleopard";
-        repo = "alga";
-        rev = "480a73137e9b38ad3f1bc2c628847953d2fb3e25";
-        sha256 = "0dpwi5ffs88brl3lz51bwb004c6zm8ds8pkw1vzsg2a6aaiyhlzl";
-      }) {});
+  reflex-platform = getReflexPlatform' false system;
+  inherit (reflex-platform) hackGet nixpkgs;
+  pkgs = nixpkgs;
 
-    # Need deriveSomeUniverse
-    # PR: https://github.com/dmwit/universe/pull/32
-    universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
-      owner = "obsidiansystems";
-      repo = "universe";
-      rev = "5a2fc823caa4163411d7e41aa80e67cefb15944a";
-      sha256 = "0ll2z0fh18z6x8jl8kbp7ldagwccz3wjmvrw1gw752z058n82yfa";
-    } + /template) {};
-  };
-
-  cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
-    builtins.match "^\\.ghc\\.environment.*" baseName != null ||
-    baseName == "cabal.project.local"
-  ));
-
-  executableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
-
-  addLibs = self: super: {
-    obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
-    obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
-    obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
-    obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-    obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).overrideAttrs
-      (drv: {
-        buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
-        postInstall = ''
-          ${drv.postInstall or ""}
-          # Install migrations
-          cp -r ${./migration} $out/migration;
-        '';
-        postFixup = ''
-          ${drv.postFixup or ""}
-          # Make `ob` reference its runtime dependencies.
-          wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
-        '';
-      });
-    obelisk-executable-config = executableConfig.haskellPackage self;
-    obelisk-executable-config-inject = executableConfig.platforms.web.inject self;
-    obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
-    obelisk-migration = self.callCabal2nix "obelisk-migration" (cleanSource ./lib/migration) {};
-    obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
-    obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
-    obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
-    obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
-    obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
-  };
+  # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
+  ghcObelisk = reflex-platform.ghc;
 
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
 
-  defaultHaskellOverrides = composeExtensions fixUpstreamPkgs addLibs;
-in
-with pkgs.lib;
-rec {
+  haskellLib = pkgs.haskell.lib;
+
+in rec {
   inherit reflex-platform;
   inherit (reflex-platform) nixpkgs pinBuildInputs;
+  inherit (nixpkgs) lib;
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
@@ -133,7 +131,7 @@ rec {
 
     PATH="${command}/bin:$PATH"
     export OBELISK_IMPL="${hackGet ./.}"
-    "${justStaticExecutables' ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" "$@"
+    "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" "$@"
   '';
   #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
   skeleton = pkgs.runCommand "skeleton" {
@@ -141,8 +139,7 @@ rec {
   } ''
     ln -s "$dir" "$out"
   '';
-  nullIfAbsent = p: if pathExists p then p else null;
-  haskellOverrides = addLibs;
+  nullIfAbsent = p: if lib.pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
   processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static" }: pkgs.runCommand "asset-manifest" {
     inherit src;
@@ -159,7 +156,7 @@ rec {
   compressedJs = frontend: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
     mkdir $out
     cd $out
-    ln -s "${justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
+    ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
     closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
     echo "//# sourceMappingURL=all.js.map" >> all.js
   '';
@@ -235,7 +232,7 @@ rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${justStaticExecutables backend}"/bin/* $out/
+      ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
       cp -r ${config} $out/config
       ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
@@ -274,18 +271,17 @@ rec {
                   staticName = "obelisk-generated-static";
                   processedStatic = processAssets { src = staticFiles; };
                   # The packages whose names and roles are defined by this package
-                  predefinedPackages = filterAttrs (_: x: x != null) {
+                  predefinedPackages = lib.filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
                     ${commonName} = nullIfAbsent (base + "/common");
                     ${backendName} = nullIfAbsent (base + "/backend");
                   };
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
-                    ${staticName} = dontHaddock (self.callCabal2nix staticName processedStatic.haskellManifest {});
-                    ${backendName} = addBuildDepend super.${backendName} self.obelisk-run;
+                    ${staticName} = haskellLib.dontHaddock (self.callCabal2nix staticName processedStatic.haskellManifest {});
+                    ${backendName} = haskellLib.addBuildDepend super.${backendName} self.obelisk-run;
                   };
-                  totalOverrides = composeExtensions (composeExtensions defaultHaskellOverrides projectOverrides) overrides;
-                  inherit (nixpkgs) lib;
+                  totalOverrides = lib.composeExtensions projectOverrides overrides;
                   inherit (lib.strings) hasPrefix;
                   privateConfigDirs = ["config/backend"];
                   injectableConfig = builtins.filterSource (path: _:
@@ -296,16 +292,16 @@ rec {
                 overrides = totalOverrides;
                 packages = combinedPackages;
                 shells = {
-                  ghcSavedSplices = (filter (x: hasAttr x combinedPackages) [
+                  ghcSavedSplices = (lib.filter (x: lib.hasAttr x combinedPackages) [
                     commonName
                     frontendName
                   ]);
-                  ghc = (filter (x: hasAttr x combinedPackages) [
+                  ghc = (lib.filter (x: lib.hasAttr x combinedPackages) [
                     backendName
                     commonName
                     frontendName
                   ]);
-                  ghcjs = filter (x: hasAttr x combinedPackages) [
+                  ghcjs = lib.filter (x: lib.hasAttr x combinedPackages) [
                     frontendName
                     commonName
                   ];
@@ -314,14 +310,14 @@ rec {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
                     ${if builtins.pathExists staticFiles then "assets" else null} =
-                      executableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
+                      nixpkgs.obeliskExecutableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
                   } // android;
                 };
                 ios = {
                   ${if ios == null then null else frontendName} = {
                     executableName = "frontend";
                     ${if builtins.pathExists staticFiles then "staticSrc" else null} =
-                      executableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
+                      nixpkgs.obeliskExecutableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles; };
@@ -334,13 +330,11 @@ rec {
       linuxExe = linuxExe (base + "/config");
       exe = serverOn system (base + "/config") ;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, config }: let
-        injectableConfig = builtins.filterSource (path: _: !(hasPrefix (toString config + "/backend") (toString path))) config;
+        injectableConfig = builtins.filterSource (path: _: !(lib.hasPrefix (toString config + "/backend") (toString path))) config;
       in server (args // { exe = linuxExe injectableConfig; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
-    ghc = reflex-platform.ghc.override {
-      overrides = defaultHaskellOverrides;
-    };
+    inherit (reflex-platform) ghc;
   };
 }
