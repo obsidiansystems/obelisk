@@ -28,9 +28,31 @@ import Obelisk.Command.Nix (withNixRemoteCheck)
 getNixBuildersArg :: MonadObelisk m => m String
 getNixBuildersArg = do
   stateDir <- liftIO getDockerBuilderStateDir
+  let sshIdFile = stateDir </> sshKeyFileName
+  checkForNixDarwin sshIdFile
   exists <- containerExists stateDir
   if exists then startContainer else setupNixDocker stateDir
   pure $ nixBuildersArgString stateDir
+
+checkForNixDarwin :: MonadObelisk m => String -> m ()
+checkForNixDarwin sshIdFile = do
+  (exitCode, _, _) <- readCreateProcessWithExitCode $ proc "which" ["darwin-rebuild"]
+  unless (exitCode == ExitSuccess) $ failWith $ T.intercalate "\n"
+    [ "Deployments from macOS require nix-darwin to be installed."
+    , "Follow the installation instructions here: https://github.com/LnL7/nix-darwin"
+    , "You'll also need to add the following to your 'configuration.nix' and run 'darwin-rebuild switch':"
+    , ""
+    , T.intercalate "\n" $ map ("  " <>)
+      [ "nix.buildMachines = [{"
+      , " hostName = " <> T.pack (show (containerName :: String)) <> ";"
+      , " sshUser = \"root\";"
+      , " sshKey = " <> T.pack (show sshIdFile) <> ";"
+      , " sshPort = " <> T.pack (show containerSshPort) <> ";"
+      , " systems = [ \"x86_64-linux\" ];"
+      , " maxJobs = 2;"
+      , "}];"
+      ]
+    ]
 
 -- | String to pass to nix's `--builders` arguments to enable the VM builder.
 nixBuildersArgString :: FilePath -> String
