@@ -43,7 +43,7 @@ let
       })
     ];
 
-    haskellOverlays = [
+    haskellOverlays = with pkgs.haskell.lib; [
 
       # Fix misc upstream packages
       (self: super: let
