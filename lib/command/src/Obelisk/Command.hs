@@ -248,7 +248,7 @@ mkObeliskConfig = do
 --       liftIO $ exitWith $ ExitFailure 2
   cliConf <- newCliConfig logLevel notInteractive notInteractive $ \case
     ObeliskError_ProcessError (ProcessFailure p code) ann ->
-      ( "Process exited with code " <> T.pack (show code) <> "; " <> T.pack (show p)
+      ( "Process exited with code " <> T.pack (show code) <> "; " <> reconstructCommand p
         <> maybe "" ("\n\n" <>) ann
       , 2
       )
