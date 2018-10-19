@@ -93,7 +93,7 @@ main = do
   withSystemTempDirectory "initCache" $ \initCache -> do
     -- Setup the ob init cache
     void . shellyOb verbosity $ chdir (fromString initCache) $ do
-      run_ "ob" ["init", "--symlink", obeliskImpl]
+      run_ "ob" ["init"]
       run_ "git" ["init"]
     hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
@@ -101,8 +101,9 @@ main = do
           inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
           inTmp f = shelly_ . withSystemTempDirectory "test" $ (chdir <*> f) . fromString
 
-          obInitFromCache dir = run_ "cp" ["-a", fromString $ initCache <> "/.", toTextIgnore dir]
-          inTmpObInit f = inTmp $ \dir -> obInitFromCache dir *> f
+          inTmpObInit f = inTmp $ \dir -> do
+            run_ "cp" ["-a", fromString $ initCache <> "/.", toTextIgnore dir]
+            f dir
 
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
           assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
@@ -136,16 +137,15 @@ main = do
           void $ errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
-        it "produces a valid route config" $ inTmp $ \tmp -> do
-          run_ "ob" ["init"]
+        it "produces a valid route config" $ inTmpObInit $ \tmp -> do
           liftIO $ withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ getConfigRoute `shouldNotReturn` Nothing
 
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'
       describe "ob run" $ parallel $ do
-        it "works in root directory" $ inTmpObInit $ do
+        it "works in root directory" $ inTmpObInit $ \_ -> do
           testObRunInDir Nothing httpManager
-        it "works in sub directory" $ inTmpObInit $ do
+        it "works in sub directory" $ inTmpObInit $ \_ -> do
           testObRunInDir (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
@@ -157,34 +157,32 @@ main = do
 
       describe "blank initialized project" $ parallel $ do
 
-        it "can build ghc.backend" $ inTmpObInit $ do
+        it "can build ghc.backend" $ inTmpObInit $ \_ -> do
           run "nix-build" ["--no-out-link", "-A", "ghc.backend"]
-        it "can build ghcjs.frontend" $ inTmpObInit $ do
+        it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> do
           run "nix-build" ["--no-out-link", "-A", "ghcjs.frontend"]
 
         if os == "darwin"
-          then it "can build ios"     $ inTmpObInit $ run "nix-build" ["--no-out-link", "-A", "ios.frontend"    ]
-          else it "can build android" $ inTmpObInit $ run "nix-build" ["--no-out-link", "-A", "android.frontend"]
+          then it "can build ios"     $ inTmpObInit $ \_ -> run "nix-build" ["--no-out-link", "-A", "ios.frontend"    ]
+          else it "can build android" $ inTmpObInit $ \_ -> run "nix-build" ["--no-out-link", "-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
             shell = "shells." <> compiler
             inShell cmd' = run "nix-shell" ["-A", fromString shell, "--run", cmd']
-          it ("can enter "    <> shell) $ inTmpObInit $ inShell "exit"
-          it ("can build in " <> shell) $ inTmpObInit $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
+          it ("can enter "    <> shell) $ inTmpObInit $ \_ -> inShell "exit"
+          it ("can build in " <> shell) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
-        it "can build reflex project" $ inTmpObInit $ do
+        it "can build reflex project" $ inTmpObInit $ \_ -> do
           run "nix-build" []
 
-        it "has idempotent thunk update" $ inTmpObInit $ do
+        it "has idempotent thunk update" $ inTmpObInit $ \_ -> do
           u  <- update
           uu <- update
           assertRevEQ u uu
 
       describe "ob thunk pack/unpack" $ parallel $ do
-        it "has thunk pack and unpack inverses" $ inTmp $ \_ -> do
-          _ <- run "ob" ["init"]
-          _ <- run "git" ["init"]
+        it "has thunk pack and unpack inverses" $ inTmpObInit $ \_ -> do
 
           e    <- commitAll
           eu   <- unpack
@@ -214,9 +212,7 @@ main = do
 
             testThunkPack $ fromText repo
 
-        it "aborts thunk pack when there are uncommitted files" $ inTmp $ \dir -> do
-          _ <- run "ob" ["init"]
-          _ <- run "git" ["init"]
+        it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
           void $ unpack
           testThunkPack (dir </> thunk)
 
