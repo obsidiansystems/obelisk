@@ -8,6 +8,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
   - [Locally](#locally)
   - [EC2](#ec2)
   - [From macOS](#from-macos)
+  - [Deploying an updated version](#deploying-an-updated-version)
 - [Mobile](#mobile)
   - [iOS](#ios)
   - [Android](#android)
