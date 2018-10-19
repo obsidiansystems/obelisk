@@ -171,7 +171,6 @@ deployInitOpts = DeployInitOpts
   <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Publicly accessible URL of your app")
   <*> strOption (long "admin-email" <> metavar "ADMINEMAIL" <> help "Email address where administrative alerts will be sent")
   <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
-  <*> strOption (long "upstream" <> value "origin" <> metavar "REMOTE" <> help "git remote to use for the src thunk" <> showDefault)
 
 type TeamID = String
 data PlatformDeployment = Android | IOS TeamID
@@ -194,7 +193,6 @@ data DeployInitOpts = DeployInitOpts
   , _deployInitOpts_route :: String
   , _deployInitOpts_adminEmail :: String
   , _deployInitOpts_enableHttps :: Bool
-  , _deployInitOpts_remote :: String
   }
   deriving Show
 
@@ -212,32 +210,17 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   , help "Path to directory containing thunk data"
   ]
 
-data ThunkPackOpts = ThunkPackOpts
-  { _thunkPackOpts_directory :: FilePath
-  , _thunkPackOpts_upstream :: String
-  }
-  deriving Show
-
 data ThunkCommand
    = ThunkCommand_Update [FilePath]
    | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack [ThunkPackOpts]
+   | ThunkCommand_Pack   [FilePath]
   deriving Show
-
-thunkPackOpts :: Parser ThunkPackOpts
-thunkPackOpts = (ThunkPackOpts <$> thunkDirectoryParser <*>) . strOption $ mconcat
-  [ long "upstream"
-  , value "origin"
-  , metavar "REMOTE"
-  , help "Git remote that packed thunk will point to"
-  , showDefault
-  ]
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
   [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkPackOpts) $ progDesc "Pack git checkout into thunk that points at given upstream"
+  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
 
 parserPrefs :: ParserPrefs
@@ -265,7 +248,7 @@ mkObeliskConfig = do
 --       liftIO $ exitWith $ ExitFailure 2
   cliConf <- newCliConfig logLevel notInteractive notInteractive $ \case
     ObeliskError_ProcessError (ProcessFailure p code) ann ->
-      ( "Process exited with code " <> T.pack (show code) <> "; " <> T.pack (show p)
+      ( "Process exited with code " <> T.pack (show code) <> "; " <> reconstructCommand p
         <> maybe "" ("\n\n" <>) ann
       , 2
       )
@@ -352,7 +335,7 @@ ob = \case
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr' False root (T.pack $ _deployInitOpts_remote deployOpts)
+          getThunkPtr' False root
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
           route = _deployInitOpts_route deployOpts
@@ -373,7 +356,7 @@ ob = \case
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
-    ThunkCommand_Pack thunks -> forM_ thunks $ \(ThunkPackOpts dir upstream) -> packThunk dir (T.pack upstream)
+    ThunkCommand_Pack thunks -> forM_ thunks packThunk
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Internal icmd -> case icmd of

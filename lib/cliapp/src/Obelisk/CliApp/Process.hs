@@ -18,6 +18,7 @@ module Obelisk.CliApp.Process
   , createProcess_
   , callProcess
   , callCommand
+  , reconstructCommand
   ) where
 
 import Control.Monad ((<=<), join, void)
@@ -31,7 +32,6 @@ import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
---import qualified Data.Text.IO as T
 import System.Exit (ExitCode (..))
 import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
@@ -167,6 +167,7 @@ streamToLog stream = fix $ \loop -> do
     Nothing -> return ()
     Just (sev, line) -> putLogRaw sev (T.decodeUtf8 line) >> loop
 
+-- | Pretty print a 'CmdSpec'
 reconstructCommand :: Process.CmdSpec -> Text
 reconstructCommand (Process.ShellCommand str) = T.pack str
 reconstructCommand (Process.RawCommand c as) = processToShellString c as

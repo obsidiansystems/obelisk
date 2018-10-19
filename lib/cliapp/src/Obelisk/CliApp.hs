@@ -41,6 +41,7 @@ module Obelisk.CliApp
   , createProcess_
   , callProcess
   , callCommand
+  , reconstructCommand
   ) where
 
 import Control.Monad.Log (Severity (..))
