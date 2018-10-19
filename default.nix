@@ -35,13 +35,13 @@ let
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
       in {
-        # Need deriveSomeUniverse
-        # PR: https://github.com/dmwit/universe/pull/32
+        # Need 8.0.2 build support
+        # PR: https://github.com/dmwit/universe/pull/33
         universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
           owner = "obsidiansystems";
           repo = "universe";
-          rev = "5a2fc823caa4163411d7e41aa80e67cefb15944a";
-          sha256 = "0ll2z0fh18z6x8jl8kbp7ldagwccz3wjmvrw1gw752z058n82yfa";
+          rev = "6a71119bfa5db2b9990a2491c941469ff8ef5d13";
+          sha256 = "0z8smyainnlzcglv3dlx6x1n9j6d2jv48aa8f2421iayfkxg3js5";
         } + /template) {};
       })
 
