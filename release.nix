@@ -6,13 +6,13 @@ let
 
   cacheBuildSystems = [ "x86_64-linux" "x86_64-darwin" ];
 
-  obeliskPackagesFrontendOnly = [
+  obeliskPackagesCommon = [
     "obelisk-frontend"
     "obelisk-route"
     "obelisk-executable-config"
   ];
 
-  obeliskPackages = obeliskPackagesFrontendOnly ++ [
+  obeliskPackagesBackend = obeliskPackagesCommon ++ [
     "obelisk-asset-manifest"
     "obelisk-asset-serve-snap"
     "obelisk-backend"
@@ -49,10 +49,10 @@ let
     reflex-platform = obelisk.reflex-platform;
     ghc = pnameToAttrs
       obelisk.haskellPackageSets.ghc
-      obeliskPackages;
+      obeliskPackagesBackend;
     ghcjs = pnameToAttrs
       obelisk.haskellPackageSets.ghcjs
-      obeliskPackagesFrontendOnly;
+      obeliskPackagesCommon;
     cachePackages = builtins.concatLists [
       (builtins.attrValues ghc)
       (builtins.attrValues ghcjs)
@@ -74,7 +74,7 @@ let
   });
 
   metaCache = local-self.pinBuildInputs
-    "reflex-platform-everywhere"
+    "obelisk-everywhere"
     (map (a: a.cache) (builtins.attrValues perPlatform))
     [];
 
