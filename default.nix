@@ -49,21 +49,14 @@ let
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
       in {
+        obelisk-executable-config = pkgs.obeliskExecutableConfig.haskellPackage self;
+        obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
+
         obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
         obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
         obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-        obelisk-command = (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}).overrideAttrs
-          (drv: {
-            buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
-            postFixup = ''
-              ${drv.postFixup or ""}
-              # Make `ob` reference its runtime dependencies.
-              wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
-            '';
-          });
-        obelisk-executable-config = pkgs.obeliskExecutableConfig.haskellPackage self;
-        obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
+        obelisk-command = self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {};
         obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
         obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
@@ -72,7 +65,6 @@ let
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
       })
 
-      # Dynamic linking with split objects dramatically increases startup time (about 0.5 seconds on a decent machine with SSD)
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         haskellLib = pkgs.haskell.lib;
@@ -97,7 +89,17 @@ let
           '';
         });
       in {
-        obelisk-command = addOptparseApplicativeCompletionScripts "ob" (haskellLib.justStaticExecutables super.obelisk-command);
+        # Dynamic linking with split objects dramatically increases startup time (about
+        # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.
+        obelisk-command = (addOptparseApplicativeCompletionScripts "ob"
+          (haskellLib.justStaticExecutables super.obelisk-command)).overrideAttrs (drv: {
+            buildInputs = drv.buildInputs ++ [ pkgs.makeWrapper ];
+            postFixup = ''
+              ${drv.postFixup or ""}
+              # Make `ob` reference its runtime dependencies.
+              wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
+            '';
+          });
         obelisk-selftest = haskellLib.justStaticExecutables super.obelisk-selftest;
       })
 
