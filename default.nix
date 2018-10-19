@@ -255,13 +255,12 @@ in rec {
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
     let configPath = base + "/config";
-        static = base + "/static";
-        processedStatic = processAssets { src = static; };
         projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
                           , packages ? {}
                           , overrides ? _: _: {}
+                          , staticFiles ? base + /static
                           , tools ? _: []
                           , shellToolOverrides ? _: _: {}
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
@@ -270,7 +269,7 @@ in rec {
                   backendName = "backend";
                   commonName = "common";
                   staticName = "obelisk-generated-static";
-                  staticPath = base + "/static";
+                  processedStatic = processAssets { src = staticFiles; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = lib.filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
@@ -279,7 +278,7 @@ in rec {
                   };
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
-                    ${staticName} = haskellLib.dontHaddock (self.callCabal2nix "static" processedStatic.haskellManifest {});
+                    ${staticName} = haskellLib.dontHaddock (self.callCabal2nix staticName processedStatic.haskellManifest {});
                     ${backendName} = haskellLib.addBuildDepend super.${backendName} self.obelisk-run;
                   };
                   totalOverrides = lib.composeExtensions projectOverrides overrides;
@@ -310,20 +309,21 @@ in rec {
                 android = {
                   ${if android == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "assets" else null} =
+                    ${if builtins.pathExists staticFiles then "assets" else null} =
                       nixpkgs.obeliskExecutableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
                   } // android;
                 };
                 ios = {
                   ${if ios == null then null else frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticPath then "staticSrc" else null} =
+                    ${if builtins.pathExists staticFiles then "staticSrc" else null} =
                       nixpkgs.obeliskExecutableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend static config;
+      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend (projectOut sys).passthru.staticFiles config;
       linuxExe = serverOn "x86_64-linux";
     in projectOut system // {
       linuxExeConfigurable = linuxExe;

@@ -55,8 +55,8 @@ data GhcjsApp route = GhcjsApp
 
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
-serveDefaultObeliskApp :: MonadSnap m => Frontend (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
-serveDefaultObeliskApp frontend = serveObeliskApp defaultStaticAssets frontendApp
+serveDefaultObeliskApp :: MonadSnap m => ([Text] -> m ()) -> Frontend (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
+serveDefaultObeliskApp serveStaticAsset frontend = serveObeliskApp serveStaticAsset frontendApp
   where frontendApp = GhcjsApp
           { _ghcjsApp_compiled = defaultFrontendGhcjsAssets
           , _ghcjsApp_value = frontend
@@ -107,11 +107,11 @@ getRouteWith e = do
   pageName <- getPageName
   return $ tryDecode e pageName
 
-serveObeliskApp :: MonadSnap m => StaticAssets -> GhcjsApp (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
-serveObeliskApp staticAssets frontendApp = \case
+serveObeliskApp :: MonadSnap m => ([Text] -> m ()) -> GhcjsApp (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
+serveObeliskApp serveStaticAsset frontendApp = \case
   ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> serveGhcjsApp frontendApp $ GhcjsAppRoute_App appRouteComponent :/ appRouteRest
   ObeliskRoute_Resource resComponent :=> Identity resRest -> case resComponent :=> Identity resRest of
-    ResourceRoute_Static :=> Identity pathSegments -> serveStaticAssets staticAssets pathSegments
+    ResourceRoute_Static :=> Identity pathSegments -> serveStaticAsset pathSegments
     ResourceRoute_Ghcjs :=> Identity pathSegments -> serveGhcjsApp frontendApp $ GhcjsAppRoute_Resource :/ pathSegments
     ResourceRoute_JSaddleWarp :=> Identity _ -> do
       let msg = "Error: Obelisk.Backend received jsaddle request"
@@ -146,7 +146,7 @@ runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend 
       getRouteWith validFullEncoder >>= \case
         Identity r -> case r of
           InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-          InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp frontend $ obeliskRoute :/ a
+          InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp (serveStaticAssets defaultStaticAssets) frontend $ obeliskRoute :/ a
 
 renderGhcjsFrontend :: route -> Frontend route -> IO ByteString
 renderGhcjsFrontend route f = do
