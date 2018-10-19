@@ -182,7 +182,10 @@ main = do
           assertRevEQ u uu
 
       describe "ob thunk pack/unpack" $ do
-        it "has thunk pack and unpack inverses" $ inProj $ do
+        it "has thunk pack and unpack inverses" $ inTmp $ \_ -> do
+          _ <- run "ob" ["init"]
+          _ <- run "git" ["init"]
+
           e    <- commitAll
           eu   <- unpack
           eup  <- pack
@@ -211,9 +214,11 @@ main = do
 
             testThunkPack $ fromText repo
 
-        it "aborts thunk pack when there are uncommitted files" $ inProj $ do
+        it "aborts thunk pack when there are uncommitted files" $ inTmp $ \dir -> do
+          _ <- run "ob" ["init"]
+          _ <- run "git" ["init"]
           void $ unpack
-          testThunkPack (blankProject </> thunk)
+          testThunkPack (dir </> thunk)
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
 testObRunInDir :: Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
@@ -248,7 +253,7 @@ testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $
   ensureThunkPackFails "unsaved"
   chdir path' $ commit "test commit"
   -- Non-pushed commits in any branch
-  ensureThunkPackFails "not been pushed"
+  ensureThunkPackFails "not yet pushed"
   -- Uncommitted files (unstaged)
   liftIO $ T.hPutStrLn handle "test file" >> hClose handle
   ensureThunkPackFails "modified"
