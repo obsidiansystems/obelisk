@@ -74,7 +74,7 @@ setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> con
     proc "ssh-keygen" ["-t", "ed25519", "-f", stateDir </> sshKeyFileName, "-P", ""]
 
   -- Build the docker container (which uses the SSH keys in the 'ssh' folder)
-  containerId <- readProcessAndLogStderr Error $
+  containerId <- fmap T.strip $ readProcessAndLogStderr Error $
     proc "docker" ["build", stateDir, "--quiet"]
   callProcessAndLogOutput (Debug, Error) $ proc "docker"
     [ "run"
