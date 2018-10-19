@@ -90,15 +90,19 @@ main = do
   let verbosity = bool silently verbosely isVerbose
   obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
-  withSystemTempDirectory "blank-project" $ \blankProject ->
-    hspec $ do
+  withSystemTempDirectory "initCache" $ \initCache -> do
+    -- Setup the ob init cache
+    void . shellyOb verbosity $ chdir (fromString initCache) $ do
+      run_ "ob" ["init", "--symlink", obeliskImpl]
+      run_ "git" ["init"]
+    hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
-          inProj :: Sh a -> IO ()
-          inProj = shelly_ . chdir (fromString blankProject)
-
           inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
-          inTmp f = shelly_ . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
+          inTmp f = shelly_ . withSystemTempDirectory "test" $ (chdir <*> f) . fromString
+
+          obInitFromCache dir = run_ "cp" ["-a", fromString $ initCache <> "/.", toTextIgnore dir]
+          inTmpObInit f = inTmp $ \dir -> obInitFromCache dir *> f
 
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
           assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
@@ -117,7 +121,7 @@ main = do
 
           diff a b = run "git" ["diff", a, b]
 
-      describe "ob init" $ do
+      describe "ob init" $ parallel $ do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
@@ -136,12 +140,12 @@ main = do
           run_ "ob" ["init"]
           liftIO $ withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ getConfigRoute `shouldNotReturn` Nothing
 
-      describe "ob run" $ do
-        it "works in root directory" $ inTmp $ \_ -> do
-          run_ "ob" ["init"]
+      -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
+      -- when not run by 'nix-build --attr selftest'
+      describe "ob run" $ parallel $ do
+        it "works in root directory" $ inTmpObInit $ do
           testObRunInDir Nothing httpManager
-        it "works in sub directory" $ inTmp $ \_ -> do
-          run_ "ob" ["init"]
+        it "works in sub directory" $ inTmpObInit $ do
           testObRunInDir (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
@@ -151,37 +155,33 @@ main = do
         -- See https://github.com/obsidiansystems/obelisk/issues/101
         -- it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
 
-      describe "blank initialized project" $ do
-        it "can be created" $ inProj $ do
-          run_ "ob" ["init"]
-          run_ "git" ["init"]
-          commitAll
+      describe "blank initialized project" $ parallel $ do
 
-        it "can build ghc.backend" $ inProj $ do
+        it "can build ghc.backend" $ inTmpObInit $ do
           run "nix-build" ["--no-out-link", "-A", "ghc.backend"]
-        it "can build ghcjs.frontend" $ inProj $ do
+        it "can build ghcjs.frontend" $ inTmpObInit $ do
           run "nix-build" ["--no-out-link", "-A", "ghcjs.frontend"]
 
         if os == "darwin"
-          then it "can build ios"     $ inProj $ run "nix-build" ["--no-out-link", "-A", "ios.frontend"    ]
-          else it "can build android" $ inProj $ run "nix-build" ["--no-out-link", "-A", "android.frontend"]
+          then it "can build ios"     $ inTmpObInit $ run "nix-build" ["--no-out-link", "-A", "ios.frontend"    ]
+          else it "can build android" $ inTmpObInit $ run "nix-build" ["--no-out-link", "-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
             shell = "shells." <> compiler
             inShell cmd' = run "nix-shell" ["-A", fromString shell, "--run", cmd']
-          it ("can enter "    <> shell) $ inProj $ inShell "exit"
-          it ("can build in " <> shell) $ inProj $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
+          it ("can enter "    <> shell) $ inTmpObInit $ inShell "exit"
+          it ("can build in " <> shell) $ inTmpObInit $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
-        it "can build reflex project" $ inProj $ do
+        it "can build reflex project" $ inTmpObInit $ do
           run "nix-build" []
 
-        it "has idempotent thunk update" $ inProj $ do
+        it "has idempotent thunk update" $ inTmpObInit $ do
           u  <- update
           uu <- update
           assertRevEQ u uu
 
-      describe "ob thunk pack/unpack" $ do
+      describe "ob thunk pack/unpack" $ parallel $ do
         it "has thunk pack and unpack inverses" $ inTmp $ \_ -> do
           _ <- run "ob" ["init"]
           _ <- run "git" ["init"]
