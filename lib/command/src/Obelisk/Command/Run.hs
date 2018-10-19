@@ -51,7 +51,7 @@ run = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
-    runGhcid dotGhciPath $ Just $ unwords ["run", show freePort, "Backend.backend", "Frontend.frontend"]
+    runGhcid dotGhciPath $ Just $ unwords ["run", show freePort, "(runServeAsset Obelisk.Generated.Static.staticRootPath)", "Backend.backend", "Frontend.frontend"]
 
 runRepl :: MonadObelisk m => m ()
 runRepl = do
@@ -112,7 +112,7 @@ parseCabalPackage dir = do
         mapM_ (putLog Error) $ fmap (T.pack . show) errors
         return Nothing
 
-withUTF8FileContentsM :: (MonadIO m, HasCliConfig m) => FilePath -> (ByteString -> CliT IO a) -> m a
+withUTF8FileContentsM :: (MonadIO m, HasCliConfig e m) => FilePath -> (ByteString -> CliT e IO a) -> m a
 withUTF8FileContentsM fp f = do
   c <- getCliConfig
   liftIO $ withUTF8FileContents fp $ runCli c . f . toUTF8BS
@@ -173,7 +173,7 @@ runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
     opts =
       [ "-W"
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , "--command='ghci -Wall -fwarn-redundant-constraints -ghci-script " <> dotGhci <> "' "
+      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -ghci-script " <> dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd

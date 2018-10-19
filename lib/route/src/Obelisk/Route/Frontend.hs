@@ -19,6 +19,9 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FunctionalDependencies #-}
+
 module Obelisk.Route.Frontend
   ( module Obelisk.Route
   , pattern (:~)
@@ -30,7 +33,14 @@ module Obelisk.Route.Frontend
   , mapRoutedT
   , subRoute
   , subRoute_
+  , maybeRoute
+  , maybeRoute_
+  , maybeRouted
   , runRouteViewT
+  , SetRouteT(..)
+  , SetRoute(..)
+  , runSetRouteT
+  , mapSetRouteT
   ) where
 
 import Prelude hiding ((.), id)
@@ -51,7 +61,7 @@ import Data.Constraint (Dict (..))
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
-import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Functor.Compose
 import Reflex.Class
 import Reflex.Host.Class
@@ -67,6 +77,10 @@ import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can
 import Reflex.Dom.Core
 import qualified GHCJS.DOM.Types as DOM
 import Network.URI
+#if defined(ios_HOST_OS)
+import Data.Maybe (fromMaybe)
+import qualified Data.List as L
+#endif
 
 import Unsafe.Coerce
 
@@ -74,7 +88,7 @@ infixr 5 :~
 pattern (:~) :: Reflex t => f a -> Dynamic t a -> DSum f (Compose (Dynamic t) Identity)
 pattern a :~ b <- a :=> (coerceDynamic . getCompose -> b)
 
-class Routed t r m where
+class Routed t r m | m -> t r where
   askRoute :: m (Dynamic t r)
 
 instance Monad m => Routed t r (RoutedT t r m) where
@@ -153,6 +167,22 @@ subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
+maybeRoute_ :: (MonadFix m, MonadHold t m, Adjustable t m) => m () -> RoutedT t r m () -> RoutedT t (Maybe r) m ()
+maybeRoute_ n j = maybeRouted $ strictDynWidget_ $ \case
+  Nothing -> n
+  Just r -> runRoutedT j r
+
+maybeRoute :: (MonadFix m, MonadHold t m, Adjustable t m) => m a -> RoutedT t r m a -> RoutedT t (Maybe r) m (Dynamic t a)
+maybeRoute n j = maybeRouted $ strictDynWidget $ \case
+  Nothing -> n
+  Just r -> runRoutedT j r
+
+{-
+maybeRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => m a -> RoutedT t r m a -> RoutedT t (Maybe r) m a
+maybeRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
+  runRoutedT (f c) r'
+-}
+
 dsumValueCoercion :: Coercion f g -> Coercion (DSum k f) (DSum k g)
 dsumValueCoercion Coercion = Coercion
 
@@ -163,6 +193,11 @@ factorRouted :: (Reflex t, MonadFix m, MonadHold t m, GEq f) => RoutedT t (DSum 
 factorRouted r = RoutedT $ ReaderT $ \d -> do
   d' <- factorDyn d
   runRoutedT r $ (coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d')
+
+maybeRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Maybe (Dynamic t a)) m b -> RoutedT t (Maybe a) m b
+maybeRouted r = RoutedT $ ReaderT $ \d -> do
+  d' <- maybeDyn d
+  runRoutedT r d'
 
 -- | WARNING: The input 'Dynamic' must be fully constructed when this is run
 strictDynWidget :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
@@ -177,6 +212,69 @@ strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   (_, _) <- runWithReplace (f r0) $ f <$> updated r
   pure ()
 
+newtype SetRouteT t r m a = SetRouteT { unSetRouteT :: EventWriterT t (Endo r) m a }
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomBuilder t)
+
+mapSetRouteT :: (forall x. m x -> n x) -> SetRouteT t r m a -> SetRouteT t r n a
+mapSetRouteT f (SetRouteT x) = SetRouteT (mapEventWriterT f x)
+
+runSetRouteT :: (Reflex t, Monad m) => SetRouteT t r m a -> m (a, Event t (Endo r))
+runSetRouteT = runEventWriterT . unSetRouteT
+
+class Reflex t => SetRoute t r m | m -> t r where
+  setRoute :: Event t r -> m ()
+  modifyRoute :: Event t (r -> r) -> m ()
+  setRoute = modifyRoute . fmap const
+
+instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
+  modifyRoute = SetRouteT . tellEvent . fmap Endo
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
+  modifyRoute = lift . modifyRoute
+
+instance Prerender js m => Prerender js (SetRouteT t r m) where
+  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+
+instance Requester t m => Requester t (SetRouteT t r m) where
+  type Request (SetRouteT t r m) = Request m
+  type Response (SetRouteT t r m) = Response m
+  requesting = SetRouteT . requesting
+  requesting_ = SetRouteT . requesting_
+
+#ifndef ghcjs_HOST_OS
+deriving instance MonadJSM m => MonadJSM (SetRouteT t r m)
+#endif
+
+instance PerformEvent t m => PerformEvent t (SetRouteT t r m) where
+  type Performable (SetRouteT t r m) = Performable m
+  performEvent = lift . performEvent
+  performEvent_ = lift . performEvent_
+
+instance MonadRef m => MonadRef (SetRouteT t r m) where
+  type Ref (SetRouteT t r m) = Ref m
+  newRef = lift . newRef
+  readRef = lift . readRef
+  writeRef r = lift . writeRef r
+
+instance HasJS x m => HasJS x (SetRouteT t r m) where
+  type JSX (SetRouteT t r m) = JSX m
+  liftJS = lift . liftJS
+
+instance PrimMonad m => PrimMonad (SetRouteT t r m ) where
+  type PrimState (SetRouteT t r m) = PrimState m
+  primitive = lift . primitive
+
+instance (MonadHold t m, Adjustable t m) => Adjustable t (SetRouteT t r m) where
+  runWithReplace a0 a' = SetRouteT $ runWithReplace (coerce a0) $ coerceEvent a'
+  traverseIntMapWithKeyWithAdjust f a0 a' = SetRouteT $ traverseIntMapWithKeyWithAdjust (coerce f) (coerce a0) $ coerce a'
+  traverseDMapWithKeyWithAdjust f a0 a' = SetRouteT $ traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
+  traverseDMapWithKeyWithAdjustWithMove f a0 a' = SetRouteT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
+
+instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (SetRouteT t r m) where
+  tellQueryIncremental = lift . tellQueryIncremental
+  askQueryResult = lift askQueryResult
+  queryIncremental = lift . queryIncremental
+
 runRouteViewT
   :: forall t m r a.
      ( TriggerEvent t m
@@ -186,18 +284,24 @@ runRouteViewT
      , MonadJSM (Performable m)
      , MonadFix m
      )
-  => (ValidEncoder (Either Text) r PageName)
-  -> (Text -> r) -- ^ 404 page
-  -> RoutedT t r (EventWriterT t (Endo r) m) a
+  => (Encoder Identity Identity r PageName)
+  -> RoutedT t r (SetRouteT t r m) a
   -> m a
-runRouteViewT routeValidEncoder error404 a = do
+runRouteViewT routeEncoder a = do
   rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
-      let route :: Dynamic t r
-          route = fmap (runIdentity . _validEncoder_decode (catchValidEncoder error404 $ pageNameValidEncoder . routeValidEncoder) . (uriPath &&& uriQuery) . _historyItem_uri) historyState
-      (result, changeState) <- runEventWriterT $ runRoutedT a route
-      let f oldRoute change =
+      let theEncoder = pageNameEncoder . hoistParse (pure . runIdentity) routeEncoder
+          -- NB: The can only fail if the uriPath doesn't begin with a '/' or if the uriQuery
+          -- is nonempty, but begins with a character that isn't '?'. Since we don't expect
+          -- this ever to happen, we'll just handle it by failing completely with 'error'.
+          route :: Dynamic t r
+          route = fmap (errorLeft . tryDecode theEncoder . (adaptedUriPath &&& uriQuery) . _historyItem_uri) historyState
+            where
+              errorLeft (Left e) = error (T.unpack e)
+              errorLeft (Right x) = x
+      (result, changeState) <- runSetRouteT $ runRoutedT a route
+      let f (currentHistoryState, oldRoute) change =
             let newRoute = appEndo change oldRoute
-                (newPath, newQuery) = _validEncoder_encode (pageNameValidEncoder . routeValidEncoder) newRoute
+                (newPath, newQuery) = encode theEncoder newRoute
             in HistoryStateUpdate
                { _historyStateUpdate_state = DOM.SerializedScriptValue jsNull
                  -- We always provide "" as the title.  On Firefox, Chrome, and
@@ -211,10 +315,32 @@ runRouteViewT routeValidEncoder error404 a = do
                  -- we can change this function later to accommodate.
                  -- See: https://github.com/whatwg/html/issues/2174
                , _historyStateUpdate_title = ""
-               , _historyStateUpdate_uri = Just $ nullURI
-                 { uriPath = newPath
-                 , uriQuery = newQuery
+               , _historyStateUpdate_uri = Just $ setAdaptedUriPath newPath $ (_historyItem_uri currentHistoryState)
+                 { uriQuery = newQuery
                  }
                }
-          setState = attachWith f (current route) changeState
+          setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
+
+-- On ios due to sandboxing when loading the page from a file adapt the
+-- path to be based on the hash.
+
+adaptedUriPath :: URI -> String
+#if defined(ios_HOST_OS)
+adaptedUriPath = hashToPath . uriFragment
+
+hashToPath :: String -> String
+hashToPath = ('/' :) . fromMaybe "" . L.stripPrefix "#"
+#else
+adaptedUriPath = uriPath
+#endif
+
+setAdaptedUriPath :: String -> URI -> URI
+#if defined(ios_HOST_OS)
+setAdaptedUriPath s u = u { uriFragment = pathToHash s }
+
+pathToHash :: String -> String
+pathToHash = ('#' :) . fromMaybe "" . L.stripPrefix "/"
+#else
+setAdaptedUriPath s u = u { uriPath = s }
+#endif

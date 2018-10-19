@@ -4,15 +4,36 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Provides a logging handler that facilitates safe ouputting to terminal using MVar based locking.
 -- | Spinner.hs and Process.hs work on this guarantee.
-module Obelisk.CliApp.Logging where
+module Obelisk.CliApp.Logging
+  ( AsUnstructuredError (..)
+  , newCliConfig
+  , runCli
+  , verboseLogLevel
+  , isOverwrite
+  , getSeverity
+  , getLogLevel
+  , setLogLevel
+  , putLog
+  , putLogRaw
+  , failWith
+  , errorToWarning
+  , withExitFailMessage
+  , writeLog
+  , allowUserToMakeLoggingVerbose
+  , getChars
+  , fork
+  ) where
 
 import Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
 import Control.Concurrent.MVar (modifyMVar_, newMVar)
+import Control.Lens (Prism', review)
 import Control.Monad (unless, void, when)
 import Control.Monad.Catch (MonadCatch, MonadMask, bracket, catch, throwM)
+import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Log (Severity (..), WithSeverity (..), logMessage, runLoggingT)
 import Control.Monad.Loops (iterateUntil)
@@ -25,23 +46,30 @@ import qualified Data.Text.IO as T
 import System.Console.ANSI (Color (Red, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (SetColor, SetConsoleIntensity), clearLine)
-import System.Exit (ExitCode (..), exitWith)
+import System.Exit (ExitCode (..))
 import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stderr, stdin, stdout)
 
 import qualified Obelisk.CliApp.TerminalString as TS
 import Obelisk.CliApp.Types
 
-newCliConfig :: Severity -> Bool -> Bool -> IO CliConfig
-newCliConfig sev noColor noSpinner = do
+newCliConfig
+  :: Severity
+  -> Bool
+  -> Bool
+  -> (e -> (Text, Int))
+  -> IO (CliConfig e)
+newCliConfig sev noColor noSpinner errorLogExitCode = do
   level <- newIORef sev
   lock <- newMVar False
   tipDisplayed <- newIORef False
   stack <- newIORef ([], [])
-  return $ CliConfig level noColor noSpinner lock tipDisplayed stack
+  return $ CliConfig level noColor noSpinner lock tipDisplayed stack errorLogExitCode
 
-runCli :: MonadIO m => CliConfig -> CliT m a -> m a
+runCli :: MonadIO m => CliConfig e -> CliT e m a -> m a
 runCli c =
     flip runLoggingT (handleLog c)
+  . flip runReaderT (_cliConfig_errorLogExitCode c)
+  . unDieT
   . flip runReaderT c
   . unCliT
 
@@ -59,18 +87,18 @@ getSeverity = \case
   Output_LogRaw (WithSeverity sev _) -> Just sev
   _ -> Nothing
 
-setLogLevel :: (MonadIO m, HasCliConfig m) => Severity -> m ()
+getLogLevel :: (MonadIO m, HasCliConfig e m) => m Severity
+getLogLevel = getLogLevel' =<< getCliConfig
+
+getLogLevel' :: MonadIO m => CliConfig e -> m Severity
+getLogLevel' = liftIO . readIORef . _cliConfig_logLevel
+
+setLogLevel :: (MonadIO m, HasCliConfig e m) => Severity -> m ()
 setLogLevel sev = do
   l <- _cliConfig_logLevel <$> getCliConfig
   liftIO $ writeIORef l sev
 
-getLogLevel :: (MonadIO m, HasCliConfig m) => m Severity
-getLogLevel = getLogLevel' =<< getCliConfig
-
-getLogLevel' :: MonadIO m => CliConfig -> m Severity
-getLogLevel' = liftIO . readIORef . _cliConfig_logLevel
-
-handleLog :: MonadIO m => CliConfig -> Output -> m ()
+handleLog :: MonadIO m => CliConfig e -> Output -> m ()
 handleLog conf output = do
   level <- getLogLevel' conf
   liftIO $ modifyMVar_ (_cliConfig_lock conf) $ \wasOverwriting -> do
@@ -107,26 +135,35 @@ handleLog' noColor output = do
       hFlush stdout
   return $ isOverwrite output
 
--- | Log a message to the console.
---
--- Logs safely even if there are ongoing spinners.
-putLog :: Cli m => Severity -> Text -> m ()
-putLog sev = logMessage . Output_Log . WithSeverity sev
-
 -- | Like `putLog` but without the implicit newline added.
-putLogRaw :: Cli m => Severity -> Text -> m ()
+putLogRaw :: CliLog m => Severity -> Text -> m ()
 putLogRaw sev = logMessage . Output_LogRaw . WithSeverity sev
 
+-- | Indicates unstructured errors form one variant (or conceptual projection)
+-- of the error type.
+--
+-- Shouldn't really use this, but who has time to clean up that much!
+class AsUnstructuredError e where
+  asUnstructuredError :: Prism' e Text
+
+instance AsUnstructuredError Text where
+  asUnstructuredError = id
+
 -- | Like `putLog Alert` but also abrupts the program.
-failWith :: (MonadIO m, Cli m) => Text -> m a
-failWith s = do
-  putLog Alert s
-  liftIO $ exitWith $ ExitFailure 2
+failWith :: (CliThrow e m, AsUnstructuredError e) => Text -> m a
+failWith = throwError . review asUnstructuredError
+
+errorToWarning
+  :: (HasCliConfig e m, CliThrow e m, CliLog m)
+  => e -> m ()
+errorToWarning e = do
+  c <- getCliConfig
+  putLog Warning $ fst $ _cliConfig_errorLogExitCode c e
 
 -- | Intercept ExitFailure exceptions and log the given alert before exiting.
 --
 -- This is useful when you want to provide contextual information to a deeper failure.
-withExitFailMessage :: (Cli m, MonadCatch m) => Text -> m a -> m a
+withExitFailMessage :: (CliLog m, MonadCatch m) => Text -> m a -> m a
 withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
   case e of
     ExitFailure _ -> putLog Alert msg
@@ -134,7 +171,7 @@ withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
   throwM e
 
 -- | Write log to stdout, with colors (unless `noColor`)
-writeLog:: (MonadIO m, MonadMask m) => Bool -> Bool -> WithSeverity Text -> m ()
+writeLog :: (MonadIO m, MonadMask m) => Bool -> Bool -> WithSeverity Text -> m ()
 writeLog withNewLine noColor (WithSeverity severity s)
   | noColor && severity <= Warning = liftIO $ putFn $ T.pack (show severity) <> ": " <> s
   | not noColor && severity <= Error = TS.putStrWithSGR errorColors h withNewLine s
@@ -152,7 +189,7 @@ writeLog withNewLine noColor (WithSeverity severity s)
 --
 -- Call this function in a thread, and kill it to turn off keystroke monitoring.
 allowUserToMakeLoggingVerbose
-  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
+  :: (MonadIO m, MonadMask m, CliLog m, HasCliConfig e m)
   => String  -- ^ The key to press in order to make logging verbose
   -> m ()
 allowUserToMakeLoggingVerbose keyCode = bracket showTip (liftIO . killThread) $ \_ -> do
@@ -185,7 +222,7 @@ getChars = reverse <$> f mempty
         True -> f (x:xs)
         False -> return (x:xs)
 
-fork :: (HasCliConfig m, MonadIO m) => CliT IO () -> m ThreadId
+fork :: (HasCliConfig e m, MonadIO m) => CliT e IO () -> m ThreadId
 fork f = do
   c <- getCliConfig
   liftIO $ forkIO $ runCli c f

@@ -12,6 +12,7 @@ library
     , bytestring
     , exceptions
     , io-streams
+    , lens
     , logging-effect
     , monad-loops
     , mtl

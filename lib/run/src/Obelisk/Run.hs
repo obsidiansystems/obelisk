@@ -26,7 +26,6 @@ import Control.Lens ((%~), (^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Identity
@@ -37,7 +36,6 @@ import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -50,26 +48,28 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
+import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.ExecutableConfig (get)
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
+import Snap.Core (Snap)
 import System.Environment
 import System.IO
 import System.Process
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
-import Snap.Core (writeText)
 import Obelisk.Backend
 
 run
   :: Int -- ^ Port to run the backend
+  -> ([Text] -> Snap ()) -- ^ Static asset handler
   -> Backend fullRoute frontendRoute -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
-run port backend frontend = do
+run port serveStaticAsset backend frontend = do
   prettifyOutput
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
@@ -80,12 +80,15 @@ run port backend frontend = do
         _backend_run backend $ \serveRoute -> do
           runSnapWithCommandLineArgs $ do
             getRouteWith validFullEncoder >>= \case
-              Left e -> writeText e
-              Right r -> case r of
+              Identity r -> case r of
                 InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-                InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp frontend $ obeliskRoute :/ a
+                InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp serveStaticAsset frontend $ obeliskRoute :/ a
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf frontend validFullEncoder `finally` killThread backendTid
+
+-- Convenience wrapper to handle path segments for 'Snap.serveAsset'
+runServeAsset :: FilePath -> [Text] -> Snap ()
+runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
 
 getConfigRoute :: IO (Maybe URI)
 getConfigRoute = get "config/common/route" >>= \case
@@ -99,7 +102,7 @@ getConfigRoute = get "config/common/route" >>= \case
 defAppUri :: URI
 defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
 
-runWidget :: RunConfig -> Frontend (R route) -> ValidEncoder (Either Text) (R (Sum backendRoute (ObeliskRoute route))) PageName -> IO ()
+runWidget :: RunConfig -> Frontend (R route) -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> IO ()
 runWidget conf frontend validFullEncoder = do
   uri <- fromMaybe defAppUri <$> getConfigRoute
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
@@ -119,7 +122,7 @@ runWidget conf frontend validFullEncoder = do
 obeliskApp
   :: forall route backendRoute. ConnectionOptions
   -> Frontend (R route)
-  -> ValidEncoder (Either Text) (R (Sum backendRoute (ObeliskRoute route))) PageName
+  -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
   -> URI
   -> Application
   -> IO Application
@@ -129,15 +132,14 @@ obeliskApp opts frontend validFullEncoder uri backend = do
         syncPoint
   jsaddlePath <- URI.mkPathPiece "jsaddle"
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
-  Right (jsaddleWarpRouteValidEncoder :: ValidEncoder (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
+  Right (jsaddleWarpRouteValidEncoder :: Encoder Identity (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
   jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
-  return $ \req sendResponse -> case _validEncoder_decode validFullEncoder (W.pathInfo req, mempty) of --TODO: Query strings
-    Left e -> sendResponse $ W.responseLBS H.status404 [("Content-Type", "text/plain")] $ LBS.fromStrict $ encodeUtf8 e
-    Right r -> case r of
+  return $ \req sendResponse -> case tryDecode validFullEncoder (W.pathInfo req, mempty) of --TODO: Query strings
+    Identity r -> case r of
       InR (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :=> Identity jsaddleRoute -> case jsaddleRoute of
         JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just jsaddleUri) False
         _ -> flip jsaddle sendResponse $ req
-          { W.pathInfo = fst $ _validEncoder_encode jsaddleWarpRouteValidEncoder jsaddleRoute
+          { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
       InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
         html <- renderJsaddleFrontend (appRouteComponent :/ appRouteRest) frontend

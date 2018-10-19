@@ -113,7 +113,7 @@ deployPush deployPath getNixBuilders = do
       checkGitCleanStatus srcPath True >>= \case
         True -> do
           result <- build
-          packThunk srcPath "origin" -- get upstream
+          packThunk srcPath
           return result
         False -> do
           _ <- failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."

@@ -7,7 +7,8 @@
 }:
 let injectConfig = config: assets: nixpkgs.runCommand "inject-config" {} ''
       set -x
-      cp -a "${assets}" $out
+      mkdir -p $out
+      cp --no-preserve=mode -Lr "${assets}" $out/static
       chmod +w "$out"
       if ! mkdir $out/config; then
         2>&1 echo config directory already exists or could not be created
