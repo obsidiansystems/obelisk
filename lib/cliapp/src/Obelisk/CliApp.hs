@@ -37,6 +37,7 @@ module Obelisk.CliApp
   , AsProcessFailure (..)
   , readProcessAndLogStderr
   , readProcessAndLogOutput
+  , readCreateProcessWithExitCode
   , callProcessAndLogOutput
   , createProcess_
   , callProcess
