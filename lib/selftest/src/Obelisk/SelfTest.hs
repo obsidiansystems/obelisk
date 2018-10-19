@@ -32,7 +32,7 @@ import System.Process (readProcessWithExitCode, CreateProcess(cwd), readCreatePr
 import Test.Hspec
 import Test.HUnit.Base
 
-import Obelisk.CliApp hiding (runCli)
+import Obelisk.CliApp hiding (runCli, readCreateProcessWithExitCode)
 import qualified Obelisk.CliApp as CliApp
 import Obelisk.Run (getConfigRoute)
 
