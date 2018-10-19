@@ -43,7 +43,8 @@ checkForNixDarwin sshIdFile = do
     , "You'll also need to add the following to your 'configuration.nix' and run 'darwin-rebuild switch':"
     , ""
     , T.intercalate "\n" $ map ("  " <>)
-      [ "nix.buildMachines = [{"
+      [ "nix.distributedBuilds = true;"
+      , "nix.buildMachines = [{"
       , " hostName = " <> T.pack (show (containerName :: String)) <> ";"
       , " sshUser = \"root\";"
       , " sshKey = " <> T.pack (show sshIdFile) <> ";"
