@@ -280,12 +280,12 @@ alterRouteTo uri stdout = do
 
 -- | Handle stdout of `ob run`: check that the frontend and backend servers are started correctly
 handleObRunStdout :: HTTP.Manager -> Handle -> Sh Text
-handleObRunStdout httpManager stdout = flip fix ObRunState_Init $ \loop state -> do
+handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (state, msgs) -> do
   liftIO (T.hGetLine stdout) >>= \t -> case state of
     ObRunState_Init
-      | "Running test..." `T.isPrefixOf` t -> loop ObRunState_BackendStarted
+      | "Running test..." `T.isPrefixOf` t -> loop (ObRunState_BackendStarted, msgs)
     ObRunState_Startup
-      | t == "backend stopped; make a change to your code to reload" -> loop ObRunState_Startup
+      | t == "backend stopped; make a change to your code to reload" -> loop (ObRunState_Startup, msgs)
       -- | Just port <- "Backend running on port " `T.stripPrefix` t -> loop $ ObRunState_BackendStarted port
       | not (T.null t) -> errorExit $ "Startup: " <> t -- If theres any other output here, startup failed
     ObRunState_BackendStarted
@@ -293,7 +293,8 @@ handleObRunStdout httpManager stdout = flip fix ObRunState_Init $ \loop state ->
         obRunCheck httpManager stdout uri
         pure uri
       | not (T.null t) -> errorExit $ "Started: " <> t -- If theres any other output here, startup failed
-    _ -> loop state
+    _ | "Failed" `T.isPrefixOf` t -> errorExit $ "ob run failed: " <> T.unlines (reverse $ t : msgs)
+      | otherwise -> loop (state, t : msgs)
 
 -- | Make requests to frontend/backend servers to check they are working properly
 obRunCheck :: HTTP.Manager -> Handle -> Text -> Sh ()
