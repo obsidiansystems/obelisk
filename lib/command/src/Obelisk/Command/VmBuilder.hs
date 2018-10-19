@@ -141,11 +141,11 @@ testLinuxBuild stateDir =
     , "--builders", nixBuildersArgString stateDir
     ]
 
--- Copied from https://raw.githubusercontent.com/LnL7/nix-docker/bf28b99aebd8e403d2fc2171f4fa8878f857171c/ssh/Dockerfile
+-- Copied from https://github.com/LnL7/nix-docker/blob/8dcfb3aff1f87cdafeecb0d27964b27c3fb8b1d2/ssh/Dockerfile
 -- Renamed "insecure_rsa" to 'sshKeyFileName'
 dockerfile :: Text
 dockerfile = [hereLit|
-FROM lnl7/nix:2018-04-17
+FROM lnl7/nix:2018-09-21
 
 RUN nix-env -f '<nixpkgs>' -iA \
     gnused \
@@ -170,7 +170,8 @@ RUN mkdir -p /etc/ssh \
   ] <> [hereLit|
 
 EXPOSE 22
-CMD ["/nix/store/hpnx760s247labqc3nbn2kripk73p0ca-openssh-7.6p1/bin/sshd", "-D", "-e"]
+CMD ["/nix/store/mydwfxzk8bka4iwjml033dir6gkmqwic-openssh-7.7p1/bin/sshd", "-D", "-e"]
+
 |]
 
 sshKeyFileName :: FilePath
