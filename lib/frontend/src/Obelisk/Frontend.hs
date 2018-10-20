@@ -12,6 +12,7 @@
 module Obelisk.Frontend
   ( ObeliskWidget
   , Frontend (..)
+  , HeadRender (..)
   , runFrontend
   , renderFrontendHtml
   ) where
@@ -67,8 +68,11 @@ type ObeliskWidget t x route m =
 
 data Frontend route = Frontend
   { _frontend_head :: !(forall t m x. ObeliskWidget t x route m => RoutedT t route m ())
+  , _frontend_headRender :: HeadRender
   , _frontend_body :: !(forall t m x. ObeliskWidget t x route m => RoutedT t route m ())
   }
+
+data HeadRender = HeadRender_Static | HeadRender_Dynamic
 
 type Widget' x = ImmediateDomBuilderT DomTimeline (DomCoreWidget x)
 
@@ -101,16 +105,16 @@ runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
   headFragment <- createDocumentFragment globalDoc
   bodyFragment <- createDocumentFragment globalDoc
   unreadyChildren <- liftIO $ newIORef 0
-  let commit = do
+  let commitHead = do
         headElement <- getHeadUnchecked globalDoc
+        replaceElementContents headElement headFragment
+      commitBody = do
         bodyElement <- getBodyUnchecked globalDoc
-        void $ inAnimationFrame' $ \_ -> do
-          replaceElementContents headElement headFragment
-          replaceElementContents bodyElement bodyFragment
+        replaceElementContents bodyElement bodyFragment
   liftIO $ attachWidget''' $ \events -> flip runWithJSContextSingleton jsSing $ do
     (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
-    let appendImmediateDom :: DOM.DocumentFragment -> Widget' () c -> FloatingWidget () c
-        appendImmediateDom df w = do
+    let appendImmediateDom :: JSM () -> DOM.DocumentFragment -> Widget' () c -> FloatingWidget () c
+        appendImmediateDom commit df w = do
           events' <- TriggerEvent.askEvents
           lift $ do
             doc <- getOwnerDocumentUnchecked df
@@ -121,10 +125,10 @@ runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
                   , _immediateDomBuilderEnv_commitAction = commit
                   }
             runImmediateDomBuilderT w builderEnv events'
-    flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (appendImmediateDom headFragment) (appendImmediateDom bodyFragment)
-    liftIO (readIORef unreadyChildren) >>= \case
-      0 -> DOM.liftJSM commit
-      _ -> return ()
+    flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (appendImmediateDom commitHead headFragment) (appendImmediateDom commitBody bodyFragment)
+    -- liftIO (readIORef unreadyChildren) >>= \case
+    --   0 -> DOM.liftJSM commit
+    --   _ -> return ()
     return postBuildTriggerRef
 
 runFrontend :: forall backendRoute route. Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> Frontend (R route) -> JSM ()
@@ -146,7 +150,9 @@ runFrontend validFullEncoder frontend = do
         -> m a
       runMyRouteViewT = runRouteViewT ve
   runWithHeadAndBody $ \appendHead appendBody -> runMyRouteViewT $ do
-    mapRoutedT (mapSetRouteT appendHead) $ _frontend_head frontend
+    case _frontend_headRender frontend of
+      HeadRender_Dynamic -> mapRoutedT (mapSetRouteT appendHead) $ _frontend_head frontend
+      HeadRender_Static -> return ()
     mapRoutedT (mapSetRouteT appendBody) $ _frontend_body frontend
 
 renderFrontendHtml
