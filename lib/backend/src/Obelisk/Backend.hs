@@ -29,6 +29,7 @@ import Data.Default (Default (..))
 import Data.Dependent.Sum
 import Data.Functor.Sum
 import Data.Functor.Identity
+import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
