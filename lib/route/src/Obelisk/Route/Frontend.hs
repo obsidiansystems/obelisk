@@ -49,7 +49,7 @@ import Obelisk.Route
 
 import Control.Category (Category (..), (.))
 import Control.Category.Cartesian
-import Control.Lens hiding (Bifunctor, bimap, universe)
+import Control.Lens hiding (Bifunctor, bimap, universe, element)
 import Control.Monad.Fix
 import Control.Monad.Primitive
 import Control.Monad.Ref
@@ -95,7 +95,11 @@ instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+
+instance HasJSContext m => HasJSContext (RoutedT t r m) where
+  type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
+  askJSContext = lift askJSContext
 
 instance Prerender js m => Prerender js (RoutedT t r m) where
   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
@@ -213,7 +217,18 @@ strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   pure ()
 
 newtype SetRouteT t r m a = SetRouteT { unSetRouteT :: EventWriterT t (Endo r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, HasJSContext, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomBuilder t)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, MonadIO, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadReflexCreateTrigger t, HasDocument)
+
+instance (MonadFix m, MonadHold t m, DomBuilder t m) => DomBuilder t (SetRouteT t r m) where
+  type DomBuilderSpace (SetRouteT t r m) = DomBuilderSpace m
+  element t cfg child = SetRouteT $ element t cfg $ unSetRouteT child
+  inputElement = lift . inputElement
+  textAreaElement = lift . textAreaElement
+  selectElement cfg child = SetRouteT $ selectElement cfg $ unSetRouteT child
+
+instance HasJSContext m => HasJSContext (SetRouteT t r m) where
+  type JSContextPhantom (SetRouteT t r m) = JSContextPhantom m
+  askJSContext = lift askJSContext
 
 mapSetRouteT :: (forall x. m x -> n x) -> SetRouteT t r m a -> SetRouteT t r n a
 mapSetRouteT f (SetRouteT x) = SetRouteT (mapEventWriterT f x)
