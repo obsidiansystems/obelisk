@@ -34,7 +34,15 @@ let
       # Fix misc upstream packages
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
+        beam-src = hackGet ./dep/beam;
       in {
+        # TODO: Fix so dontCheck not needed
+        beam-core = pkgs.haskell.lib.dontCheck (self.callCabal2nix "beam-core" (beam-src + /beam-core) {});
+        beam-migrate = self.callCabal2nix "beam-migrate" (beam-src + /beam-migrate) {};
+        beam-migrate-cli = self.callCabal2nix "beam-migrate-cli" (beam-src + /beam-migrate-cli) {};
+        beam-postgres = pkgs.haskell.lib.dontCheck (self.callCabal2nix "beam-postgres" (beam-src + /beam-postgres) {});
+        beam-sqlite = self.callCabal2nix "beam-sqlite" (beam-src + /beam-sqlite) {};
+
         # Need 8.0.2 build support
         # PR: https://github.com/dmwit/universe/pull/33
         universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
