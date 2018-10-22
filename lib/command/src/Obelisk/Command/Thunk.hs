@@ -582,12 +582,11 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
         git $ [ "clone" ]
           ++  ("--recursive" <$ guard (_gitSource_fetchSubmodules s))
           ++  [ T.unpack $ render $ _gitSource_url s ]
+          ++  do branch <- maybeToList $ _gitSource_branch s
+                 [ "--branch", T.unpack $ untagName branch ]
         git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
         when (_gitSource_fetchSubmodules s) $
           git ["submodule", "update", "--recursive", "--init"]
-        case _gitSource_branch s of
-          Just b -> git ["branch", "-u", "origin/" <> T.unpack (untagName $ b)]
-          Nothing -> pure ()
 
         liftIO $ createDirectory obGitDir
         callProcessAndLogOutput (Notice, Error) $
