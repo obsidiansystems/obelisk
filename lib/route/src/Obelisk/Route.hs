@@ -40,7 +40,6 @@ module Obelisk.Route
   , checkEnum1EncoderFunc
   , unitEncoder
   , pathOnlyEncoder
-  , pathOnlyEncoderIgnoringQuery
   , singletonListEncoder
   , unpackTextEncoder
   , prefixTextEncoder
