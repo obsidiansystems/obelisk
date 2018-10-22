@@ -81,7 +81,7 @@ type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (Perform
 --TODO: Rename
 {-# INLINABLE attachWidget''' #-}
 attachWidget'''
-  :: (EventChannel -> PerformEventT DomTimeline (SpiderHost Global) (IORef (Maybe (EventTrigger DomTimeline ()))))
+  :: (EventChannel -> PerformEventT DomTimeline DomHost (IORef (Maybe (EventTrigger DomTimeline ()))))
   -> IO ()
 attachWidget''' w = runDomHost $ do
   events <- liftIO newChan
@@ -151,10 +151,10 @@ runFrontend validFullEncoder frontend = do
     mapRoutedT (mapSetRouteT appendBody) $ _frontend_body frontend
 
 renderFrontendHtml
-  :: (t ~ SpiderTimeline Global)
+  :: (t ~ DomTimeline)
   => r
-  -> RoutedT t r (SetRouteT t r' (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
-  -> RoutedT t r (SetRouteT t r' (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
+  -> RoutedT t r (SetRouteT t r' (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost)))) ()
+  -> RoutedT t r (SetRouteT t r' (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost)))) ()
   -> IO ByteString
 renderFrontendHtml route headWidget bodyWidget = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
