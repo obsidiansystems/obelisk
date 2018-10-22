@@ -7,6 +7,8 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
+  - [From macOS](#from-macos)
+  - [Deploying an updated version](#deploying-an-updated-version)
 - [Mobile](#mobile)
   - [iOS](#ios)
   - [Android](#android)
@@ -155,6 +157,15 @@ ob deploy push
 `ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. The backend will live in `/var/lib/backend`.
 
 At this point you are done. Your app will be accessible at `${ROUTE}`.
+
+### From macOS
+
+Deploying from macOS requires some extra setup:
+
+- [Install nix-darwin](https://github.com/LnL7/nix-darwin)
+- [Install docker](https://docs.docker.com/)
+
+Running `ob deploy push` will give you additional setup instructions.
 
 ### Deploying an updated version
 

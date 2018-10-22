@@ -2,40 +2,90 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 module Obelisk.App where
 
+import Control.Lens
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
-import Control.Monad.Trans.Class (lift)
+import Control.Monad.Writer (WriterT)
+import Control.Monad.State (StateT)
+import Control.Monad.Except (ExceptT, MonadError)
+import Control.Monad.Trans.Class (MonadTrans, lift)
+import Data.Text (Text)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 import Control.Monad.Log (MonadLog)
 
-import Obelisk.CliApp (CliConfig, CliT, HasCliConfig, getCliConfig, runCli, Output)
+import Obelisk.CliApp
+  ( CliConfig
+  , CliLog
+  , CliThrow
+  , CliT (..)
+  , ProcessFailure
+  , AsProcessFailure (..)
+  , AsUnstructuredError (..)
+  , HasCliConfig
+  , Output
+  , runCli
+  )
+
+data ObeliskError
+  = ObeliskError_ProcessError
+    { obeliskError_err :: ProcessFailure
+    , obeliskError_mAnn :: Maybe Text
+    }
+  | ObeliskError_Unstructured Text
+
+makePrisms ''ObeliskError
+
+instance AsUnstructuredError ObeliskError where
+  asUnstructuredError = _ObeliskError_Unstructured
+
+-- Only project when the other field is null, otherwise we are not law abiding.
+instance AsProcessFailure ObeliskError where
+  asProcessFailure = _ObeliskError_ProcessError . prism (, Nothing) f
+    where f = \case
+            (pf, Nothing) -> Right pf
+            pann@(_, Just _) -> Left pann
 
 newtype Obelisk = Obelisk
-  { _obelisk_cliConfig :: CliConfig
+  { _obelisk_cliConfig :: CliConfig ObeliskError
   }
 
 newtype ObeliskT m a = ObeliskT
-  { unObeliskT :: ReaderT Obelisk (CliT m) a
+  { unObeliskT :: ReaderT Obelisk (CliT ObeliskError m) a
   }
   deriving
     ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask
-    , HasObelisk, HasCliConfig)
+    , MonadLog Output -- CliLog
+    , MonadError ObeliskError -- CliThrow ObeliskError
+    , HasCliConfig ObeliskError)
 
-deriving instance Monad m => MonadLog Output (ObeliskT m)
+instance MonadTrans ObeliskT where
+  lift = ObeliskT . lift . lift
 
-class HasObelisk m where
+class Monad m => HasObelisk m where
   getObelisk :: m Obelisk
 
-instance Monad m => HasObelisk (ReaderT Obelisk m) where
-  getObelisk = ask
+instance Monad m => HasObelisk (ObeliskT m) where
+  getObelisk = ObeliskT ask
 
-instance HasCliConfig m => HasCliConfig (ReaderT Obelisk m) where
-  getCliConfig = lift getCliConfig
+instance HasObelisk m => HasObelisk (ReaderT r m) where
+  getObelisk = lift getObelisk
+
+instance (Monoid w, HasObelisk m) => HasObelisk (WriterT w m) where
+  getObelisk = lift getObelisk
+
+instance HasObelisk m => HasObelisk (StateT r m) where
+  getObelisk = lift getObelisk
+
+instance HasObelisk m => HasObelisk (ExceptT e m) where
+  getObelisk = lift getObelisk
 
 runObelisk :: MonadIO m => Obelisk -> ObeliskT m a -> m a
 runObelisk c =
@@ -43,12 +93,17 @@ runObelisk c =
   . flip runReaderT c
   . unObeliskT
 
-type MonadObelisk m =
-  ( MonadLog Output m
-  , HasCliConfig m
+type MonadInfallibleObelisk m =
+  ( CliLog m
+  , HasCliConfig ObeliskError m
   , HasObelisk m
   , MonadIO m
   , MonadMask m
+  )
+
+type MonadObelisk m =
+  ( MonadInfallibleObelisk m
+  , CliThrow ObeliskError m
   )
 
 getObeliskUserStateDir :: IO FilePath

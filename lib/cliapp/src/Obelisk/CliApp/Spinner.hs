@@ -24,11 +24,11 @@ import System.Console.ANSI (Color (Blue, Cyan, Green, Red))
 
 import Obelisk.CliApp.Logging (allowUserToMakeLoggingVerbose, fork, putLog)
 import Obelisk.CliApp.TerminalString (TerminalString (..), enquiryCode)
-import Obelisk.CliApp.Types (Cli, CliConfig (..), HasCliConfig, Output (..), getCliConfig)
+import Obelisk.CliApp.Types (CliLog, CliConfig (..), HasCliConfig, Output (..), getCliConfig)
 
 -- | Run an action with a CLI spinner.
 withSpinner
-  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
+  :: (MonadIO m, MonadMask m, CliLog m, HasCliConfig e m)
   => Text -> m a -> m a
 withSpinner s = withSpinner' s $ Just $ const s
 
@@ -39,13 +39,13 @@ withSpinner s = withSpinner' s $ Just $ const s
 -- The 'no trail' property automatically carries over to sub-spinners (in that
 -- they won't leave a trail either).
 withSpinnerNoTrail
-  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
+  :: (MonadIO m, MonadMask m, CliLog m, HasCliConfig e m)
   => Text -> m a -> m a
 withSpinnerNoTrail s = withSpinner' s Nothing
 
 -- | Advanced version that controls the display and content of the trail message.
 withSpinner'
-  :: (MonadIO m, MonadMask m, Cli m, HasCliConfig m)
+  :: (MonadIO m, MonadMask m, CliLog m, HasCliConfig e m)
   => Text
   -> Maybe (a -> Text) -- ^ Leave an optional trail with the given message creator
   -> m a

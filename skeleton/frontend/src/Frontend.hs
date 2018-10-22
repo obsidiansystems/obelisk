@@ -10,7 +10,8 @@ import Reflex.Dom.Core
 
 import Common.Api
 import Common.Route
-import Static
+import Obelisk.Generated.Static
+
 
 frontend :: Frontend (R FrontendRoute)
 frontend = Frontend

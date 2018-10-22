@@ -47,6 +47,8 @@ module Obelisk.Route
   , unsafeTshowEncoder
   , someConstEncoder
   , singlePathSegmentEncoder
+  , maybeEncoder
+  , maybeToEitherEncoder
   , justEncoder
   , nothingEncoder
   , isoEncoder
@@ -102,6 +104,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Monoid ((<>))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Some (Some)
@@ -305,7 +308,28 @@ wrappedEncoder = isoEncoder $ from _Wrapped'
 unwrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse a (Unwrapped a)
 unwrappedEncoder = isoEncoder _Wrapped'
 
--- | Encodea a value by simply applying 'Just'
+maybeToEitherEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Maybe a) (Either () a)
+maybeToEitherEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = \case
+      Nothing -> Left ()
+      Just a -> Right a
+  , _encoderImpl_decode = pure . \case
+      Left _ -> Nothing
+      Right a -> Just a
+  }
+
+maybeEncoder
+  :: ( MonadError Text check
+     , Show a
+     , Show b
+     , check ~ parse
+     )
+  => Encoder check parse () b
+  -> Encoder check parse a b
+  -> Encoder check parse (Maybe a) b
+maybeEncoder f g = shadowEncoder f g . maybeToEitherEncoder
+
+-- | Encode a value by simply applying 'Just'
 justEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a (Maybe a)
 justEncoder = prismEncoder _Just
 
@@ -721,7 +745,7 @@ obeliskRouteEncoder appRouteSegment = pathComponentEncoder $ \r ->
 obeliskRouteSegment :: forall check parse appRoute a.
      (MonadError Text check, MonadError Text parse)
   => ObeliskRoute appRoute a
-  -> (forall a'. appRoute a' -> SegmentResult check parse a')
+  -> (forall b. appRoute b -> SegmentResult check parse b)
   -> SegmentResult check parse a
 obeliskRouteSegment r appRouteSegment = case r of
   ObeliskRoute_App appRoute -> appRouteSegment appRoute

@@ -10,6 +10,7 @@ module Obelisk.Asset.Promoted
 import Obelisk.Asset.Gather
 
 import Data.Foldable
+import qualified Data.List as L
 import Language.Haskell.TH (runQ, pprint)
 import Language.Haskell.TH.Syntax hiding (lift)
 import GHC.TypeLits
@@ -27,15 +28,27 @@ import qualified Data.Map as Map
 data StaticConfig = StaticConfig
   { _staticConfig_packageName :: Text --TODO: Better type
   , _staticConfig_moduleName :: Text --TODO: Better type
+  , _staticConfig_rootPath :: FilePath
   }
 
 writeStaticProject :: Map FilePath FilePath -> FilePath -> StaticConfig -> IO ()
 writeStaticProject paths target cfg = do
-  createDirectoryIfMissing True $ target </> "src"
+  createDirectoryIfMissing True target
   T.writeFile (target </> T.unpack (_staticConfig_packageName cfg) <.> "cabal") $ staticCabalFile cfg
   let modName = _staticConfig_moduleName cfg
+      (modName', moduleDirPath) = case L.uncons (reverse $ T.splitOn "." modName) of
+        Nothing -> error $ "writeStaticProject: invalid module name " <> T.unpack modName
+        Just (name, parents) -> (name, target </> "src" </> T.unpack (T.intercalate "/" $ reverse parents))
+  createDirectoryIfMissing True moduleDirPath
   modContents <- staticModuleFile modName paths
-  T.writeFile (target </> "src" </> T.unpack modName <.> "hs") modContents
+  T.writeFile (moduleDirPath </> T.unpack modName' <.> "hs") $ appendRootPath (_staticConfig_rootPath cfg) modContents
+
+appendRootPath :: FilePath -> Text -> Text
+appendRootPath fp txt = T.unlines
+  [ txt
+  , "staticRootPath :: FilePath"
+  , "staticRootPath = \"" <> T.pack fp <> "\""
+  ]
 
 staticCabalFile :: StaticConfig -> Text
 staticCabalFile cfg = T.unlines
