@@ -297,7 +297,7 @@ in rec {
                 overrides = totalOverrides;
                 packages = combinedPackages;
                 shells = {
-                  ghcSavedSplices = (lib.filter (x: lib.hasAttr x combinedPackages) [
+                  ${if android == null && ios == null then null else "ghcSavedSplices"} = (lib.filter (x: lib.hasAttr x combinedPackages) [
                     commonName
                     frontendName
                   ]);
