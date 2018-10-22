@@ -95,7 +95,7 @@ main = do
     void . shellyOb verbosity $ chdir (fromString initCache) $ do
       run_ "ob" ["init"]
       run_ "git" ["init"]
-    hspec $ parallel $ do
+    hspec $ do
       let shelly_ = void . shellyOb verbosity
 
           inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
@@ -122,7 +122,7 @@ main = do
 
           diff a b = run "git" ["diff", a, b]
 
-      describe "ob init" $ parallel $ do
+      describe "ob init" $ do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
@@ -142,20 +142,20 @@ main = do
 
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'
-      describe "ob run" $ parallel $ do
+      describe "ob run" $ do
         it "works in root directory" $ inTmpObInit $ \_ -> do
           testObRunInDir Nothing httpManager
         it "works in sub directory" $ inTmpObInit $ \_ -> do
           testObRunInDir (Just "frontend") httpManager
 
-      describe "obelisk project" $ parallel $ do
+      describe "obelisk project" $ do
         it "can build obelisk command"  $ shelly_ $ run "nix-build" ["-A", "command" , obeliskImpl]
         it "can build obelisk skeleton" $ shelly_ $ run "nix-build" ["-A", "skeleton", obeliskImpl]
         it "can build obelisk shell"    $ shelly_ $ run "nix-build" ["-A", "shell",    obeliskImpl]
         -- See https://github.com/obsidiansystems/obelisk/issues/101
         -- it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
 
-      describe "blank initialized project" $ parallel $ do
+      describe "blank initialized project" $ do
 
         it "can build ghc.backend" $ inTmpObInit $ \_ -> do
           run "nix-build" ["--no-out-link", "-A", "ghc.backend"]
@@ -181,7 +181,7 @@ main = do
           uu <- update
           assertRevEQ u uu
 
-      describe "ob thunk pack/unpack" $ parallel $ do
+      describe "ob thunk pack/unpack" $ do
         it "has thunk pack and unpack inverses" $ inTmpObInit $ \_ -> do
 
           e    <- commitAll
