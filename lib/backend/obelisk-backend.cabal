@@ -20,7 +20,6 @@ library
                  obelisk-snap-extras,
                  reflex-dom,
                  snap,
-                 snap-core,
                  snap-server,
                  text,
                  universe
