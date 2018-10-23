@@ -22,7 +22,6 @@ import System.Process (proc)
 
 import Obelisk.App (MonadObelisk, getObeliskUserStateDir)
 import Obelisk.CliApp
-import Obelisk.Command.Nix (withNixRemoteCheck)
 
 -- | Generate the `--builders` argument string to enable the VM builder after ensuring it is available.
 getNixBuildersArg :: MonadObelisk m => m String
@@ -155,7 +154,7 @@ getDockerBuilderStateDir = liftA2 (</>) getObeliskUserStateDir (pure "nix-docker
 testLinuxBuild :: MonadObelisk m => FilePath -> m ()
 testLinuxBuild stateDir
   | System.Info.os == "linux" = failWith "Using the docker builder is not necessary on linux."
-  | otherwise = withNixRemoteCheck $ do
+  | otherwise = do
     (exitCode, _stdout, stderr) <- readCreateProcessWithExitCode $ proc "nix-build"
       [ "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
       , "--builders", nixBuildersArgString stateDir
