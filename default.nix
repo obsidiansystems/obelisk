@@ -233,7 +233,7 @@ in rec {
     };
   };
 
-  serverExe = backend: frontend: assets: config: optimizationLevel:
+  serverExe = backend: frontend: assets: config: optimizationLevel: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
@@ -241,9 +241,10 @@ in rec {
       ln -s "${mkAssets assets}" $out/static.assets
       cp -r ${config} $out/config
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, config }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, config, version }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -329,15 +330,21 @@ in rec {
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles __closureCompilerOptimizationLevel; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend (projectOut sys).passthru.staticFiles config (projectOut sys).passthru.__closureCompilerOptimizationLevel;
+      serverOn = sys: config: version: serverExe
+        (projectOut sys).ghc.backend
+        (projectOut system).ghcjs.frontend
+        (projectOut sys).passthru.staticFiles
+        config
+        (projectOut sys).passthru.__closureCompilerOptimizationLevel
+        version;
       linuxExe = serverOn "x86_64-linux";
     in projectOut system // {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe (base + "/config");
-      exe = serverOn system (base + "/config") ;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, config }: let
+      exe = serverOn system (base + "/config");
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, config, version }: let
         injectableConfig = builtins.filterSource (path: _: !(lib.hasPrefix (toString config + "/backend") (toString path))) config;
-      in server (args // { exe = linuxExe injectableConfig; });
+      in server (args // { exe = linuxExe injectableConfig version; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
