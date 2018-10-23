@@ -1,0 +1,14 @@
+name: obelisk-beam
+version: 0.1
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  hs-source-dirs: src
+  build-depends: base,
+                 beam-core,
+                 beam-migrate,
+                 text
+  exposed-modules: Obelisk.Database.Beam.Entity
+
+  ghc-options: -Wall

@@ -63,6 +63,7 @@ let
         obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
         obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
         obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
+        obelisk-beam = self.callCabal2nix "obelisk-beam" (cleanSource ./lib/beam) {};
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
         obelisk-command = self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {};
         obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
