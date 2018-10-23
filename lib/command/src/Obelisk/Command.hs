@@ -238,18 +238,10 @@ mkObeliskConfig = do
   -- This function should not use argument parser (full argument parsing happens post handoff)
   let logLevel = toLogLevel $ "-v" `elem` cliArgs
   notInteractive <- not <$> isInteractiveTerm
--- instance MonadIO m => MonadError (Either Text ProcessFailed) (DieT m) where
---   throwError = \case
---     Left s -> do
---       putLog Alert s
---       liftIO $ exitWith $ ExitFailure 2
---     Right (ProcessFailed p code) -> do
---       putLog Alert $ "Process exited with code " <> T.pack (show code) <> "; " <> T.pack (show p)
---       liftIO $ exitWith $ ExitFailure 2
   cliConf <- newCliConfig logLevel notInteractive notInteractive $ \case
     ObeliskError_ProcessError (ProcessFailure p code) ann ->
       ( "Process exited with code " <> T.pack (show code) <> "; " <> reconstructCommand p
-        <> maybe "" ("\n\n" <>) ann
+        <> maybe "" ("\n" <>) ann
       , 2
       )
     ObeliskError_Unstructured msg -> (msg, 2)

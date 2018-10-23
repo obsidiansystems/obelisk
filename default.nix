@@ -166,11 +166,11 @@ in rec {
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
-  compressedJs = frontend: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
+  compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
     mkdir $out
     cd $out
     ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-    closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ADVANCED --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+    closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
     echo "//# sourceMappingURL=all.js.map" >> all.js
   '';
 
@@ -241,14 +241,14 @@ in rec {
     };
   };
 
-  serverExe = backend: frontend: assets: config:
+  serverExe = backend: frontend: assets: config: optimizationLevel:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
       cp -r ${config} $out/config
-      ln -s ${mkAssets (compressedJs frontend)} $out/frontend.jsexe.assets
+      ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
     '';
 
   server = { exe, hostName, adminEmail, routeHost, enableHttps, config }@args:
@@ -277,6 +277,7 @@ in rec {
                           , tools ? _: []
                           , shellToolOverrides ? _: _: {}
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
+                          , __closureCompilerOptimizationLevel ? "ADVANCED"
                           }:
               let frontendName = "frontend";
                   backendName = "backend";
@@ -305,7 +306,7 @@ in rec {
                 overrides = totalOverrides;
                 packages = combinedPackages;
                 shells = {
-                  ghcSavedSplices = (lib.filter (x: lib.hasAttr x combinedPackages) [
+                  ${if android == null && ios == null then null else "ghcSavedSplices"} = (lib.filter (x: lib.hasAttr x combinedPackages) [
                     commonName
                     frontendName
                   ]);
@@ -333,10 +334,10 @@ in rec {
                       nixpkgs.obeliskExecutableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles; };
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles __closureCompilerOptimizationLevel; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend (projectOut sys).passthru.staticFiles config;
+      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend (projectOut sys).passthru.staticFiles config (projectOut sys).passthru.__closureCompilerOptimizationLevel;
       linuxExe = serverOn "x86_64-linux";
     in projectOut system // {
       linuxExeConfigurable = linuxExe;
