@@ -9,7 +9,6 @@
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Nix
   ( nixBuild
-  , withNixRemoteCheck
   , NixBuildConfig (..)
   , Target (..)
   , OutLink (..)
@@ -87,7 +86,7 @@ instance Default NixBuildConfig where
 
 nixBuild :: MonadObelisk m => NixBuildConfig -> m FilePath
 nixBuild cfg = withSpinner' ("Running nix-build on " <> desc) (Just $ const $ "Built " <> desc) $ do
-  output <- withNixRemoteCheck $ readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
+  output <- readProcessAndLogStderr Debug $ proc "nix-build" $ mconcat
     [[path], attrArg, args, outLink, buildersArg]
   -- Remove final newline that Nix appends
   Just (outPath, '\n') <- pure $ T.unsnoc output
@@ -108,31 +107,3 @@ nixBuild cfg = withSpinner' ("Running nix-build on " <> desc) (Just $ const $ "B
       [] -> []
       builders -> ["--builders", intercalate ";" builders]
 
--- | If a nix command fails, and this may be related to the NIX_REMOTE issue,
--- tell the user what to do.
---
--- Added: June, 2018. Consider removing this eventually.
-withNixRemoteCheck
-  :: MonadObelisk m
-  => (forall m'. MonadInfallibleObelisk m' => ExceptT ObeliskError m' a)
-  -> m a
-withNixRemoteCheck f = do
-  status <- runExceptT f
-  case status of
-    Right a -> pure a
-    Left e -> throwError =<< case matching asProcessFailure e of
-      Left _ -> pure e
-      Right pf -> liftIO (lookupEnv "NIX_REMOTE") >>= \case
-        Just _ -> pure e
-        Nothing -> liftIO (writable <$> getPermissions "/nix/var/nix/db") >>= \case
-          True -> pure e
-          False -> pure $ ObeliskError_ProcessError pf $ Just $ T.unlines
-            [ "!!! "
-            , "!!! A nix command failed to run. You might need to set the NIX_REMOTE environment variable"
-            , "!!! to `daemon`. To do this, run the following before running obelisk:"
-            , "!!! "
-            , "!!!     export NIX_REMOTE=daemon"
-            , "!!! "
-            , "!!! For details, see https://github.com/NixOS/nixpkgs/issues/5713"
-            , "!!! "
-            ]

@@ -73,7 +73,6 @@ import Text.URI
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
-import Obelisk.Command.Nix (withNixRemoteCheck)
 import Obelisk.Command.Utils
 
 --TODO: Support symlinked thunk data
@@ -160,14 +159,14 @@ getNixSha256ForUriUnpacked
   -> m NixSha256
 getNixSha256ForUriUnpacked uri =
   withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> render uri) $ do
-    [hash] <- fmap T.lines $ withNixRemoteCheck $ readProcessAndLogOutput (Debug, Debug) $
+    [hash] <- fmap T.lines $ readProcessAndLogOutput (Debug, Debug) $
       proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , T.unpack $ render uri]
     pure hash
 
 nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
   withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> render uri <> " at " <> rev) $ do
-    out <- withNixRemoteCheck $ readProcessAndLogStderr Debug $
+    out <- readProcessAndLogStderr Debug $
       proc "nix-prefetch-git" $ filter (/="")
         [ "--url", T.unpack $ render uri
         , "--rev", T.unpack rev
@@ -751,7 +750,7 @@ uriThunkPtr uri mbranch = do
         Left e -> do
           putLog Warning $ "\
 \Failed to fetch archive from GitHub. This is probably a private repo. \
-\Falling back on normal fetchgit. Original failure:\n\n"
+\Falling back on normal fetchgit. Original failure:"
           errorToWarning e
           let s' = forgetGithub True s
           (,) (ThunkSource_Git s') <$> gitThunkRev s' commit

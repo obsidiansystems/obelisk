@@ -64,22 +64,8 @@ tshow :: Show a => a -> Text
 tshow = T.pack . show
 
 -- | Like `shelly` but used when running `ob` commands
---
--- This tests the NIX_REMOTE workaround, whether that gets printed
--- on failure, and whether retrying with the suggested workaround
--- leads to the test succeeding.
 shellyOb :: MonadIO m => (Sh a -> Sh a) -> Sh a -> m a
-shellyOb f obTest = shelly $ f $ do
-  obTest `catch_sh` \(e :: RunFailed) -> do
-    obStderr <- lastStderr
-    if T.isInfixOf "export NIX_REMOTE" obStderr
-      then do
-      runCli $ do
-        putLog Notice "Detected NIX_REMOTE suggestion in stderr of failed ob"
-        putLog Warning "Retrying this test with NIX_REMOTE=daemon"
-      setenv "NIX_REMOTE" "daemon"
-      f obTest
-      else throw e
+shellyOb f obTest = shelly $ f obTest
 
 main :: IO ()
 main = do
