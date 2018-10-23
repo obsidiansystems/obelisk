@@ -750,7 +750,7 @@ uriThunkPtr uri mbranch = do
         Left e -> do
           putLog Warning $ "\
 \Failed to fetch archive from GitHub. This is probably a private repo. \
-\Falling back on normal fetchgit. Original failure:\n\n"
+\Falling back on normal fetchgit. Original failure:"
           errorToWarning e
           let s' = forgetGithub True s
           (,) (ThunkSource_Git s') <$> gitThunkRev s' commit
