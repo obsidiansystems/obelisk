@@ -274,7 +274,7 @@ The previous section would have generated a debug version of the app. In order t
 First, if you do not already have a keystore, create it as follows (for more information, see the [Android documentation](https://developer.android.com/studio/publish/app-signing#signing-manually)):
 
 ```
-nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
+nix-shell -E "let pkgs = import <nixpkgs> {}; in pkgs.mkShell { buildInputs = [ pkgs.jdk9 ]; }" --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
 ```
 
 (Be sure to give an appropriate keystore filename and key alias string above.)
