@@ -68,7 +68,6 @@ deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail en
     writeDeployConfig deployDir "enable_https" $ show enableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
     writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
-    writeDeployConfig deployDir "version" $ show $ _thunkRev_commit $ _thunkPtr_rev thunkPtr
   withSpinner "Creating source thunk (./src)" $ liftIO $ do
     createThunk (deployDir </> "src") thunkPtr
     setupObeliskImpl deployDir
