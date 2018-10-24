@@ -11,6 +11,7 @@ import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, tr
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits
 import Data.Default
+import Data.List (isSuffixOf)
 import qualified Data.Map as Map
 import Data.Maybe
 import qualified Data.Text as T
@@ -19,7 +20,7 @@ import System.Directory
 import System.Environment (getEnvironment)
 import System.FilePath
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc)
+import System.Process (delegate_ctlc, env, proc, readCreateProcess, cwd)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
@@ -156,8 +157,44 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
+  when (platform == "android") $ do
+    let keystorePath = root </> "android_keystore.jks"
+    hasKeystore <- liftIO $ doesFileExist keystorePath
+    when (not hasKeystore) $ do
+      -- TODO log instructions for how to modify the keystore
+      putLog Notice $ "Creating keystore: " <> T.pack keystorePath
+      createKeystore root $ KeytoolConfig
+        { _keytoolConfig_keystore = keystorePath
+        , _keytoolConfig_alias = "obelisk"
+        , _keytoolConfig_storepass = "obelisk"
+        , _keytoolConfig_dname = "CN=mqttserver.ibm.com, OU=ID, O=IBM, L=Hursley, S=Hants, C=GB" -- TODO Read these from config?
+        }
   result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
+
+data KeytoolConfig = KeytoolConfig
+  { _keytoolConfig_keystore :: FilePath
+  , _keytoolConfig_alias :: String
+  , _keytoolConfig_storepass :: String
+  , _keytoolConfig_dname :: String
+  } deriving (Show)
+
+createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
+createKeystore root config = do
+  let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
+  callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
+  where
+    keytoolCmd = unwords $ "keytool" :
+      [ "-genkeypair -noprompt"
+      , "-keystore", _keytoolConfig_keystore config
+      , "-keyalg RSA -keysize 2048 -validity 10000"
+      , "-storetype pkcs12"
+      , "-storepass", _keytoolConfig_storepass config
+      , "-alias", _keytoolConfig_alias config
+      , "-dname ", quote $ _keytoolConfig_dname config
+      ]
+    quote x = "\"" <> x <> "\""
+
 
 -- | Simplified deployment configuration mechanism. At one point we may revisit this.
 writeDeployConfig :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
