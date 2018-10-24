@@ -181,6 +181,14 @@ main = do
           assertRevEQ eu eupu
           assertRevNE e  eu
 
+        it "unpacks the correct branch" $ inTmp $ \dir -> do
+          let branch = "master"
+          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
+          run_ "ob" ["thunk", "pack", toTextIgnore dir]
+          run_ "ob" ["thunk", "unpack", toTextIgnore dir]
+          branch' <- run "git" ["rev-parse", "--abbrev-ref", "HEAD"]
+          liftIO $ assertEqual "" branch (T.strip branch')
+
         it "can pack and unpack plain git repos" $ do
           shelly_ $ withSystemTempDirectory "git-repo" $ \dir -> do
             let repo = toTextIgnore $ dir </> ("repo" :: String)
