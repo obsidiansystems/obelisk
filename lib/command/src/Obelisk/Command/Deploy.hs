@@ -19,7 +19,7 @@ import System.Directory
 import System.Environment (getEnvironment)
 import System.FilePath
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc)
+import System.Process (delegate_ctlc, env, proc, readCreateProcess)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
@@ -161,6 +161,22 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
+  when (platform == "android") $ do
+    let signKeyDir = root </> "config/android"
+    -- check to see if config/android/...jks exist
+    androidDirExist <- liftIO $ doesDirectoryExist srcDir
+    -- if it doesn't, create the directory and...
+    liftIO $ createDirectoryIfMissing (not androidDirExist) signKeyDir
+    liftIO $ print $ "starting keytool..."
+    -- TODO: ... run keytool command if there isn't a file (what should the name of the file be?) located at config/android
+    res <- liftIO $ readCreateProcess (proc "nix-shell"
+      [ ".obelisk/impl/default.nix"
+      , "-A"
+      , "nixpkgs.jdk"
+      , "--run"
+      , "\"keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias\""
+      ]) ""
+    liftIO $ print res
   result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
 
