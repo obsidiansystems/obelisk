@@ -17,7 +17,6 @@ library
                  obelisk-executable-config-inject,
                  obelisk-frontend,
                  obelisk-route,
-                 obelisk-snap,
                  reflex-dom,
                  snap,
                  snap-server,
