@@ -18,20 +18,14 @@ module Obelisk.Command.Nix
   , strArg
   ) where
 
---import Control.Monad.Catch (catch, throwM)
-import Control.Lens
-import Control.Monad.Except (ExceptT, runExceptT, throwError)
-import Control.Monad.IO.Class (liftIO)
 import Data.Bool (bool)
 import Data.Default
 import Data.List (intercalate)
 import Data.Monoid ((<>))
 import qualified Data.Text as T
-import System.Directory
-import System.Environment
 import System.Process (proc)
 
-import Obelisk.App (MonadInfallibleObelisk, MonadObelisk, ObeliskError (..))
+import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 
 -- | Where to put nix-build output
