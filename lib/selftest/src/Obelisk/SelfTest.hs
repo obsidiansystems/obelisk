@@ -64,22 +64,8 @@ tshow :: Show a => a -> Text
 tshow = T.pack . show
 
 -- | Like `shelly` but used when running `ob` commands
---
--- This tests the NIX_REMOTE workaround, whether that gets printed
--- on failure, and whether retrying with the suggested workaround
--- leads to the test succeeding.
 shellyOb :: MonadIO m => (Sh a -> Sh a) -> Sh a -> m a
-shellyOb f obTest = shelly $ f $ do
-  obTest `catch_sh` \(e :: RunFailed) -> do
-    obStderr <- lastStderr
-    if T.isInfixOf "export NIX_REMOTE" obStderr
-      then do
-      runCli $ do
-        putLog Notice "Detected NIX_REMOTE suggestion in stderr of failed ob"
-        putLog Warning "Retrying this test with NIX_REMOTE=daemon"
-      setenv "NIX_REMOTE" "daemon"
-      f obTest
-      else throw e
+shellyOb f obTest = shelly $ f obTest
 
 main :: IO ()
 main = do
@@ -90,15 +76,21 @@ main = do
   let verbosity = bool silently verbosely isVerbose
   obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
-  withSystemTempDirectory "blank-project" $ \blankProject ->
-    hspec $ do
+  [p0, p1, p2, p3] <- liftIO $ getFreePorts 4
+  withSystemTempDirectory "initCache" $ \initCache -> do
+    -- Setup the ob init cache
+    void . shellyOb verbosity $ chdir (fromString initCache) $ do
+      run_ "ob" ["init"]
+      run_ "git" ["init"]
+    hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
-          inProj :: Sh a -> IO ()
-          inProj = shelly_ . chdir (fromString blankProject)
-
           inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
-          inTmp f = shelly_ . withSystemTempDirectory "ob-init" $ (chdir <*> f) . fromString
+          inTmp f = shelly_ . withSystemTempDirectory "test" $ (chdir <*> f) . fromString
+
+          inTmpObInit f = inTmp $ \dir -> do
+            run_ "cp" ["-a", fromString $ initCache <> "/.", toTextIgnore dir]
+            f dir
 
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
           assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
@@ -117,7 +109,7 @@ main = do
 
           diff a b = run "git" ["diff", a, b]
 
-      describe "ob init" $ do
+      describe "ob init" $ parallel $ do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
@@ -132,17 +124,16 @@ main = do
           void $ errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
-        it "produces a valid route config" $ inTmp $ \tmp -> do
-          run_ "ob" ["init"]
+        it "produces a valid route config" $ inTmpObInit $ \tmp -> do
           liftIO $ withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ getConfigRoute `shouldNotReturn` Nothing
 
-      describe "ob run" $ do
-        it "works in root directory" $ inTmp $ \_ -> do
-          run_ "ob" ["init"]
-          testObRunInDir Nothing httpManager
-        it "works in sub directory" $ inTmp $ \_ -> do
-          run_ "ob" ["init"]
-          testObRunInDir (Just "frontend") httpManager
+      -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
+      -- when not run by 'nix-build --attr selftest'
+      describe "ob run" $ parallel $ do
+        it "works in root directory" $ inTmpObInit $ \_ -> do
+          testObRunInDir p0 p1 Nothing httpManager
+        it "works in sub directory" $ inTmpObInit $ \_ -> do
+          testObRunInDir p2 p3 (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
         it "can build obelisk command"  $ shelly_ $ run "nix-build" ["-A", "command" , obeliskImpl]
@@ -151,38 +142,35 @@ main = do
         -- See https://github.com/obsidiansystems/obelisk/issues/101
         -- it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
 
-      describe "blank initialized project" $ do
-        it "can be created" $ inProj $ do
-          run_ "ob" ["init"]
-          run_ "git" ["init"]
-          commitAll
+      describe "blank initialized project" $ parallel $ do
 
-        it "can build ghc.backend" $ inProj $ do
+        it "can build ghc.backend" $ inTmpObInit $ \_ -> do
           run "nix-build" ["--no-out-link", "-A", "ghc.backend"]
-        it "can build ghcjs.frontend" $ inProj $ do
+        it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> do
           run "nix-build" ["--no-out-link", "-A", "ghcjs.frontend"]
 
         if os == "darwin"
-          then it "can build ios"     $ inProj $ run "nix-build" ["--no-out-link", "-A", "ios.frontend"    ]
-          else it "can build android" $ inProj $ run "nix-build" ["--no-out-link", "-A", "android.frontend"]
+          then it "can build ios"     $ inTmpObInit $ \_ -> run "nix-build" ["--no-out-link", "-A", "ios.frontend"    ]
+          else it "can build android" $ inTmpObInit $ \_ -> run "nix-build" ["--no-out-link", "-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
             shell = "shells." <> compiler
             inShell cmd' = run "nix-shell" ["-A", fromString shell, "--run", cmd']
-          it ("can enter "    <> shell) $ inProj $ inShell "exit"
-          it ("can build in " <> shell) $ inProj $ inShell $ "cabal new-build --" <> fromString compiler <> " all"
+          it ("can enter "    <> shell) $ inTmpObInit $ \_ -> inShell "exit"
+          it ("can build in " <> shell) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
-        it "can build reflex project" $ inProj $ do
+        it "can build reflex project" $ inTmpObInit $ \_ -> do
           run "nix-build" []
 
-        it "has idempotent thunk update" $ inProj $ do
+        it "has idempotent thunk update" $ inTmpObInit $ \_ -> do
           u  <- update
           uu <- update
           assertRevEQ u uu
 
-      describe "ob thunk pack/unpack" $ do
-        it "has thunk pack and unpack inverses" $ inProj $ do
+      describe "ob thunk pack/unpack" $ parallel $ do
+        it "has thunk pack and unpack inverses" $ inTmpObInit $ \_ -> do
+
           e    <- commitAll
           eu   <- unpack
           eup  <- pack
@@ -192,6 +180,14 @@ main = do
           assertRevEQ e  eup
           assertRevEQ eu eupu
           assertRevNE e  eu
+
+        it "unpacks the correct branch" $ inTmp $ \dir -> do
+          let branch = "master"
+          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
+          run_ "ob" ["thunk", "pack", toTextIgnore dir]
+          run_ "ob" ["thunk", "unpack", toTextIgnore dir]
+          branch' <- run "git" ["rev-parse", "--abbrev-ref", "HEAD"]
+          liftIO $ assertEqual "" branch (T.strip branch')
 
         it "can pack and unpack plain git repos" $ do
           shelly_ $ withSystemTempDirectory "git-repo" $ \dir -> do
@@ -211,19 +207,18 @@ main = do
 
             testThunkPack $ fromText repo
 
-        it "aborts thunk pack when there are uncommitted files" $ inProj $ do
+        it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
           void $ unpack
-          testThunkPack (blankProject </> thunk)
+          testThunkPack (dir </> thunk)
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
-testObRunInDir :: Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
-testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
+testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
-  writefile "config/common/route" . uri =<< liftIO getFreePort -- Use a free port initially
+  writefile "config/common/route" $ uri p0
   maybe id chdir mdir $ runHandle "ob" ["run"] $ \stdout -> do
-    freePort <- liftIO getFreePort
     firstUri <- handleObRunStdout httpManager stdout
-    let newUri = uri freePort
+    let newUri = uri p1
     when (firstUri == newUri) $ errorExit $
       "Startup URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
     maybe id (\_ -> chdir "..") mdir $ alterRouteTo newUri stdout
@@ -248,7 +243,7 @@ testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $
   ensureThunkPackFails "unsaved"
   chdir path' $ commit "test commit"
   -- Non-pushed commits in any branch
-  ensureThunkPackFails "not been pushed"
+  ensureThunkPackFails "not yet pushed"
   -- Uncommitted files (unstaged)
   liftIO $ T.hPutStrLn handle "test file" >> hClose handle
   ensureThunkPackFails "modified"
@@ -275,12 +270,12 @@ alterRouteTo uri stdout = do
 
 -- | Handle stdout of `ob run`: check that the frontend and backend servers are started correctly
 handleObRunStdout :: HTTP.Manager -> Handle -> Sh Text
-handleObRunStdout httpManager stdout = flip fix ObRunState_Init $ \loop state -> do
+handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (state, msgs) -> do
   liftIO (T.hGetLine stdout) >>= \t -> case state of
     ObRunState_Init
-      | "Running test..." `T.isPrefixOf` t -> loop ObRunState_BackendStarted
+      | "Running test..." `T.isPrefixOf` t -> loop (ObRunState_BackendStarted, msgs)
     ObRunState_Startup
-      | t == "backend stopped; make a change to your code to reload" -> loop ObRunState_Startup
+      | t == "backend stopped; make a change to your code to reload" -> loop (ObRunState_Startup, msgs)
       -- | Just port <- "Backend running on port " `T.stripPrefix` t -> loop $ ObRunState_BackendStarted port
       | not (T.null t) -> errorExit $ "Startup: " <> t -- If theres any other output here, startup failed
     ObRunState_BackendStarted
@@ -288,7 +283,8 @@ handleObRunStdout httpManager stdout = flip fix ObRunState_Init $ \loop state ->
         obRunCheck httpManager stdout uri
         pure uri
       | not (T.null t) -> errorExit $ "Started: " <> t -- If theres any other output here, startup failed
-    _ -> loop state
+    _ | "Failed" `T.isPrefixOf` t -> errorExit $ "ob run failed: " <> T.unlines (reverse $ t : msgs)
+      | otherwise -> loop (state, t : msgs)
 
 -- | Make requests to frontend/backend servers to check they are working properly
 obRunCheck :: HTTP.Manager -> Handle -> Text -> Sh ()
@@ -297,10 +293,11 @@ obRunCheck httpManager _stdout frontendUri = do
   req frontendUri >>= \r -> when (HTTP.responseStatus r /= HTTP.ok200) $ errorExit $
     "Request to frontend server failed: " <> T.pack (show r)
 
-getFreePort :: IO Socket.PortNumber
-getFreePort = Socket.withSocketsDo $ do
+getFreePorts :: Int -> IO [Socket.PortNumber]
+getFreePorts 0 = pure []
+getFreePorts n = Socket.withSocketsDo $ do
   addr:_ <- Socket.getAddrInfo (Just Socket.defaultHints) (Just "127.0.0.1") (Just "0")
-  bracket (open addr) Socket.close Socket.socketPort
+  bracket (open addr) Socket.close $ \s -> (:) <$> Socket.socketPort s <*> getFreePorts (n - 1)
   where
     open addr = do
       sock <- Socket.socket (Socket.addrFamily addr) (Socket.addrSocketType addr) (Socket.addrProtocol addr)
