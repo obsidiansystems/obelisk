@@ -11,6 +11,7 @@ import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, tr
 import Control.Monad.IO.Class (liftIO)
 import Data.Bits
 import Data.Default
+import Data.List (isSuffixOf)
 import qualified Data.Map as Map
 import Data.Maybe
 import qualified Data.Text as T
@@ -168,15 +169,20 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     -- if it doesn't, create the directory and...
     liftIO $ createDirectoryIfMissing (not androidDirExist) signKeyDir
     liftIO $ print $ "starting keytool..."
-    -- TODO: ... run keytool command if there isn't a file (what should the name of the file be?) located at config/android
-    res <- liftIO $ readCreateProcess (proc "nix-shell"
-      [ ".obelisk/impl/default.nix"
-      , "-A"
-      , "nixpkgs.jdk"
-      , "--run"
-      , "\"keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias\""
-      ]) ""
-    liftIO $ print res
+    -- ... run keytool command if there isn't a file (what should the name of the file be?) located at config/android
+    searchResults <- liftIO $ findFileWith (\fp -> return $ isSuffixOf ".jks" fp) [signKeyDir] "signKey"
+    case searchResults of
+      Nothing -> do
+        let impl = toImplDir "."
+        res <- liftIO $ readCreateProcess (proc "nix-shell"
+          [ impl
+          , "-A"
+          , "nixpkgs.jdk"
+          , "--run"
+          , "\"keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias\""
+          ]) ""
+        liftIO $ print res
+      _ -> return ()
   result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
 
