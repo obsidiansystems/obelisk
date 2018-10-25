@@ -661,7 +661,7 @@ getThunkPtr' checkClean thunkDir = do
     let untrackedBranches = Map.keys errorMap
     when (not $ L.null untrackedBranches) $ failWith $ T.unlines $
       [ "thunk pack: Certain branches in the thunk have no upstream branch \
-        \set. This means don't know to check whether all your work is \
+        \set. This means we don't know to check whether all your work is \
         \saved. The offending branches are:"
       , ""
       , T.unwords untrackedBranches
