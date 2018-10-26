@@ -156,7 +156,7 @@ ob deploy push
 
 `ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. The backend will live in `/var/lib/backend`.
 
-At this point you are done. Your app will be accessible at `${ROUTE}`.
+At this point you are done. Your app will be accessible at `${ROUTE}`. The currently deployed version - the git commit hash of the source repo - can be found at `${ROUTE}/version`.
 
 ### From macOS
 
