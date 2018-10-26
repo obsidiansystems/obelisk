@@ -338,10 +338,11 @@ in rec {
         (projectOut sys).passthru.__closureCompilerOptimizationLevel
         version;
       linuxExe = serverOn "x86_64-linux";
+      dummyVersion = "Version number is only available for deployments";
     in projectOut system // {
       linuxExeConfigurable = linuxExe;
-      linuxExe = linuxExe (base + "/config");
-      exe = serverOn system (base + "/config");
+      linuxExe = linuxExe (base + "/config") dummyVersion;
+      exe = serverOn system (base + "/config") dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, config, version }: let
         injectableConfig = builtins.filterSource (path: _: !(lib.hasPrefix (toString config + "/backend") (toString path))) config;
       in server (args // { exe = linuxExe injectableConfig version; });
