@@ -23,7 +23,6 @@ let
     "obelisk-run"
     "obelisk-route"
     "obelisk-selftest"
-    "obelisk-snap"
     "obelisk-snap-extras"
   ];
 

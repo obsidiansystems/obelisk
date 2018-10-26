@@ -180,6 +180,7 @@ verifyHostKey knownHostsPath keyPath hostName =
   callProcessAndLogOutput (Notice, Warning) $ proc "ssh" $
     sshArgs knownHostsPath keyPath True <>
       [ "root@" <> hostName
+      , "-o", "NumberOfPasswordPrompts=0"
       , "exit"
       ]
 
