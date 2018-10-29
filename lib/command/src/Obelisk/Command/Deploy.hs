@@ -20,7 +20,7 @@ import System.Directory
 import System.Environment (getEnvironment)
 import System.FilePath
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc, readCreateProcess)
+import System.Process (delegate_ctlc, env, proc, readCreateProcess, cwd)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
@@ -163,13 +163,13 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
   when (platform == "android") $ do
-    let signKeyDir = root </> "config/android"
+    let signKeyDir = root </> "backend"
     -- check to see if config/android/...jks exist
     androidDirExist <- liftIO $ doesDirectoryExist srcDir
     -- if it doesn't, create the directory and...
-    liftIO $ createDirectoryIfMissing (not androidDirExist) signKeyDir
-    liftIO $ print $ ("Enter desired APK key filename:" :: String)
-    keyFilename <- liftIO getLine
+    -- liftIO $ createDirectoryIfMissing (not androidDirExist) signKeyDir
+    -- liftIO $ print $ ("Enter desired APK key filename:" :: String)
+    -- keyFilename <- liftIO getLine
     liftIO $ print $ ("Enter desired APK key alias:" :: String)
     alias <- liftIO getLine
     liftIO $ print $ ("starting keytool..." :: String)
@@ -181,10 +181,10 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
         let impl = toImplDir "."
         callProcessAndLogOutput (Notice,Notice) (proc "nix-shell"
           [ "-E"
-          , ("with (import " <> impl <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }")
+          , "with (import " <> impl <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
           , "--run"
-          , ("keytool -genkey -v -keystore " <> keyFilename <>".jks -keyalg RSA -keysize 2048 -validity 10000 -alias " <> alias) 
-          ])
+          , "keytool -genkey -v -keystore " <> (signKeyDir </> "obeliskkeystore.jks") <> " -keyalg RSA -keysize 2048 -validity 10000 -alias " <> alias
+          ]) { cwd = Just root }
       _ -> return ()
   result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
