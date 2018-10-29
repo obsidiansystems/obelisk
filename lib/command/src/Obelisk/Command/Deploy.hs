@@ -174,9 +174,9 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     case searchResults of
       Nothing -> do
         let impl = toImplDir "."
-        res <- liftIO $ readCreateProcess (proc "nix-shell" $ mconcat
-          [ ["-E"]
-          ,  [ "with (import "
+        res <- liftIO $ readCreateProcess (proc "nix-shell"
+          [ "-E"
+          ,  mconcat [ "with (import "
              , impl
              , ").reflex-platform.nixpkgs;"
              , "pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
