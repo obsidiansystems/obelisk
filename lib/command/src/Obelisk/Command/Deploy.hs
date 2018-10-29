@@ -168,9 +168,14 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     androidDirExist <- liftIO $ doesDirectoryExist srcDir
     -- if it doesn't, create the directory and...
     liftIO $ createDirectoryIfMissing (not androidDirExist) signKeyDir
-    liftIO $ print $ "starting keytool..."
+    liftIO $ print $ ("Enter desired APK key filename:" :: String)
+    keyFilename <- liftIO getLine
+    liftIO $ print $ ("Enter desired APK key alias:" :: String)
+    alias <- liftIO getLine
+    liftIO $ print $ ("starting keytool..." :: String)
     -- ... run keytool command if there isn't a file (what should the name of the file be?) located at config/android
     searchResults <- liftIO $ findFileWith (\fp -> return $ isSuffixOf ".jks" fp) [signKeyDir] "signKey"
+    -- TODO: How do I allow user to use prompts within keytool?
     case searchResults of
       Nothing -> do
         let impl = toImplDir "."
@@ -178,7 +183,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
           [ "-E"
           , ("with (import " <> impl <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }")
           , "--run"
-          , "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
+          , ("keytool -genkey -v -keystore " <> keyFilename <>".jks -keyalg RSA -keysize 2048 -validity 10000 -alias " <> alias) 
           ]) ""
         liftIO $ print res
       _ -> return ()
