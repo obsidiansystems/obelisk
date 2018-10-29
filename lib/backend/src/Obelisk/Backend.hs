@@ -16,6 +16,7 @@ module Obelisk.Backend
   , serveDefaultObeliskApp
   , prettifyOutput
   , runBackend
+  , staticRenderContentType
   ) where
 
 import Prelude hiding (id, (.))
@@ -38,8 +39,8 @@ import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.Frontend
 import Obelisk.Route
 import Reflex.Dom
-import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, rqPathInfo,
-             rqQueryString, writeBS, writeText)
+import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, modifyResponse
+            , rqPathInfo, rqQueryString, setContentType, writeBS, writeText)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
@@ -132,10 +133,14 @@ data GhcjsAppRoute :: (* -> *) -> * -> * where
   GhcjsAppRoute_App :: appRouteComponent a -> GhcjsAppRoute appRouteComponent a
   GhcjsAppRoute_Resource :: GhcjsAppRoute appRouteComponent [Text]
 
+staticRenderContentType :: ByteString
+staticRenderContentType = "text/html; charset=utf-8"
+
 --TODO: Don't assume we're being served at "/"
 serveGhcjsApp :: MonadSnap m => GhcjsApp (R appRouteComponent) -> R (GhcjsAppRoute appRouteComponent) -> m ()
 serveGhcjsApp app = \case
-  GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest ->
+  GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest -> do
+    modifyResponse $ setContentType staticRenderContentType
     writeBS <=< liftIO $ renderGhcjsFrontend (appRouteComponent :/ appRouteRest) $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 

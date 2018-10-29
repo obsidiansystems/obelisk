@@ -143,7 +143,7 @@ obeliskApp opts frontend validFullEncoder uri backend = do
           }
       InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
         html <- renderJsaddleFrontend (appRouteComponent :/ appRouteRest) frontend
-        sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/html")] $ BSLC.fromStrict html
+        sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
       _ -> backend req sendResponse
 
 renderJsaddleFrontend :: route -> Frontend route -> IO ByteString
