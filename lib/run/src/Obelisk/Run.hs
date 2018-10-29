@@ -82,7 +82,8 @@ run port serveStaticAsset backend frontend = do
             getRouteWith validFullEncoder >>= \case
               Identity r -> case r of
                 InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-                InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp serveStaticAsset frontend $ obeliskRoute :/ a
+                InR obeliskRoute :=> Identity a ->
+                  serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend $ obeliskRoute :/ a
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf frontend validFullEncoder `finally` killThread backendTid
 
@@ -142,14 +143,14 @@ obeliskApp opts frontend validFullEncoder uri backend = do
           { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
       InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
-        html <- renderJsaddleFrontend (appRouteComponent :/ appRouteRest) frontend
+        html <- renderJsaddleFrontend (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
       _ -> backend req sendResponse
 
-renderJsaddleFrontend :: route -> Frontend route -> IO ByteString
-renderJsaddleFrontend r f =
+renderJsaddleFrontend :: (route -> Text) -> route -> Frontend route -> IO ByteString
+renderJsaddleFrontend urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
-  in renderFrontendHtml r (_frontend_head f >> injectExecutableConfigs) (_frontend_body f >> jsaddleScript)
+  in renderFrontendHtml urlEnc r (_frontend_head f >> injectExecutableConfigs) (_frontend_body f >> jsaddleScript)
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
