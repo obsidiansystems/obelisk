@@ -179,13 +179,12 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     case searchResults of
       Nothing -> do
         let impl = toImplDir "."
-        res <- liftIO $ readCreateProcess (proc "nix-shell"
+        callProcessAndLogOutput (Notice,Notice) (proc "nix-shell"
           [ "-E"
           , ("with (import " <> impl <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }")
           , "--run"
           , ("keytool -genkey -v -keystore " <> keyFilename <>".jks -keyalg RSA -keysize 2048 -validity 10000 -alias " <> alias) 
-          ]) ""
-        liftIO $ print res
+          ])
       _ -> return ()
   result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
