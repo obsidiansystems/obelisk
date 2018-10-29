@@ -423,6 +423,8 @@ runRouteViewT routeEncoder a = do
           setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
 
+-- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
+-- contexts, this widget falls back to using @href@s to control navigation
 routeLink
   :: forall t m a route.
      ( DomBuilder t m
