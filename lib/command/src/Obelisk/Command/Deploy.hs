@@ -174,12 +174,15 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     case searchResults of
       Nothing -> do
         let impl = toImplDir "."
-        res <- liftIO $ readCreateProcess (proc "nix-shell"
-          [ impl
-          , "-A"
-          , "nixpkgs.jdk"
-          , "--run"
-          , "\"keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias\""
+        res <- liftIO $ readCreateProcess (proc "nix-shell" $ mconcat
+          [ ["-E"]
+          ,  [ "with (import "
+             , impl
+             , ").reflex-platform.nixpkgs;"
+             , "pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
+             , "--run"
+             , "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
+             ]
           ]) ""
         liftIO $ print res
       _ -> return ()
