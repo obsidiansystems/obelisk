@@ -61,7 +61,6 @@ let
         obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
         obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
-        obelisk-snap = self.callCabal2nix "obelisk-snap" (cleanSource ./lib/snap) {};
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
       })
 
@@ -135,7 +134,7 @@ in rec {
 
     PATH="${command}/bin:$PATH"
     export OBELISK_IMPL="${hackGet ./.}"
-    "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" "$@"
+    "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
   '';
   #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
   skeleton = pkgs.runCommand "skeleton" {

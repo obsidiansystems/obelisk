@@ -563,8 +563,16 @@ finalMsg noTrail s = if noTrail then Nothing else Just s
 unpackThunk :: MonadObelisk m => FilePath -> m ()
 unpackThunk = unpackThunk' False
 
+-- | Check that we are not somewhere inside the thunk directory
+checkThunkDirectory :: MonadObelisk m => FilePath -> m ()
+checkThunkDirectory thunkDir = do
+  currentDir <- liftIO getCurrentDirectory
+  thunkDir' <- liftIO $ canonicalizePath thunkDir
+  when (thunkDir' `L.isInfixOf` currentDir) $
+    failWith "Can't pack/unpack from within the thunk directory"
+
 unpackThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
-unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
+unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ "thunk unpack: " <> T.pack (show err)
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right (ThunkData_Checkout _) -> failWith "thunk unpack: thunk is already unpacked"
@@ -601,7 +609,7 @@ packThunk :: MonadObelisk m => FilePath -> m ()
 packThunk = packThunk' False
 
 packThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
-packThunk' noTrail thunkDir = readThunk thunkDir >>= \case
+packThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
@@ -661,7 +669,7 @@ getThunkPtr' checkClean thunkDir = do
     let untrackedBranches = Map.keys errorMap
     when (not $ L.null untrackedBranches) $ failWith $ T.unlines $
       [ "thunk pack: Certain branches in the thunk have no upstream branch \
-        \set. This means don't know to check whether all your work is \
+        \set. This means we don't know to check whether all your work is \
         \saved. The offending branches are:"
       , ""
       , T.unwords untrackedBranches
