@@ -86,7 +86,9 @@ main = do
       let shelly_ = void . shellyOb verbosity
 
           inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
-          inTmp f = shelly_ . withSystemTempDirectory "test" $ (chdir <*> f) . fromString
+          inTmp f = withTmp (chdir <*> f)
+
+          withTmp f = shelly_ . withSystemTempDirectory "test" $ f . fromString
 
           inTmpObInit f = inTmp $ \dir -> do
             run_ "cp" ["-a", fromString $ initCache <> "/.", toTextIgnore dir]
@@ -181,12 +183,12 @@ main = do
           assertRevEQ eu eupu
           assertRevNE e  eu
 
-        it "unpacks the correct branch" $ inTmp $ \dir -> do
+        it "unpacks the correct branch" $ withTmp $ \dir -> do
           let branch = "master"
           run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
           run_ "ob" ["thunk", "pack", toTextIgnore dir]
           run_ "ob" ["thunk", "unpack", toTextIgnore dir]
-          branch' <- run "git" ["rev-parse", "--abbrev-ref", "HEAD"]
+          branch' <- chdir dir $ run "git" ["rev-parse", "--abbrev-ref", "HEAD"]
           liftIO $ assertEqual "" branch (T.strip branch')
 
         it "can pack and unpack plain git repos" $ do
