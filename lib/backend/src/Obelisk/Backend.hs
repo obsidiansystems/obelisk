@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Backend
   ( Backend (..)
@@ -16,6 +17,8 @@ module Obelisk.Backend
   , serveDefaultObeliskApp
   , prettifyOutput
   , runBackend
+  , staticRenderContentType
+  , mkRouteToUrl
   ) where
 
 import Prelude hiding (id, (.))
@@ -39,8 +42,8 @@ import Obelisk.Frontend
 import Obelisk.Route
 import Obelisk.Snap.Extras (doNotCache, serveFileIfExistsAs)
 import Reflex.Dom
-import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, rqPathInfo,
-             rqQueryString, writeBS, writeText)
+import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, modifyResponse
+            , rqPathInfo, rqQueryString, setContentType, writeBS, writeText)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
@@ -57,8 +60,8 @@ data GhcjsApp route = GhcjsApp
 
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
-serveDefaultObeliskApp :: MonadSnap m => ([Text] -> m ()) -> Frontend (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
-serveDefaultObeliskApp serveStaticAsset frontend = serveObeliskApp serveStaticAsset frontendApp
+serveDefaultObeliskApp :: MonadSnap m => (R appRoute -> Text) -> ([Text] -> m ()) -> Frontend (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
+serveDefaultObeliskApp urlEnc serveStaticAsset frontend = serveObeliskApp urlEnc serveStaticAsset frontendApp
   where frontendApp = GhcjsApp
           { _ghcjsApp_compiled = defaultFrontendGhcjsAssets
           , _ghcjsApp_value = frontend
@@ -109,12 +112,12 @@ getRouteWith e = do
   pageName <- getPageName
   return $ tryDecode e pageName
 
-serveObeliskApp :: MonadSnap m => ([Text] -> m ()) -> GhcjsApp (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
-serveObeliskApp serveStaticAsset frontendApp = \case
-  ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> serveGhcjsApp frontendApp $ GhcjsAppRoute_App appRouteComponent :/ appRouteRest
+serveObeliskApp :: MonadSnap m => (R appRoute -> Text) -> ([Text] -> m ()) -> GhcjsApp (R appRoute) -> R (ObeliskRoute appRoute) -> m ()
+serveObeliskApp urlEnc serveStaticAsset frontendApp = \case
+  ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> serveGhcjsApp urlEnc frontendApp $ GhcjsAppRoute_App appRouteComponent :/ appRouteRest
   ObeliskRoute_Resource resComponent :=> Identity resRest -> case resComponent :=> Identity resRest of
     ResourceRoute_Static :=> Identity pathSegments -> serveStaticAsset pathSegments
-    ResourceRoute_Ghcjs :=> Identity pathSegments -> serveGhcjsApp frontendApp $ GhcjsAppRoute_Resource :/ pathSegments
+    ResourceRoute_Ghcjs :=> Identity pathSegments -> serveGhcjsApp urlEnc frontendApp $ GhcjsAppRoute_Resource :/ pathSegments
     ResourceRoute_JSaddleWarp :=> Identity _ -> do
       let msg = "Error: Obelisk.Backend received jsaddle request"
       liftIO $ putStrLn $ T.unpack msg
@@ -134,11 +137,15 @@ data GhcjsAppRoute :: (* -> *) -> * -> * where
   GhcjsAppRoute_App :: appRouteComponent a -> GhcjsAppRoute appRouteComponent a
   GhcjsAppRoute_Resource :: GhcjsAppRoute appRouteComponent [Text]
 
+staticRenderContentType :: ByteString
+staticRenderContentType = "text/html; charset=utf-8"
+
 --TODO: Don't assume we're being served at "/"
-serveGhcjsApp :: MonadSnap m => GhcjsApp (R appRouteComponent) -> R (GhcjsAppRoute appRouteComponent) -> m ()
-serveGhcjsApp app = \case
-  GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest ->
-    writeBS <=< liftIO $ renderGhcjsFrontend (appRouteComponent :/ appRouteRest) $ _ghcjsApp_value app
+serveGhcjsApp :: MonadSnap m => (R appRouteComponent -> Text) -> GhcjsApp (R appRouteComponent) -> R (GhcjsAppRoute appRouteComponent) -> m ()
+serveGhcjsApp urlEnc app = \case
+  GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest -> do
+    modifyResponse $ setContentType staticRenderContentType
+    writeBS <=< liftIO $ renderGhcjsFrontend urlEnc (appRouteComponent :/ appRouteRest) $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
 runBackend :: Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
@@ -149,10 +156,17 @@ runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend 
       getRouteWith validFullEncoder >>= \case
         Identity r -> case r of
           InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-          InR obeliskRoute :=> Identity a -> serveDefaultObeliskApp (serveStaticAssets defaultStaticAssets) frontend $ obeliskRoute :/ a
+          InR obeliskRoute :=> Identity a ->
+            serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) (serveStaticAssets defaultStaticAssets) frontend $ obeliskRoute :/ a
 
-renderGhcjsFrontend :: route -> Frontend route -> IO ByteString
-renderGhcjsFrontend route f = do
+mkRouteToUrl :: Encoder Identity parse (R (Sum f (ObeliskRoute r))) PageName -> R r -> Text
+mkRouteToUrl validFullEncoder =
+  let pageNameEncoder' :: Encoder Identity (Either Text) PageName PathQuery = pageNameEncoder
+  in \(k :/ v) -> T.pack . uncurry (<>) . encode pageNameEncoder' . encode validFullEncoder $ (InR $ ObeliskRoute_App k) :/ v
+
+
+renderGhcjsFrontend :: MonadIO m => (route -> Text) -> route -> Frontend route -> m ByteString
+renderGhcjsFrontend urlEnc route f = do
   let baseTag  = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
       ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
-  renderFrontendHtml route (_frontend_head f >> injectExecutableConfigs >> baseTag) (_frontend_body f >> ghcjsScript)
+  liftIO $ renderFrontendHtml urlEnc route (_frontend_head f >> injectExecutableConfigs >> baseTag) (_frontend_body f >> ghcjsScript)
