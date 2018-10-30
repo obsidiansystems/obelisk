@@ -138,9 +138,9 @@ main = do
           testObRunInDir p2 p3 (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
-        it "can build obelisk command"  $ shelly_ $ run "nix-build" ["-A", "command" , obeliskImpl]
-        it "can build obelisk skeleton" $ shelly_ $ run "nix-build" ["-A", "skeleton", obeliskImpl]
-        it "can build obelisk shell"    $ shelly_ $ run "nix-build" ["-A", "shell",    obeliskImpl]
+        it "can build obelisk command"  $ inTmpObInit $ \_ -> run "nix-build" ["-A", "command" , obeliskImpl]
+        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> run "nix-build" ["-A", "skeleton", obeliskImpl]
+        it "can build obelisk shell"    $ inTmpObInit $ \_ -> run "nix-build" ["-A", "shell",    obeliskImpl]
         -- See https://github.com/obsidiansystems/obelisk/issues/101
         -- it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
 
