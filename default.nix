@@ -232,17 +232,16 @@ in rec {
     };
   };
 
-  serverExe = backend: frontend: assets: config: optimizationLevel:
+  serverExe = backend: frontend: assets: optimizationLevel:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
-      cp -r ${config} $out/config
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, config }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -328,15 +327,13 @@ in rec {
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles __closureCompilerOptimizationLevel; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: config: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend (projectOut sys).passthru.staticFiles config (projectOut sys).passthru.__closureCompilerOptimizationLevel;
+      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend (projectOut sys).passthru.staticFiles (projectOut sys).passthru.__closureCompilerOptimizationLevel;
       linuxExe = serverOn "x86_64-linux";
     in projectOut system // {
       linuxExeConfigurable = linuxExe;
-      linuxExe = linuxExe (base + "/config");
-      exe = serverOn system (base + "/config") ;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, config }: let
-        injectableConfig = builtins.filterSource (path: _: !(lib.hasPrefix (toString config + "/backend") (toString path))) config;
-      in server (args // { exe = linuxExe injectableConfig; });
+      linuxExe = linuxExe;
+      exe = serverOn system;
+      server = args@{ hostName, adminEmail, routeHost, enableHttps }: server (args // { exe = linuxExe; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {

@@ -101,7 +101,6 @@ deployPush deployPath getNixBuilders = do
             , strArg "adminEmail" adminEmail
             , strArg "routeHost" routeHost
             , boolArg "enableHttps" enableHttps
-            , rawArg "config" $ deployPath </> "config"
             ]
           , _nixBuildConfig_builders = builders
           }
@@ -127,6 +126,15 @@ deployPush deployPath getNixBuilders = do
             callProcess'
               (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
               "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+
+          withSpinner "Uploading config" $ do
+            callProcessAndLogOutput (Notice, Warning) $
+              proc "rsync"
+                [ "-e ssh " <> unwords sshOpts
+                , "-qarvz"
+                , deployPath </> "config"
+                , "root@" <> host <> ":/var/lib/backend"
+                ]
 
           withSpinner "Switching to new configuration" $ do
             callProcessAndLogOutput (Notice, Warning) $
