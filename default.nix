@@ -264,6 +264,12 @@ in rec {
                           , packages ? {}
                           , overrides ? _: _: {}
                           , staticFiles ? base + /static
+                          , staticFilesImpure ?
+                             if lib.isDerivation staticFiles
+                             then builtins.trace
+                               ("Define `staticFilesImpure` if you build our assets so you can manually rebuild without restarting `ob run`. Better solution forthcomming!")
+                               staticFiles
+                             else toString staticFiles
                           , tools ? _: []
                           , shellToolOverrides ? _: _: {}
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
@@ -273,7 +279,6 @@ in rec {
                   backendName = "backend";
                   commonName = "common";
                   staticName = "obelisk-generated-static";
-                  staticFilesImpure = if lib.isDerivation staticFiles then staticFiles else toString staticFiles;
                   processedStatic = processAssets { src = staticFiles; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = lib.filterAttrs (_: x: x != null) {
