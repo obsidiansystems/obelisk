@@ -41,6 +41,11 @@ module Obelisk.Route.Frontend
   , SetRoute(..)
   , runSetRouteT
   , mapSetRouteT
+  , RouteToUrl(..)
+  , RouteToUrlT(..)
+  , runRouteToUrlT
+  , mapRouteToUrlT
+  , routeLink
   ) where
 
 import Prelude hiding ((.), id)
@@ -61,6 +66,8 @@ import Data.Constraint (Dict (..))
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
+import Data.Proxy
+import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Functor.Compose
 import Reflex.Class
@@ -290,6 +297,85 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (SetRouteT t r m) where
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
+class RouteToUrl r m | m -> r where
+  askRouteToUrl :: m (r -> Text)
+
+newtype RouteToUrlT r m a = RouteToUrlT { unRouteToUrlT :: ReaderT (r -> Text) m a }
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+
+runRouteToUrlT
+  :: RouteToUrlT r m a
+  -> (r -> Text)
+  -> m a
+runRouteToUrlT a = runReaderT (unRouteToUrlT a)
+
+mapRouteToUrlT :: (forall x. m x -> n x) -> RouteToUrlT r m a -> RouteToUrlT r n a
+mapRouteToUrlT f (RouteToUrlT m) = RouteToUrlT $ mapReaderT f m
+
+instance Monad m => RouteToUrl r (RouteToUrlT r m) where
+  askRouteToUrl = RouteToUrlT ask
+
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (SetRouteT t r' m) where
+  askRouteToUrl = lift askRouteToUrl
+
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (RoutedT t r' m) where
+  askRouteToUrl = lift askRouteToUrl
+
+instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
+  type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
+  askJSContext = lift askJSContext
+
+instance Prerender js m => Prerender js (RouteToUrlT r m) where
+  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+
+instance Requester t m => Requester t (RouteToUrlT r m) where
+  type Request (RouteToUrlT r m) = Request m
+  type Response (RouteToUrlT r m) = Response m
+  requesting = RouteToUrlT . requesting
+  requesting_ = RouteToUrlT . requesting_
+
+#ifndef ghcjs_HOST_OS
+deriving instance MonadJSM m => MonadJSM (RouteToUrlT r m)
+#endif
+
+instance PerformEvent t m => PerformEvent t (RouteToUrlT r m) where
+  type Performable (RouteToUrlT r m) = Performable m
+  performEvent = lift . performEvent
+  performEvent_ = lift . performEvent_
+
+instance MonadRef m => MonadRef (RouteToUrlT r m) where
+  type Ref (RouteToUrlT r m) = Ref m
+  newRef = lift . newRef
+  readRef = lift . readRef
+  writeRef r = lift . writeRef r
+
+instance HasJS x m => HasJS x (RouteToUrlT r m) where
+  type JSX (RouteToUrlT r m) = JSX m
+  liftJS = lift . liftJS
+
+instance MonadTransControl (RouteToUrlT r) where
+  type StT (RouteToUrlT r) a = StT (ReaderT (r -> Text)) a
+  liftWith = defaultLiftWith RouteToUrlT unRouteToUrlT
+  restoreT = defaultRestoreT RouteToUrlT
+
+instance PrimMonad m => PrimMonad (RouteToUrlT r m ) where
+  type PrimState (RouteToUrlT r m) = PrimState m
+  primitive = lift . primitive
+
+instance DomBuilder t m => DomBuilder t (RouteToUrlT r m) where
+  type DomBuilderSpace (RouteToUrlT r m) = DomBuilderSpace m
+
+instance Adjustable t m => Adjustable t (RouteToUrlT r m) where
+  runWithReplace a0 a' = RouteToUrlT $ runWithReplace (coerce a0) $ coerceEvent a'
+  traverseIntMapWithKeyWithAdjust f a0 a' = RouteToUrlT $ traverseIntMapWithKeyWithAdjust (coerce f) (coerce a0) $ coerce a'
+  traverseDMapWithKeyWithAdjust f a0 a' = RouteToUrlT $ traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
+  traverseDMapWithKeyWithAdjustWithMove f a0 a' = RouteToUrlT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
+
+instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RouteToUrlT r m) where
+  tellQueryIncremental = lift . tellQueryIncremental
+  askQueryResult = lift askQueryResult
+  queryIncremental = lift . queryIncremental
+
 runRouteViewT
   :: forall t m r a.
      ( TriggerEvent t m
@@ -300,7 +386,7 @@ runRouteViewT
      , MonadFix m
      )
   => (Encoder Identity Identity r PageName)
-  -> RoutedT t r (SetRouteT t r m) a
+  -> RoutedT t r (SetRouteT t r (RouteToUrlT r m)) a
   -> m a
 runRouteViewT routeEncoder a = do
   rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
@@ -313,7 +399,7 @@ runRouteViewT routeEncoder a = do
             where
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
-      (result, changeState) <- runSetRouteT $ runRoutedT a route
+      (result, changeState) <- runRouteToUrlT (runSetRouteT $ runRoutedT a route) $ (\(p, q) -> T.pack $ p <> q) . encode theEncoder
       let f (currentHistoryState, oldRoute) change =
             let newRoute = appEndo change oldRoute
                 (newPath, newQuery) = encode theEncoder newRoute
@@ -336,6 +422,26 @@ runRouteViewT routeEncoder a = do
                }
           setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
+
+-- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
+-- contexts, this widget falls back to using @href@s to control navigation
+routeLink
+  :: forall t m a route.
+     ( DomBuilder t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => R route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+routeLink r w = do
+  enc <- askRouteToUrl
+  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_initialAttributes .~ "href" =: enc r
+  (e, a) <- element "a" cfg w
+  setRoute $ r <$ domEvent Click e
+  return a
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
