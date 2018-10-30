@@ -149,7 +149,8 @@ obeliskApp opts frontend validFullEncoder uri backend = do
 renderJsaddleFrontend :: route -> Frontend route -> IO ByteString
 renderJsaddleFrontend r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
-  in renderFrontendHtml r (_frontend_head f >> injectExecutableConfigs) (_frontend_body f >> jsaddleScript)
+      jsaddlePreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "/jsaddle/jsaddle.js") blank
+  in renderFrontendHtml r (_frontend_head f >> injectExecutableConfigs >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
