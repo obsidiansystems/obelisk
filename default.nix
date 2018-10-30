@@ -144,15 +144,15 @@ in rec {
   '';
   nullIfAbsent = p: if lib.pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
-  processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static" }: pkgs.runCommand "asset-manifest" {
-    inherit src;
+  processAssets = { src, srcImpure, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static" }: pkgs.runCommand "asset-manifest" {
+    inherit src srcImpure;
     outputs = [ "out" "haskellManifest" "symlinked" ];
     nativeBuildInputs = [ ghcObelisk.obelisk-asset-manifest ];
   } ''
     set -euo pipefail
     touch "$out"
     mkdir -p "$symlinked"
-    obelisk-asset-manifest-generate "$src" "${builtins.toString src}" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
+    obelisk-asset-manifest-generate "$src" "$srcImpure" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
@@ -264,6 +264,12 @@ in rec {
                           , packages ? {}
                           , overrides ? _: _: {}
                           , staticFiles ? base + /static
+                          , staticFilesImpure ?
+                             if lib.isDerivation staticFiles
+                             then builtins.trace
+                               ("Define `staticFilesImpure` if you build our assets so you can manually rebuild without restarting `ob run`. Better solution forthcomming!")
+                               staticFiles
+                             else toString staticFiles
                           , tools ? _: []
                           , shellToolOverrides ? _: _: {}
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
@@ -273,7 +279,7 @@ in rec {
                   backendName = "backend";
                   commonName = "common";
                   staticName = "obelisk-generated-static";
-                  processedStatic = processAssets { src = staticFiles; };
+                  processedStatic = processAssets { src = staticFiles; srcImpure = staticFilesImpure; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = lib.filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
@@ -324,7 +330,7 @@ in rec {
                       nixpkgs.obeliskExecutableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles __closureCompilerOptimizationLevel; };
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel; };
               };
           in mkProject (projectDefinition args));
       serverOn = sys: config: version: serverExe
