@@ -553,7 +553,7 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
         return tmpThunk
       Right _ -> failWith $ "Thunk is not packed"
     updateThunkFromTmp p' = do
-      packThunk' True p'
+      _ <- packThunk' True p'
       callProcessAndLogOutput (Notice, Error) $
         proc "cp" ["-r", "-T", p', p]
 
@@ -605,10 +605,10 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkD
 
 --TODO: add force mode to pack even if changes are present
 --TODO: add a rollback mode to pack to the original thunk
-packThunk :: MonadObelisk m => FilePath -> m ()
+packThunk :: MonadObelisk m => FilePath -> m ThunkPtr
 packThunk = packThunk' False
 
-packThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
+packThunk' :: MonadObelisk m => Bool -> FilePath -> m ThunkPtr
 packThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
@@ -618,6 +618,7 @@ packThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir
       thunkPtr <- getThunkPtr thunkDir
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
+      pure thunkPtr
 
 getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
 getThunkPtr = getThunkPtr' True

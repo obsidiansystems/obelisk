@@ -40,6 +40,7 @@ import Obelisk.Asset.Serve.Snap (serveAsset)
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.Frontend
 import Obelisk.Route
+import Obelisk.Snap.Extras (doNotCache, serveFileIfExistsAs)
 import Reflex.Dom
 import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, modifyResponse
             , rqPathInfo, rqQueryString, setContentType, writeBS, writeText)
@@ -121,6 +122,7 @@ serveObeliskApp urlEnc serveStaticAsset frontendApp = \case
       let msg = "Error: Obelisk.Backend received jsaddle request"
       liftIO $ putStrLn $ T.unpack msg
       writeText msg
+    ResourceRoute_Version :=> Identity () -> doNotCache >> serveFileIfExistsAs "text/plain" "version"
 
 serveStaticAssets :: MonadSnap m => StaticAssets -> [Text] -> m ()
 serveStaticAssets assets pathSegments = serveAsset (_staticAssets_processed assets) (_staticAssets_unprocessed assets) $ T.unpack $ T.intercalate "/" pathSegments

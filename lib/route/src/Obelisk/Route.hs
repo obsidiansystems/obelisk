@@ -721,6 +721,7 @@ data ResourceRoute :: * -> * where
   ResourceRoute_Static :: ResourceRoute [Text] -- This [Text] represents the *path in our static files directory*, not necessarily the URL path that the asset gets served at (although that will often be "/static/this/text/thing")
   ResourceRoute_Ghcjs :: ResourceRoute [Text]
   ResourceRoute_JSaddleWarp :: ResourceRoute (R JSaddleWarpRoute)
+  ResourceRoute_Version :: ResourceRoute ()
 
 -- | If there are no additional backend routes in your app (i.e. ObeliskRoute gives you all the routes you need),
 -- this constructs a suitable 'Encoder' to use for encoding routes to 'PageName's. If you do have additional backend routes,
@@ -757,6 +758,7 @@ resourceRouteSegment = \case
   ResourceRoute_Static -> PathSegment "static" $ pathOnlyEncoderIgnoringQuery
   ResourceRoute_Ghcjs -> PathSegment "ghcjs" $ pathOnlyEncoder
   ResourceRoute_JSaddleWarp -> PathSegment "jsaddle" $ jsaddleWarpRouteEncoder
+  ResourceRoute_Version -> PathSegment "version" $ unitEncoder mempty
 
 data JSaddleWarpRoute :: * -> * where
   JSaddleWarpRoute_JavaScript :: JSaddleWarpRoute ()
