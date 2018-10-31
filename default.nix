@@ -152,7 +152,7 @@ in rec {
     set -euo pipefail
     touch "$out"
     mkdir -p "$symlinked"
-    obelisk-asset-manifest-generate "$src" "${builtins.toString src}" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
+    obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
@@ -273,6 +273,7 @@ in rec {
                   backendName = "backend";
                   commonName = "common";
                   staticName = "obelisk-generated-static";
+                  staticFilesImpure = if lib.isDerivation staticFiles then staticFiles else toString staticFiles;
                   processedStatic = processAssets { src = staticFiles; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = lib.filterAttrs (_: x: x != null) {
@@ -324,7 +325,7 @@ in rec {
                       nixpkgs.obeliskExecutableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
                   } // ios;
                 };
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles __closureCompilerOptimizationLevel; };
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel; };
               };
           in mkProject (projectDefinition args));
       serverOn = sys: config: version: serverExe
