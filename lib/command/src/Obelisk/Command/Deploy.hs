@@ -88,36 +88,31 @@ deployPush deployPath getNixBuilders = do
   route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
   routeHost <- getHostFromRoute enableHttps route
   let srcPath = deployPath </> "src"
-      build = do
-        builders <- getNixBuilders
-        buildOutput <- nixBuild $ def
-          { _nixBuildConfig_target = Target
-            { _target_path = srcPath
-            , _target_attr = Just "server.system"
-            }
-          , _nixBuildConfig_outLink = OutLink_None
-          , _nixBuildConfig_args =
-            [ strArg "hostName" host
-            , strArg "adminEmail" adminEmail
-            , strArg "routeHost" routeHost
-            , boolArg "enableHttps" enableHttps
-            ]
-          , _nixBuildConfig_builders = builders
-          }
-        return $ listToMaybe $ lines buildOutput
-  result <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed _) ->
-      build
+  thunkPtr <- readThunk srcPath >>= \case
+    Right (ThunkData_Packed ptr) -> return ptr
     Right (ThunkData_Checkout _) -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> do
-          result <- build
-          packThunk srcPath
-          return result
-        False -> do
-          _ <- failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
-          return Nothing
-    _ -> return Nothing
+        True -> packThunk srcPath
+        False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
+    Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
+  let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
+  builders <- getNixBuilders
+  buildOutput <- nixBuild $ def
+    { _nixBuildConfig_target = Target
+      { _target_path = srcPath
+      , _target_attr = Just "server.system"
+      }
+    , _nixBuildConfig_outLink = OutLink_None
+    , _nixBuildConfig_args =
+      [ strArg "hostName" host
+      , strArg "adminEmail" adminEmail
+      , strArg "routeHost" routeHost
+      , strArg "version" version
+      , boolArg "enableHttps" enableHttps
+      ]
+    , _nixBuildConfig_builders = builders
+    }
+  let result = listToMaybe $ lines buildOutput
   forM_ result $ \res -> do
     let knownHostsPath = deployPath </> "backend_known_hosts"
         sshOpts = sshArgs knownHostsPath (deployPath </> "ssh_key") False

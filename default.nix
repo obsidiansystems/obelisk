@@ -147,14 +147,12 @@ in rec {
   processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static" }: pkgs.runCommand "asset-manifest" {
     inherit src;
     outputs = [ "out" "haskellManifest" "symlinked" ];
-    buildInputs = [
-      (reflex-platform.ghc.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {})
-    ];
+    nativeBuildInputs = [ ghcObelisk.obelisk-asset-manifest ];
   } ''
     set -euo pipefail
     touch "$out"
     mkdir -p "$symlinked"
-    obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
+    obelisk-asset-manifest-generate "$src" "${builtins.toString src}" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
@@ -232,16 +230,17 @@ in rec {
     };
   };
 
-  serverExe = backend: frontend: assets: optimizationLevel:
+  serverExe = backend: frontend: assets: optimizationLevel: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -327,13 +326,20 @@ in rec {
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles __closureCompilerOptimizationLevel; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: serverExe (projectOut sys).ghc.backend (projectOut system).ghcjs.frontend (projectOut sys).passthru.staticFiles (projectOut sys).passthru.__closureCompilerOptimizationLevel;
+      serverOn = sys: version: serverExe
+        (projectOut sys).ghc.backend
+        (projectOut system).ghcjs.frontend
+        (projectOut sys).passthru.staticFiles
+        (projectOut sys).passthru.__closureCompilerOptimizationLevel
+        version;
       linuxExe = serverOn "x86_64-linux";
+      dummyVersion = "Version number is only available for deployments";
     in projectOut system // {
       linuxExeConfigurable = linuxExe;
-      linuxExe = linuxExe;
-      exe = serverOn system;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps }: server (args // { exe = linuxExe; });
+      linuxExe = linuxExe dummyVersion;
+      exe = serverOn system dummyVersion;
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
+        server (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
