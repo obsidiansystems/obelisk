@@ -144,15 +144,15 @@ in rec {
   '';
   nullIfAbsent = p: if lib.pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
-  processAssets = { src, srcImpure, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static" }: pkgs.runCommand "asset-manifest" {
-    inherit src srcImpure;
+  processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static" }: pkgs.runCommand "asset-manifest" {
+    inherit src;
     outputs = [ "out" "haskellManifest" "symlinked" ];
     nativeBuildInputs = [ ghcObelisk.obelisk-asset-manifest ];
   } ''
     set -euo pipefail
     touch "$out"
     mkdir -p "$symlinked"
-    obelisk-asset-manifest-generate "$src" "$srcImpure" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
+    obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
@@ -279,7 +279,7 @@ in rec {
                   backendName = "backend";
                   commonName = "common";
                   staticName = "obelisk-generated-static";
-                  processedStatic = processAssets { src = staticFiles; srcImpure = staticFilesImpure; };
+                  processedStatic = processAssets { src = staticFiles; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = lib.filterAttrs (_: x: x != null) {
                     ${frontendName} = nullIfAbsent (base + "/frontend");
