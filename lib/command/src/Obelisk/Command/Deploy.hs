@@ -97,13 +97,13 @@ deployPush deployPath getNixBuilders = do
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   builders <- getNixBuilders
-  buildOutput <- nixBuild $ def
-    { _nixBuildConfig_target = Target
+  buildOutput <- nixCmd $ NixCmd_Build $ def
+    & nixCmdConfig_target .~Target
       { _target_path = srcPath
       , _target_attr = Just "server.system"
       }
-    , _nixBuildConfig_outLink = OutLink_None
-    , _nixBuildConfig_args =
+    & nixBuildConfig_outLink .~ OutLink_None
+    & nixCmdConfig_args .~
       [ strArg "hostName" host
       , strArg "adminEmail" adminEmail
       , strArg "routeHost" routeHost
@@ -111,8 +111,7 @@ deployPush deployPath getNixBuilders = do
       , boolArg "enableHttps" enableHttps
       , rawArg "config" $ deployPath </> "config"
       ]
-    , _nixBuildConfig_builders = builders
-    }
+    & nixCmdConfig_builders .~ builders
   let result = listToMaybe $ lines buildOutput
   forM_ result $ \res -> do
     let knownHostsPath = deployPath </> "backend_known_hosts"
