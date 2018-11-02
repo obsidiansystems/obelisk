@@ -20,4 +20,8 @@ frontend = Frontend
       text "Welcome to Obelisk!"
       el "p" $ text $ T.pack commonStuff
       elAttr "img" ("src" =: static @"obelisk.jpg") blank
+      e <- button "click"
+      el "p" $ display =<< count e
+      pb <- getPostBuild
+      widgetHold_ (el "div" $ text "first") $ ffor pb $ \() -> el "div" $ text "second"
   }

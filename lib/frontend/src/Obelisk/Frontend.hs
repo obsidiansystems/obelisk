@@ -83,13 +83,15 @@ type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (Perform
 --TODO: Rename
 {-# INLINABLE attachWidget''' #-}
 attachWidget'''
-  :: (EventChannel -> PerformEventT DomTimeline DomHost (IORef (Maybe (EventTrigger DomTimeline ()))))
+  :: IORef Bool
+  -> (EventChannel -> PerformEventT DomTimeline DomHost (IORef (Maybe (EventTrigger DomTimeline ()))))
   -> IO ()
-attachWidget''' w = runDomHost $ do
+attachWidget''' hydration w = runDomHost $ do
   events <- liftIO newChan
   (postBuildTriggerRef, fc@(FireCommand fire)) <- hostPerformEventT $ w events
   mPostBuildTrigger <- readRef postBuildTriggerRef
   forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
+  liftIO $ writeIORef hydration False
   liftIO $ processAsyncEvents events fc
 
 --TODO: This is a collection of random stuff; we should make it make some more sense and then upstream to reflex-dom-core
@@ -101,33 +103,30 @@ runWithHeadAndBody
   -> JSM ()
 runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
   globalDoc <- currentDocumentUnchecked
-  headFragment <- createDocumentFragment globalDoc
-  bodyFragment <- createDocumentFragment globalDoc
+  headElement <- getHeadUnchecked globalDoc
+  bodyElement <- getBodyUnchecked globalDoc
   unreadyChildren <- liftIO $ newIORef 0
-  let commit = do
-        headElement <- getHeadUnchecked globalDoc
-        bodyElement <- getBodyUnchecked globalDoc
-        void $ inAnimationFrame' $ \_ -> do
-          replaceElementContents headElement headFragment
-          replaceElementContents bodyElement bodyFragment
-  liftIO $ attachWidget''' $ \events -> flip runWithJSContextSingleton jsSing $ do
+  hydration <- liftIO $ newIORef True
+  liftIO $ attachWidget''' hydration $ \events -> flip runWithJSContextSingleton jsSing $ do
     (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
-    let appendImmediateDom :: DOM.DocumentFragment -> Widget' () c -> FloatingWidget () c
-        appendImmediateDom df w = do
+    let appendImmediateDom :: DOM.Node -> Widget' () c -> FloatingWidget () c
+        appendImmediateDom n w = do
+          hydrationNode <- liftIO $ newIORef Nothing
           events' <- TriggerEvent.askEvents
           lift $ do
-            doc <- getOwnerDocumentUnchecked df
             let builderEnv = ImmediateDomBuilderEnv
-                  { _immediateDomBuilderEnv_document = doc
-                  , _immediateDomBuilderEnv_parent = toNode df
+                  { _immediateDomBuilderEnv_document = globalDoc
+                  , _immediateDomBuilderEnv_parent = toNode n
                   , _immediateDomBuilderEnv_unreadyChildren = unreadyChildren
-                  , _immediateDomBuilderEnv_commitAction = commit
+                  , _immediateDomBuilderEnv_commitAction = pure ()
+                  , _immediateDomBuilderEnv_hydrating = hydration
+                  , _immediateDomBuilderEnv_hydrationNode = hydrationNode
                   }
             runImmediateDomBuilderT w builderEnv events'
-    flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (appendImmediateDom headFragment) (appendImmediateDom bodyFragment)
-    liftIO (readIORef unreadyChildren) >>= \case
-      0 -> DOM.liftJSM commit
-      _ -> return ()
+    flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (appendImmediateDom $ toNode headElement) (appendImmediateDom $ toNode bodyElement)
+--    liftIO (readIORef unreadyChildren) >>= \case
+--      0 -> DOM.liftJSM commit
+--      _ -> return ()
     return postBuildTriggerRef
 
 runFrontend :: forall backendRoute route. Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> Frontend (R route) -> JSM ()
