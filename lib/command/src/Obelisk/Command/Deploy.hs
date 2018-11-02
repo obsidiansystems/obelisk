@@ -3,19 +3,25 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveGeneric #-}
 module Obelisk.Command.Deploy where
 
 import Control.Lens
 import Control.Monad
 import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, try)
 import Control.Monad.IO.Class (liftIO)
+import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
+import qualified Data.ByteString.Lazy as BSL
 import Data.Default
 import Data.List (isSuffixOf)
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import GHC.Generics
 import System.Directory
 import System.Environment (getEnvironment)
 import System.FilePath
@@ -152,6 +158,15 @@ deployPush deployPath getNixBuilders = do
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
 
+keytoolToAndroidConfig :: KeytoolConfig -> Map Text NValue
+keytoolToAndroidConfig conf = Map.fromList
+  [ ("storeFile", NValue_Path $ _keytoolConfig_keystore conf)
+  , ("storePassword", NValue_Text $ T.pack $ _keytoolConfig_storepass conf)
+  , ("keyAlias", NValue_Text $ T.pack $ _keytoolConfig_alias conf)
+  , ("keyPassword", NValue_Text $ T.pack $ _keytoolConfig_storepass conf)
+  ]
+
+
 deployMobile :: MonadObelisk m => String -> [String] -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
@@ -159,22 +174,26 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   unless exists $ failWith "ob test should be run inside of a deploy directory"
   when (platform == "android") $ do
     let keystorePath = root </> "android_keystore.jks"
+        keytoolConfPath = root </> "config/backend/androidKeyStore"
     hasKeystore <- liftIO $ doesFileExist keystorePath
     when (not hasKeystore) $ do
       -- TODO log instructions for how to modify the keystore
       putLog Notice $ "Creating keystore: " <> T.pack keystorePath
-      createKeystore root $ KeytoolConfig
-        { _keytoolConfig_keystore = keystorePath
-        , _keytoolConfig_alias = "obelisk"
-        , _keytoolConfig_storepass = "obelisk"
-        , _keytoolConfig_dname = "CN=mqttserver.ibm.com, OU=ID, O=IBM, L=Hursley, S=Hants, C=GB" -- TODO Read these from config?
-        }
-    let releaseKey = renderAttrset $ Map.fromList
-          [ ("storeFile", NValue_Path keystorePath)
-          , ("storePassword", NValue_Text "obelisk")
-          , ("keyAlias", NValue_Text "obelisk")
-          , ("keyPassword", NValue_Text "obelisk")
-          ]
+      let keyToolConf = KeytoolConfig
+            { _keytoolConfig_keystore = keystorePath
+            , _keytoolConfig_alias = "obelisk"
+            , _keytoolConfig_storepass = "obelisk"
+            , _keytoolConfig_dname = "CN=mqttserver.ibm.com, OU=ID, O=IBM, L=Hursley, S=Hants, C=GB" -- TODO Read these from config?
+            }
+      createKeystore root $ keyToolConf
+      liftIO $ BSL.writeFile keytoolConfPath $ encode keyToolConf
+    checkKeytoolConfExist <- liftIO $ doesFileExist keytoolConfPath
+    unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"
+    keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
+    liftIO $ putStrLn $ show keytoolConfContents
+    releaseKey <- case eitherDecode keytoolConfContents of
+      Left err -> failWith $ T.pack err
+      Right conf -> return $ renderAttrset $ keytoolToAndroidConfig conf
     result <- nixCmd $ NixCmd_Build $ def
       & nixBuildConfig_outLink .~ OutLink_None
       & nixCmdConfig_target .~ Target
@@ -189,7 +208,10 @@ data KeytoolConfig = KeytoolConfig
   , _keytoolConfig_alias :: String
   , _keytoolConfig_storepass :: String
   , _keytoolConfig_dname :: String
-  } deriving (Show)
+  } deriving (Show, Generic)
+
+instance FromJSON KeytoolConfig
+instance ToJSON KeytoolConfig
 
 createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
 createKeystore root config = do
