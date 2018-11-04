@@ -13,11 +13,13 @@ module Obelisk.CliApp.Process
   , AsProcessFailure (..)
   , readProcessAndLogStderr
   , readProcessAndLogOutput
+  , readCreateProcessWithExitCode
   , callProcessAndLogOutput
   , createProcess
   , createProcess_
   , callProcess
   , callCommand
+  , reconstructCommand
   ) where
 
 import Control.Monad ((<=<), join, void)
@@ -31,7 +33,6 @@ import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
---import qualified Data.Text.IO as T
 import System.Exit (ExitCode (..))
 import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
@@ -64,6 +65,13 @@ readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
     streamToLog =<< liftIO (streamHandle sev err)
   liftIO $ T.decodeUtf8 <$> BS.hGetContents out
+
+readCreateProcessWithExitCode
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
+  => CreateProcess -> m (ExitCode, String, String)
+readCreateProcessWithExitCode process = do
+  putLog Debug $ "Creating process: " <> reconstructCommand (cmdspec process)
+  liftIO $ Process.readCreateProcessWithExitCode process ""
 
 -- | Like `System.Process.readProcess` but logs the combined output (stdout and stderr)
 -- with the corresponding severity.
@@ -167,6 +175,7 @@ streamToLog stream = fix $ \loop -> do
     Nothing -> return ()
     Just (sev, line) -> putLogRaw sev (T.decodeUtf8 line) >> loop
 
+-- | Pretty print a 'CmdSpec'
 reconstructCommand :: Process.CmdSpec -> Text
 reconstructCommand (Process.ShellCommand str) = T.pack str
 reconstructCommand (Process.RawCommand c as) = processToShellString c as

@@ -1,13 +1,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.VmBuilder where
 
 import Control.Applicative (liftA2)
-import Control.Monad (unless)
-import Control.Monad.Catch (try)
+import Control.Monad (when, unless)
+import Control.Monad.Catch (handle)
 import Control.Monad.IO.Class (liftIO)
-import Data.Either (isRight)
 import Data.Monoid ((<>))
 import Data.String (IsString)
 import Data.String.Here.Uninterpolated (hereLit)
@@ -15,22 +15,44 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory (createDirectoryIfMissing)
-import System.Exit (ExitCode)
+import System.Exit (ExitCode(..))
 import System.FilePath ((<.>), (</>))
 import qualified System.Info
 import System.Process (proc)
 
 import Obelisk.App (MonadObelisk, getObeliskUserStateDir)
 import Obelisk.CliApp
-import Obelisk.Command.Nix (withNixRemoteCheck)
 
 -- | Generate the `--builders` argument string to enable the VM builder after ensuring it is available.
 getNixBuildersArg :: MonadObelisk m => m String
 getNixBuildersArg = do
   stateDir <- liftIO getDockerBuilderStateDir
-  exists <- containerExists
+  let sshIdFile = stateDir </> sshKeyFileName
+  checkForNixDarwin sshIdFile
+  exists <- containerExists stateDir
   if exists then startContainer else setupNixDocker stateDir
   pure $ nixBuildersArgString stateDir
+
+checkForNixDarwin :: MonadObelisk m => String -> m ()
+checkForNixDarwin sshIdFile = do
+  (exitCode, _, _) <- readCreateProcessWithExitCode $ proc "which" ["darwin-rebuild"]
+  unless (exitCode == ExitSuccess) $ failWith $ T.intercalate "\n"
+    [ "Deployments from macOS require nix-darwin to be installed."
+    , "Follow the installation instructions here: https://github.com/LnL7/nix-darwin"
+    , "You'll also need to add the following to your 'configuration.nix' and run 'darwin-rebuild switch':"
+    , ""
+    , T.intercalate "\n" $ map ("  " <>)
+      [ "nix.distributedBuilds = true;"
+      , "nix.buildMachines = [{"
+      , " hostName = " <> T.pack (show (containerName :: String)) <> ";"
+      , " sshUser = \"root\";"
+      , " sshKey = " <> T.pack (show sshIdFile) <> ";"
+      , " sshPort = " <> T.pack (show containerSshPort) <> ";"
+      , " systems = [ \"x86_64-linux\" ];"
+      , " maxJobs = 2;"
+      , "}];"
+      ]
+    ]
 
 -- | String to pass to nix's `--builders` arguments to enable the VM builder.
 nixBuildersArgString :: FilePath -> String
@@ -41,14 +63,19 @@ containerName :: IsString str => str
 containerName = "obelisk-docker-nix-builder"
 
 -- | Check to see if the Docker container exists. This will exit with a helpful message if Docker is not installed.
-containerExists :: MonadObelisk m => m Bool
-containerExists = withExitFailMessage needDockerMsg $ do
+containerExists :: MonadObelisk m => FilePath -> m Bool
+containerExists stateDir = handle (\(_ :: IOError) -> failWith needDockerMsg) $ do
   containerNames <- fmap (map T.strip . T.lines) $
     readProcessAndLogStderr Error $
       proc "docker" ["container", "list", "--all", "--format", "{{.Names}}"]
-  pure $ containerName `elem` containerNames
+  let exists = containerName `elem` containerNames
+  when exists $ testLinuxBuild stateDir
+  pure exists
   where
-    needDockerMsg = "This feature requires that you have Docker installed and the `docker` command available on your PATH. Please go https://docs.docker.com/ to install Docker and try this command again."
+    needDockerMsg = T.intercalate "\n"
+      [ "This feature requires that you have Docker installed and the `docker` command available on your PATH."
+      , "Please go https://docs.docker.com/ to install Docker and try this command again."
+      ]
 
 -- | SSH port on localhost that connects to the container.
 containerSshPort :: Int
@@ -74,7 +101,7 @@ setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> con
     proc "ssh-keygen" ["-t", "ed25519", "-f", stateDir </> sshKeyFileName, "-P", ""]
 
   -- Build the docker container (which uses the SSH keys in the 'ssh' folder)
-  containerId <- readProcessAndLogStderr Error $
+  containerId <- fmap T.strip $ readProcessAndLogStderr Error $
     proc "docker" ["build", stateDir, "--quiet"]
   callProcessAndLogOutput (Debug, Error) $ proc "docker"
     [ "run"
@@ -83,16 +110,11 @@ setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> con
     , "--publish", show containerSshPort <> ":22"
     , "--name", T.unpack containerName, T.unpack containerId
     ]
-  exists <- containerExists
+  exists <- containerExists stateDir
   unless exists $
     failWith $ "Expected to see docker container named " <> containerName <> " but it does not exist."
 
-  linuxBuildWorked <- if System.Info.os == "linux"
-    then pure False -- The Linux test is useless on Linux so just assume the setup is incomplete.
-    else testLinuxBuild stateDir
-  unless linuxBuildWorked $ do
-    let sshIdFile = stateDir </> sshKeyFileName
-    failWith $ setupInstructions sshIdFile
+  testLinuxBuild stateDir
 
 -- | The instructions for setting up SSH access to the container for the Nix daemon.
 setupInstructions :: FilePath -> Text
@@ -129,19 +151,24 @@ getDockerBuilderStateDir :: IO FilePath
 getDockerBuilderStateDir = liftA2 (</>) getObeliskUserStateDir (pure "nix-docker-builder")
 
 -- | Run a test build to see if a Linux build can finish successfully.
-testLinuxBuild :: MonadObelisk m => FilePath -> m Bool
-testLinuxBuild stateDir =
-  fmap (isRight :: Either ExitCode () -> Bool) $ try $ withNixRemoteCheck $
-  callProcessAndLogOutput (Debug, Debug) $ proc "nix-build"
-    [ "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
-    , "--builders", nixBuildersArgString stateDir
-    ]
+testLinuxBuild :: MonadObelisk m => FilePath -> m ()
+testLinuxBuild stateDir
+  | System.Info.os == "linux" = failWith "Using the docker builder is not necessary on linux."
+  | otherwise = do
+    (exitCode, _stdout, stderr) <- readCreateProcessWithExitCode $ proc "nix-build"
+      [ "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
+      , "--builders", nixBuildersArgString stateDir
+      ]
+    unless (exitCode == ExitSuccess) $ do
+      let sshIdFile = stateDir </> sshKeyFileName
+      putLog Error $ T.pack stderr
+      failWith $ setupInstructions sshIdFile
 
--- Copied from https://raw.githubusercontent.com/LnL7/nix-docker/bf28b99aebd8e403d2fc2171f4fa8878f857171c/ssh/Dockerfile
+-- Copied from https://github.com/LnL7/nix-docker/blob/8dcfb3aff1f87cdafeecb0d27964b27c3fb8b1d2/ssh/Dockerfile
 -- Renamed "insecure_rsa" to 'sshKeyFileName'
 dockerfile :: Text
 dockerfile = [hereLit|
-FROM lnl7/nix:2018-04-17
+FROM lnl7/nix:2018-09-21
 
 RUN nix-env -f '<nixpkgs>' -iA \
     gnused \
@@ -166,7 +193,8 @@ RUN mkdir -p /etc/ssh \
   ] <> [hereLit|
 
 EXPOSE 22
-CMD ["/nix/store/hpnx760s247labqc3nbn2kripk73p0ca-openssh-7.6p1/bin/sshd", "-D", "-e"]
+CMD ["/nix/store/mydwfxzk8bka4iwjml033dir6gkmqwic-openssh-7.7p1/bin/sshd", "-D", "-e"]
+
 |]
 
 sshKeyFileName :: FilePath

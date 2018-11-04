@@ -34,7 +34,6 @@ import GitHub.Data.Name (Name)
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Thunk
-import Obelisk.Command.Nix (withNixRemoteCheck)
 --TODO: Make this module resilient to random exceptions
 
 --TODO: Don't hardcode this
@@ -48,7 +47,6 @@ obeliskSourceWithBranch branch = ThunkSource_GitHub $ GitHubSource
   { _gitHubSource_owner = "obsidiansystems"
   , _gitHubSource_repo = "obelisk"
   , _gitHubSource_branch = Just branch
-  , _gitHubSource_private = False
   }
 
 data InitSource
@@ -147,7 +145,7 @@ findProjectRoot target = do
   (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat myUid) []
   return result
 
-withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m ()) -> m ()
+withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
 withProjectRoot target f = findProjectRoot target >>= \case
   Nothing -> failWith "Must be used inside of an Obelisk project"
   Just root -> f root
@@ -205,7 +203,7 @@ inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
   projectShell root False shellName command
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> String -> m ()
-projectShell root isPure shellName command = withNixRemoteCheck $ do
+projectShell root isPure shellName command = do
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
      [ "--pure" | isPure ] <>
      [ "-A"

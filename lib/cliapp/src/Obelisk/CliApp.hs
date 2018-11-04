@@ -37,10 +37,12 @@ module Obelisk.CliApp
   , AsProcessFailure (..)
   , readProcessAndLogStderr
   , readProcessAndLogOutput
+  , readCreateProcessWithExitCode
   , callProcessAndLogOutput
   , createProcess_
   , callProcess
   , callCommand
+  , reconstructCommand
   ) where
 
 import Control.Monad.Log (Severity (..))

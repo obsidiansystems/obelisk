@@ -103,6 +103,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Monoid ((<>))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Some (Some)
@@ -528,6 +529,12 @@ unitEncoder expected = unsafeMkEncoder $ EncoderImpl
 singlePathSegmentEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse Text PageName
 singlePathSegmentEncoder = pathOnlyEncoder . singletonListEncoder
 
+pathOnlyEncoderIgnoringQuery :: (Applicative check, MonadError Text parse) => Encoder check parse [Text] PageName
+pathOnlyEncoderIgnoringQuery = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_decode = \(path, _query) -> pure path
+  , _encoderImpl_encode = \path -> (path, mempty)
+  }
+
 pathOnlyEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse [Text] PageName
 pathOnlyEncoder = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_decode = \(path, query) ->
@@ -714,6 +721,7 @@ data ResourceRoute :: * -> * where
   ResourceRoute_Static :: ResourceRoute [Text] -- This [Text] represents the *path in our static files directory*, not necessarily the URL path that the asset gets served at (although that will often be "/static/this/text/thing")
   ResourceRoute_Ghcjs :: ResourceRoute [Text]
   ResourceRoute_JSaddleWarp :: ResourceRoute (R JSaddleWarpRoute)
+  ResourceRoute_Version :: ResourceRoute ()
 
 -- | If there are no additional backend routes in your app (i.e. ObeliskRoute gives you all the routes you need),
 -- this constructs a suitable 'Encoder' to use for encoding routes to 'PageName's. If you do have additional backend routes,
@@ -747,9 +755,10 @@ obeliskRouteSegment r appRouteSegment = case r of
 -- be combined with other such segment encoders before 'pathComponentEncoder' turns it into a proper 'Encoder'.
 resourceRouteSegment :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> SegmentResult check parse a
 resourceRouteSegment = \case
-  ResourceRoute_Static -> PathSegment "static" $ pathOnlyEncoder
+  ResourceRoute_Static -> PathSegment "static" $ pathOnlyEncoderIgnoringQuery
   ResourceRoute_Ghcjs -> PathSegment "ghcjs" $ pathOnlyEncoder
   ResourceRoute_JSaddleWarp -> PathSegment "jsaddle" $ jsaddleWarpRouteEncoder
+  ResourceRoute_Version -> PathSegment "version" $ unitEncoder mempty
 
 data JSaddleWarpRoute :: * -> * where
   JSaddleWarpRoute_JavaScript :: JSaddleWarpRoute ()

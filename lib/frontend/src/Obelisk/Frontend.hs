@@ -31,6 +31,8 @@ import Data.ByteString (ByteString)
 import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Sum
 import Data.IORef
+import Data.Monoid ((<>))
+import Data.Text (Text)
 import GHCJS.DOM hiding (bracket, catch)
 import GHCJS.DOM.Document
 import GHCJS.DOM.Node
@@ -63,6 +65,7 @@ type ObeliskWidget t x route m =
   , PrimMonad m
   , Prerender x m
   , SetRoute t route m
+  , RouteToUrl route m
   )
 
 data Frontend route = Frontend
@@ -80,7 +83,7 @@ type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (Perform
 --TODO: Rename
 {-# INLINABLE attachWidget''' #-}
 attachWidget'''
-  :: (EventChannel -> PerformEventT DomTimeline (SpiderHost Global) (IORef (Maybe (EventTrigger DomTimeline ()))))
+  :: (EventChannel -> PerformEventT DomTimeline DomHost (IORef (Maybe (EventTrigger DomTimeline ()))))
   -> IO ()
 attachWidget''' w = runDomHost $ do
   events <- liftIO newChan
@@ -142,22 +145,23 @@ runFrontend validFullEncoder frontend = do
            , MonadFix m
            , MonadFix (Performable m)
            )
-        => RoutedT t (R route) (SetRouteT t (R route) m) a
+        => RoutedT t (R route) (SetRouteT t (R route) (RouteToUrlT (R route) m)) a
         -> m a
       runMyRouteViewT = runRouteViewT ve
   runWithHeadAndBody $ \appendHead appendBody -> runMyRouteViewT $ do
-    mapRoutedT (mapSetRouteT appendHead) $ _frontend_head frontend
-    mapRoutedT (mapSetRouteT appendBody) $ _frontend_body frontend
+    mapRoutedT (mapSetRouteT (mapRouteToUrlT appendHead)) $ _frontend_head frontend
+    mapRoutedT (mapSetRouteT (mapRouteToUrlT appendBody)) $ _frontend_body frontend
 
 renderFrontendHtml
-  :: (t ~ SpiderTimeline Global)
-  => r
-  -> RoutedT t r (SetRouteT t r' (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
-  -> RoutedT t r (SetRouteT t r' (PostBuildT Spider (StaticDomBuilderT Spider (PerformEventT Spider (SpiderHost Global))))) ()
+  :: (t ~ DomTimeline)
+  => (r' -> Text)
+  -> r
+  -> RoutedT t r (SetRouteT t r' (RouteToUrlT r' (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost))))) ()
+  -> RoutedT t r (SetRouteT t r' (RouteToUrlT r' (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost))))) ()
   -> IO ByteString
-renderFrontendHtml route headWidget bodyWidget = do
+renderFrontendHtml urlEnc route headWidget bodyWidget = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-  html <- fmap snd $ renderStatic $ fmap fst $ runSetRouteT $ flip runRoutedT (pure route) $
+  html <- fmap snd $ renderStatic $ fmap fst $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
       el "head" headWidget
       el "body" bodyWidget
