@@ -8,7 +8,7 @@ module Obelisk.Command.Deploy where
 
 import Control.Lens
 import Control.Monad
-import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, try)
+import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, try, bracket_)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
@@ -25,6 +25,7 @@ import GHC.Generics
 import System.Directory
 import System.Environment (getEnvironment)
 import System.FilePath
+import System.IO
 import System.Posix.Files
 import System.Process (delegate_ctlc, env, proc, readCreateProcess, cwd)
 import Text.URI (URI)
@@ -179,10 +180,15 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     when (not hasKeystore) $ do
       -- TODO log instructions for how to modify the keystore
       putLog Notice $ "Creating keystore: " <> T.pack keystorePath
+      putLog Notice "Enter a keystore password: "
+      keyStorePassword <- liftIO $ withEcho False getLine
+      putLog Notice "Re-enter the keystore password: "
+      keyStorePassword' <- liftIO $ withEcho False getLine
+      unless (keyStorePassword' == keyStorePassword) $ failWith "passwords do not match"
       let keyToolConf = KeytoolConfig
             { _keytoolConfig_keystore = keystorePath
             , _keytoolConfig_alias = "obelisk"
-            , _keytoolConfig_storepass = "obelisk"
+            , _keytoolConfig_storepass = keyStorePassword
             , _keytoolConfig_dname = "CN=mqttserver.ibm.com, OU=ID, O=IBM, L=Hursley, S=Hants, C=GB" -- TODO Read these from config?
             }
       createKeystore root $ keyToolConf
@@ -202,6 +208,10 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
         , _target_expr = Just $ "with (import " <> srcDir <> " {}); "  <> platform <> ".frontend.override (drv: { releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> T.unpack releaseKey <> "; })"
         }
     callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
+  where
+    withEcho showEcho f = do
+      prevEcho <- hGetEcho stdin
+      bracket_ (hSetEcho stdin showEcho) (hSetEcho stdin prevEcho) f
 
 data KeytoolConfig = KeytoolConfig
   { _keytoolConfig_keystore :: FilePath
