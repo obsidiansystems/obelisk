@@ -507,6 +507,7 @@ nixBuildThunkAttrWithCache thunkDir attr = do
         Lens.& nixCmdConfig_target Lens..~ Target
           { _target_path = Just thunkDir
           , _target_attr = Just attr
+          , _target_expr = Nothing
           }
       return cachePath
 
@@ -528,6 +529,7 @@ nixBuildAttrWithCache exprPath attr = do
       Lens.& nixCmdConfig_target Lens..~ Target
         { _target_path = Just exprPath
         , _target_attr = Just attr
+        , _target_expr = Nothing
         }
 
 -- | Safely update thunk using a custom action
