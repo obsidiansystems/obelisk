@@ -33,6 +33,7 @@ import Control.Lens
 import Data.Bool (bool)
 import Data.Default
 import Data.List (intercalate)
+import Data.Maybe
 import Data.Monoid ((<>))
 import qualified Data.Text as T
 import System.Process (proc)
@@ -42,15 +43,17 @@ import Obelisk.CliApp
 
 -- | What to build
 data Target = Target
-  { _target_path :: FilePath
+  { _target_path :: Maybe FilePath
   , _target_attr :: Maybe String
+  , _target_expr :: Maybe String
   }
 makeClassy ''Target
 
 instance Default Target where
   def = Target
-    { _target_path = "."
+    { _target_path = Just "."
     , _target_attr = Nothing
+    , _target_expr = Nothing
     }
 
 data Arg
@@ -83,13 +86,17 @@ instance Default NixCommonConfig where
   def = NixCommonConfig def mempty mempty
 
 runNixCommonConfig :: NixCommonConfig -> [FilePath]
-runNixCommonConfig cfg = mconcat [[path], attrArg, args, buildersArg]
+runNixCommonConfig cfg = mconcat [maybeToList path, attrArg, exprArg, args, buildersArg]
   where
     path = _target_path $ _nixCmdConfig_target cfg
     attr = _target_attr $ _nixCmdConfig_target cfg
+    expr = _target_expr $ _nixCmdConfig_target cfg
     attrArg = case attr of
       Nothing -> []
       Just a -> ["-A", a]
+    exprArg = case expr of
+      Nothing -> []
+      Just a -> ["-E", a]
     args = cliFromArgs $ _nixCmdConfig_args cfg
     buildersArg = case _nixCmdConfig_builders cfg of
       [] -> []
@@ -151,7 +158,7 @@ instance Default NixCmd where
   def = NixCmd_Build def
 
 nixCmd :: MonadObelisk m => NixCmd -> m FilePath
-nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> " on " <> desc) (Just $ const $ "Built " <> desc) $ do
+nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built " <> desc) $ do
   output <- readProcessAndLogStderr Debug $ proc (T.unpack cmd) $ options
   -- Remove final newline that Nix appends
   Just (outPath, '\n') <- pure $ T.unsnoc output
@@ -169,6 +176,7 @@ nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> " on " <> desc) (Just $ const
         , cfg' ^. nixCommonConfig
         )
     path = commonCfg ^. nixCmdConfig_target . target_path
-    desc = T.pack $ path <> maybe ""
-      (\a -> " [" <> a <> "]")
-      (commonCfg ^. nixCmdConfig_target . target_attr)
+    desc = T.pack $ mconcat $ catMaybes
+      [ (" on " <>) <$> path
+      , (\a -> " [" <> a <> "]") <$> (commonCfg ^. nixCmdConfig_target . target_attr)
+      ]

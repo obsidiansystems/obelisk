@@ -114,6 +114,9 @@ let
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
   ghcObelisk = reflex-platform.ghc;
 
+  # Development environments for obelisk packages.
+  ghcObeliskEnvs = pkgs.lib.mapAttrs (n: v: reflex-platform.workOn ghcObelisk v) ghcObelisk;
+
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
 
   haskellLib = pkgs.haskell.lib;
@@ -125,6 +128,7 @@ in rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
+  obeliskEnvs = ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
 

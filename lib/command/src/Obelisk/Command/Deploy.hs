@@ -99,8 +99,9 @@ deployPush deployPath getNixBuilders = do
   builders <- getNixBuilders
   buildOutput <- nixCmd $ NixCmd_Build $ def
     & nixCmdConfig_target .~Target
-      { _target_path = srcPath
+      { _target_path = Just srcPath
       , _target_attr = Just "server.system"
+      , _target_expr = Nothing
       }
     & nixBuildConfig_outLink .~ OutLink_None
     & nixCmdConfig_args .~
