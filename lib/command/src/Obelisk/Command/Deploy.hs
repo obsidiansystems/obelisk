@@ -164,7 +164,7 @@ keytoolToAndroidConfig conf = Map.fromList
   [ ("storeFile", NValue_Path $ _keytoolConfig_keystore conf)
   , ("storePassword", NValue_Text $ T.pack $ _keytoolConfig_storepass conf)
   , ("keyAlias", NValue_Text $ T.pack $ _keytoolConfig_alias conf)
-  , ("keyPassword", NValue_Text $ T.pack $ _keytoolConfig_storepass conf)
+  , ("keyPassword", NValue_Text $ T.pack $ _keytoolConfig_keypass conf)
   ]
 
 
@@ -189,7 +189,8 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
             { _keytoolConfig_keystore = keystorePath
             , _keytoolConfig_alias = "obelisk"
             , _keytoolConfig_storepass = keyStorePassword
-            , _keytoolConfig_dname = "CN=mqttserver.ibm.com, OU=ID, O=IBM, L=Hursley, S=Hants, C=GB" -- TODO Read these from config?
+            , _keytoolConfig_keypass = keyStorePassword
+            , _keytoolConfig_dname = "CN=example.com, OU=engineering, O=obelisk, L=LinuxLand, S=NY, C=US" -- TODO Read these from config?
             }
       createKeystore root $ keyToolConf
       liftIO $ BSL.writeFile keytoolConfPath $ encode keyToolConf
@@ -217,6 +218,7 @@ data KeytoolConfig = KeytoolConfig
   { _keytoolConfig_keystore :: FilePath
   , _keytoolConfig_alias :: String
   , _keytoolConfig_storepass :: String
+  , _keytoolConfig_keypass :: String
   , _keytoolConfig_dname :: String
   } deriving (Show, Generic)
 
@@ -232,9 +234,9 @@ createKeystore root config = do
       [ "-genkeypair -noprompt"
       , "-keystore", _keytoolConfig_keystore config
       , "-keyalg RSA -keysize 2048 -validity 10000"
-      , "-storetype pkcs12"
       , "-storepass", _keytoolConfig_storepass config
       , "-alias", _keytoolConfig_alias config
+      , "-keypass", _keytoolConfig_keypass config
       , "-dname ", quote $ _keytoolConfig_dname config
       ]
     quote x = "\"" <> x <> "\""
