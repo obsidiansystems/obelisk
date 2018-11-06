@@ -169,8 +169,20 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
         , _keytoolConfig_storepass = "obelisk"
         , _keytoolConfig_dname = "CN=mqttserver.ibm.com, OU=ID, O=IBM, L=Hursley, S=Hants, C=GB" -- TODO Read these from config?
         }
-  result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
-  callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
+    let releaseKey = renderAttrset $ Map.fromList
+          [ ("storeFile", NValue_Path keystorePath)
+          , ("storePassword", NValue_Text "obelisk")
+          , ("keyAlias", NValue_Text "obelisk")
+          , ("keyPassword", NValue_Text "obelisk")
+          ]
+    result <- nixCmd $ NixCmd_Build $ def
+      & nixBuildConfig_outLink .~ OutLink_None
+      & nixCmdConfig_target .~ Target
+        { _target_path = Nothing
+        , _target_attr = Nothing
+        , _target_expr = Just $ "with (import " <> srcDir <> " {}); "  <> platform <> ".frontend.override (drv: { releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> T.unpack releaseKey <> "; })"
+        }
+    callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
 
 data KeytoolConfig = KeytoolConfig
   { _keytoolConfig_keystore :: FilePath
