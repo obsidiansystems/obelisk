@@ -247,6 +247,17 @@ Now deploy the built apk file to your Android device:
 1. Connect the device using USB (be sure to confirm any security prompts on the device)
 1. Run the deploy script: `result-android/bin/deploy`
 
+Alternatively, you can deploy from an obelisk deployment directory (a directory generated post `ob deploy init ...` command) using the `ob deploy test android` command.
+This command will accomplish the following:
+
+1. Create a key store and apk signing key (`android_keystore.jks`)
+1. Build a Signed Android apk for your application
+1. Deploy the Signed apk to your connect Android device
+
+In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `config/backend/androidKeyStore`
+
+Additional documentation on java key stores can be found [here] (https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html)
+
 This should copy over and install the application on your device (if you see a  "*signatures do not match*" error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 
 #### Releasing to Play Store
