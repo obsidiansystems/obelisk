@@ -12,7 +12,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Bits
 import Data.Default
 import qualified Data.Map as Map
-import Data.Maybe
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import System.Directory
@@ -82,7 +82,7 @@ setupObeliskImpl deployDir = do
 
 deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
-  host <- readDeployConfig deployPath "backend_hosts"
+  hosts <- Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "backend_hosts"
   adminEmail <- readDeployConfig deployPath "admin_email"
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
   route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
@@ -97,51 +97,50 @@ deployPush deployPath getNixBuilders = do
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   builders <- getNixBuilders
-  buildOutput <- nixCmd $ NixCmd_Build $ def
-    & nixCmdConfig_target .~Target
-      { _target_path = Just srcPath
-      , _target_attr = Just "server.system"
-      , _target_expr = Nothing
-      }
-    & nixBuildConfig_outLink .~ OutLink_None
-    & nixCmdConfig_args .~
-      [ strArg "hostName" host
-      , strArg "adminEmail" adminEmail
-      , strArg "routeHost" routeHost
-      , strArg "version" version
-      , boolArg "enableHttps" enableHttps
-      , rawArg "config" $ deployPath </> "config"
-      ]
-    & nixCmdConfig_builders .~ builders
-  let result = listToMaybe $ lines buildOutput
-  forM_ result $ \res -> do
-    let knownHostsPath = deployPath </> "backend_known_hosts"
-        sshOpts = sshArgs knownHostsPath (deployPath </> "ssh_key") False
-        deployAndSwitch outputPath = do
-          withSpinner "Uploading closure" $ do
-            callProcess'
-              (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
-              "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
-
-          withSpinner "Switching to new configuration" $ do
-            callProcessAndLogOutput (Notice, Warning) $
-              proc "ssh" $ sshOpts <>
-                [ "root@" <> host
-                , unwords
-                    [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
-                    , "&&"
-                    , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
-                    ]
-                ]
-    deployAndSwitch res
-    isClean <- checkGitCleanStatus deployPath True
-    when (not isClean) $ do
-      withSpinner "Commiting changes to Git" $ do
-        callProcessAndLogOutput (Debug, Error) $ proc "git"
-          ["-C", deployPath, "add", "."]
-        callProcessAndLogOutput (Debug, Error) $ proc "git"
-          ["-C", deployPath, "commit", "-m", "New deployment"]
-    putLog Notice $ "Deployed => " <> T.pack route
+  buildOutputByHost <- ifor (Map.fromSet (const ()) hosts) $ \host () -> do
+    --TODO: What does it mean if this returns more or less than 1 line of output?
+    [result] <- fmap lines $ nixCmd $ NixCmd_Build $ def
+      & nixCmdConfig_target .~ Target
+        { _target_path = Just srcPath
+        , _target_attr = Just "server.system"
+        , _target_expr = Nothing
+        }
+      & nixBuildConfig_outLink .~ OutLink_None
+      & nixCmdConfig_args .~
+        [ strArg "hostName" host
+        , strArg "adminEmail" adminEmail
+        , strArg "routeHost" routeHost
+        , strArg "version" version
+        , boolArg "enableHttps" enableHttps
+        , rawArg "config" $ deployPath </> "config"
+        ]
+      & nixCmdConfig_builders .~ builders
+    pure result
+  let knownHostsPath = deployPath </> "backend_known_hosts"
+      sshOpts = sshArgs knownHostsPath (deployPath </> "ssh_key") False
+  withSpinner "Uploading closures" $ ifor_ buildOutputByHost $ \host outputPath -> do
+    callProcess'
+      (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
+      "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+  --TODO: Create GC root so we're sure our closure won't go away during this time period
+  withSpinner "Switching to new configuration" $ ifor_ buildOutputByHost $ \host outputPath -> do
+    callProcessAndLogOutput (Notice, Warning) $
+      proc "ssh" $ sshOpts <>
+        [ "root@" <> host
+        , unwords
+            [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
+            , "&&"
+            , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+            ]
+        ]
+  isClean <- checkGitCleanStatus deployPath True
+  when (not isClean) $ do
+    withSpinner "Commiting changes to Git" $ do
+      callProcessAndLogOutput (Debug, Error) $ proc "git"
+        ["-C", deployPath, "add", "."]
+      callProcessAndLogOutput (Debug, Error) $ proc "git"
+        ["-C", deployPath, "commit", "-m", "New deployment"]
+  putLog Notice $ "Deployed => " <> T.pack route
   where
     callProcess' envMap cmd args = do
       processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
