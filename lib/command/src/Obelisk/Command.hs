@@ -214,6 +214,7 @@ data ThunkCommand
    = ThunkCommand_Update [FilePath]
    | ThunkCommand_Unpack [FilePath]
    | ThunkCommand_Pack   [FilePath]
+   | ThunkCommand_Set    [FilePath] String
   deriving Show
 
 thunkCommand :: Parser ThunkCommand
@@ -221,6 +222,7 @@ thunkCommand = hsubparser $ mconcat
   [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
   , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+  , command "set" $ info (ThunkCommand_Set <$> some thunkDirectoryParser <*> strOption (long "branch" <> metavar "BRANCH")) $ progDesc "Set upstream branch of thunk"
   ]
 
 parserPrefs :: ParserPrefs
@@ -349,6 +351,7 @@ ob = \case
     ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks packThunk
+    ThunkCommand_Set thunks branch -> mapM_ (setThunk branch) thunks
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Internal icmd -> case icmd of

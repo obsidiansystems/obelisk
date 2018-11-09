@@ -29,6 +29,8 @@ module Obelisk.Command.Thunk
   , getThunkPtr'
   , parseGitUri
   , uriThunkPtr
+  , setThunk
+  , setThunk'
   ) where
 
 import Control.Applicative
@@ -620,6 +622,20 @@ packThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
       pure thunkPtr
+
+setThunk :: MonadObelisk m => String -> FilePath -> m ()
+setThunk = setThunk' False
+
+setThunk' :: MonadObelisk m => Bool -> String -> FilePath -> m ()
+setThunk' noTrail branch thunkDir = do
+  _ <- unpackThunk thunkDir
+  -- TODO: may have to get current dir before switching
+  initalDir <- liftIO getCurrentDirectory
+  liftIO $ setCurrentDirectory thunkDir
+  callProcessAndLogOutput (Debug, Error) $ proc "git" ["checkout", branch]
+  liftIO $ setCurrentDirectory initalDir
+  _ <- packThunk thunkDir
+  updateThunkToLatest thunkDir
 
 getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
 getThunkPtr = getThunkPtr' True
