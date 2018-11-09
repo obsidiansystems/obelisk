@@ -628,13 +628,13 @@ setThunk = setThunk' False
 
 setThunk' :: MonadObelisk m => Bool -> String -> FilePath -> m ()
 setThunk' noTrail branch thunkDir = do
-  _ <- unpackThunk thunkDir
+  _ <- unpackThunk' noTrail thunkDir
   -- TODO: may have to get current dir before switching
   initalDir <- liftIO getCurrentDirectory
   liftIO $ setCurrentDirectory thunkDir
   callProcessAndLogOutput (Debug, Error) $ proc "git" ["checkout", branch]
   liftIO $ setCurrentDirectory initalDir
-  _ <- packThunk thunkDir
+  _ <- packThunk' noTrail thunkDir
   updateThunkToLatest thunkDir
 
 getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
