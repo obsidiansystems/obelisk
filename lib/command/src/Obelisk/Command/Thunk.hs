@@ -627,15 +627,20 @@ setThunk :: MonadObelisk m => String -> FilePath -> m ()
 setThunk = setThunk' False
 
 setThunk' :: MonadObelisk m => Bool -> String -> FilePath -> m ()
-setThunk' noTrail branch thunkDir = do
-  _ <- unpackThunk' noTrail thunkDir
-  -- TODO: may have to get current dir before switching
-  initalDir <- liftIO getCurrentDirectory
-  liftIO $ setCurrentDirectory thunkDir
-  callProcessAndLogOutput (Debug, Error) $ proc "git" ["checkout", branch]
-  liftIO $ setCurrentDirectory initalDir
-  _ <- packThunk' noTrail thunkDir
-  updateThunkToLatest thunkDir
+setThunk' noTrail branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
+  Left err -> failWith $ T.pack $ "thunk set : " <> show err
+  Right (ThunkData_Packed _) -> do
+    -- TODO: create a ThunkPtr from the branch name
+    _ <- unpackThunk' noTrail thunkDir
+    -- TODO: if git checkout branch errors out, the directory should be restored back to it's previous state
+    callProcessAndLogOutput (Debug, Error) $ gitProc thunkDir ["checkout", branch]
+    _ <- packThunk' noTrail thunkDir
+    updateThunkToLatest thunkDir
+    -- TODO: use overwriteThunk thunkDir (someThunkPtr)
+  Right (ThunkData_Checkout _) -> do
+    callProcessAndLogOutput (Debug, Error) $ gitProc thunkDir ["checkout", branch]
+    _ <- packThunk' noTrail thunkDir
+    updateThunkToLatest thunkDir
 
 getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
 getThunkPtr = getThunkPtr' True
