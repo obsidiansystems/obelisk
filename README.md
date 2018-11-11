@@ -47,39 +47,23 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 When developing on obelisk itself you may launch `ghcid` for the corresponding project as follows. For example to launch ghcid for `lib/backend` project:
 
 ```
-nix-shell -A obelisk.obelisk-backend.env --run "cd lib/backend && ghcid -c 'cabal new-repl'"
+nix-shell -A obeliskEnvs.obelisk-backend --run "cd lib/backend && ghcid -c 'cabal new-repl'"
 ```
 
 Or to launch ghcid for `lib/command` project:
 
 ```
-nix-shell -A obelisk.obelisk-command.env --run "cd lib/command && ghcid -c 'cabal new-repl'"
+nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
 ### Accessing private repositories
-To allow the Nix builder to access private git repositories, follow these steps:
 
-1. [Get set up to connect to GitHub with SSH](https://help.github.com/articles/connecting-to-github-with-ssh/)
-1. [Create a GitHub personal access token](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/)
-1. Set environment variables:
-   * NixOS: Add this to `/etc/nixos/configuration.nix`:
-    ```
-    nix.envVars = {
-      NIX_GITHUB_PRIVATE_USERNAME = "your-github-username";
-      NIX_GITHUB_PRIVATE_PASSWORD = "your-github-personal-access-token";
-    };
-    ```
-   * MacOS:
-    ```
-    sudo launchctl setenv NIX_GITHUB_PRIVATE_USERNAME "your-github-username"
-    sudo launchctl setenv NIX_GITHUB_PRIVATE_PASSWORD "your-github-personal-access"
-    sudo launchctl stop org.nixos.nix-daemon
-    sudo launchctl start org.nixos.nix-daemon
-    ```
-1. `nix-env -i hub` OR `nix-env -iA nixos.gitAndTools.hub`
-1. `hub clone yourusername/yourproject`
-  * NOTE: you must authenticate with hub at least once, because the `ob` command uses `hub` for authentication
-  #TODO: Make ob do this itself (either invoke hub automatically or not depend on hub)
+To allow the Nix builder to access private git repositories, you must be set up
+to access them via SSH. Follow these steps depending on the platform you need
+access to:
+
+- [GitHub](https://help.github.com/articles/connecting-to-github-with-ssh/)
+- [GitLab](https://docs.gitlab.com/ee/gitlab-basics/create-your-ssh-keys.html)
 
 ## Developing an Obelisk project
 
@@ -156,7 +140,7 @@ ob deploy push
 
 `ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. The backend will live in `/var/lib/backend`.
 
-At this point you are done. Your app will be accessible at `${ROUTE}`.
+At this point you are done. Your app will be accessible at `${ROUTE}`. The currently deployed version - the git commit hash of the source repo - can be found at `${ROUTE}/version`.
 
 ### From macOS
 
