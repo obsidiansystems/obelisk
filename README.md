@@ -252,9 +252,9 @@ This command will accomplish the following:
 
 1. Create a key store and apk signing key (`android_keystore.jks`)
 1. Build a Signed Android apk for your application
-1. Deploy the Signed apk to your connect Android device
+1. Deploy the Signed apk to your connected Android device
 
-In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `config/backend/androidKeyStore`
+In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`
 
 Additional documentation on java key stores can be found [here] (https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html)
 
