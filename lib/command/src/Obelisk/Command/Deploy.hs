@@ -175,7 +175,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   unless exists $ failWith "ob test should be run inside of a deploy directory"
   when (platform == "android") $ do
     let keystorePath = root </> "android_keystore.jks"
-        keytoolConfPath = root </> "config/backend/androidKeyStore"
+        keytoolConfPath = root </> "android_keytool_config.json"
     hasKeystore <- liftIO $ doesFileExist keystorePath
     when (not hasKeystore) $ do
       -- TODO log instructions for how to modify the keystore
