@@ -33,6 +33,7 @@ module Obelisk.Command.Thunk
 
 import Control.Applicative
 import Control.Exception (displayException, try)
+import qualified Control.Lens as Lens
 import Control.Lens.Indexed hiding ((<.>))
 import Control.Monad
 import Control.Monad.Catch (handle)
@@ -501,13 +502,13 @@ nixBuildThunkAttrWithCache thunkDir attr = do
     Just c -> return c
     Nothing -> do
       putLog Warning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
-      _ <- nixBuild $ def
-        { _nixBuildConfig_target = Target
-          { _target_path = thunkDir
+      _ <- nixCmd $ NixCmd_Build$ def
+        Lens.& nixBuildConfig_outLink Lens..~ OutLink_IndirectRoot cachePath
+        Lens.& nixCmdConfig_target Lens..~ Target
+          { _target_path = Just thunkDir
           , _target_attr = Just attr
+          , _target_expr = Nothing
           }
-        , _nixBuildConfig_outLink = OutLink_IndirectRoot cachePath
-        }
       return cachePath
 
 -- | Build a nix attribute, and cache the result if possible
@@ -523,13 +524,13 @@ nixBuildAttrWithCache exprPath attr = do
   readThunk exprPath >>= \case
     -- Only packed thunks are cached. in particular, checkouts are not
     Right (ThunkData_Packed _) -> nixBuildThunkAttrWithCache exprPath attr
-    _ -> nixBuild $ def
-      { _nixBuildConfig_target = Target
-        { _target_path = exprPath
+    _ -> nixCmd $ NixCmd_Build $ def
+      Lens.& nixBuildConfig_outLink Lens..~ OutLink_None
+      Lens.& nixCmdConfig_target Lens..~ Target
+        { _target_path = Just exprPath
         , _target_attr = Just attr
+        , _target_expr = Nothing
         }
-      , _nixBuildConfig_outLink = OutLink_None
-      }
 
 -- | Safely update thunk using a custom action
 --

@@ -145,7 +145,7 @@ findProjectRoot target = do
   (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat myUid) []
   return result
 
-withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m ()) -> m ()
+withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
 withProjectRoot target f = findProjectRoot target >>= \case
   Nothing -> failWith "Must be used inside of an Obelisk project"
   Just root -> f root
