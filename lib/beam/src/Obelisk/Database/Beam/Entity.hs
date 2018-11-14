@@ -3,10 +3,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Obelisk.Database.Beam.Entity where
 
+import Control.Lens
 import Data.Text
 import Database.Beam
 import Database.Beam.Migrate
@@ -19,6 +21,8 @@ data Entity (value :: (* -> *) -> *) (f :: * -> *) = Entity
   { _entity_key :: (Key value) f
   , _entity_value :: value f
   } deriving Generic
+
+makeLenses ''Entity
 
 deriving instance (Beamable (Key value), Beamable value) => Beamable (Entity value)
 deriving instance (Eq (Key value Identity), Eq (value Identity)) => Eq (Entity value Identity)

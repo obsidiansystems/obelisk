@@ -8,6 +8,7 @@ library
   build-depends: base,
                  beam-core,
                  beam-migrate,
+                 lens,
                  text
   exposed-modules: Obelisk.Database.Beam.Entity
 
