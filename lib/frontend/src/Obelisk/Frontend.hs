@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -21,7 +22,7 @@ import Prelude hiding ((.))
 import Control.Category
 import Control.Concurrent
 import Control.Lens
-import Control.Monad
+import Control.Monad hiding (sequence, sequence_)
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Control.Monad.Primitive
@@ -33,6 +34,8 @@ import Data.Functor.Sum
 import Data.IORef
 import Data.Monoid ((<>))
 import Data.Text (Text)
+import Data.Foldable (sequence_)
+import Data.Traversable (sequence)
 import GHCJS.DOM hiding (bracket, catch)
 import GHCJS.DOM.Document
 import GHCJS.DOM.Node
@@ -40,6 +43,7 @@ import qualified GHCJS.DOM.Types as DOM
 import Language.Javascript.JSaddle (JSM)
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
+import Reflex.Dom.Builder.Hydration
 import Reflex.Host.Class
 import qualified Reflex.TriggerEvent.Base as TriggerEvent
 
@@ -73,7 +77,7 @@ data Frontend route = Frontend
   , _frontend_body :: !(forall t m x. ObeliskWidget t x route m => RoutedT t route m ())
   }
 
-type Widget' x = ImmediateDomBuilderT DomTimeline (DomCoreWidget x)
+type Widget' x a = HydrationDomBuilderT DomTimeline (DomCoreWidget x) a
 
 -- | A widget that isn't attached to any particular part of the DOM hierarchy
 type FloatingWidget x = TriggerEventT DomTimeline (DomCoreWidget x)
@@ -83,16 +87,43 @@ type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (Perform
 --TODO: Rename
 {-# INLINABLE attachWidget''' #-}
 attachWidget'''
-  :: IORef Bool
+  :: Document
+  -> Node
+  -> IORef HydrationMode
+  -> IORef [DOM DomTimeline (PostBuildT DomTimeline (WithJSContextSingleton () (PerformEventT DomTimeline DomHost)))]
+  -> JSContextSingleton ()
   -> (EventChannel -> PerformEventT DomTimeline DomHost (IORef (Maybe (EventTrigger DomTimeline ()))))
   -> IO ()
-attachWidget''' hydration w = runDomHost $ do
-  events <- liftIO newChan
-  (postBuildTriggerRef, fc@(FireCommand fire)) <- hostPerformEventT $ w events
-  mPostBuildTrigger <- readRef postBuildTriggerRef
-  forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
-  liftIO $ writeIORef hydration False
-  liftIO $ processAsyncEvents events fc
+attachWidget''' doc bodyNode hydrationMode hres jsSing w = do
+  events <- newChan
+  runDomHost $ flip runTriggerEventT events $ mdo
+    (syncEvent, fireSync) <- newTriggerEvent
+    liftIO $ putStrLn "-------------------------------------- Running host"
+    (postBuildTriggerRef, fc@(FireCommand fire)) <- lift $ hostPerformEventT $ do
+      a <- w events
+      runWithReplace (return ()) $ delayedAction <$ syncEvent
+      pure a
+    mPostBuildTrigger <- readRef postBuildTriggerRef
+    lift $ forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
+    liftIO $ putStrLn "-------------------------------------- Finished postBuild"
+    liftIO $ fireSync ()
+    unreadyChildren <- liftIO $ newIORef 0
+    forest <- liftIO $ readIORef hres
+    -- TODO: DomHost is SpiderHost Global only if we're not in profiling mode
+    let env = HydrationRunnerEnv
+          { _hydrationRunnerEnv_document = doc
+          , _hydrationRunnerEnv_parent = bodyNode
+          , _hydrationRunnerEnv_unreadyChildren = unreadyChildren
+          , _hydrationRunnerEnv_commitAction = pure ()
+          }
+        state = HydrationRunnerState
+          { _hydrationRunnerState_previousNode = Nothing
+          }
+        delayedAction = do
+          void $ runWithJSContextSingleton (runPostBuildT (runHydrationDomBuilderT (runDOMForest forest) env state events) never) jsSing
+          liftIO $ writeIORef hydrationMode HydrationMode_Immediate
+    liftIO $ putStrLn "-------------------------------------- Performing delayed actions"
+    liftIO $ processAsyncEvents events fc
 
 --TODO: This is a collection of random stuff; we should make it make some more sense and then upstream to reflex-dom-core
 runWithHeadAndBody
@@ -106,24 +137,31 @@ runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
   headElement <- getHeadUnchecked globalDoc
   bodyElement <- getBodyUnchecked globalDoc
   unreadyChildren <- liftIO $ newIORef 0
-  hydration <- liftIO $ newIORef True
-  liftIO $ attachWidget''' hydration $ \events -> flip runWithJSContextSingleton jsSing $ do
+  hydrationMode <- liftIO $ newIORef HydrationMode_Hydrating
+  hydrationResult <- liftIO $ newIORef []
+  liftIO $ attachWidget''' globalDoc (toNode bodyElement) hydrationMode hydrationResult jsSing $ \events -> flip runWithJSContextSingleton jsSing $ do
     (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
-    let appendImmediateDom :: DOM.Node -> Widget' () c -> FloatingWidget () c
-        appendImmediateDom n w = do
-          hydrationNode <- liftIO $ newIORef Nothing
+    let hydrateDom :: DOM.Node -> Widget' () c -> FloatingWidget () c
+        hydrateDom n w = do
           events' <- TriggerEvent.askEvents
+          parent <- liftIO $ newIORef $ toNode n
+          prerenderDepth <- liftIO $ newIORef 0
           lift $ do
-            let builderEnv = ImmediateDomBuilderEnv
-                  { _immediateDomBuilderEnv_document = globalDoc
-                  , _immediateDomBuilderEnv_parent = toNode n
-                  , _immediateDomBuilderEnv_unreadyChildren = unreadyChildren
-                  , _immediateDomBuilderEnv_commitAction = pure ()
-                  , _immediateDomBuilderEnv_hydrating = hydration
-                  , _immediateDomBuilderEnv_hydrationNode = hydrationNode
+            let builderEnv = HydrationDomBuilderEnv
+                  { _hydrationDomBuilderEnv_document = globalDoc
+                  , _hydrationDomBuilderEnv_parent = parent
+                  , _hydrationDomBuilderEnv_unreadyChildren = unreadyChildren
+                  , _hydrationDomBuilderEnv_commitAction = pure ()
+                  , _hydrationDomBuilderEnv_hydrationMode = hydrationMode
+                  , _hydrationDomBuilderEnv_prerenderDepth = prerenderDepth
                   }
-            runImmediateDomBuilderT w builderEnv events'
-    flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (appendImmediateDom $ toNode headElement) (appendImmediateDom $ toNode bodyElement)
+                state = HydrationDomBuilderState
+                  { _hydrationDomBuilderState_delayed = []
+                  }
+            (a, res) <- runHydrationDomBuilderT w builderEnv state events'
+            liftIO $ modifyIORef' hydrationResult $ \xs -> xs ++ _hydrationDomBuilderState_delayed res
+            pure a
+    flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (hydrateDom $ toNode headElement) (hydrateDom $ toNode bodyElement)
 --    liftIO (readIORef unreadyChildren) >>= \case
 --      0 -> DOM.liftJSM commit
 --      _ -> return ()
