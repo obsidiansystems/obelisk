@@ -33,6 +33,7 @@ module Obelisk.Command.Thunk
 
 import Control.Applicative
 import Control.Exception (displayException, try)
+import qualified Control.Lens as Lens
 import Control.Lens.Indexed hiding ((<.>))
 import Control.Monad
 import Control.Monad.Catch (handle)
@@ -501,13 +502,13 @@ nixBuildThunkAttrWithCache thunkDir attr = do
     Just c -> return c
     Nothing -> do
       putLog Warning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
-      _ <- nixBuild $ def
-        { _nixBuildConfig_target = Target
-          { _target_path = thunkDir
+      _ <- nixCmd $ NixCmd_Build$ def
+        Lens.& nixBuildConfig_outLink Lens..~ OutLink_IndirectRoot cachePath
+        Lens.& nixCmdConfig_target Lens..~ Target
+          { _target_path = Just thunkDir
           , _target_attr = Just attr
+          , _target_expr = Nothing
           }
-        , _nixBuildConfig_outLink = OutLink_IndirectRoot cachePath
-        }
       return cachePath
 
 -- | Build a nix attribute, and cache the result if possible
@@ -523,13 +524,13 @@ nixBuildAttrWithCache exprPath attr = do
   readThunk exprPath >>= \case
     -- Only packed thunks are cached. in particular, checkouts are not
     Right (ThunkData_Packed _) -> nixBuildThunkAttrWithCache exprPath attr
-    _ -> nixBuild $ def
-      { _nixBuildConfig_target = Target
-        { _target_path = exprPath
+    _ -> nixCmd $ NixCmd_Build $ def
+      Lens.& nixBuildConfig_outLink Lens..~ OutLink_None
+      Lens.& nixCmdConfig_target Lens..~ Target
+        { _target_path = Just exprPath
         , _target_attr = Just attr
+        , _target_expr = Nothing
         }
-      , _nixBuildConfig_outLink = OutLink_None
-      }
 
 -- | Safely update thunk using a custom action
 --
@@ -553,7 +554,7 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
         return tmpThunk
       Right _ -> failWith $ "Thunk is not packed"
     updateThunkFromTmp p' = do
-      packThunk' True p'
+      _ <- packThunk' True p'
       callProcessAndLogOutput (Notice, Error) $
         proc "cp" ["-r", "-T", p', p]
 
@@ -563,8 +564,16 @@ finalMsg noTrail s = if noTrail then Nothing else Just s
 unpackThunk :: MonadObelisk m => FilePath -> m ()
 unpackThunk = unpackThunk' False
 
+-- | Check that we are not somewhere inside the thunk directory
+checkThunkDirectory :: MonadObelisk m => FilePath -> m ()
+checkThunkDirectory thunkDir = do
+  currentDir <- liftIO getCurrentDirectory
+  thunkDir' <- liftIO $ canonicalizePath thunkDir
+  when (thunkDir' `L.isInfixOf` currentDir) $
+    failWith "Can't pack/unpack from within the thunk directory"
+
 unpackThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
-unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
+unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ "thunk unpack: " <> T.pack (show err)
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right (ThunkData_Checkout _) -> failWith "thunk unpack: thunk is already unpacked"
@@ -597,11 +606,11 @@ unpackThunk' noTrail thunkDir = readThunk thunkDir >>= \case
 
 --TODO: add force mode to pack even if changes are present
 --TODO: add a rollback mode to pack to the original thunk
-packThunk :: MonadObelisk m => FilePath -> m ()
+packThunk :: MonadObelisk m => FilePath -> m ThunkPtr
 packThunk = packThunk' False
 
-packThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
-packThunk' noTrail thunkDir = readThunk thunkDir >>= \case
+packThunk' :: MonadObelisk m => Bool -> FilePath -> m ThunkPtr
+packThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
@@ -610,6 +619,7 @@ packThunk' noTrail thunkDir = readThunk thunkDir >>= \case
       thunkPtr <- getThunkPtr thunkDir
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
+      pure thunkPtr
 
 getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
 getThunkPtr = getThunkPtr' True
@@ -661,7 +671,7 @@ getThunkPtr' checkClean thunkDir = do
     let untrackedBranches = Map.keys errorMap
     when (not $ L.null untrackedBranches) $ failWith $ T.unlines $
       [ "thunk pack: Certain branches in the thunk have no upstream branch \
-        \set. This means don't know to check whether all your work is \
+        \set. This means we don't know to check whether all your work is \
         \saved. The offending branches are:"
       , ""
       , T.unwords untrackedBranches
