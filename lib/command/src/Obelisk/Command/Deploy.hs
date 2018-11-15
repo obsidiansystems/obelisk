@@ -167,8 +167,6 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     -- check to see if config/android/...jks exist
     androidDirExist <- liftIO $ doesDirectoryExist srcDir
     -- if it doesn't, create the directory and...
-    -- liftIO $ createDirectoryIfMissing (not androidDirExist) signKeyDir
-    -- liftIO $ print $ ("Enter desired APK key filename:" :: String)
     -- keyFilename <- liftIO getLine
     liftIO $ print $ ("Enter desired APK key alias:" :: String)
     alias <- liftIO getLine
@@ -187,6 +185,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
           ]) { cwd = Just root }
       _ -> return ()
   result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
+  putLog Notice $ "Your recently built android apk can be found at the following path: " <> (show result)
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
 
 -- | Simplified deployment configuration mechanism. At one point we may revisit this.
