@@ -105,24 +105,14 @@ attachWidget''' doc bodyNode hydrationMode hres jsSing w = do
       pure a
     mPostBuildTrigger <- readRef postBuildTriggerRef
     lift $ forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
-    liftIO $ putStrLn "-------------------------------------- Finished postBuild"
     liftIO $ fireSync ()
-    unreadyChildren <- liftIO $ newIORef 0
     forest <- liftIO $ readIORef hres
     -- TODO: DomHost is SpiderHost Global only if we're not in profiling mode
-    let env = HydrationRunnerEnv
-          { _hydrationRunnerEnv_document = doc
-          , _hydrationRunnerEnv_parent = bodyNode
-          , _hydrationRunnerEnv_unreadyChildren = unreadyChildren
-          , _hydrationRunnerEnv_commitAction = pure ()
-          }
-        state = HydrationRunnerState
-          { _hydrationRunnerState_previousNode = Nothing
-          }
-        delayedAction = do
-          void $ runWithJSContextSingleton (runPostBuildT (runHydrationDomBuilderT (runDOMForest forest) env state events) never) jsSing
+    let delayedAction = do
+          liftIO $ putStrLn "-------------------------------------- Performing delayed actions"
+          void $ runWithJSContextSingleton (runPostBuildT (runHydrationRunnerT (runDOMForest forest) Nothing bodyNode events) never) jsSing
+          liftIO $ putStrLn "-------------------------------------- Performed delayed actions"
           liftIO $ writeIORef hydrationMode HydrationMode_Immediate
-    liftIO $ putStrLn "-------------------------------------- Performing delayed actions"
     liftIO $ processAsyncEvents events fc
 
 --TODO: This is a collection of random stuff; we should make it make some more sense and then upstream to reflex-dom-core
@@ -155,11 +145,8 @@ runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
                   , _hydrationDomBuilderEnv_hydrationMode = hydrationMode
                   , _hydrationDomBuilderEnv_prerenderDepth = prerenderDepth
                   }
-                state = HydrationDomBuilderState
-                  { _hydrationDomBuilderState_delayed = []
-                  }
-            (a, res) <- runHydrationDomBuilderT w builderEnv state events'
-            liftIO $ modifyIORef' hydrationResult $ \xs -> xs ++ _hydrationDomBuilderState_delayed res
+            (a, res) <- runHydrationDomBuilderT w builderEnv events'
+            liftIO $ modifyIORef' hydrationResult $ \xs -> xs ++ res -- TODO
             pure a
     flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (hydrateDom $ toNode headElement) (hydrateDom $ toNode bodyElement)
 --    liftIO (readIORef unreadyChildren) >>= \case

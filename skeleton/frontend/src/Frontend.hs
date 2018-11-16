@@ -39,7 +39,9 @@ tshow = T.pack . show
 
 frontend :: Frontend (R FrontendRoute)
 frontend = Frontend
-  { _frontend_head = pure () -- el "title" $ text "Obelisk Minimal Example"
+  { _frontend_head = pure ()
+    -- TODO lib/Frontend needs fixing for this to work
+    -- el "title" $ text "Obelisk Minimal Example"
   , _frontend_body = do
       text "Welcome to Obelisk!"
       el "p" $ text $ T.pack commonStuff
@@ -61,7 +63,6 @@ frontend = Frontend
 --          (el "a" $ text "JS link")
 
       pb <- getPostBuild
-      pure ()
 
       elAttr "article" ("style" =: "background: moccasin") $ do
         widgetHold_ (el "div" $ text "first") $ ffor pb $ \() -> display seconds
@@ -82,8 +83,6 @@ frontend = Frontend
               1 -> text "Odd"
           1 -> el "span" $ text "Odd inner"
 
-      pure ()
-
       -- These will be squashed into a single text node by the static renderer
 --      text "Test"
 --      text "Test"
@@ -91,14 +90,18 @@ frontend = Frontend
 --      text "Test"
 --      text "Test"
 
-  {-
       --traverseDMapWithKeyWithAdjust' :: (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> m (DMap k v', Event t (PatchDMap k v'))
-      elAttr "article" ("style" =: "background: thistle") $ do
-        (m', e') <- traverseDMapWithKeyWithAdjust (\k v -> has @Show k $ dkeyWidget k v) keyMap $ ffor (updated clicks) $ \x -> case x `mod` 2 of
-          0 -> PatchDMap $ DMap.singleton Key_Int (ComposeMaybe $ Just $ Identity x)
-          1 -> PatchDMap $ DMap.singleton Key_Bool (ComposeMaybe $ case x `mod` 3 of 0 -> Nothing; _ -> Just $ Identity True) <> DMap.singleton Key_Char (ComposeMaybe $ Just $ Identity (toEnum $ fromEnum 'A' + x))
+--      elAttr "article" ("style" =: "background: thistle") $ do
+--        (m', e') <- traverseDMapWithKeyWithAdjust (\k v -> has @Show k $ dkeyWidget k v) keyMap $ ffor (updated clicks) $ \_ -> case 0 of -- x -> case x `mod` 2 of
+--          0 -> PatchDMap $ DMap.singleton Key_Int (ComposeMaybe $ Just $ Identity 10)
+--          1 -> PatchDMap $ DMap.singleton Key_Bool (ComposeMaybe $ case x `mod` 3 of 0 -> Nothing; _ -> Just $ Identity True) <> DMap.singleton Key_Char (ComposeMaybe $ Just $ Identity (toEnum $ fromEnum 'A' + x))
         pure ()
--}
+
+
+--      elAttr "article" ("style" =: "background: thistle") $ do
+--        (m', e') <- traverseDMapWithKeyWithAdjust (\k v -> has @Show k $ dkeyWidget k v) keyMap $
+--          PatchDMap (DMap.singleton Key_Int (ComposeMaybe $ Just $ Identity 10)) <$ pb
+--        pure ()
 
   {-
       elAttr "article" ("style" =: "background: maroon") $ do
@@ -130,10 +133,10 @@ frontend = Frontend
           , ffor del $ \() -> PatchIntMap $ IntMap.singleton 3 Nothing
           ]
         pure ()
-
--}
+  -}
 
 --      el "footer" $ text "Footer"
+      pure ()
   }
 
 intkeyWidget :: (MonadHold t m, PostBuild t m, PerformEvent t m, TriggerEvent t m, DomBuilder t m, MonadFix m, MonadIO m, MonadIO (Performable m)) => Int -> Char -> m ()
