@@ -238,9 +238,9 @@ createKeystore root config = do
   callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
   where
     keytoolCmd = processToShellString "keytool"
-      [ "-genkeypair -noprompt"
+      [ "-genkeypair", "-noprompt"
       , "-keystore", _keytoolConfig_keystore config
-      , "-keyalg RSA -keysize 2048 -validity 10000"
+      , "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000"
       , "-storepass", _keytoolConfig_storepass config
       , "-alias", _keytoolConfig_alias config
       , "-keypass", _keytoolConfig_keypass config
