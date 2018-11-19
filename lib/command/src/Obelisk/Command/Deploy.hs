@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Deploy where
 
 import Control.Lens
@@ -14,21 +15,22 @@ import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
-import Data.List (isSuffixOf)
-import Data.Map (Map)
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
-import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.Generics
+import Nix.Convert
+import Nix.Pretty
+import Nix.Value
 import System.Directory
 import System.Environment (getEnvironment)
 import System.FilePath
 import System.IO
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc, readCreateProcess, cwd)
+import System.Process (delegate_ctlc, env, proc, cwd)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
@@ -159,14 +161,18 @@ deployPush deployPath getNixBuilders = do
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
 
-keytoolToAndroidConfig :: KeytoolConfig -> Map Text NValue
-keytoolToAndroidConfig conf = Map.fromList
-  [ ("storeFile", NValue_Path $ _keytoolConfig_keystore conf)
-  , ("storePassword", NValue_Text $ T.pack $ _keytoolConfig_storepass conf)
-  , ("keyAlias", NValue_Text $ T.pack $ _keytoolConfig_alias conf)
-  , ("keyPassword", NValue_Text $ T.pack $ _keytoolConfig_keypass conf)
-  ]
-
+keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValueNF Identity)
+keytoolToAndroidConfig conf = runIdentity $ do
+  path <- toValue $ Path $ _keytoolConfig_keystore conf
+  storepass <- toValue $ T.pack $ _keytoolConfig_storepass conf
+  alias <- toValue $ T.pack $ _keytoolConfig_alias conf
+  keypass <- toValue $ T.pack $ _keytoolConfig_keypass conf
+  return $ HM.fromList
+    [ ("storeFile", path)
+    , ("storePassword", storepass)
+    , ("keyAlias", alias)
+    , ("keyPassword", keypass)
+    ]
 
 deployMobile :: MonadObelisk m => String -> [String] -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
@@ -200,13 +206,15 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     liftIO $ putStrLn $ show keytoolConfContents
     releaseKey <- case eitherDecode keytoolConfContents of
       Left err -> failWith $ T.pack err
-      Right conf -> return $ renderAttrset $ keytoolToAndroidConfig conf
+      Right conf -> do
+        let nvset = toValue @(HM.HashMap Text (NValueNF Identity)) @Identity @(NValueNF Identity) $ keytoolToAndroidConfig conf
+        return $ printNix $ runIdentity nvset
     result <- nixCmd $ NixCmd_Build $ def
       & nixBuildConfig_outLink .~ OutLink_None
       & nixCmdConfig_target .~ Target
         { _target_path = Nothing
         , _target_attr = Nothing
-        , _target_expr = Just $ "with (import " <> srcDir <> " {}); "  <> platform <> ".frontend.override (drv: { releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> T.unpack releaseKey <> "; })"
+        , _target_expr = Just $ "with (import " <> srcDir <> " {}); "  <> platform <> ".frontend.override (drv: { releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; })"
         }
     putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> (show result)
     callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs

@@ -25,9 +25,6 @@ module Obelisk.Command.Nix
   , boolArg
   , rawArg
   , strArg
-  , NValue (..)
-  , renderNValue
-  , renderAttrset
   ) where
 
 import Control.Monad (guard)
@@ -36,11 +33,8 @@ import Control.Lens
 import Data.Bool (bool)
 import Data.Default
 import Data.List (intercalate)
-import Data.Map (Map)
-import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid ((<>))
-import Data.Text (Text)
 import qualified Data.Text as T
 import System.Process (proc)
 
@@ -186,16 +180,4 @@ nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built 
       [ (" on " <>) <$> path
       , (\a -> " [" <> a <> "]") <$> (commonCfg ^. nixCmdConfig_target . target_attr)
       ]
-
-data NValue
-  = NValue_Text Text
-  | NValue_Path FilePath
-
-renderNValue :: NValue -> Text
-renderNValue = \case
-  NValue_Text x -> "\"" <> x <> "\""
-  NValue_Path p -> T.pack p
-
-renderAttrset :: Map Text NValue -> Text
-renderAttrset m = "{ " <> T.unwords (map (\(k,v) -> k <> " = " <> renderNValue v <> ";") $ M.toList m) <> " }"
 
