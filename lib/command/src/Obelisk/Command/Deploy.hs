@@ -196,7 +196,6 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
             , _keytoolConfig_alias = "obelisk"
             , _keytoolConfig_storepass = keyStorePassword
             , _keytoolConfig_keypass = keyStorePassword
-            , _keytoolConfig_dname = "CN=example.com, OU=engineering, O=obelisk, L=LinuxLand, S=NY, C=US" -- TODO Read these from config?
             }
       createKeystore root $ keyToolConf
       liftIO $ BSL.writeFile keytoolConfPath $ encode keyToolConf
@@ -228,7 +227,6 @@ data KeytoolConfig = KeytoolConfig
   , _keytoolConfig_alias :: String
   , _keytoolConfig_storepass :: String
   , _keytoolConfig_keypass :: String
-  , _keytoolConfig_dname :: String
   } deriving (Show, Generic)
 
 instance FromJSON KeytoolConfig
@@ -246,9 +244,7 @@ createKeystore root config = do
       , "-storepass", _keytoolConfig_storepass config
       , "-alias", _keytoolConfig_alias config
       , "-keypass", _keytoolConfig_keypass config
-      , "-dname ", quote $ _keytoolConfig_dname config
       ]
-    quote x = "\"" <> x <> "\""
 
 -- | Simplified deployment configuration mechanism. At one point we may revisit this.
 writeDeployConfig :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
