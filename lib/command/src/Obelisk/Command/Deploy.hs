@@ -255,7 +255,8 @@ createKeystore root config = do
     keytoolCmd = processToShellString "keytool"
       [ "-genkeypair", "-noprompt"
       , "-keystore", _keytoolConfig_keystore config
-      , "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000"
+      , "-keyalg", "RSA", "-keysize", "2048"
+      , "-validity", "1000000000"
       , "-storepass", _keytoolConfig_storepass config
       , "-alias", _keytoolConfig_alias config
       , "-keypass", _keytoolConfig_keypass config
