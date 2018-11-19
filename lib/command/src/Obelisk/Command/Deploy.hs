@@ -237,7 +237,7 @@ createKeystore root config = do
   let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
   callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
   where
-    keytoolCmd = unwords $ "keytool" :
+    keytoolCmd = processToShellString "keytool"
       [ "-genkeypair -noprompt"
       , "-keystore", _keytoolConfig_keystore config
       , "-keyalg RSA -keysize 2048 -validity 10000"
