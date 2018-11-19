@@ -174,49 +174,64 @@ keytoolToAndroidConfig conf = runIdentity $ do
     , ("keyPassword", keypass)
     ]
 
-deployMobile :: MonadObelisk m => String -> [String] -> m ()
+data PlatformDeployment = Android | IOS
+  deriving (Show, Eq)
+
+renderPlatformDeployment :: PlatformDeployment -> String
+renderPlatformDeployment = \case
+  Android -> "android"
+  IOS -> "ios"
+
+deployMobile :: MonadObelisk m => PlatformDeployment -> [String] -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
-  when (platform == "android") $ do
-    let keystorePath = root </> "android_keystore.jks"
-        keytoolConfPath = root </> "android_keytool_config.json"
-    hasKeystore <- liftIO $ doesFileExist keystorePath
-    when (not hasKeystore) $ do
-      -- TODO log instructions for how to modify the keystore
-      putLog Notice $ "Creating keystore: " <> T.pack keystorePath
-      putLog Notice "Enter a keystore password: "
-      keyStorePassword <- liftIO $ withEcho False getLine
-      putLog Notice "Re-enter the keystore password: "
-      keyStorePassword' <- liftIO $ withEcho False getLine
-      unless (keyStorePassword' == keyStorePassword) $ failWith "passwords do not match"
-      let keyToolConf = KeytoolConfig
-            { _keytoolConfig_keystore = keystorePath
-            , _keytoolConfig_alias = "obelisk"
-            , _keytoolConfig_storepass = keyStorePassword
-            , _keytoolConfig_keypass = keyStorePassword
-            }
-      createKeystore root $ keyToolConf
-      liftIO $ BSL.writeFile keytoolConfPath $ encode keyToolConf
-    checkKeytoolConfExist <- liftIO $ doesFileExist keytoolConfPath
-    unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"
-    keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
-    liftIO $ putStrLn $ show keytoolConfContents
-    releaseKey <- case eitherDecode keytoolConfContents of
-      Left err -> failWith $ T.pack err
-      Right conf -> do
-        let nvset = toValue @(HM.HashMap Text (NValueNF Identity)) @Identity @(NValueNF Identity) $ keytoolToAndroidConfig conf
-        return $ printNix $ runIdentity nvset
-    result <- nixCmd $ NixCmd_Build $ def
-      & nixBuildConfig_outLink .~ OutLink_None
-      & nixCmdConfig_target .~ Target
+  nixBuildTarget <- case platform of
+    Android -> do
+      let keystorePath = root </> "android_keystore.jks"
+          keytoolConfPath = root </> "android_keytool_config.json"
+      hasKeystore <- liftIO $ doesFileExist keystorePath
+      when (not hasKeystore) $ do
+        -- TODO log instructions for how to modify the keystore
+        putLog Notice $ "Creating keystore: " <> T.pack keystorePath
+        putLog Notice "Enter a keystore password: "
+        keyStorePassword <- liftIO $ withEcho False getLine
+        putLog Notice "Re-enter the keystore password: "
+        keyStorePassword' <- liftIO $ withEcho False getLine
+        unless (keyStorePassword' == keyStorePassword) $ failWith "passwords do not match"
+        let keyToolConf = KeytoolConfig
+              { _keytoolConfig_keystore = keystorePath
+              , _keytoolConfig_alias = "obelisk"
+              , _keytoolConfig_storepass = keyStorePassword
+              , _keytoolConfig_keypass = keyStorePassword
+              }
+        createKeystore root $ keyToolConf
+        liftIO $ BSL.writeFile keytoolConfPath $ encode keyToolConf
+      checkKeytoolConfExist <- liftIO $ doesFileExist keytoolConfPath
+      unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"
+      keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
+      liftIO $ putStrLn $ show keytoolConfContents
+      releaseKey <- case eitherDecode keytoolConfContents of
+        Left err -> failWith $ T.pack err
+        Right conf -> do
+          let nvset = toValue @(HM.HashMap Text (NValueNF Identity)) @Identity @(NValueNF Identity) $ keytoolToAndroidConfig conf
+          return $ printNix $ runIdentity nvset
+      return $ Target
         { _target_path = Nothing
         , _target_attr = Nothing
-        , _target_expr = Just $ "with (import " <> srcDir <> " {}); "  <> platform <> ".frontend.override (drv: { releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; })"
+        , _target_expr = Just $ "with (import " <> srcDir <> " {}); "  <> renderPlatformDeployment platform <> ".frontend.override (drv: { releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; })"
         }
-    putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> (show result)
-    callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
+    IOS -> return $ Target
+      { _target_path = Nothing
+      , _target_attr = Just "ios.frontend"
+      , _target_expr = Nothing
+      }
+  result <- nixCmd $ NixCmd_Build $ def
+    & nixBuildConfig_outLink .~ OutLink_None
+    & nixCmdConfig_target .~ nixBuildTarget
+  putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> (show result)
+  callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
   where
     withEcho showEcho f = do
       prevEcho <- hGetEcho stdin
