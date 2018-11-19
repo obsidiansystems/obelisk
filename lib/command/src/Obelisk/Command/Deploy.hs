@@ -160,9 +160,21 @@ deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
 deployMobile :: MonadObelisk m => String -> [String] -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
+      configDir = root </> "config"
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
-  result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
+  -- result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
+  let expr = mconcat 
+        [ "with (import ", srcDir, " {});" 
+        -- , "android.frontend.override (_: { staticSrc = (passthru.__android ", configDir, ").frontend.staticSrc; })"
+        , "ios.frontend.override (_: { staticSrc = (passthru.__ios ", configDir, ").frontend.staticSrc; })" 
+        ]
+      target = Target
+        { _target_path = Nothing
+        , _target_attr = Nothing
+        , _target_expr = Just expr
+        }
+  result <- nixCmd $ NixCmd_Build $ def & nixBuildConfig_common .~ (def & nixCmdConfig_target .~ target)
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
 
 -- | Simplified deployment configuration mechanism. At one point we may revisit this.
