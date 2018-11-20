@@ -180,3 +180,4 @@ nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built 
       [ (" on " <>) <$> path
       , (\a -> " [" <> a <> "]") <$> (commonCfg ^. nixCmdConfig_target . target_attr)
       ]
+
