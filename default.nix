@@ -283,7 +283,7 @@ in rec {
                   combinedPackages = predefinedPackages // packages;
                   projectOverrides = self: super: {
                     ${staticName} = haskellLib.dontHaddock (self.callCabal2nix staticName processedStatic.haskellManifest {});
-#                    ${backendName} = haskellLib.addBuildDepend super.${backendName} self.obelisk-run;
+                    ${backendName} = haskellLib.addBuildDepend super.${backendName} self.obelisk-run;
                   };
                   totalOverrides = lib.composeExtensions projectOverrides overrides;
                   inherit (lib.strings) hasPrefix;
@@ -300,17 +300,17 @@ in rec {
                     commonName
                     frontendName
                   ]);
-                  ghc = ([
+                  ghc = (lib.filter (x: lib.hasAttr x combinedPackages)[
                     backendName
                     commonName
                     frontendName
-                    "obelisk-route"
-                    "obelisk-frontend"
-                    "obelisk-backend"
-                    "obelisk-executable-config"
-                    "obelisk-run"
-                    "reflex-dom-core"
-                    "reflex-dom"
+#                    "obelisk-route"
+#                    "obelisk-frontend"
+#                    "obelisk-backend"
+#                    "obelisk-executable-config"
+#                    "obelisk-run"
+#                    "reflex-dom-core"
+#                    "reflex-dom"
                   ]);
                   ghcjs = lib.filter (x: lib.hasAttr x combinedPackages) [
                     frontendName

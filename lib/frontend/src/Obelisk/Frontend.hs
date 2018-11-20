@@ -30,6 +30,7 @@ import Control.Monad.Ref
 import Control.Monad.Trans.Class
 import Data.ByteString (ByteString)
 import Data.Dependent.Sum (DSum (..))
+import Data.Foldable (for_)
 import Data.Functor.Sum
 import Data.IORef
 import Data.Monoid ((<>))
@@ -88,13 +89,12 @@ type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (Perform
 {-# INLINABLE attachWidget''' #-}
 attachWidget'''
   :: Document
-  -> Node
   -> IORef HydrationMode
-  -> IORef [DOM DomTimeline (PostBuildT DomTimeline (WithJSContextSingleton () (PerformEventT DomTimeline DomHost)))]
+  -> IORef [(Node, [DOM DomTimeline (PostBuildT DomTimeline (WithJSContextSingleton () (PerformEventT DomTimeline DomHost)))])]
   -> JSContextSingleton ()
   -> (EventChannel -> PerformEventT DomTimeline DomHost (IORef (Maybe (EventTrigger DomTimeline ()))))
   -> IO ()
-attachWidget''' doc bodyNode hydrationMode hres jsSing w = do
+attachWidget''' doc hydrationMode hres jsSing w = do
   events <- newChan
   runDomHost $ flip runTriggerEventT events $ mdo
     (syncEvent, fireSync) <- newTriggerEvent
@@ -106,12 +106,13 @@ attachWidget''' doc bodyNode hydrationMode hres jsSing w = do
     mPostBuildTrigger <- readRef postBuildTriggerRef
     lift $ forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
     liftIO $ fireSync ()
-    forest <- liftIO $ readIORef hres
+    forests <- liftIO $ readIORef hres
     -- TODO: DomHost is SpiderHost Global only if we're not in profiling mode
     let delayedAction = do
-          liftIO $ putStrLn "-------------------------------------- Performing delayed actions"
-          void $ runWithJSContextSingleton (runPostBuildT (runHydrationRunnerT (runDOMForest forest) Nothing bodyNode events) never) jsSing
-          liftIO $ putStrLn "-------------------------------------- Performed delayed actions"
+          for_ (reverse forests) $ \(rootNode, forest) -> do
+            liftIO $ putStrLn "-------------------------------------- Performing delayed actions"
+            void $ runWithJSContextSingleton (runPostBuildT (runHydrationRunnerT (runDOMForest forest) Nothing rootNode events) never) jsSing
+            liftIO $ putStrLn "-------------------------------------- Performed delayed actions"
           liftIO $ writeIORef hydrationMode HydrationMode_Immediate
     liftIO $ processAsyncEvents events fc
 
@@ -129,7 +130,7 @@ runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
   unreadyChildren <- liftIO $ newIORef 0
   hydrationMode <- liftIO $ newIORef HydrationMode_Hydrating
   hydrationResult <- liftIO $ newIORef []
-  liftIO $ attachWidget''' globalDoc (toNode bodyElement) hydrationMode hydrationResult jsSing $ \events -> flip runWithJSContextSingleton jsSing $ do
+  liftIO $ attachWidget''' globalDoc hydrationMode hydrationResult jsSing $ \events -> flip runWithJSContextSingleton jsSing $ do
     (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
     let hydrateDom :: DOM.Node -> Widget' () c -> FloatingWidget () c
         hydrateDom n w = do
@@ -146,7 +147,7 @@ runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
                   , _hydrationDomBuilderEnv_prerenderDepth = prerenderDepth
                   }
             (a, res) <- runHydrationDomBuilderT w builderEnv events'
-            liftIO $ modifyIORef' hydrationResult $ \xs -> xs ++ res -- TODO
+            liftIO $ modifyIORef' hydrationResult ((n, res) :)
             pure a
     flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (hydrateDom $ toNode headElement) (hydrateDom $ toNode bodyElement)
 --    liftIO (readIORef unreadyChildren) >>= \case

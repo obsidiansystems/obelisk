@@ -39,9 +39,9 @@ tshow = T.pack . show
 
 frontend :: Frontend (R FrontendRoute)
 frontend = Frontend
-  { _frontend_head = pure ()
-    -- TODO lib/Frontend needs fixing for this to work
-    -- el "title" $ text "Obelisk Minimal Example"
+  { _frontend_head = do
+      el "title" $ text "Obelisk Minimal Example"
+      elAttr "meta" mempty blank
   , _frontend_body = do
       text "Welcome to Obelisk!"
       el "p" $ text $ T.pack commonStuff
@@ -50,38 +50,38 @@ frontend = Frontend
       performEvent $ liftIO . print <$> updated clicks
       el "p" $ text "Clicks: " >> el "span" (display clicks) -- TODO multiple text bug
 
+      pb <- getPostBuild
+
       timer <- tickLossy 1 =<< liftIO getCurrentTime
       seconds <- count timer
       el "p" $ display seconds
       text "-----------------------------------------------"
 
---      elAttr "article" ("style" =: "background: lightcoral") $ do
---        prerender
---          (prerender
---            (el "span" $ text "Server span")
---            (el "a" $ text "JS link"))
---          (el "a" $ text "JS link")
+      elAttr "article" ("style" =: "background: lightcoral") $ do
+        prerender
+          (prerender
+            (el "span" $ text "Server span")
+            (el "a" $ text "JS link, inner"))
+          (el "a" $ text "JS link")
 
-      pb <- getPostBuild
-
-      elAttr "article" ("style" =: "background: moccasin") $ do
-        widgetHold_ (el "div" $ text "first") $ ffor pb $ \() -> display seconds
+--      elAttr "article" ("style" =: "background: moccasin") $ do
+--        widgetHold_ (el "div" $ text "first") $ ffor pb $ \() -> display seconds
 
 --      elAttr "article" ("style" =: "background: lightgreen") $ do
 --        widgetHold_ (do prerender (liftIO $ putStrLn "-------- server missiles") (liftIO $ putStrLn "-------- client missiles"); el "div" $ text "first") never
 
-      elAttr "article" ("style" =: "background: paleturquoise") $ do
-        dyn_ $ ffor clicks $ \x -> case x `mod` 2 of
-          0 -> el "span" $ text "Even"
-          1 -> el "span" $ text "Odd"
-
-      elAttr "article" ("style" =: "background: cornflowerblue") $ do
-        widgetHold (text "first") $ ffor (updated clicks) $ \x -> case x `mod` 2 of
-          0 -> do
-            dyn_ $ ffor seconds $ \x -> case x `mod` 2 of
-              0 -> el "span" $ text "Even"
-              1 -> text "Odd"
-          1 -> el "span" $ text "Odd inner"
+--      elAttr "article" ("style" =: "background: paleturquoise") $ do
+--        dyn_ $ ffor clicks $ \x -> case x `mod` 2 of
+--          0 -> el "span" $ text "Even"
+--          1 -> el "span" $ text "Odd"
+--
+--      elAttr "article" ("style" =: "background: cornflowerblue") $ do
+--        widgetHold (text "first") $ ffor (updated clicks) $ \x -> case x `mod` 2 of
+--          0 -> do
+--            dyn_ $ ffor seconds $ \x -> case x `mod` 2 of
+--              0 -> el "span" $ text "Even"
+--              1 -> text "Odd"
+--          1 -> el "span" $ text "Odd inner"
 
       -- These will be squashed into a single text node by the static renderer
 --      text "Test"
@@ -92,48 +92,46 @@ frontend = Frontend
 
       --traverseDMapWithKeyWithAdjust' :: (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> m (DMap k v', Event t (PatchDMap k v'))
 --      elAttr "article" ("style" =: "background: thistle") $ do
---        (m', e') <- traverseDMapWithKeyWithAdjust (\k v -> has @Show k $ dkeyWidget k v) keyMap $ ffor (updated clicks) $ \_ -> case 0 of -- x -> case x `mod` 2 of
+--        (m', e') <- traverseDMapWithKeyWithAdjust (\k v -> has @Show k $ dkeyWidget k v) keyMap $ ffor (updated clicks) $ \x -> case x `mod` 2 of
 --          0 -> PatchDMap $ DMap.singleton Key_Int (ComposeMaybe $ Just $ Identity 10)
 --          1 -> PatchDMap $ DMap.singleton Key_Bool (ComposeMaybe $ case x `mod` 3 of 0 -> Nothing; _ -> Just $ Identity True) <> DMap.singleton Key_Char (ComposeMaybe $ Just $ Identity (toEnum $ fromEnum 'A' + x))
-        pure ()
-
-
+--        pure ()
+--
+--
 --      elAttr "article" ("style" =: "background: thistle") $ do
 --        (m', e') <- traverseDMapWithKeyWithAdjust (\k v -> has @Show k $ dkeyWidget k v) keyMap $
 --          PatchDMap (DMap.singleton Key_Int (ComposeMaybe $ Just $ Identity 10)) <$ pb
 --        pure ()
-
-  {-
-      elAttr "article" ("style" =: "background: maroon") $ do
-        widgetHold (text "first") $ ffor pb $ \_ -> do
-          (m', e') <- traverseDMapWithKeyWithAdjust (\k v -> has @Show k $ dkeyWidget k v) keyMap $ ffor (updated clicks) $ \x -> case x `mod` 2 of
-            0 -> PatchDMap $ DMap.singleton Key_Int (ComposeMaybe $ Just $ Identity x)
-            1 -> PatchDMap $ DMap.singleton Key_Bool (ComposeMaybe $ case x `mod` 3 of 0 -> Nothing; _ -> Just $ Identity True) <> DMap.singleton Key_Char (ComposeMaybe $ Just $ Identity (toEnum $ fromEnum 'A' + x))
-          pure ()
-
-      move <- button "Move"
-      ins <- button "Insert"
-      del <- button "Delete"
+--
+--      elAttr "article" ("style" =: "background: maroon") $ do
+--        widgetHold (text "first") $ ffor pb $ \_ -> do
+--          (m', e') <- traverseDMapWithKeyWithAdjust (\k v -> has @Show k $ dkeyWidget k v) keyMap $ ffor (updated clicks) $ \x -> case x `mod` 2 of
+--            0 -> PatchDMap $ DMap.singleton Key_Int (ComposeMaybe $ Just $ Identity x)
+--            1 -> PatchDMap $ DMap.singleton Key_Bool (ComposeMaybe $ case x `mod` 3 of 0 -> Nothing; _ -> Just $ Identity True) <> DMap.singleton Key_Char (ComposeMaybe $ Just $ Identity (toEnum $ fromEnum 'A' + x))
+--          pure ()
+--
+--      move <- button "Move"
+--      ins <- button "Insert"
+--      del <- button "Delete"
 
       --traverseDMapWithKeyWithAdjust' :: (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> m (DMap k v', Event t (PatchDMap k v'))
-      elAttr "article" ("style" =: "background: yellow") $ do
-        (m', e') <- traverseDMapWithKeyWithAdjustWithMove (\k v -> has @Show k $ dkeyWidget k v) keyMap $ leftmost
-          -- TODO: move causes JSException here and in Immediate builder
-          [ ffor move $ \() -> moveDMapKey Key_Int2 Key_Int
-          , ffor ins $ \() -> insertDMapKey Key_Int (Identity 4)
-          , ffor del $ \() -> deleteDMapKey Key_Int
-          ]
-        pure ()
-
-      elAttr "article" ("style" =: "background: cyan") $ do
-        (m', e') <- traverseIntMapWithKeyWithAdjust (\k v -> intkeyWidget k v) intMap $ leftmost
-          -- TODO: move causes JSException here and in Immediate builder
-          [ ffor move $ \() -> PatchIntMap $ IntMap.singleton 1 (Just 'Z')
-          , ffor ins $ \() -> PatchIntMap $ IntMap.singleton 5 (Just 'Z')
-          , ffor del $ \() -> PatchIntMap $ IntMap.singleton 3 Nothing
-          ]
-        pure ()
-  -}
+--      elAttr "article" ("style" =: "background: yellow") $ do
+--        (m', e') <- traverseDMapWithKeyWithAdjustWithMove (\k v -> has @Show k $ dkeyWidget k v) keyMap $ leftmost
+--          -- TODO: move causes JSException here and in Immediate builder
+--          [ ffor move $ \() -> moveDMapKey Key_Int2 Key_Int
+--          , ffor ins $ \() -> insertDMapKey Key_Int (Identity 4)
+--          , ffor del $ \() -> deleteDMapKey Key_Int
+--          ]
+--        pure ()
+--
+--      elAttr "article" ("style" =: "background: cyan") $ do
+--        (m', e') <- traverseIntMapWithKeyWithAdjust (\k v -> intkeyWidget k v) intMap $ leftmost
+--          -- TODO: move causes JSException here and in Immediate builder
+--          [ ffor move $ \() -> PatchIntMap $ IntMap.singleton 1 (Just 'Z')
+--          , ffor ins $ \() -> PatchIntMap $ IntMap.singleton 5 (Just 'Z')
+--          , ffor del $ \() -> PatchIntMap $ IntMap.singleton 3 Nothing
+--          ]
+--        pure ()
 
 --      el "footer" $ text "Footer"
       pure ()
