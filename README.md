@@ -247,38 +247,20 @@ Now deploy the built apk file to your Android device:
 1. Connect the device using USB (be sure to confirm any security prompts on the device)
 1. Run the deploy script: `result-android/bin/deploy`
 
+Alternatively, you can deploy from an obelisk deployment directory (a directory generated post `ob deploy init ...` command) using the `ob deploy test android` command.
+This command will accomplish the following:
+
+1. Create a key store and apk signing key (`android_keystore.jks`)
+1. Build a Signed Android apk for your application
+1. Deploy the Signed apk to your connected Android device
+
+In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`
+
+Additional documentation on java key stores can be found [here] (https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html)
+
 This should copy over and install the application on your device (if you see a  "*signatures do not match*" error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 
 #### Releasing to Play Store
-
-##### Configure signing
-
-The previous section would have generated a debug version of the app. In order to build a release version you will need to sign your app. Obelisk can automatically sign the app during build if you provide it with your keystore file in `default.nix`.
-
-First, if you do not already have a keystore, create it as follows (for more information, see the [Android documentation](https://developer.android.com/studio/publish/app-signing#signing-manually)):
-
-```
-nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
-```
-
-(Be sure to give an appropriate keystore filename and key alias string above.)
-
-The `keytool` command will ask you for some details, including a keystore password and a key password (we will use these passwords further below). It will now have created a `myandroidkey.jks` file under the current directory. Move that to somewhere safe, and note down its full path.
-
-Now edit your project's `default.nix` and tell Obelisk of your app's keystore file. Your `default.nix` should look like this after the edit:
-
-```nix
-  ...
-  android.applicationId = "com.example.myapp";
-  android.displayName = "My App";
-  android.releaseKey =
-    { storeFile = /path/to/myandroidkey.jks;
-      storePassword = "abcd1234";
-      keyAlias = "myandroidalias";
-      keyPassword = "abcd1234";
-    };
-  ...
-```
 
 ##### Build a release version
 
