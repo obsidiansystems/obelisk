@@ -12,7 +12,6 @@ let
   commandRuntimeDeps = pkgs: with pkgs; [
     coreutils
     git
-    gitAndTools.hub
     nix-prefetch-git
     openssh
   ];
