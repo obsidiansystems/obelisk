@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "bump-reflex-query-morphisms",
-  "rev": "ad70acfc3b731468ef0cd30717ea0d059b98ece9",
-  "sha256": "0122pxrq4vjrlrkkfp53jkyyl2gc4yrw8600jf4gcbxxv0dk8979"
+  "branch": "develop",
+  "rev": "a7cd9a23e7faa9c2545a4c111229e28208e42351",
+  "sha256": "0y52rfrhk4zszgprpyni51l0pgq18dg695k5bmpd62c3zxar5mvm"
 }

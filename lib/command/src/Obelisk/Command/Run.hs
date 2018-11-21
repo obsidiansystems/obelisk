@@ -26,16 +26,19 @@ import Hpack.Config
 import Hpack.Render
 import Hpack.Yaml
 import Language.Haskell.Extension
-import Network.Socket
+import Network.Socket hiding (Debug)
 import System.Directory
 import System.FilePath
+import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
 import Data.ByteString (ByteString)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
-import Obelisk.CliApp (CliT (..), HasCliConfig, Severity (..), callCommand, failWith, getCliConfig, putLog,
-                       runCli)
-import Obelisk.Command.Project (inProjectShell)
+import Obelisk.CliApp
+  ( CliT (..), HasCliConfig, Severity (..)
+  , callCommand, failWith, getCliConfig, putLog
+  , readProcessAndLogStderr, runCli)
+import Obelisk.Command.Project (inProjectShell, withProjectRoot)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageRoot :: FilePath
@@ -51,7 +54,19 @@ run = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
-    runGhcid dotGhciPath $ Just $ unwords ["run", show freePort, "(runServeAsset Obelisk.Generated.Static.staticRootPath)", "Backend.backend", "Frontend.frontend"]
+    assets <- withProjectRoot "." $ \root ->
+      -- `--raw` is not available with old nix-instantiate. It drops quotation
+      -- marks and trailing newline, so is very convenient for shelling out.
+      readProcessAndLogStderr Debug $
+        proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+    putLog Debug $ "Assets impurely loaded from: " <> assets
+    runGhcid dotGhciPath $ Just $ unwords
+      [ "run"
+      , show freePort
+      , "(runServeAsset " ++ show assets ++ ")"
+      , "Backend.backend"
+      , "Frontend.frontend"
+      ]
 
 runRepl :: MonadObelisk m => m ()
 runRepl = do

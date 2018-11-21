@@ -47,39 +47,23 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 When developing on obelisk itself you may launch `ghcid` for the corresponding project as follows. For example to launch ghcid for `lib/backend` project:
 
 ```
-nix-shell -A obelisk.obelisk-backend.env --run "cd lib/backend && ghcid -c 'cabal new-repl'"
+nix-shell -A obeliskEnvs.obelisk-backend --run "cd lib/backend && ghcid -c 'cabal new-repl'"
 ```
 
 Or to launch ghcid for `lib/command` project:
 
 ```
-nix-shell -A obelisk.obelisk-command.env --run "cd lib/command && ghcid -c 'cabal new-repl'"
+nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
 ### Accessing private repositories
-To allow the Nix builder to access private git repositories, follow these steps:
 
-1. [Get set up to connect to GitHub with SSH](https://help.github.com/articles/connecting-to-github-with-ssh/)
-1. [Create a GitHub personal access token](https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/)
-1. Set environment variables:
-   * NixOS: Add this to `/etc/nixos/configuration.nix`:
-    ```
-    nix.envVars = {
-      NIX_GITHUB_PRIVATE_USERNAME = "your-github-username";
-      NIX_GITHUB_PRIVATE_PASSWORD = "your-github-personal-access-token";
-    };
-    ```
-   * MacOS:
-    ```
-    sudo launchctl setenv NIX_GITHUB_PRIVATE_USERNAME "your-github-username"
-    sudo launchctl setenv NIX_GITHUB_PRIVATE_PASSWORD "your-github-personal-access"
-    sudo launchctl stop org.nixos.nix-daemon
-    sudo launchctl start org.nixos.nix-daemon
-    ```
-1. `nix-env -i hub` OR `nix-env -iA nixos.gitAndTools.hub`
-1. `hub clone yourusername/yourproject`
-  * NOTE: you must authenticate with hub at least once, because the `ob` command uses `hub` for authentication
-  #TODO: Make ob do this itself (either invoke hub automatically or not depend on hub)
+To allow the Nix builder to access private git repositories, you must be set up
+to access them via SSH. Follow these steps depending on the platform you need
+access to:
+
+- [GitHub](https://help.github.com/articles/connecting-to-github-with-ssh/)
+- [GitLab](https://docs.gitlab.com/ee/gitlab-basics/create-your-ssh-keys.html)
 
 ## Developing an Obelisk project
 
@@ -156,7 +140,7 @@ ob deploy push
 
 `ob deploy push` will locally build your app and then transfer it, along with all the Nix package dependencies, via ssh to the EC2 instance. The backend will live in `/var/lib/backend`.
 
-At this point you are done. Your app will be accessible at `${ROUTE}`.
+At this point you are done. Your app will be accessible at `${ROUTE}`. The currently deployed version - the git commit hash of the source repo - can be found at `${ROUTE}/version`.
 
 ### From macOS
 
@@ -263,38 +247,20 @@ Now deploy the built apk file to your Android device:
 1. Connect the device using USB (be sure to confirm any security prompts on the device)
 1. Run the deploy script: `result-android/bin/deploy`
 
+Alternatively, you can deploy from an obelisk deployment directory (a directory generated post `ob deploy init ...` command) using the `ob deploy test android` command.
+This command will accomplish the following:
+
+1. Create a key store and apk signing key (`android_keystore.jks`)
+1. Build a Signed Android apk for your application
+1. Deploy the Signed apk to your connected Android device
+
+In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`
+
+Additional documentation on java key stores can be found [here] (https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html)
+
 This should copy over and install the application on your device (if you see a  "*signatures do not match*" error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 
 #### Releasing to Play Store
-
-##### Configure signing
-
-The previous section would have generated a debug version of the app. In order to build a release version you will need to sign your app. Obelisk can automatically sign the app during build if you provide it with your keystore file in `default.nix`.
-
-First, if you do not already have a keystore, create it as follows (for more information, see the [Android documentation](https://developer.android.com/studio/publish/app-signing#signing-manually)):
-
-```
-nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
-```
-
-(Be sure to give an appropriate keystore filename and key alias string above.)
-
-The `keytool` command will ask you for some details, including a keystore password and a key password (we will use these passwords further below). It will now have created a `myandroidkey.jks` file under the current directory. Move that to somewhere safe, and note down its full path.
-
-Now edit your project's `default.nix` and tell Obelisk of your app's keystore file. Your `default.nix` should look like this after the edit:
-
-```nix
-  ...
-  android.applicationId = "com.example.myapp";
-  android.displayName = "My App";
-  android.releaseKey =
-    { storeFile = /path/to/myandroidkey.jks;
-      storePassword = "abcd1234";
-      keyAlias = "myandroidalias";
-      keyPassword = "abcd1234";
-    };
-  ...
-```
 
 ##### Build a release version
 

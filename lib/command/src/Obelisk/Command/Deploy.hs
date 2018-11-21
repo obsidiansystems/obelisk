@@ -3,23 +3,34 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Deploy where
 
 import Control.Lens
 import Control.Monad
-import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, try)
+import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, try, bracket_)
 import Control.Monad.IO.Class (liftIO)
+import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
+import qualified Data.ByteString.Lazy as BSL
 import Data.Default
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
-import Data.Maybe
+import Data.Text (Text)
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import GHC.Generics
+import Nix.Convert
+import Nix.Pretty
+import Nix.Value
 import System.Directory
 import System.Environment (getEnvironment)
 import System.FilePath
+import System.IO
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc)
+import System.Process (delegate_ctlc, env, proc, cwd)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
@@ -82,71 +93,65 @@ setupObeliskImpl deployDir = do
 
 deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
-  host <- readDeployConfig deployPath "backend_hosts"
+  hosts <- Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "backend_hosts"
   adminEmail <- readDeployConfig deployPath "admin_email"
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
   route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
   routeHost <- getHostFromRoute enableHttps route
   let srcPath = deployPath </> "src"
-      build = do
-        builders <- getNixBuilders
-        buildOutput <- nixBuild $ def
-          { _nixBuildConfig_target = Target
-            { _target_path = srcPath
-            , _target_attr = Just "server.system"
-            }
-          , _nixBuildConfig_outLink = OutLink_None
-          , _nixBuildConfig_args =
-            [ strArg "hostName" host
-            , strArg "adminEmail" adminEmail
-            , strArg "routeHost" routeHost
-            , boolArg "enableHttps" enableHttps
-            , rawArg "config" $ deployPath </> "config"
-            ]
-          , _nixBuildConfig_builders = builders
-          }
-        return $ listToMaybe $ lines buildOutput
-  result <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed _) ->
-      build
+  thunkPtr <- readThunk srcPath >>= \case
+    Right (ThunkData_Packed ptr) -> return ptr
     Right (ThunkData_Checkout _) -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> do
-          result <- build
-          packThunk srcPath
-          return result
-        False -> do
-          _ <- failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
-          return Nothing
-    _ -> return Nothing
-  forM_ result $ \res -> do
-    let knownHostsPath = deployPath </> "backend_known_hosts"
-        sshOpts = sshArgs knownHostsPath (deployPath </> "ssh_key") False
-        deployAndSwitch outputPath = do
-          withSpinner "Uploading closure" $ do
-            callProcess'
-              (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
-              "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
-
-          withSpinner "Switching to new configuration" $ do
-            callProcessAndLogOutput (Notice, Warning) $
-              proc "ssh" $ sshOpts <>
-                [ "root@" <> host
-                , unwords
-                    [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
-                    , "&&"
-                    , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
-                    ]
-                ]
-    deployAndSwitch res
-    isClean <- checkGitCleanStatus deployPath True
-    when (not isClean) $ do
-      withSpinner "Commiting changes to Git" $ do
-        callProcessAndLogOutput (Debug, Error) $ proc "git"
-          ["-C", deployPath, "add", "."]
-        callProcessAndLogOutput (Debug, Error) $ proc "git"
-          ["-C", deployPath, "commit", "-m", "New deployment"]
-    putLog Notice $ "Deployed => " <> T.pack route
+        True -> packThunk srcPath
+        False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
+    Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
+  let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
+  builders <- getNixBuilders
+  buildOutputByHost <- ifor (Map.fromSet (const ()) hosts) $ \host () -> do
+    --TODO: What does it mean if this returns more or less than 1 line of output?
+    [result] <- fmap lines $ nixCmd $ NixCmd_Build $ def
+      & nixCmdConfig_target .~ Target
+        { _target_path = Just srcPath
+        , _target_attr = Just "server.system"
+        , _target_expr = Nothing
+        }
+      & nixBuildConfig_outLink .~ OutLink_None
+      & nixCmdConfig_args .~
+        [ strArg "hostName" host
+        , strArg "adminEmail" adminEmail
+        , strArg "routeHost" routeHost
+        , strArg "version" version
+        , boolArg "enableHttps" enableHttps
+        , rawArg "config" $ deployPath </> "config"
+        ]
+      & nixCmdConfig_builders .~ builders
+    pure result
+  let knownHostsPath = deployPath </> "backend_known_hosts"
+      sshOpts = sshArgs knownHostsPath (deployPath </> "ssh_key") False
+  withSpinner "Uploading closures" $ ifor_ buildOutputByHost $ \host outputPath -> do
+    callProcess'
+      (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
+      "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+  --TODO: Create GC root so we're sure our closure won't go away during this time period
+  withSpinner "Switching to new configuration" $ ifor_ buildOutputByHost $ \host outputPath -> do
+    callProcessAndLogOutput (Notice, Warning) $
+      proc "ssh" $ sshOpts <>
+        [ "root@" <> host
+        , unwords
+            [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
+            , "&&"
+            , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+            ]
+        ]
+  isClean <- checkGitCleanStatus deployPath True
+  when (not isClean) $ do
+    withSpinner "Commiting changes to Git" $ do
+      callProcessAndLogOutput (Debug, Error) $ proc "git"
+        ["-C", deployPath, "add", "."]
+      callProcessAndLogOutput (Debug, Error) $ proc "git"
+        ["-C", deployPath, "commit", "-m", "New deployment"]
+  putLog Notice $ "Deployed => " <> T.pack route
   where
     callProcess' envMap cmd args = do
       processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
@@ -156,13 +161,106 @@ deployPush deployPath getNixBuilders = do
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
 
-deployMobile :: MonadObelisk m => String -> [String] -> m ()
+keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValueNF Identity)
+keytoolToAndroidConfig conf = runIdentity $ do
+  path <- toValue $ Path $ _keytoolConfig_keystore conf
+  storepass <- toValue $ T.pack $ _keytoolConfig_storepass conf
+  alias <- toValue $ T.pack $ _keytoolConfig_alias conf
+  keypass <- toValue $ T.pack $ _keytoolConfig_keypass conf
+  return $ HM.fromList
+    [ ("storeFile", path)
+    , ("storePassword", storepass)
+    , ("keyAlias", alias)
+    , ("keyPassword", keypass)
+    ]
+
+data PlatformDeployment = Android | IOS
+  deriving (Show, Eq)
+
+renderPlatformDeployment :: PlatformDeployment -> String
+renderPlatformDeployment = \case
+  Android -> "android"
+  IOS -> "ios"
+
+deployMobile :: MonadObelisk m => PlatformDeployment -> [String] -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
-  result <- nixBuildAttrWithCache srcDir $ platform <> ".frontend"
+  nixBuildTarget <- case platform of
+    Android -> do
+      let keystorePath = root </> "android_keystore.jks"
+          keytoolConfPath = root </> "android_keytool_config.json"
+      hasKeystore <- liftIO $ doesFileExist keystorePath
+      when (not hasKeystore) $ do
+        -- TODO log instructions for how to modify the keystore
+        putLog Notice $ "Creating keystore: " <> T.pack keystorePath
+        putLog Notice "Enter a keystore password: "
+        keyStorePassword <- liftIO $ withEcho False getLine
+        putLog Notice "Re-enter the keystore password: "
+        keyStorePassword' <- liftIO $ withEcho False getLine
+        unless (keyStorePassword' == keyStorePassword) $ failWith "passwords do not match"
+        let keyToolConf = KeytoolConfig
+              { _keytoolConfig_keystore = keystorePath
+              , _keytoolConfig_alias = "obelisk"
+              , _keytoolConfig_storepass = keyStorePassword
+              , _keytoolConfig_keypass = keyStorePassword
+              }
+        createKeystore root $ keyToolConf
+        liftIO $ BSL.writeFile keytoolConfPath $ encode keyToolConf
+      checkKeytoolConfExist <- liftIO $ doesFileExist keytoolConfPath
+      unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"
+      keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
+      liftIO $ putStrLn $ show keytoolConfContents
+      releaseKey <- case eitherDecode keytoolConfContents of
+        Left err -> failWith $ T.pack err
+        Right conf -> do
+          let nvset = toValue @(HM.HashMap Text (NValueNF Identity)) @Identity @(NValueNF Identity) $ keytoolToAndroidConfig conf
+          return $ printNix $ runIdentity nvset
+      return $ Target
+        { _target_path = Nothing
+        , _target_attr = Nothing
+        , _target_expr = Just $ "with (import " <> srcDir <> " {}); "  <> renderPlatformDeployment platform <> ".frontend.override (drv: { releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; })"
+        }
+    IOS -> return $ Target
+      { _target_path = Nothing
+      , _target_attr = Just "ios.frontend"
+      , _target_expr = Nothing
+      }
+  result <- nixCmd $ NixCmd_Build $ def
+    & nixBuildConfig_outLink .~ OutLink_None
+    & nixCmdConfig_target .~ nixBuildTarget
+  putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> (show result)
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
+  where
+    withEcho showEcho f = do
+      prevEcho <- hGetEcho stdin
+      bracket_ (hSetEcho stdin showEcho) (hSetEcho stdin prevEcho) f
+
+data KeytoolConfig = KeytoolConfig
+  { _keytoolConfig_keystore :: FilePath
+  , _keytoolConfig_alias :: String
+  , _keytoolConfig_storepass :: String
+  , _keytoolConfig_keypass :: String
+  } deriving (Show, Generic)
+
+instance FromJSON KeytoolConfig
+instance ToJSON KeytoolConfig
+
+createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
+createKeystore root config = do
+  let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
+  callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
+  where
+    keytoolCmd = processToShellString "keytool"
+      [ "-genkeypair", "-noprompt"
+      , "-keystore", _keytoolConfig_keystore config
+      , "-keyalg", "RSA", "-keysize", "2048"
+      , "-validity", "1000000000"
+      , "-storepass", _keytoolConfig_storepass config
+      , "-alias", _keytoolConfig_alias config
+      , "-keypass", _keytoolConfig_keypass config
+      ]
 
 -- | Simplified deployment configuration mechanism. At one point we may revisit this.
 writeDeployConfig :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
@@ -177,6 +275,7 @@ verifyHostKey knownHostsPath keyPath hostName =
   callProcessAndLogOutput (Notice, Warning) $ proc "ssh" $
     sshArgs knownHostsPath keyPath True <>
       [ "root@" <> hostName
+      , "-o", "NumberOfPasswordPrompts=0"
       , "exit"
       ]
 
