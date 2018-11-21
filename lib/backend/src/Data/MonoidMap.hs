@@ -40,9 +40,9 @@ instance (Ord k) => Functor (MonoidMap k) where
 instance FunctorMaybe (MonoidMap k) where
   fmapMaybe f (MonoidMap m) = MonoidMap $ Map.mapMaybe f m
 
-instance (Ord k) => Align (MonoidMap k) where
-  nil = MonoidMap nil
-  align (MonoidMap x) (MonoidMap y) = MonoidMap (align x y)
-  alignWith f (MonoidMap x) (MonoidMap y) = MonoidMap (alignWith f x y)
+instance Ord k => Align (MonoidMap k) where
+  nil = MonoidMap $ MonoidalMap nil
+  align (MonoidMap (MonoidalMap x)) (MonoidMap (MonoidalMap y)) = MonoidMap $ MonoidalMap $ align x y
+  alignWith f (MonoidMap (MonoidalMap x)) (MonoidMap (MonoidalMap y)) = MonoidMap $ MonoidalMap $ alignWith f x y
 
-instance (Ord k) => Unalign (MonoidMap k)
+instance Ord k => Unalign (MonoidMap k)

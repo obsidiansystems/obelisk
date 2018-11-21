@@ -1,85 +1,41 @@
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Api where
 
 import Prelude hiding ((.))
 
+import Obelisk.Api.Pipeline
+import Obelisk.Db
 import Obelisk.Postgres.Replication
 import Obelisk.Postgres.LogicalDecoding.Plugins.TestDecoding
-import Obelisk.Db
+import Obelisk.Request (Request)
 
 import Control.Category
-import Control.Concurrent (forkIO, killThread)
 import Control.Concurrent.Async
-import Control.Concurrent.STM (TChan, atomically, dupTChan, newBroadcastTChanIO, readTChan, writeTChan, newTChanIO)
-import Control.Monad (forever, void)
+import Control.Concurrent.STM (TChan, atomically, readTChan, writeTChan, newTChanIO)
+import Control.Monad (forever)
 import Control.Monad.Reader
-import Control.Monad.State.Strict
-import Control.Exception
-import Control.Exception.Enclosed
-import Data.Binary (Binary)
-import qualified Data.Binary as Binary
-import Data.Binary.Get (ByteOffset)
-import Data.Aeson (FromJSON, ToJSON, toJSON)
-import qualified Data.Aeson as Aeson
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
-import Data.List.Split (wordsBy)
-import Data.Functor.Identity (Identity (..))
-import Data.Pool (Pool, withResource)
-import Data.Semigroup ((<>))
-import Data.String (fromString)
-import qualified Data.Text as T
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
+import Control.Monad.Trans (lift)
+import Data.Aeson (FromJSON, ToJSON)
+import Data.Attoparsec.ByteString
+import Data.ByteString (ByteString)
+import Data.Default
+import Data.Map.Monoidal (MonoidalMap)
+import Data.MonoidMap (MonoidMap (..))
+import Data.Pool (withResource)
 import qualified Database.PostgreSQL.Simple as PG
 import qualified Database.PostgreSQL.Simple.Transaction as PG
-import Database.PostgreSQL.Simple.SqlQQ
-import qualified Database.PostgreSQL.Simple.Types as PG
-import qualified Database.PostgreSQL.Simple.Notification as PG
-import GHC.Generics (Generic)
-import Control.Category (Category)
-import qualified Control.Category as Cat
-import Control.Concurrent (forkIO, killThread)
-import Control.Exception (bracket)
-import Control.Lens (imapM_)
-import Control.Monad (forever, void, when)
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.State.Strict (evalStateT, get, put)
-import Control.Monad.Trans (lift)
-import Data.Aeson (FromJSON, toJSON)
-import Data.AppendMap (AppendMap)
-import qualified Data.AppendMap as Map
-import Data.Map.Monoidal (MonoidalMap)
-import Data.Foldable (fold)
-import Data.IORef (atomicModifyIORef', newIORef, readIORef)
-import Data.MonoidMap (MonoidMap (..), monoidMap)
-import Data.Pool (Pool)
-import Data.Semigroup (Semigroup, (<>))
-import Data.Text (Text)
-import Data.Typeable (Typeable)
-import Debug.Trace (trace)
 import Reflex (FunctorMaybe (..))
-import Reflex.Patch (Group, negateG, (~~))
-import Reflex.Query.Base (mapQuery, mapQueryResult)
-import Reflex.Query.Class (Query, QueryResult, QueryMorphism (..), SelectedCount (..), crop)
-import Snap.Core (MonadSnap, Snap)
-import qualified Web.ClientSession as CS
-import Data.ByteString (ByteString)
-import Data.Int
-import Data.Word
-import Data.Char
-import Data.Default
-import Data.Attoparsec
-
-import Rhyolite.Backend.DB.PsqlSimple hiding (Binary)
-import Obelisk.Api.Pipeline
---import Rhyolite.Backend.App
+import Reflex.Patch (Group)
+import Reflex.Query.Class (QueryResult, SelectedCount (..))
+import Snap.Core (Snap)
 
 {-
 -- | A way for a pipeline to retrieve data
@@ -132,6 +88,7 @@ servePostgres db handleApi handleNotify handleQuery pipe = do
 -}
 
 newtype ReadDb a = ReadDb { unReadDb :: ReaderT PG.Connection IO a }
+  deriving (Functor, Applicative, Monad)
 
 readTransaction :: PG.Connection -> ReadDb a -> IO a
 readTransaction conn (ReadDb r) = PG.withTransactionModeRetry m PG.isSerializationError conn $ runReaderT r conn
@@ -141,6 +98,7 @@ readTransaction conn (ReadDb r) = PG.withTransactionModeRetry m PG.isSerializati
           }
 
 newtype WriteDb a = WriteDb { unWriteDb :: ReaderT PG.Connection IO a }
+  deriving (Functor, Applicative, Monad)
 
 writeTransaction :: PG.Connection -> WriteDb a -> IO a
 writeTransaction conn (WriteDb r) = PG.withTransactionModeRetry m PG.isSerializationError conn $ runReaderT r conn
@@ -156,7 +114,7 @@ unsafeWriteDb :: (PG.Connection -> IO a) -> WriteDb a
 unsafeWriteDb f = WriteDb $ lift . f =<< ask
 
 withApiHandler
-  :: forall query queryResult request change a.
+  :: forall query queryResult request a.
      ( Monoid (query SelectedCount)
      , QueryResult (query (MonoidMap ClientKey SelectedCount)) ~ queryResult (MonoidMap ClientKey SelectedCount)
      , QueryResult (query SelectedCount) ~ queryResult SelectedCount
@@ -182,9 +140,6 @@ withApiHandler
   -> (Snap () -> IO a)
   -> IO a
 withApiHandler dbUri handleApi handleChange handleQuery go = do
-  let opts = def
-        { _logicalDecodingOptions_pluginOptions = [("skip-empty-xacts", Nothing)]
-        }
   withNonEmptyTransactions dbUri $ \transactions -> do
     withConnectionPool dbUri $ \db -> do
       let onChange :: Transaction -> query x -> IO (QueryResult (query x))
@@ -193,7 +148,7 @@ withApiHandler dbUri handleApi handleChange handleQuery go = do
           pipe = queryMorphismPipeline $ transposeMonoidMap . monoidMapQueryMorphism
       rec (qh, finalizeFeed) <- feedPipeline (onChange <$> atomically (readTChan transactions)) (QueryHandler $ \q -> withResource db $ \conn -> readTransaction conn $ handleQuery q) r
           (qh', r) <- unPipeline pipe qh r'
-          (r', handleListen) <- connectPipelineToWebsockets "" (\r -> withResource db $ \conn -> writeTransaction conn $ handleApi r) qh'
+          (r', handleListen) <- connectPipelineToWebsockets "" (\r'' -> withResource db $ \conn -> writeTransaction conn $ handleApi r'') qh'
       go handleListen
 
 withNonEmptyTransactions :: ByteString -> (TChan Transaction -> IO a) -> IO a
@@ -201,11 +156,11 @@ withNonEmptyTransactions dbUri go = do
   let opts = def
         { _logicalDecodingOptions_pluginOptions = [("skip-empty-xacts", Nothing)]
         }
-  withLogicalDecoding dbUri "test_decoding" opts $ \lines -> do
+  withLogicalDecoding dbUri "test_decoding" opts $ \decodedLines -> do
     transactions <- newTChanIO
     processLine <- linesToTransactions
     let processLines = forever $ do
-          lineRaw <- atomically $ readTChan lines
+          lineRaw <- atomically $ readTChan decodedLines
           let Right l = parseOnly (line <* endOfInput) lineRaw
           Right mTransaction <- processLine l
           forM_ mTransaction $ \transaction ->

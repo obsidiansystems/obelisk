@@ -93,10 +93,10 @@ let
         gargoyle = doJailbreak (self.callCabal2nix "gargoyle" (gargoyle-src + /gargoyle) {});
         gargoyle-postgresql-nix = pkgs.haskell.lib.addBuildTool
           (self.callCabal2nix "gargoyle-postgresql-nix" (gargoyle-src + /gargoyle-postgresql-nix) {})
-          pkgs.postgresql; # `staticWhich` requires `psql` on PATH during build time
-        gargoyle-postgresql = addBuildDepend (doJailbreak (self.callCabal2nix "gargoyle-postgresql" (gargoyle-src + /gargoyle-postgresql) {})) pkgs.postgresql;
+          pkgs.postgresql100; # `staticWhich` requires `psql` on PATH during build time
+        gargoyle-postgresql = addBuildDepend (doJailbreak (self.callCabal2nix "gargoyle-postgresql" (gargoyle-src + /gargoyle-postgresql) {})) pkgs.postgresql100;
         postgresql-libpq = enableCabalFlag (overrideCabal super.postgresql-libpq (drv: {
-          pkgconfigDepends = (drv.pkgconfigDepends or []) ++ [pkgs.postgresql]; #TODO: Obelisk should probably provide this version of postgresql
+          pkgconfigDepends = (drv.pkgconfigDepends or []) ++ [pkgs.postgresql100]; #TODO: Obelisk should probably provide this version of postgresql
         })) "use-pkg-config";
       })
 
@@ -113,6 +113,7 @@ let
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
         obelisk-command = self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {};
         obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
+        obelisk-request = self.callCabal2nix "obelisk-request" (cleanSource ./lib/request) {};
         obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
         obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};

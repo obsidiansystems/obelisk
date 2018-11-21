@@ -11,6 +11,7 @@ library
                , common
                , frontend
                , obelisk-backend
+               , obelisk-request
                , obelisk-route
   exposed-modules:
     Backend

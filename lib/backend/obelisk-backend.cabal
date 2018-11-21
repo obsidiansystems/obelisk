@@ -6,22 +6,57 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base,
+                 aeson,
+                 async,
+                 attoparsec,
+                 binary,
                  bytestring,
                  categories,
+                 clientsession,
+                 constraints,
+                 containers,
                  data-default,
                  dependent-sum,
                  dependent-sum-template,
+                 directory,
+                 --TODO: Do we really want enclosed-exceptions?
+                 enclosed-exceptions,
+                 filepath,
+                 gargoyle,
+                 gargoyle-postgresql-nix,
                  lens,
+                 monoidal-containers,
                  mtl,
                  obelisk-asset-serve-snap,
                  obelisk-executable-config-inject,
                  obelisk-frontend,
+                 obelisk-request,
                  obelisk-route,
                  obelisk-snap-extras,
+                 postgresql-libpq,
+                 postgresql-simple,
+                 reflex,
                  reflex-dom,
+                 resource-pool,
                  snap,
+                 snap-core,
                  snap-server,
+                 split,
+                 stm,
+                 template-haskell,
                  text,
-                 universe
-  exposed-modules: Obelisk.Backend
+                 these,
+                 time,
+                 universe,
+                 unordered-containers,
+                 websockets,
+                 websockets-snap
+  exposed-modules:
+    Data.MonoidMap
+    Obelisk.Api
+    Obelisk.Api.Pipeline
+    Obelisk.Backend
+    Obelisk.Db
+    Obelisk.Postgres.LogicalDecoding.Plugins.TestDecoding
+    Obelisk.Postgres.Replication
   ghc-options: -Wall

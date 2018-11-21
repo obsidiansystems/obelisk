@@ -9,6 +9,8 @@ module Obelisk.Api.Pipeline where
 
 import Prelude hiding (id, (.))
 
+import Obelisk.Request (Request, SomeRequest (..))
+
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.State.Strict
@@ -16,8 +18,6 @@ import Data.Typeable
 import GHC.Generics
 import Control.Lens (imapM_)
 import Data.Aeson
-import Data.Aeson.Types (Parser)
-import Data.Constraint (Dict)
 import Reflex.Query.Base
 import Reflex.Query.Class
 import Reflex.Patch
@@ -36,21 +36,6 @@ import qualified Network.WebSockets.Connection as WS
 import qualified Network.WebSockets.Stream as WS
 import Network.WebSockets.Snap
 import Control.Exception
-
-data SomeRequest t where
-    SomeRequest :: (FromJSON x, ToJSON x) => t x -> SomeRequest t
-
-class Request r where
-  requestToJSON :: r a -> Value
-  requestParseJSON :: Value -> Parser (SomeRequest r)
-  requestResponseToJSON :: r a -> Dict (ToJSON a)
-  requestResponseFromJSON :: r a -> Dict (FromJSON a)
-
-instance Request r => FromJSON (SomeRequest r) where
-  parseJSON = requestParseJSON
-
-instance Request r => ToJSON (SomeRequest r) where
-  toJSON (SomeRequest r) = requestToJSON r
 
 -- | A way for a pipeline to retrieve data
 newtype QueryHandler q m = QueryHandler
@@ -154,7 +139,7 @@ multiplexQuery lookupQueryHandler = do
           -- TODO: Should we have a way of ensuring that this doesn't actually cause a query to be run?
           -- It shouldn't cause the query to be run again but it depends on if the callee will notice
           -- that the new query is strictly smaller than the old one.
-          runQueryHandler (lookupQueryHandler cid) antiQ
+          _ <- runQueryHandler (lookupQueryHandler cid) antiQ
           return ()
 
       return (queryHandler, unregisterRecipient)

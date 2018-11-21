@@ -46,7 +46,7 @@ import qualified Data.Binary.Get as Binary
 import qualified Data.Binary.Put as Binary
 import Data.Char
 
-import Rhyolite.Backend.DB.PsqlSimple hiding (Binary)
+import Obelisk.Postgres.QQ
 
 -- | Start a replication session using logical decoding
 withLogicalDecoding
@@ -64,6 +64,7 @@ withLogicalDecoding dbUri pluginName opts go = bracket (PQ.connectdb $ dbUri <> 
     <*> newMVar mempty
     <*> newIORef 0
   backendPid <- PQ.backendPID unwrappedConn
+  putStrLn $ "withLogicalDecoding.d" <> show backendPid
   let slotName = PG.Identifier $ slotNamePrefix <> T.pack (show backendPid)
   [(_, _, _, _) :: (Text, Text, Maybe Text, Text)] <- uncurry (PG.query pgConn) [sqlQ| CREATE_REPLICATION_SLOT ?slotName TEMPORARY LOGICAL ?pluginName NOEXPORT_SNAPSHOT |]
   withConn $ \conn -> do

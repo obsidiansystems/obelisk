@@ -36,7 +36,8 @@ withDbUri dbPath a = do
       let myConfig = defaultConfig
             { _gargoyle_init = \workDir -> do
                 _gargoyle_init defaultConfig workDir
-                appendFile (workDir </> "postgresql.conf") "\n# Added by Obelisk.Db\nwal_level = logical\n"
+                appendFile (workDir </> "postgresql.conf") "\n# Added by Obelisk.Db\nwal_level = logical\nmax_wal_senders = 10\n"
+                appendFile (workDir </> "pg_hba.conf") "\n# Added by Obelisk.Db\nlocal replication postgres trust\n"
             }
       withGargoyle myConfig dbPath a
 

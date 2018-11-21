@@ -182,13 +182,13 @@ type Transaction = (Xid, Map QualifiedIdentifier (Seq Change))
 
 data LineError
    = LineError_OtherTransactionAlreadyInProgress
-     Xid -- ^ Existing transaction ID
-     Xid -- ^ New transaction ID that tried to start
+     Xid -- Existing transaction ID
+     Xid -- New transaction ID that tried to start
    | LineError_CommittingWithoutTransaction
-     Xid -- ^ Transaction ID that tried to commit
+     Xid -- Transaction ID that tried to commit
    | LineError_CommittingWrongTransaction
-     Xid -- ^ Existing transaction ID
-     Xid -- ^ New transaction ID that tried to start
+     Xid -- Existing transaction ID
+     Xid -- New transaction ID that tried to start
    | LineError_ChangeOutsideTransaction
 
 -- | Create a function that will statefully accumulate lines until a Transaction
