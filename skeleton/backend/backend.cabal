@@ -13,6 +13,9 @@ library
                , obelisk-backend
                , obelisk-request
                , obelisk-route
+               , beam-core
+               , beam-migrate
+               , beam-postgres
   exposed-modules:
     Backend
   ghc-options: -Wall

@@ -16,19 +16,9 @@ let
     openssh
   ];
 
-  beam-src = pkgs.fetchFromGitHub {
-    owner = "obsidiansystems";
-    repo = "beam";
-    rev = "6c9b08d57951083c1f7e4bd49d941619603127f4";
-    sha256 = "1k4sdz0dxjafwkwlpfcdxkgvvv591nfwc97g1fq23wrs271jr2sm";
-  };
+  beam-src = hackGet ./dep/beam;
 
-  gargoyle-src = pkgs.fetchFromGitHub {
-    owner = "obsidiansystems";
-    repo = "gargoyle";
-    rev = "2c19c569325ad76694526e9b688ccdbf148df980";
-    sha256 = "0257p0qd8xx900ngghkjbmjnvn7pjv05g0jm5kkrm4p6alrlhfyl";
-  };
+  gargoyle-src = hackGet ./dep/gargoyle;
 
   getReflexPlatform = getReflexPlatform' __useLegacyCompilers;
   getReflexPlatform' = __useLegacyCompilers: sys: import ./dep/reflex-platform {
@@ -79,7 +69,7 @@ let
           sha256 = "1v337d810d88jzfriw07pr16d34nibm6q2zkw787lc3sfn07glp5";
         }) {};
 
-        beam-core = self.callCabal2nix "beam-core" (beam-src + /beam-core) {};
+        beam-core = dontCheck (self.callCabal2nix "beam-core" (beam-src + /beam-core) {});
         beam-postgres = dontCheck (self.callCabal2nix "beam-postgres" (beam-src + /beam-postgres) {});
         beam-migrate = self.callCabal2nix "beam-migrate" (beam-src + /beam-migrate) {};
 

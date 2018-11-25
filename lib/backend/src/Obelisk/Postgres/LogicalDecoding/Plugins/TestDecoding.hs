@@ -3,6 +3,7 @@
 module Obelisk.Postgres.LogicalDecoding.Plugins.TestDecoding
   ( line
   , Transaction
+  , Change (..)
   , LineError (..)
   , linesToTransactions
   ) where
