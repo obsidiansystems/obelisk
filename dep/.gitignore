@@ -1,4 +1,4 @@
-*
+*/*
 !.gitignore
 !*/*.json
 !*/default.nix
