@@ -1,7 +1,7 @@
 {
-  "owner": "tathougies",
+  "owner": "obsidiansystems",
   "repo": "beam",
-  "branch": "travis/beam-0.8.0.0-migrate",
-  "rev": "aa397a7367c77a288937dcbb00e7acdea6a3b569",
-  "sha256": "1q4ici4d61bp5r9kzyricblsfc274crrsjmic3dklycfq6m05zxg"
+  "branch": "int-and-serial-size",
+  "rev": "87caf239ea198bad03acb73e65f9a43566ee4373",
+  "sha256": "1lnzwds131cxix0dwkql980w9s2jdxfp2b9q7x8d4wh5i5jfbh6g"
 }

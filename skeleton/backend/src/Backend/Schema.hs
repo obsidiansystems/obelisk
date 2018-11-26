@@ -11,12 +11,13 @@ module Backend.Schema where
 import Data.Int
 import Data.Text (Text)
 import Database.Beam
+import Database.Beam.Backend.SQL.Types
 import Database.Beam.Migrate.Simple
 import Database.Beam.Migrate
 import Database.Beam.Postgres
 
 data TaskT f = Task
-  { _task_id :: Columnar f Int64
+  { _task_id :: Columnar f (SqlSerial Int64)
   , _task_description :: Columnar f Text
   , _task_completed :: Columnar f Bool
   }
@@ -29,7 +30,7 @@ deriving instance Eq Task
 instance Beamable TaskT
 
 instance Table TaskT where
-  data PrimaryKey TaskT f = TaskId (Columnar f Int64) deriving (Generic)
+  data PrimaryKey TaskT f = TaskId (Columnar f (SqlSerial Int64)) deriving (Generic)
   primaryKey = TaskId . _task_id
 
 instance Beamable (PrimaryKey TaskT)
