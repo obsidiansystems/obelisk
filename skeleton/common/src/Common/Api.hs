@@ -16,8 +16,10 @@
 {-# LANGUAGE TypeFamilies #-}
 module Common.Api where
 
+import Common.Schema
 import Data.Aeson
 import Data.AppendMap ()
+import Data.Functor.Identity
 import Data.Map.Monoidal (MonoidalMap (..))
 import qualified Data.Map.Monoidal as Map
 import Data.Semigroup
@@ -39,7 +41,10 @@ instance (Ord k, Semigroup a) => Query (VS k v a) where
   type QueryResult (VS k v a) = V k v a
   crop _ = id
 
+type family Id t where
+  Id (f Identity) = PrimaryKey f Identity
+
 data MyRequest a where
-  MyRequest_Echo :: Text -> MyRequest Text
+  MyRequest_Add :: Text -> MyRequest (Id Task)
 
 makeRequestForData ''MyRequest

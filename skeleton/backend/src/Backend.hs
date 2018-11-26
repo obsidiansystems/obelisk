@@ -19,21 +19,24 @@
 module Backend where
 
 import Common.Api
+import Common.Schema
 import Backend.Schema
 import Common.Route
-import Data.Text (Text)
 import Data.Map.Monoidal (MonoidalMap (..))
+import qualified Data.Map.Monoidal as Map
 import Data.Pool
+import Data.Semigroup
 import Obelisk.Backend
 import Obelisk.Route
 import Obelisk.Api
 import Obelisk.Db
 import Obelisk.Postgres.LogicalDecoding.Plugins.TestDecoding
-import qualified Data.Map as Map
+import qualified Data.Map as OldMap
 import Data.Sequence (Seq)
 
 import Database.Beam
 import Database.Beam.Postgres
+import Database.Beam.Postgres.Full (PgInsertReturning, returning, runPgInsertReturningList)
 import Database.Beam.Postgres.Migrate
 import Database.Beam.Migrate.Simple
 import Database.Beam.Schema.Tables
@@ -55,27 +58,23 @@ backend = Backend
         withConnectionPool dbUri $ \pool -> do
           withResource pool $ \conn -> do
             runBeamPostgres conn $ autoMigrate migrationBackend checkedDb
-        let onNotify :: forall a. VS Int Text a -> Transaction -> ReadDb (V Int Text a)
-            onNotify (VS _) txn = do
-              traceM $ show txn
-              traceM $ show $ decodeTransaction txn
+        let onNotify :: forall a. VS (Id Task) Task a -> Transaction -> ReadDb (V (Id Task) Task a)
+            onNotify (VS requested) txn = do
               tasks <- runSelectReturningList' $ select $ all_ $ _db_tasks db
-              traceM $ show tasks
-              pure $ V $ MonoidalMap mempty
-            onSubscribe :: forall a. VS Int Text a -> ReadDb (V Int Text a)
-            onSubscribe (VS _) = do
+              pure $ V $ Map.intersectionWith (,) requested $ Map.fromList $ fmap (\x -> (TaskId $ _task_id x, First $ Just x)) tasks
+            onSubscribe :: forall a. VS (Id Task) Task a -> ReadDb (V (Id Task) Task a)
+            onSubscribe (VS requested) = do
               tasks <- runSelectReturningList' $ select $ all_ $ _db_tasks db
-              traceM $ show tasks
-              pure $ V $ MonoidalMap mempty
+              pure $ V $ Map.intersectionWith (,) requested $ Map.fromList $ fmap (\x -> (TaskId $ _task_id x, First $ Just x)) tasks
             onRequest :: forall a. MyRequest a -> WriteDb a
             onRequest = \case
-              MyRequest_Echo a -> do
-                runInsert' $ insert (_db_tasks db) $ insertExpressions $ (:[]) $ Task
+              MyRequest_Add a -> do
+                [taskId] <- runInsertReturningList' $ flip returning _task_id $ insert (_db_tasks db) $ insertExpressions $ (:[]) $ Task
                   { _task_id = default_
                   , _task_description = val_ a
                   , _task_completed = val_ False
                   }
-                pure a
+                pure $ TaskId taskId
         withApiHandler dbUri onRequest onNotify onSubscribe $ \handler -> do
           serve $ \case
             BackendRoute_Api :/ () -> handler
@@ -107,11 +106,13 @@ instance MonadBeamRead ReadDb where
 
 class MonadBeamWrite m where
   runInsert' :: SqlInsert Postgres table -> m ()
+  runInsertReturningList' :: FromBackendRow Postgres a => PgInsertReturning a -> m [a]
   runUpdate' :: SqlUpdate Postgres table -> m ()
   runDelete' :: SqlDelete Postgres table -> m ()
 
 instance MonadBeamWrite WriteDb where
   runInsert' = unsafeRunPgWriteDb . runInsert
+  runInsertReturningList' = unsafeRunPgWriteDb . runPgInsertReturningList
   runUpdate' = unsafeRunPgWriteDb . runUpdate
   runDelete' = unsafeRunPgWriteDb . runDelete
 
@@ -122,4 +123,4 @@ decodeTransaction (_, tableChanges) = runIdentity $ zipTables (Proxy :: Proxy Po
     f (DatabaseEntity descriptor) _ = pure $ Const $
       let n = view dbEntityName descriptor
           s = Just "public" -- view dbEntitySchema descriptor --TODO: Beam has 'Nothing' while the replication connection reports 'Just "public"'
-      in trace (show (s, n)) $ Map.findWithDefault mempty (QualifiedIdentifier s n) tableChanges
+      in trace (show (s, n)) $ OldMap.findWithDefault mempty (QualifiedIdentifier s n) tableChanges
