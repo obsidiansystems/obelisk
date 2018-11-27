@@ -24,12 +24,14 @@
 module Backend where
 
 import Control.Exception
+import Control.Applicative
 import Control.Concurrent
 import Common.Api
 import Common.Schema
 import Backend.Schema
 import Common.Route
 import qualified Data.Map.Monoidal as Map
+import Data.Maybe
 import Data.Pool
 import Data.Semigroup
 import Obelisk.Backend
@@ -59,6 +61,8 @@ import Database.Beam.Migrate.Simple
 import Database.Beam.Schema.Tables
 import Database.PostgreSQL.Simple.Types
 import Control.Monad.Reader
+import Reflex.Patch
+import Reflex.Patch.MapWithMove2
 
 import Data.Proxy
 
@@ -76,9 +80,9 @@ backend = Backend
         withConnectionPool dbUri $ \pool -> do
           withResource pool $ \conn -> do
             try (runBeamPostgres conn $ autoMigrate migrationBackend checkedDb) >>= \case
-              Left (_ :: SomeException) -> do
-                putStrLn "Required migration is unsafe; refusing to start"
-                forever $ threadDelay maxBound
+              Left (e :: SomeException) -> do
+                print e
+                forever $ threadDelay maxBound --TODO: Probably not necessary once we have `ob psql`
               Right _ -> pure ()
         let onNotify :: forall a. VS (Id Task) Task a -> Transaction -> ReadDb (V (Id Task) Task a)
             onNotify (VS requested) txn = do
@@ -208,9 +212,9 @@ data FieldDecoder be a where
 
 data EntityPatch e where
   EntityPatch_NotPatchable :: EntityPatch e
-  EntityPatch_Table :: Seq (These (PrimaryKey tbl Maybe) (tbl Maybe)) -> EntityPatch (TableEntity tbl) --TODO: Add old keys / deletes
+  EntityPatch_Table :: Seq (These (Maybe (PrimaryKey tbl Identity)) (tbl Maybe)) -> EntityPatch (TableEntity tbl) --TODO: Add old keys / deletes
 
-deriving instance (Show (PrimaryKey tbl Maybe), Show (tbl Maybe)) => Show (EntityPatch (TableEntity tbl))
+deriving instance (Show (PrimaryKey tbl Identity), Show (tbl Maybe)) => Show (EntityPatch (TableEntity tbl))
 
 deriving instance FromField a => FromField (SqlSerial a)
 
@@ -250,6 +254,32 @@ decodeRow conn settings decoders r = zipBeamFieldsM d settings decoders
             Just (Errors e) -> fail $ show e
             Nothing -> pure $ Columnar' Nothing
 
+sequenceMaybeBeamable :: (Beamable table, Applicative f, f ~ Maybe) => table f -> f (table Identity)
+sequenceMaybeBeamable t = zipBeamFieldsM (\(Columnar' a) _ -> Columnar' <$> a) t t
+
+newtype PartialUpdate tbl = PartialUpdate (tbl Maybe)
+
+instance Beamable tbl => Patch (PartialUpdate tbl) where
+  type PatchTarget (PartialUpdate tbl) = tbl Identity
+  apply (PartialUpdate new) old = zipBeamFieldsM (\(Columnar' newField) (Columnar' oldField) -> pure $ Columnar' $ fromMaybe oldField newField) new old
+
+theseToPatch :: Table tbl => These (Maybe (PrimaryKey tbl Identity)) (tbl Maybe) -> PatchMapWithMove2 (PrimaryKey tbl Identity) (PartialUpdate tbl)
+theseToPatch = \case
+  That rm
+    | Just r <- sequenceMaybeBeamable rm
+      -> patchMapWithMove2InsertAll $ OldMap.singleton (primaryKey r) r
+    | otherwise -> error "Incomplete insert"
+  This Nothing -> error "Incomplete delete"
+  This (Just k) -> PatchMapWithMove2 $ OldMap.singleton k $ NodeInfo
+    { _nodeInfo_from = From_Delete
+    , _nodeInfo_to = Nothing
+    }
+  These mk vm -> let k = fromMaybe (error "Update without key") $ mk <|> sequenceMaybeBeamable (primaryKey vm) in PatchMapWithMove2 $ OldMap.singleton k $ NodeInfo
+    { _nodeInfo_from = From_Move k $ PartialUpdate vm
+    , _nodeInfo_to = Nothing
+    }
+
+--TODO: Inserts should always be complete; deletes should always have a key
 decodeChange
   :: forall tbl
   .  Table tbl
@@ -257,11 +287,22 @@ decodeChange
   -> tbl (TableField tbl)
   -> tbl (FieldDecoder Postgres)
   -> Change
-  -> IO (These (PrimaryKey tbl Maybe) (tbl Maybe))
-decodeChange conn settings decoders = \case
-  Change_Insert r -> That <$> decodeRow conn settings decoders r
-  Change_Update k r -> These <$> decodeRow conn (primaryKey settings) (primaryKey decoders) (fmap (fmap Just) k) <*> decodeRow conn settings decoders r
-  Change_Delete k -> This <$> decodeRow conn (primaryKey settings) (primaryKey decoders) (fmap (fmap Just) k)
+  -> IO (These (Maybe (PrimaryKey tbl Identity)) (tbl Maybe))
+decodeChange conn settings decoders =
+  let decodeRecord = decodeRow conn settings decoders
+      decodeKey k = do
+        v <- decodeRow conn (primaryKey settings) (primaryKey decoders) (fmap (fmap Just) k)
+        case sequenceMaybeBeamable v of
+          Nothing -> fail "Got partial key"
+          Just a -> pure a
+  in \case
+  Change_Insert r -> That
+    <$> decodeRecord r
+  Change_Update mk r -> These
+    <$> traverse decodeKey mk
+    <*> decodeRecord r
+  Change_Delete k -> This . Just
+    <$> decodeKey k
 
 decodeTransaction :: Connection -> Transaction -> IO (Db EntityPatch)
 decodeTransaction conn (_, tableChanges) = zipTables (Proxy :: Proxy Postgres) f db (defaultDatabasePatchDecoder @Postgres @Db)

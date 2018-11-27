@@ -141,7 +141,7 @@ key = rowLike literal
 
 data Change
    = Change_Insert Row
-   | Change_Update Key Row
+   | Change_Update (Maybe Key) Row
    | Change_Delete Key
    deriving (Show, Read, Eq, Ord)
 
@@ -156,8 +156,8 @@ change = do
            old <- key
            _ <- string " new-tuple: "
            new <- row
-           pure $ Change_Update old new
-      , Change_Update mempty <$> row
+           pure $ Change_Update (Just old) new
+      , Change_Update Nothing <$> row
       ]
     "DELETE" -> Change_Delete <$> key
     _ -> fail $ "Unrecognized change type: " <> show t
