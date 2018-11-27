@@ -34,6 +34,8 @@ import Common.Api
 import Common.Route
 import Obelisk.Generated.Static
 
+import Obelisk.Route.Frontend
+
 tshow :: Show a => a -> Text
 tshow = T.pack . show
 
@@ -52,29 +54,71 @@ frontend = Frontend
 
       pb <- getPostBuild
 
+      -- Tests for adjacent/empty text
+      text "One"
+      text "Two"
+      text "Three"
+      text ""
+      text ""
+      text "Four"
+      text ""
+      el "span" $ text ""
+      el "span" $ text "" >> text "hi"
+      el "span" $ text "" >> el "span" (text "hi")
+      el "span" $ el "span" (text "hi") >> text ""
+
       timer <- tickLossy 1 =<< liftIO getCurrentTime
       seconds <- count timer
       el "p" $ display seconds
-      text "-----------------------------------------------"
+      prerender blank $ setRoute never
+      textNode $ TextNodeConfig "0" (Just $ "pb" <$ pb)
+      textNode $ TextNodeConfig "0" (Just $ "" <$ pb)
+      textNode $ TextNodeConfig "" (Just $ "pb" <$ pb)
+      textNode $ TextNodeConfig "" (Just $ "" <$ pb)
+--      text "-----------------------------------------------"
+--      text "-----------------------------------------------"
+--      text "-----------------------------------------------"
 
-      elAttr "article" ("style" =: "background: lightcoral") $ do
+      do -- elAttr "article" ("style" =: "background: lightcoral") $ do
         prerender
-          (prerender
-            (el "span" $ text "Server span")
-            (el "a" $ text "JS link, inner"))
-          (el "a" $ text "JS link")
+          (do
+            pb <- getPostBuild
+            performEvent $ liftIO (putStrLn "hello server postBuild") <$ pb
+            el "span" $ text "Server span"
+          )
+          (do
+            liftIO (putStrLn "------------------- client missiles")
+            (e, _) <- el' "a" $ text "JS link"
+            performEvent $ liftIO (putStrLn "hello") <$ domEvent Click e
+            pb <- getPostBuild
+            performEvent $ liftIO (putStrLn "hello client postBuild") <$ pb
+            textInput def
+            pure ()
+          )
+
+      text "===================================================="
+
 
 --      elAttr "article" ("style" =: "background: moccasin") $ do
 --        widgetHold_ (el "div" $ text "first") $ ffor pb $ \() -> display seconds
 
---      elAttr "article" ("style" =: "background: lightgreen") $ do
---        widgetHold_ (do prerender (liftIO $ putStrLn "-------- server missiles") (liftIO $ putStrLn "-------- client missiles"); el "div" $ text "first") never
+      elAttr "article" ("style" =: "background: lightgreen") $ do
+        widgetHold_ (do prerender (el "b" $ text "Server") (el "b" $ text "Client"); el "div" $ text "first") never
+
+      elAttr "article" ("style" =: "background: green") $ do
+        widgetHold_ (pure ()) $ ffor pb $ \() -> do
+          prerender
+            (el "b" $ text "Server")
+            (el "b" $ text "Client")
+          el "div" $ text "first"
 
 --      elAttr "article" ("style" =: "background: paleturquoise") $ do
 --        dyn_ $ ffor clicks $ \x -> case x `mod` 2 of
 --          0 -> el "span" $ text "Even"
---          1 -> el "span" $ text "Odd"
---
+--          1 -> do
+--            runWithReplace (el "span" $ text "Odd") never
+--            pure ()
+
 --      elAttr "article" ("style" =: "background: cornflowerblue") $ do
 --        widgetHold (text "first") $ ffor (updated clicks) $ \x -> case x `mod` 2 of
 --          0 -> do

@@ -108,7 +108,7 @@ instance HasJSContext m => HasJSContext (RoutedT t r m) where
   type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
   askJSContext = lift askJSContext
 
-instance Prerender js m => Prerender js (RoutedT t r m) where
+instance (Prerender js m, Monad m) => Prerender js (RoutedT t r m) where
   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
 
 instance Requester t m => Requester t (RoutedT t r m) where
@@ -254,7 +254,7 @@ instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
 instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
   modifyRoute = lift . modifyRoute
 
-instance Prerender js m => Prerender js (SetRouteT t r m) where
+instance (Prerender js m, Monad m) => Prerender js (SetRouteT t r m) where
   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
 
 instance Requester t m => Requester t (SetRouteT t r m) where
@@ -325,7 +325,7 @@ instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
   type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
   askJSContext = lift askJSContext
 
-instance Prerender js m => Prerender js (RouteToUrlT r m) where
+instance (Prerender js m, Monad m) => Prerender js (RouteToUrlT r m) where
   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
 
 instance Requester t m => Requester t (RouteToUrlT r m) where
