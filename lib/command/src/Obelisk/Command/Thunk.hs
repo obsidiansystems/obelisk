@@ -67,6 +67,7 @@ import GitHub
 import GitHub.Data.Name
 import Obelisk.Command.Nix
 import System.Directory
+import System.Exit
 import System.FilePath
 import System.IO.Error
 import System.IO.Temp
@@ -629,14 +630,26 @@ setThunk = setThunk' False
 setThunk' :: MonadObelisk m => Bool -> String -> FilePath -> m ()
 setThunk' noTrail branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk set : " <> show err
-  Right (ThunkData_Packed _) -> do
-    -- TODO: create a ThunkPtr from the branch name
-    _ <- unpackThunk' noTrail thunkDir
-    -- TODO: if git checkout branch errors out, the directory should be restored back to it's previous state
-    callProcessAndLogOutput (Debug, Error) $ gitProc thunkDir ["checkout", branch]
-    _ <- packThunk' noTrail thunkDir
-    updateThunkToLatest thunkDir
-    -- TODO: use overwriteThunk thunkDir (someThunkPtr)
+  Right (ThunkData_Packed thunkptr) -> do
+    let thunkSrc = _thunkPtr_source thunkptr
+        repository = case thunkSrc of
+          ThunkSource_Git gitSource -> (T.unpack $ render $ _gitSource_url gitSource)
+          ThunkSource_GitHub gitHubSource -> T.unpack $ "git@github.com:"
+            <> (untagName $ _gitHubSource_owner gitHubSource)
+            <> "/"
+            <>  (untagName $ _gitHubSource_repo gitHubSource)
+            <> ".git"
+    -- check to see if branch exists before modifying directory
+    (exitCode, _) <- gitLsRemoteExitCode repository branch
+    case exitCode of
+      ExitSuccess -> do
+        _ <- unpackThunk' noTrail thunkDir
+        callProcessAndLogOutput (Debug, Error) $ gitProc thunkDir ["checkout", branch]
+        _ <- packThunk' noTrail thunkDir
+        updateThunkToLatest thunkDir
+      ExitFailure errNum -> failWith $ T.pack $ if errNum == 2
+        then "Error: branch not found"
+        else ("Error Code: " <> show errNum <> "issue checking out the desired branch")
   Right (ThunkData_Checkout _) -> do
     callProcessAndLogOutput (Debug, Error) $ gitProc thunkDir ["checkout", branch]
     _ <- packThunk' noTrail thunkDir

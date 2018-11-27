@@ -22,6 +22,7 @@ import qualified Data.Text as T
 import Data.Void (Void)
 import System.Directory (canonicalizePath)
 import System.Environment (getExecutablePath)
+import System.Exit (ExitCode)
 import qualified System.Process as P
 import Text.Megaparsec as MP
 import Text.Megaparsec.Char as MP
@@ -129,6 +130,21 @@ gitLsRemote repository mRef = do
     Right table -> pure $ bimap M.fromList M.fromList $ partitionEithers $ table
   putLog Debug $ "git ls-remote maps: " <> T.pack (show maps)
   pure maps
+
+gitLsRemoteExitCode
+  :: MonadObelisk m
+  => String
+  -> String
+  -> m (ExitCode, GitLsRemoteMaps)
+gitLsRemoteExitCode repository branchName = do
+  (exitCode, out, _err) <- readCreateProcessWithExitCode $ gitProcNoRepo $
+    ["ls-remote", "--exit-code", repository, branchName]
+  let t = T.pack out
+  maps <- case MP.runParser parseLsRemote "" t of
+    Left err -> failWith $ T.pack $ MP.parseErrorPretty' t err
+    Right table -> pure $ bimap M.fromList M.fromList $ partitionEithers $ table
+  putLog Debug $ "git ls-remote maps: " <> T.pack (show maps)
+  pure (exitCode, maps)
 
 lexeme :: Parsec Void Text a -> Parsec Void Text a
 lexeme = ML.lexeme $ void $ MP.takeWhileP (Just "within-line white space") $
