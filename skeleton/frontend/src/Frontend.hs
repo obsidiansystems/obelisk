@@ -112,6 +112,33 @@ frontend = Frontend
             (el "b" $ text "Client")
           el "div" $ text "first"
 
+      prerender
+        (do
+          liftIO $ putStrLn "Server"
+          el "b" $ text "Server"
+          prerender
+            (do
+              liftIO $ putStrLn "Server->Server"
+              el "b" $ text "Server->Server"
+            )
+            (do
+              liftIO $ putStrLn "Server->Client"
+              el "b" $ text "Server->Client"
+            )
+        )
+        (do
+          liftIO $ putStrLn "Client"
+          el "b" $ text "Client"
+          prerender
+            (do
+              liftIO $ putStrLn "Client->Server"
+              el "b" $ text "Client->Server"
+            )
+            (do
+              liftIO $ putStrLn "Client->Client"
+              el "b" $ text "Client->Client"
+            )
+        )
 --      elAttr "article" ("style" =: "background: paleturquoise") $ do
 --        dyn_ $ ffor clicks $ \x -> case x `mod` 2 of
 --          0 -> el "span" $ text "Even"
