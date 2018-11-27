@@ -20,6 +20,8 @@ let
 
   gargoyle-src = hackGet ./dep/gargoyle;
 
+  postgresql-simple-src = hackGet ./dep/postgresql-simple;
+
   getReflexPlatform = getReflexPlatform' __useLegacyCompilers;
   getReflexPlatform' = __useLegacyCompilers: sys: import ./dep/reflex-platform {
     inherit iosSdkVersion __useLegacyCompilers;
@@ -72,6 +74,8 @@ let
         beam-core = dontCheck (self.callCabal2nix "beam-core" (beam-src + /beam-core) {});
         beam-postgres = dontCheck (self.callCabal2nix "beam-postgres" (beam-src + /beam-postgres) {});
         beam-migrate = self.callCabal2nix "beam-migrate" (beam-src + /beam-migrate) {};
+
+        postgresql-simple = dontCheck (self.callCabal2nix "postgresql-simple" postgresql-simple-src {});
 
         websockets = self.callCabal2nix "websockets" (pkgs.fetchFromGitHub {
           owner = "obsidiansystems";

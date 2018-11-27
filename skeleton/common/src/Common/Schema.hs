@@ -7,6 +7,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+
+{-# OPTIONS_GHC -fno-warn-orphans #-} --TODO: Eliminate this
 module Common.Schema where
 
 import Data.Aeson
@@ -23,7 +25,8 @@ data TaskT f = Task
   deriving (Generic)
 type Task = TaskT Identity
 
-deriving instance Show Task
+deriving instance (Show (Columnar f (SqlSerial Int64)), Show (Columnar f Text), Show (Columnar f Bool)) => Show (TaskT f)
+
 deriving instance Eq Task
 
 instance Beamable TaskT
@@ -32,6 +35,8 @@ instance Table TaskT where
   newtype PrimaryKey TaskT f = TaskId (Columnar f (SqlSerial Int64))
     deriving (Generic)
   primaryKey = TaskId . _task_id
+
+deriving instance Show (Columnar f (SqlSerial Int64)) => Show (PrimaryKey TaskT f)
 
 deriving instance ToJSONKey a => ToJSONKey (SqlSerial a)
 deriving instance FromJSONKey a => FromJSONKey (SqlSerial a)
@@ -46,3 +51,10 @@ instance ToJSON (TaskT Identity)
 instance FromJSON (TaskT Identity)
 
 instance Beamable (PrimaryKey TaskT)
+
+data Db f = Db
+  { _db_tasks :: f (TableEntity TaskT)
+  }
+  deriving (Generic)
+
+deriving instance Show (f (TableEntity TaskT)) => Show (Db f)
