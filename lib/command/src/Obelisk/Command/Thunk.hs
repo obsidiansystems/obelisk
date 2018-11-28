@@ -633,12 +633,8 @@ setThunk' noTrail branch thunkDir = checkThunkDirectory thunkDir >> readThunk th
   Right (ThunkData_Packed thunkptr) -> do
     let thunkSrc = _thunkPtr_source thunkptr
         repository = case thunkSrc of
-          ThunkSource_Git gitSource -> (T.unpack $ render $ _gitSource_url gitSource)
-          ThunkSource_GitHub gitHubSource -> T.unpack $ "git@github.com:"
-            <> (untagName $ _gitHubSource_owner gitHubSource)
-            <> "/"
-            <>  (untagName $ _gitHubSource_repo gitHubSource)
-            <> ".git"
+          ThunkSource_Git gitSource -> T.unpack $ render $ _gitSource_url gitSource
+          ThunkSource_GitHub gitHubSource -> T.unpack $ render $ _gitSource_url $ forgetGithub True gitHubSource
     -- check to see if branch exists before modifying directory
     (exitCode, _) <- gitLsRemoteExitCode repository branch
     case exitCode of
