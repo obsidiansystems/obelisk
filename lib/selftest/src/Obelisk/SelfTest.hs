@@ -22,7 +22,7 @@ import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.Socket as Socket
 import Shelly
-import System.Directory (withCurrentDirectory)
+import System.Directory (withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.Info
@@ -212,6 +212,17 @@ main = do
         it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
           void $ unpack
           testThunkPack (dir </> thunk)
+
+      describe "ob thunk set" $ parallel $ do
+        let branch = "develop"
+        it "can set a packed thunk to another packed thunk" $ withTmp $ \dir -> do
+          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", "cg-quickref"]
+          run_ "ob" ["thunk", "pack", toTextIgnore dir]
+          run_ "ob" ["thunk", "set", toTextIgnore dir, "--branch", branch]
+
+        it "can set an unpacked thunk to another packed thunk" $ withTmp $ \dir -> do
+          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", "cg-quickref"]
+          run_ "ob" ["thunk", "set", toTextIgnore dir, "--branch", branch]
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
 testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
