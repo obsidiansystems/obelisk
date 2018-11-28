@@ -639,6 +639,7 @@ setThunk' noTrail branch thunkDir = checkThunkDirectory thunkDir >> readThunk th
     (exitCode, _) <- gitLsRemoteExitCode repository branch
     case exitCode of
       ExitSuccess -> do
+        -- TODO: Accomplish this without unpacking
         _ <- unpackThunk' noTrail thunkDir
         callProcessAndLogOutput (Debug, Error) $ gitProc thunkDir ["checkout", branch]
         _ <- packThunk' noTrail thunkDir
@@ -646,10 +647,7 @@ setThunk' noTrail branch thunkDir = checkThunkDirectory thunkDir >> readThunk th
       ExitFailure errNum -> failWith $ T.pack $ if errNum == 2
         then "Error: branch not found"
         else ("Error Code: " <> show errNum <> "issue checking out the desired branch")
-  Right (ThunkData_Checkout _) -> do
-    callProcessAndLogOutput (Debug, Error) $ gitProc thunkDir ["checkout", branch]
-    _ <- packThunk' noTrail thunkDir
-    updateThunkToLatest thunkDir
+  Right (ThunkData_Checkout _) -> failWith $ T.pack $ "thunk located at " <> (show thunkDir) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk set again."
 
 getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
 getThunkPtr = getThunkPtr' True
