@@ -30,6 +30,7 @@ import Common.Api
 import Common.Schema
 import Backend.Schema
 import Common.Route
+import Data.Foldable
 import qualified Data.Map.Monoidal as Map
 import Data.Maybe
 import Data.Pool
@@ -40,8 +41,6 @@ import Obelisk.Api
 import Obelisk.Db
 import Obelisk.Postgres.LogicalDecoding.Plugins.TestDecoding
 import qualified Data.Map as OldMap
-import Data.Sequence (Seq)
-import Data.These
 import Data.Text.Encoding
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
@@ -189,6 +188,8 @@ to' = Generic.to
 instance ( Generic (tbl (FieldDecoder be))
          , GPatchFields (Rep (tbl (FieldDecoder be)) ())
          , Table tbl
+         , Ord (PrimaryKey tbl Identity)
+         , Eq (tbl Maybe)
          ) => PatchEntity be (TableEntity tbl) where
   patchEntity = EntityPatchDecoder_Table $ to' gPatchFields
 
@@ -205,16 +206,16 @@ class PatchableEntity be e where
 
 data EntityPatchDecoder be e where
   EntityPatchDecoder_NotDecodable :: EntityPatchDecoder be e
-  EntityPatchDecoder_Table :: Table tbl => tbl (FieldDecoder be) -> EntityPatchDecoder be (TableEntity tbl)
+  EntityPatchDecoder_Table :: (Table tbl, Ord (PrimaryKey tbl Identity), Eq (tbl Maybe)) => tbl (FieldDecoder be) -> EntityPatchDecoder be (TableEntity tbl)
 
 data FieldDecoder be a where
   FieldDecoder :: BackendFromField be a => FieldDecoder be a
 
 data EntityPatch e where
   EntityPatch_NotPatchable :: EntityPatch e
-  EntityPatch_Table :: Seq (These (Maybe (PrimaryKey tbl Identity)) (tbl Maybe)) -> EntityPatch (TableEntity tbl) --TODO: Add old keys / deletes
+  EntityPatch_Table :: PatchMapWithMove2 (PrimaryKey tbl Identity) (PartialUpdate tbl) -> EntityPatch (TableEntity tbl)
 
-deriving instance (Show (PrimaryKey tbl Identity), Show (tbl Maybe)) => Show (EntityPatch (TableEntity tbl))
+deriving instance (Show (PrimaryKey tbl Identity), Show (tbl Maybe), Show (tbl Identity)) => Show (EntityPatch (TableEntity tbl))
 
 deriving instance FromField a => FromField (SqlSerial a)
 
@@ -259,25 +260,19 @@ sequenceMaybeBeamable t = zipBeamFieldsM (\(Columnar' a) _ -> Columnar' <$> a) t
 
 newtype PartialUpdate tbl = PartialUpdate (tbl Maybe)
 
+instance Beamable tbl => Semigroup (PartialUpdate tbl) where
+  PartialUpdate a <> PartialUpdate b = PartialUpdate $ runIdentity $ zipBeamFieldsM (\(Columnar' x) (Columnar' y) -> pure $ Columnar' $ x <|> y) a b
+
+instance Beamable tbl => Monoid (PartialUpdate tbl) where
+  mempty = PartialUpdate $ runIdentity $ zipBeamFieldsM (\_ _ -> pure $ Columnar' Nothing) tblSkeleton tblSkeleton
+  mappend = (<>)
+
+deriving instance Show (tbl Maybe) => Show (PartialUpdate tbl)
+deriving instance Eq (tbl Maybe) => Eq (PartialUpdate tbl)
+
 instance Beamable tbl => Patch (PartialUpdate tbl) where
   type PatchTarget (PartialUpdate tbl) = tbl Identity
   apply (PartialUpdate new) old = zipBeamFieldsM (\(Columnar' newField) (Columnar' oldField) -> pure $ Columnar' $ fromMaybe oldField newField) new old
-
-theseToPatch :: Table tbl => These (Maybe (PrimaryKey tbl Identity)) (tbl Maybe) -> PatchMapWithMove2 (PrimaryKey tbl Identity) (PartialUpdate tbl)
-theseToPatch = \case
-  That rm
-    | Just r <- sequenceMaybeBeamable rm
-      -> patchMapWithMove2InsertAll $ OldMap.singleton (primaryKey r) r
-    | otherwise -> error "Incomplete insert"
-  This Nothing -> error "Incomplete delete"
-  This (Just k) -> PatchMapWithMove2 $ OldMap.singleton k $ NodeInfo
-    { _nodeInfo_from = From_Delete
-    , _nodeInfo_to = Nothing
-    }
-  These mk vm -> let k = fromMaybe (error "Update without key") $ mk <|> sequenceMaybeBeamable (primaryKey vm) in PatchMapWithMove2 $ OldMap.singleton k $ NodeInfo
-    { _nodeInfo_from = From_Move k $ PartialUpdate vm
-    , _nodeInfo_to = Nothing
-    }
 
 --TODO: Inserts should always be complete; deletes should always have a key
 decodeChange
@@ -287,7 +282,7 @@ decodeChange
   -> tbl (TableField tbl)
   -> tbl (FieldDecoder Postgres)
   -> Change
-  -> IO (These (Maybe (PrimaryKey tbl Identity)) (tbl Maybe))
+  -> IO (PatchMapWithMove2 (PrimaryKey tbl Identity) (PartialUpdate tbl))
 decodeChange conn settings decoders =
   let decodeRecord = decodeRow conn settings decoders
       decodeKey k = do
@@ -296,13 +291,26 @@ decodeChange conn settings decoders =
           Nothing -> fail "Got partial key"
           Just a -> pure a
   in \case
-  Change_Insert r -> That
-    <$> decodeRecord r
-  Change_Update mk r -> These
-    <$> traverse decodeKey mk
-    <*> decodeRecord r
-  Change_Delete k -> This . Just
-    <$> decodeKey k
+  Change_Insert rRaw -> do
+    rm <- decodeRecord rRaw
+    case sequenceMaybeBeamable rm of
+      Nothing -> fail "Insert got partial row"
+      Just r -> pure $ patchMapWithMove2InsertAll $ OldMap.singleton (primaryKey r) r
+  Change_Update mkRaw rRaw -> do
+    mk <- traverse decodeKey mkRaw
+    vm <- decodeRecord rRaw
+    case mk <|> sequenceMaybeBeamable (primaryKey vm) of
+      Nothing -> fail "Update with no key"
+      Just k -> pure $ PatchMapWithMove2 $ OldMap.singleton k $ NodeInfo
+        { _nodeInfo_from = From_Move k $ PartialUpdate vm
+        , _nodeInfo_to = Just k
+        }
+  Change_Delete kRaw -> do
+    k <- decodeKey kRaw
+    pure $ PatchMapWithMove2 $ OldMap.singleton k $ NodeInfo
+      { _nodeInfo_from = From_Delete
+      , _nodeInfo_to = Nothing
+      }
 
 decodeTransaction :: Connection -> Transaction -> IO (Db EntityPatch)
 decodeTransaction conn (_, tableChanges) = zipTables (Proxy :: Proxy Postgres) f db (defaultDatabasePatchDecoder @Postgres @Db)
@@ -315,5 +323,5 @@ decodeTransaction conn (_, tableChanges) = zipTables (Proxy :: Proxy Postgres) f
           x :: IO (EntityPatch entityType)
           x = case decoder of
                 EntityPatchDecoder_NotDecodable -> pure EntityPatch_NotPatchable
-                EntityPatchDecoder_Table decoders -> EntityPatch_Table <$> traverse (decodeChange conn (dbTableSettings descriptor) decoders) vals
+                EntityPatchDecoder_Table decoders -> EntityPatch_Table . mconcat . toList <$> traverse (decodeChange conn (dbTableSettings descriptor) decoders) vals
       in x

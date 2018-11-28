@@ -26,8 +26,9 @@ data TaskT f = Task
 type Task = TaskT Identity
 
 deriving instance (Show (Columnar f (SqlSerial Int64)), Show (Columnar f Text), Show (Columnar f Bool)) => Show (TaskT f)
-
-deriving instance Eq Task
+deriving instance (Read (Columnar f (SqlSerial Int64)), Read (Columnar f Text), Read (Columnar f Bool)) => Read (TaskT f)
+deriving instance (Eq (Columnar f (SqlSerial Int64)), Eq (Columnar f Text), Eq (Columnar f Bool)) => Eq (TaskT f)
+deriving instance (Ord (Columnar f (SqlSerial Int64)), Ord (Columnar f Text), Ord (Columnar f Bool)) => Ord (TaskT f)
 
 instance Beamable TaskT
 
