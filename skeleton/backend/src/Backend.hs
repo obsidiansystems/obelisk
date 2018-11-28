@@ -85,11 +85,11 @@ backend = Backend
               Right _ -> pure ()
         let onNotify :: forall a. VS (Id Task) Task a -> Transaction -> ReadDb (V (Id Task) Task a)
             onNotify (VS requested) txn = do
-              traceM "Hello"
               decoded <- ReadDb $ do
                 conn <- ask
                 lift $ decodeTransaction conn txn
               traceM $ show $ _db_tasks decoded
+              traceM $ show $ _db_users decoded
               tasks <- runSelectReturningList' $ select $ all_ $ _db_tasks db
               pure $ V $ Map.intersectionWith (,) requested $ Map.fromList $ fmap (\x -> (TaskId $ _task_id x, First $ Just x)) tasks
             onSubscribe :: forall a. VS (Id Task) Task a -> ReadDb (V (Id Task) Task a)
@@ -103,6 +103,7 @@ backend = Backend
                   { _task_id = default_
                   , _task_description = val_ a
                   , _task_completed = val_ False
+                  , _task_assignee = val_ undefined
                   }
                 pure $ TaskId taskId
         withApiHandler dbUri onRequest onNotify onSubscribe $ \handler -> do
@@ -159,22 +160,42 @@ instance (GPatchDatabase (x p), GPatchDatabase (y p)) => GPatchDatabase ((x :*: 
   gDatabasePatchDecoder = gDatabasePatchDecoder :*: gDatabasePatchDecoder
 
 instance PatchEntity be a => GPatchDatabase (S1 f (K1 Generic.R (EntityPatchDecoder be a)) p) where
-  gDatabasePatchDecoder = M1 (K1 patchEntity)
+  gDatabasePatchDecoder = M1 $ K1 patchEntity
 
-class GPatchFields x where
-  gPatchFields :: x
+type family FieldPatches be x where
+  FieldPatches be (D1 f x) = D1 f (FieldPatches be x)
+  FieldPatches be (C1 f x) = C1 f (FieldPatches be x)
+  FieldPatches be (x :*: y) = FieldPatches be x :*: FieldPatches be y
+  FieldPatches be (S1 f (K1 Generic.R (Exposed a))) = S1 f (K1 Generic.R (FieldDecoder be a))
+  FieldPatches be (S1 f (K1 Generic.R (tbl Exposed))) = S1 f (K1 Generic.R (tbl (FieldDecoder be)))
+  FieldPatches be (S1 f (K1 Generic.R (tbl (Nullable Exposed)))) = S1 f (K1 Generic.R (tbl (Nullable (FieldDecoder be))))
 
-instance GPatchFields (x p) => GPatchFields (D1 f x p) where
-  gPatchFields = M1 gPatchFields
+class GPatchFields be exposedRep where
+  gPatchFields :: FieldPatches be exposedRep ()
 
-instance GPatchFields (x p) => GPatchFields (C1 f x p) where
-  gPatchFields = M1 gPatchFields
+instance GPatchFields be x => GPatchFields be (D1 f x) where
+  gPatchFields = M1 $ gPatchFields @be @x
 
-instance (GPatchFields (x p), GPatchFields (y p)) => GPatchFields ((x :*: y) p) where
-  gPatchFields = gPatchFields :*: gPatchFields
+instance GPatchFields be x => GPatchFields be (C1 f x) where
+  gPatchFields = M1 $ gPatchFields @be @x
 
-instance BackendFromField be a => GPatchFields (S1 f (K1 Generic.R (FieldDecoder be a)) p) where
-  gPatchFields = M1 (K1 FieldDecoder)
+instance (GPatchFields be x, GPatchFields be y) => GPatchFields be (x :*: y) where
+  gPatchFields = gPatchFields @be @x :*: gPatchFields @be @y
+
+instance BackendFromField be a => GPatchFields be (S1 f (K1 Generic.R (Exposed a))) where
+  gPatchFields = M1 $ K1 FieldDecoder
+
+instance ( GPatchFields be (Rep (tbl Exposed))
+         , FieldPatches be (Rep (tbl Exposed)) ~ Rep (tbl (FieldDecoder be))
+         , Generic (tbl (FieldDecoder be))
+         ) => GPatchFields be (S1 f (K1 Generic.R (tbl Exposed))) where
+  gPatchFields = M1 $ K1 $ to' $ gPatchFields @be @(Rep (tbl Exposed))
+
+instance ( GPatchFields be (Rep (tbl (Nullable Exposed)))
+         , FieldPatches be (Rep (tbl (Nullable Exposed))) ~ Rep (tbl (Nullable (FieldDecoder be)))
+         , Generic (tbl (Nullable (FieldDecoder be)))
+         ) => GPatchFields be (S1 f (K1 Generic.R (tbl (Nullable Exposed)))) where
+  gPatchFields = M1 $ K1 $ to' $ gPatchFields @be @(Rep (tbl (Nullable Exposed)))
 
 class PatchEntity be e where
   patchEntity :: EntityPatchDecoder be e
@@ -186,12 +207,13 @@ to' :: Generic x => Rep x () -> x
 to' = Generic.to
 
 instance ( Generic (tbl (FieldDecoder be))
-         , GPatchFields (Rep (tbl (FieldDecoder be)) ())
+         , GPatchFields be (Rep (tbl Exposed))
+         , FieldPatches be (Rep (tbl Exposed)) ~ Rep (tbl (FieldDecoder be))
          , Table tbl
          , Ord (PrimaryKey tbl Identity)
          , Eq (tbl Maybe)
          ) => PatchEntity be (TableEntity tbl) where
-  patchEntity = EntityPatchDecoder_Table $ to' gPatchFields
+  patchEntity = EntityPatchDecoder_Table $ to' $ gPatchFields @be @(Rep (tbl Exposed))
 
 defaultDatabasePatchDecoder
   :: forall be db
@@ -274,7 +296,6 @@ instance Beamable tbl => Patch (PartialUpdate tbl) where
   type PatchTarget (PartialUpdate tbl) = tbl Identity
   apply (PartialUpdate new) old = zipBeamFieldsM (\(Columnar' newField) (Columnar' oldField) -> pure $ Columnar' $ fromMaybe oldField newField) new old
 
---TODO: Inserts should always be complete; deletes should always have a key
 decodeChange
   :: forall tbl
   .  Table tbl
