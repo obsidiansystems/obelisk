@@ -30,7 +30,6 @@ module Obelisk.Command.Thunk
   , parseGitUri
   , uriThunkPtr
   , setThunk
-  , setThunk'
   ) where
 
 import Control.Applicative
@@ -625,10 +624,7 @@ packThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir
       pure thunkPtr
 
 setThunk :: MonadObelisk m => String -> FilePath -> m ()
-setThunk = setThunk' False
-
-setThunk' :: MonadObelisk m => Bool -> String -> FilePath -> m ()
-setThunk' noTrail branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
+setThunk branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk set : " <> show err
   Right (ThunkData_Packed thunkptr) -> do
     let thunkSrc = _thunkPtr_source thunkptr
@@ -639,11 +635,28 @@ setThunk' noTrail branch thunkDir = checkThunkDirectory thunkDir >> readThunk th
     (exitCode, _) <- gitLsRemoteExitCode repository branch
     case exitCode of
       ExitSuccess -> do
-        -- TODO: Accomplish this without unpacking
-        _ <- unpackThunk' noTrail thunkDir
-        callProcessAndLogOutput (Debug, Error) $ gitProc thunkDir ["checkout", branch]
-        _ <- packThunk' noTrail thunkDir
-        updateThunkToLatest thunkDir
+        remoteResults <- readGitProcessNoRepo ["ls-remote", repository, branch]
+        uri <- mkURI $ T.pack repository
+        let rev = head $ T.words remoteResults -- TODO: Don't use head
+        sha256 <- nixPrefetchGit uri rev False
+        let newThunkPtr = ThunkPtr
+              { _thunkPtr_source = case _thunkPtr_source thunkptr of
+                  ThunkSource_Git gitSource -> ThunkSource_Git GitSource
+                    { _gitSource_url = _gitSource_url gitSource
+                    , _gitSource_branch = Just $ N $ T.pack branch
+                    , _gitSource_fetchSubmodules = _gitSource_fetchSubmodules gitSource
+                    }
+                  ThunkSource_GitHub gitHubSource -> ThunkSource_GitHub GitHubSource
+                    { _gitHubSource_owner = _gitHubSource_owner gitHubSource
+                    , _gitHubSource_repo = _gitHubSource_repo gitHubSource
+                    , _gitHubSource_branch = Just $ N $ T.pack branch
+                    }
+              , _thunkPtr_rev = ThunkRev
+                  { _thunkRev_commit = Ref.hash $ encodeUtf8 rev
+                  , _thunkRev_nixSha256 = sha256
+                  }
+              }
+        overwriteThunk thunkDir newThunkPtr
       ExitFailure errNum -> failWith $ T.pack $ if errNum == 2
         then "Error: branch not found"
         else ("Error Code: " <> show errNum <> "issue checking out the desired branch")

@@ -79,6 +79,9 @@ copyDir src dest =
 readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
 readGitProcess repo = readProcessAndLogOutput (Debug, Notice) . gitProc repo
 
+readGitProcessNoRepo :: MonadObelisk m => [String] -> m Text
+readGitProcessNoRepo = readProcessAndLogOutput (Debug, Notice) . gitProcNoRepo
+
 processToShellString :: FilePath -> [String] -> String
 processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
   where quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
