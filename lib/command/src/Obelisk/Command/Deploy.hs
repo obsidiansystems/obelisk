@@ -148,7 +148,7 @@ deployPush deployPath getNixBuilders = do
       callProcessAndLogOutput (Notice, Notice) p
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
-deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
+deployUpdate deployPath = updateThunkToLatest (deployPath </> "src") Nothing
 
 deployMobile :: MonadObelisk m => String -> [String] -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do

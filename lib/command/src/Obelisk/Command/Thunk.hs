@@ -380,19 +380,22 @@ createThunkWithLatest target s = do
     , _thunkPtr_rev = rev
     }
 
-updateThunkToLatest :: MonadObelisk m => FilePath -> m ()
-updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
-  (overwrite, ptr) <- readThunk target >>= \case
-    Left err -> failWith $ T.pack $ "thunk update: " <> show err
-    Right c -> case c of
-      ThunkData_Packed t -> return (target, t)
-      ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
-  let src = _thunkPtr_source ptr
-  rev <- getLatestRev src
-  overwriteThunk overwrite $ ThunkPtr
-    { _thunkPtr_source = src
-    , _thunkPtr_rev = rev
-    }
+updateThunkToLatest :: MonadObelisk m => FilePath -> Maybe String -> m ()
+updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $
+  case mBranch of
+    Nothing -> do
+      (overwrite, ptr) <- readThunk target >>= \case
+        Left err -> failWith $ T.pack $ "thunk update: " <> show err
+        Right c -> case c of
+          ThunkData_Packed t -> return (target, t)
+          ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
+      let src = _thunkPtr_source ptr
+      rev <- getLatestRev src
+      overwriteThunk overwrite $ ThunkPtr
+        { _thunkPtr_source = src
+        , _thunkPtr_rev = rev
+        }
+    Just branch -> setThunk branch target
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
@@ -623,6 +626,7 @@ packThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir
       liftIO $ createThunk thunkDir thunkPtr
       pure thunkPtr
 
+-- set thunk to a desired branch
 setThunk :: MonadObelisk m => String -> FilePath -> m ()
 setThunk branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk set : " <> show err
@@ -657,6 +661,7 @@ setThunk branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>
                   }
               }
         overwriteThunk thunkDir newThunkPtr
+        updateThunkToLatest thunkDir Nothing
       ExitFailure errNum -> failWith $ T.pack $ if errNum == 2
         then "Error: branch not found"
         else ("Error Code: " <> show errNum <> "issue checking out the desired branch")
