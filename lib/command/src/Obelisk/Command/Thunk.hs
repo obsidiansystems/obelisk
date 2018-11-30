@@ -636,7 +636,7 @@ setThunk branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>
           ThunkSource_Git gitSource -> T.unpack $ render $ _gitSource_url gitSource
           ThunkSource_GitHub gitHubSource -> T.unpack $ render $ _gitSource_url $ forgetGithub True gitHubSource
     -- check to see if branch exists before modifying directory
-    (exitCode, _) <- gitLsRemoteExitCode repository branch
+    (exitCode, _) <- gitLsRemote repository Nothing $ Just branch
     case exitCode of
       ExitSuccess -> do
         remoteResults <- readGitProcessNoRepo ["ls-remote", repository, branch]
@@ -903,9 +903,10 @@ gitThunkRev s commit = do
 gitGetCommitBranch
   :: MonadObelisk m => URI -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
-  bothMaps <- gitLsRemote
+  (_, bothMaps) <- gitLsRemote
     (T.unpack $ render uri)
     (GitRef_Branch <$> mbranch)
+    Nothing
   branch <- case mbranch of
     Nothing -> withExitFailMessage "Failed to find default branch" $ do
       b <- rethrowE $ gitLookupDefaultBranch bothMaps
