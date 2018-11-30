@@ -379,10 +379,12 @@ createThunkWithLatest target s = do
     }
 
 updateThunkToLatest :: MonadObelisk m => FilePath -> m ()
-updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $
-  case target of
-    "." -> failWith "ob thunk update directory cannot be '.'"
-    _ -> do
+updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
+  canonicalCurrentPath <- liftIO $ canonicalizePath "."
+  canonicalTarget <- liftIO $ canonicalizePath target
+  if canonicalCurrentPath  == canonicalTarget
+    then failWith "ob thunk update directory cannot be '.'"
+    else do
       (overwrite, ptr) <- readThunk target >>= \case
         Left err -> failWith $ T.pack $ "thunk update: " <> show err
         Right c -> case c of
