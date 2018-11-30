@@ -34,6 +34,7 @@ module Obelisk.Command.Thunk
 
 import Control.Applicative
 import Control.Exception (displayException, try)
+import Control.Error.Safe
 import qualified Control.Lens as Lens
 import Control.Lens.Indexed hiding ((<.>))
 import Control.Monad
@@ -641,19 +642,22 @@ setThunk branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>
       ExitSuccess -> do
         remoteResults <- readGitProcessNoRepo ["ls-remote", repository, branch]
         uri <- mkURI $ T.pack repository
-        let rev = head $ T.words remoteResults -- TODO: Don't use head
-        sha256 <- nixPrefetchGit uri rev False
-        let newThunkPtr = ThunkPtr
-              { _thunkPtr_source = case _thunkPtr_source thunkptr of
-                  ThunkSource_Git gitSource -> ThunkSource_Git $ gitSource { _gitSource_branch = Just $ N $ T.pack branch }
-                  ThunkSource_GitHub gitHubSource -> ThunkSource_GitHub $ gitHubSource { _gitHubSource_branch = Just $ N $ T.pack branch }
-              , _thunkPtr_rev = ThunkRev
-                  { _thunkRev_commit = Ref.hash $ encodeUtf8 rev
-                  , _thunkRev_nixSha256 = sha256
+        let eitherrev = headErr "rev for branch cannot be found" $ T.words remoteResults -- TODO: Don't use head
+        case eitherrev of
+          Left notFound -> failWith notFound
+          Right rev -> do
+            sha256 <- nixPrefetchGit uri rev False
+            let newThunkPtr = ThunkPtr
+                  { _thunkPtr_source = case _thunkPtr_source thunkptr of
+                      ThunkSource_Git gitSource -> ThunkSource_Git $ gitSource { _gitSource_branch = Just $ N $ T.pack branch }
+                      ThunkSource_GitHub gitHubSource -> ThunkSource_GitHub $ gitHubSource { _gitHubSource_branch = Just $ N $ T.pack branch }
+                  , _thunkPtr_rev = ThunkRev
+                      { _thunkRev_commit = Ref.hash $ encodeUtf8 rev
+                      , _thunkRev_nixSha256 = sha256
+                      }
                   }
-              }
-        overwriteThunk thunkDir newThunkPtr
-        updateThunkToLatest thunkDir Nothing
+            overwriteThunk thunkDir newThunkPtr
+            updateThunkToLatest thunkDir Nothing
       ExitFailure errNum -> failWith $ T.pack $ if errNum == 2
         then "Error: branch not found"
         else ("Error Code: " <> show errNum <> "issue checking out the desired branch")
