@@ -379,18 +379,21 @@ createThunkWithLatest target s = do
     }
 
 updateThunkToLatest :: MonadObelisk m => FilePath -> m ()
-updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
-  (overwrite, ptr) <- readThunk target >>= \case
-    Left err -> failWith $ T.pack $ "thunk update: " <> show err
-    Right c -> case c of
-      ThunkData_Packed t -> return (target, t)
-      ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
-  let src = _thunkPtr_source ptr
-  rev <- getLatestRev src
-  overwriteThunk overwrite $ ThunkPtr
-    { _thunkPtr_source = src
-    , _thunkPtr_rev = rev
-    }
+updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $
+  case target of
+    "." -> failWith "ob thunk update directory cannot be '.'"
+    _ -> do
+      (overwrite, ptr) <- readThunk target >>= \case
+        Left err -> failWith $ T.pack $ "thunk update: " <> show err
+        Right c -> case c of
+          ThunkData_Packed t -> return (target, t)
+          ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
+      let src = _thunkPtr_source ptr
+      rev <- getLatestRev src
+      overwriteThunk overwrite $ ThunkPtr
+        { _thunkPtr_source = src
+        , _thunkPtr_rev = rev
+        }
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
