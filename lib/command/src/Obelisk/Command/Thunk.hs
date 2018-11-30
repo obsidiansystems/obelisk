@@ -657,7 +657,7 @@ setThunk branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>
       ExitFailure errNum -> failWith $ T.pack $ if errNum == 2
         then "Error: branch not found"
         else ("Error Code: " <> show errNum <> "issue checking out the desired branch")
-  Right (ThunkData_Checkout _) -> failWith $ T.pack $ "thunk located at " <> (show thunkDir) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk set again."
+  Right (ThunkData_Checkout _) -> failWith $ T.pack $ "thunk located at " <> (show thunkDir) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
 
 getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
 getThunkPtr = getThunkPtr' True
