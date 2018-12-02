@@ -8,11 +8,12 @@ library
   build-depends: base,
                  aeson,
                  constraints,
+                 constraints-extras,
+                 dependent-sum,
                  template-haskell,
                  vector
   exposed-modules:
     Obelisk.Request
-    Obelisk.Request.TH
   other-modules:
     Obelisk.Request.HList
   ghc-options: -Wall

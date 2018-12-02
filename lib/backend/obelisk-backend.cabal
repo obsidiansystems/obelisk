@@ -14,10 +14,12 @@ library
                  categories,
                  clientsession,
                  constraints,
+                 constraints-extras,
                  containers,
                  data-default,
                  dependent-sum,
                  dependent-sum-template,
+                 dependent-map,
                  directory,
                  --TODO: Do we really want enclosed-exceptions?
                  enclosed-exceptions,
@@ -49,9 +51,11 @@ library
                  time,
                  universe,
                  unordered-containers,
+                 vessel,
                  websockets,
                  websockets-snap
   exposed-modules:
+    Data.Aeson.GADT
     Data.MonoidMap
     Obelisk.Api
     Obelisk.Api.Pipeline

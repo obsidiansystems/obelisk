@@ -1,25 +1,13 @@
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 
 module Obelisk.Request
-  ( Request (..)
-  , SomeRequest (..)
+  ( Request
   ) where
 
-import Data.Aeson (FromJSON, ToJSON, Value, parseJSON, toJSON)
-import Data.Aeson.Types (Parser)
-import Data.Constraint (Dict)
+import Data.Aeson (FromJSON, ToJSON)
+import Data.Constraint.Extras
+import Data.Some (Some)
 
-class Request r where
-  requestToJSON :: r a -> Value
-  requestParseJSON :: Value -> Parser (SomeRequest r)
-  requestResponseToJSON :: r a -> Dict (ToJSON a)
-  requestResponseFromJSON :: r a -> Dict (FromJSON a)
-
-data SomeRequest t where
-    SomeRequest :: (FromJSON x, ToJSON x) => t x -> SomeRequest t
-
-instance Request r => FromJSON (SomeRequest r) where
-  parseJSON = requestParseJSON
-
-instance Request r => ToJSON (SomeRequest r) where
-  toJSON (SomeRequest r) = requestToJSON r
+type Request r = (FromJSON (Some r), ToJSON (Some r), Has FromJSON r, Has ToJSON r) --TODO: shouldn't Has FromJSON r imply FromJSON (Some r) ?

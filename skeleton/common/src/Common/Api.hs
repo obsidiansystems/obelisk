@@ -1,50 +1,55 @@
-{-# LANGUAGE EmptyCase #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 module Common.Api where
 
 import Common.Schema
 import Data.Aeson
+import Data.Aeson.GADT
 import Data.AppendMap ()
+import Data.Constraint.Extras.TH
 import Data.Functor.Identity
 import Data.Map.Monoidal (MonoidalMap (..))
 import qualified Data.Map.Monoidal as Map
+import Data.Vessel
 import Data.Semigroup
 import Data.Text (Text)
-import Obelisk.Request.TH
+import Data.Functor.Compose
 import Reflex.Class
 import Reflex.Query.Class
 
-newtype VS k v a = VS (MonoidalMap k a)
-  deriving (Semigroup, Monoid, Functor, Foldable, Traversable, Group, ToJSON, FromJSON, Eq)
+type VS = MapV
+-- ()
 
-newtype V k v a = V (MonoidalMap k (a, First (Maybe v)))
-  deriving (Semigroup, Monoid, Functor, Foldable, Traversable, ToJSON, FromJSON, Eq)
-
-instance FunctorMaybe (V k v) where
-  fmapMaybe f (V m) = V $ Map.mapMaybe (\(a, v) -> (,v) <$> f a) m
-
-instance (Ord k, Semigroup a) => Query (VS k v a) where
-  type QueryResult (VS k v a) = V k v a
-  crop _ = id
+type V = MapV
+-- PatchMapWithMove2 (Id Task) (TaskT Maybe)
 
 type family Id t where
   Id (f Identity) = PrimaryKey f Identity
 
 data MyRequest a where
-  MyRequest_Add :: Text -> MyRequest (Id Task)
+  MyRequest_Add :: Text -> MyRequest (PrimaryKey TaskT Identity)
 
-makeRequestForData ''MyRequest
+--TODO: deriveArgDict REQUIRES PolyKinds; see if we can check for that in TH
+deriveArgDict ''MyRequest
+deriveJSONGADT ''MyRequest
+
+instance (Ord k, Ord k', Semigroup v) => Query (MapV (k :: *) (v :: *) (Compose (MonoidalMap k') (Const SelectedCount))) where
+  type QueryResult (MapV k v (Compose (MonoidalMap k') (Const SelectedCount))) = MapV k v (Compose (MonoidalMap k') Identity)
+
+instance (Ord k, Semigroup v) => Query (MapV (k :: *) (v :: *) (Const SelectedCount)) where
+  type QueryResult (MapV k v (Const SelectedCount)) = MapV k v Identity

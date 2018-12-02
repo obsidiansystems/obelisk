@@ -1,4 +1,6 @@
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -9,8 +11,12 @@ module Obelisk.Api.Pipeline where
 
 import Prelude hiding (id, (.))
 
-import Obelisk.Request (Request, SomeRequest (..))
+import Obelisk.Request (Request)
 
+import Data.Vessel
+import Data.Constraint.Extras
+import Data.Some (Some)
+import qualified Data.Some as Some
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.State.Strict
@@ -152,8 +158,8 @@ data WebSocketRequest q r
   | WebSocketRequest_Api (TaggedRequest r)
   deriving (Typeable, Generic)
 
-instance (Request r, FromJSON q) => FromJSON (WebSocketRequest q r)
-instance (Request r, ToJSON q) => ToJSON (WebSocketRequest q r)
+instance (FromJSON q, FromJSON (Some r)) => FromJSON (WebSocketRequest q r)
+instance (ToJSON q, ToJSON (Some r)) => ToJSON (WebSocketRequest q r)
 
 -- | Represents a WebSocket response from one of three channels: incoming 'View's, API responses, or version info
 data WebSocketResponse q
@@ -166,11 +172,11 @@ instance FromJSON (QueryResult q) => FromJSON (WebSocketResponse q)
 instance ToJSON (QueryResult q) => ToJSON (WebSocketResponse q)
 
 -- | A request tagged with an identifier
-data TaggedRequest r = TaggedRequest Value (SomeRequest r)
+data TaggedRequest r = TaggedRequest Value (Some r)
   deriving (Typeable, Generic)
 
-instance Request r => FromJSON (TaggedRequest r)
-instance Request r => ToJSON (TaggedRequest r)
+instance FromJSON (Some r) => FromJSON (TaggedRequest r)
+instance ToJSON (Some r) => ToJSON (TaggedRequest r)
 
 -- | A response tagged with an identifier matching the one in the 'TaggedRequest'. The identifier is the first argument.
 data TaggedResponse = TaggedResponse Value Value
@@ -181,42 +187,39 @@ instance ToJSON TaggedResponse
 
 -- | Handles a websocket connection
 handleWebsocket
-  :: forall q qr r.
-     ( Eq (q SelectedCount)
-     , Eq (qr SelectedCount)
-     , QueryResult (q SelectedCount) ~ qr SelectedCount
-     , QueryResult (q ()) ~ qr ()
-     , ToJSON (qr ())
-     , Functor qr
-     , Group (q SelectedCount)
-     , Monoid (qr SelectedCount)
-     , FromJSON (q ())
-     , Request r
-     , Functor q
+  :: forall (v :: (* -> *) -> *) q q0 req.
+     ( View v
+     , Group (v (Const SelectedCount))
+     , q ~ v (Const SelectedCount)
+     , q0 ~ v Proxy
+     , QueryResult q ~ v Identity
+     , ToJSON (v Identity)
+     , FromJSON (v Proxy)
+     , Request req
      )
   => Text -- ^ Version
-  -> (forall a. r a -> IO a)
-  -> Registrar (q SelectedCount)
+  -> (forall a. req a -> IO a)
+  -> Registrar q
   -> Snap ()
 handleWebsocket v rh register = withWebsocketsConnection $ \conn -> do
-  let sender = Recipient $ sendEncodedDataMessage conn . (\a -> WebSocketResponse_View (void a) :: WebSocketResponse (q ()))
-  sendEncodedDataMessage conn (WebSocketResponse_Version v :: WebSocketResponse (q ()))
+  let sender = Recipient $ sendEncodedDataMessage conn . (\a -> WebSocketResponse_View a :: WebSocketResponse q)
+  sendEncodedDataMessage conn (WebSocketResponse_Version v :: WebSocketResponse q)
   bracket (unRegistrar register sender) snd $ \(vsHandler, _) -> flip evalStateT mempty $ forever $ do
-    (wsr :: WebSocketRequest (q ()) r) <- liftIO $ getDataMessage conn
+    (wsr :: WebSocketRequest q0 r) <- liftIO $ getDataMessage conn
     case wsr of
-      WebSocketRequest_Api (TaggedRequest reqId (SomeRequest req)) -> lift $ do
+      WebSocketRequest_Api (TaggedRequest reqId (Some.This req)) -> lift $ do
         a <- rh req
         sendEncodedDataMessage conn
-          (WebSocketResponse_Api $ TaggedResponse reqId (toJSON a) :: WebSocketResponse (q ()))
+          (WebSocketResponse_Api $ TaggedResponse reqId (has @ToJSON req (toJSON a)) :: WebSocketResponse q)
       WebSocketRequest_ViewSelector new -> do
         old <- get
-        let new' = SelectedCount 1 <$ new
+        let new' = mapV (const (Const (SelectedCount 1))) new
             vsDiff = new' ~~ old
-        when (vsDiff /= mempty) $ do
+        when (not (nullV vsDiff)) $ do
           qr <- lift $ runQueryHandler vsHandler vsDiff
           put new'
-          when (qr /= mempty) $ lift $
-            sendEncodedDataMessage conn (WebSocketResponse_View (void qr) :: WebSocketResponse (q ()))
+          when (not (nullV qr)) $ lift $
+            sendEncodedDataMessage conn (WebSocketResponse_View qr :: WebSocketResponse q)
 
 -------------------------------------------------------------------------------
 
@@ -249,24 +252,22 @@ feedPipeline getNextNotification qh r = do
 
 -- | Connects the pipeline to websockets consumers
 connectPipelineToWebsockets
-  :: ( Eq (q SelectedCount)
-     , QueryResult (q SelectedCount) ~ qr SelectedCount
-     , QueryResult (q ()) ~ qr ()
-     , Group (q SelectedCount)
-     , Monoid (qr SelectedCount)
-     , Eq (qr SelectedCount)
-     , ToJSON (qr ())
-     , FromJSON (q ())
-     , Request r
-     , Functor qr
-     , Functor q
+  :: forall v req q.
+     ( View v
+     , q ~ v (Const SelectedCount)
+     , QueryResult q ~ v Identity
+     , Group q
+     , Monoid (v Identity)
+     , ToJSON (v Identity)
+     , FromJSON (v Proxy)
+     , Request req
      )
   => Text
-  -> (forall a. r a -> IO a)
+  -> (forall a. req a -> IO a)
   -- ^ API handler
-  -> QueryHandler (MonoidalMap ClientKey (q SelectedCount)) IO
+  -> QueryHandler (MonoidalMap ClientKey q) IO
   -- ^ A way to retrieve more data for each consumer
-  -> IO (Recipient (MonoidalMap ClientKey (q SelectedCount)) IO, Snap ())
+  -> IO (Recipient (MonoidalMap ClientKey q) IO, Snap ())
   -- ^ A way to send data to many consumers and a handler for websockets connections
 connectPipelineToWebsockets ver rh qh = do
   (allRecipients, registerRecipient) <- connectPipelineToWebsockets' qh

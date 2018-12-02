@@ -1,4 +1,6 @@
 {-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -23,6 +25,14 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-} --TODO: Eliminate this
 module Backend where
 
+import Prelude hiding (id, (.))
+
+import Control.Category
+import Control.Category.Monoidal (Monoidal)
+import Control.Category.Braided
+import Control.Categorical.Bifunctor
+import Control.Category.Associative
+import Control.Category.Cartesian
 import Control.Exception
 import Control.Applicative
 import Control.Concurrent
@@ -31,10 +41,12 @@ import Common.Schema
 import Backend.Schema
 import Common.Route
 import Data.Foldable
+import Data.Functor.Misc
 import qualified Data.Map.Monoidal as Map
 import Data.Maybe
 import Data.Pool
 import Data.Semigroup
+import Data.Vessel
 import Obelisk.Backend
 import Obelisk.Route
 import Obelisk.Api
@@ -65,7 +77,7 @@ import Reflex.Patch.MapWithMove2
 
 import Data.Proxy
 
-import Control.Lens
+import Control.Lens hiding (Bifunctor, bimap)
 import qualified GHC.Generics as Generic
 import GHC.Generics hiding (R, C)
 import GHC.Types
@@ -83,19 +95,19 @@ backend = Backend
                 print e
                 forever $ threadDelay maxBound --TODO: Probably not necessary once we have `ob psql`
               Right _ -> pure ()
-        let onNotify :: forall a. VS (Id Task) Task a -> Transaction -> ReadDb (V (Id Task) Task a)
-            onNotify (VS requested) txn = do
+        let onNotify :: VS (Id Task) (First Task) Proxy -> Transaction -> ReadDb (V (Id Task) (First Task) Identity)
+            onNotify (MapV requested) txn = do
               decoded <- ReadDb $ do
                 conn <- ask
                 lift $ decodeTransaction conn txn
               traceM $ show $ _db_tasks decoded
               traceM $ show $ _db_users decoded
               tasks <- runSelectReturningList' $ select $ all_ $ _db_tasks db
-              pure $ V $ Map.intersectionWith (,) requested $ Map.fromList $ fmap (\x -> (TaskId $ _task_id x, First $ Just x)) tasks
-            onSubscribe :: forall a. VS (Id Task) Task a -> ReadDb (V (Id Task) Task a)
-            onSubscribe (VS requested) = do
+              pure $ MapV $ Map.fromList $ fmap (\x -> (TaskId $ _task_id x, Identity $ First x)) tasks
+            onSubscribe :: VS (Id Task) (First Task) Proxy -> ReadDb (V (Id Task) (First Task) Identity)
+            onSubscribe (MapV requested) = do
               tasks <- runSelectReturningList' $ select $ all_ $ _db_tasks db
-              pure $ V $ Map.intersectionWith (,) requested $ Map.fromList $ fmap (\x -> (TaskId $ _task_id x, First $ Just x)) tasks
+              pure $ MapV $ Map.fromList $ fmap (\x -> (TaskId $ _task_id x, Identity $ First x)) tasks
             onRequest :: forall a. MyRequest a -> WriteDb a
             onRequest = \case
               MyRequest_Add a -> do
@@ -112,6 +124,80 @@ backend = Backend
             _ -> return ()
   , _backend_routeEncoder = backendRouteEncoder
   }
+
+class CoCartesian' (k :: o -> o -> *) where
+  type Sum' k :: (o -> *) -> o
+  inSum :: tag x -> x `k` Sum' k tag
+  outSum :: (forall x. tag x -> x `k` a) -> Sum' k tag `k` a
+
+class Cartesian' (k :: o -> o -> *) where
+  type Product' k :: (o -> *) -> o
+  outProd :: field x -> Product' k field `k` x
+  inProd :: (forall x. field x -> a `k` x) -> a `k` Product' k field
+  inProd' :: forall (field :: o -> *) (a :: o). (Product' (->) (WrapArg field (k a))) -> a `k` Product' k field
+
+newtype Product'Hask field = Product'Hask (forall x. field x -> x)
+
+instance Cartesian' (->) where
+  type Product' (->) = Product'Hask
+
+{-
+type MyAppView = CrudEverything MyAppDb
+-}
+
+{-
+crudEverything :: IV (PostgresDb a) (a CrudIF, someOtherIF)
+crudEverything = (distributeIV $ MyDB
+  { _myDb_thing = crudIV :: IV (TableEntity ThingT) (CrudIF Thing)
+  }) &&& someOtherIV
+
+watch $ (mempty { _myDb_thing = crudPage 10 0 }, mempty)
+-}
+
+{-
+newtype PatchTarget' p = PatchTarget' (PatchTarget p)
+
+data Server a b = forall state. Server
+  { _server_subscribe :: b Proxy -> ReadDb (b (Product state PatchTarget')) -- Output 'b' must have same shape as input
+  , _server_notify :: Transaction -> b state -> ReadDb (b (Product state Identity)) -- Output state must have same shape as input state; output `b Identity` must be no larger than input `b State`, and should have size approximately proportional to the Transaction size.  Output `b State` should generally not be fully traversed.
+  , _server_request :: forall x. request x -> WriteDb x
+  }
+-}
+
+{-
+data Delta x
+
+data IF query view request response
+
+data DBIn query request = (Event (Delta query), Event request)
+
+data DBOut view response = (Event (Partial view), Event (Delta view), Event response)
+
+--data Database query view request response
+-- Such that: every Delta query triggers a Partial view; every request (by anyone) triggers a Delta view; every request (by us) triggers a response
+database :: DBIn -> m DBOut
+
+times :: DBIn -> DBIn -> m (DBOut, DBOut)
+
+item :: DBOut dbView dbResponse -> DBIn appQuery appResponse -> m (DBIn dbQuery dbRequest, DBOut appView appResponse)
+
+data IV dbquery db dbreq request query result = forall state. IV
+  { _iv_notify
+    :: query
+    -> Delta db --TODO: Should this be NonEmptyDelta, where NonEmptyDelta (a, b) = These (NonEmptyDelta a) (NonEmptyDelta b)
+    -> state
+    -> (state, Delta result)
+  , _iv_subscribe :: Delta query -> db -> (state, result)
+  , _iv_request :: request -> db -> (dbreq, a)
+  }
+
+timesIV :: IV db request query result -> IV db2 request2 query2 result2 -> IV (db, db2) (Either request request2) (query, query2) (result, result2)
+timesIV (IV n s {- r -}) (IV n2 s2 {- r2 -}) = IV
+  (\(q, q2) (ddb, ddb2) (s, s2) -> _ (n q ddb s, n2 q2 ddb2 s2))
+  _
+
+composeIV :: IV result (Delta db) query2 result2 -> IV db request query result
+-}
 
 class MonadBeamRead m where
   runSelectReturningList' :: FromBackendRow Postgres a => SqlSelect Postgres a -> m [a]
@@ -295,6 +381,11 @@ deriving instance Eq (tbl Maybe) => Eq (PartialUpdate tbl)
 instance Beamable tbl => Patch (PartialUpdate tbl) where
   type PatchTarget (PartialUpdate tbl) = tbl Identity
   apply (PartialUpdate new) old = zipBeamFieldsM (\(Columnar' newField) (Columnar' oldField) -> pure $ Columnar' $ fromMaybe oldField newField) new old
+
+availableValues :: PatchMapWithMove2 k p -> OldMap.Map k (PatchTarget p)
+availableValues (PatchMapWithMove2 m) = flip OldMap.mapMaybe m $ \case
+  NodeInfo { _nodeInfo_from = From_Insert v } -> Just v
+  _ -> Nothing
 
 decodeChange
   :: forall tbl

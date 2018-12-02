@@ -16,11 +16,17 @@ let
     openssh
   ];
 
-  beam-src = hackGet ./dep/beam;
-
-  gargoyle-src = hackGet ./dep/gargoyle;
-
-  postgresql-simple-src = hackGet ./dep/postgresql-simple;
+  src = {
+    beam = hackGet ./dep/beam;
+    constraints-extras = hackGet ./dep/constraints-extras;
+    dependent-map = hackGet ./dep/dependent-map;
+    dependent-monoidal-map = hackGet ./dep/dependent-monoidal-map;
+    dependent-sum-aeson-orphans = hackGet ./dep/dependent-sum-aeson-orphans;
+    gargoyle = hackGet ./dep/gargoyle;
+    postgresql-simple = hackGet ./dep/postgresql-simple;
+    reflex-aeson-orphans = hackGet ./dep/reflex-aeson-orphans;
+    vessel = hackGet ./dep/vessel;
+  };
 
   getReflexPlatform = getReflexPlatform' __useLegacyCompilers;
   getReflexPlatform' = __useLegacyCompilers: sys: import ./dep/reflex-platform {
@@ -71,11 +77,16 @@ let
           sha256 = "1v337d810d88jzfriw07pr16d34nibm6q2zkw787lc3sfn07glp5";
         }) {};
 
-        beam-core = dontCheck (self.callCabal2nix "beam-core" (beam-src + /beam-core) {});
-        beam-postgres = dontCheck (self.callCabal2nix "beam-postgres" (beam-src + /beam-postgres) {});
-        beam-migrate = self.callCabal2nix "beam-migrate" (beam-src + /beam-migrate) {};
+        beam-core = dontCheck (self.callCabal2nix "beam-core" (src.beam + /beam-core) {});
+        beam-postgres = dontCheck (self.callCabal2nix "beam-postgres" (src.beam + /beam-postgres) {});
+        beam-migrate = self.callCabal2nix "beam-migrate" (src.beam + /beam-migrate) {};
 
-        postgresql-simple = dontCheck (self.callCabal2nix "postgresql-simple" postgresql-simple-src {});
+        postgresql-simple = dontCheck (self.callCabal2nix "postgresql-simple" src.postgresql-simple {});
+        constraints-extras = self.callCabal2nix "constraints-extras" src.constraints-extras {};
+        dependent-map = self.callCabal2nix "dependent-map" src.dependent-map {};
+        dependent-monoidal-map = self.callCabal2nix "dependent-monoidal-map" src.dependent-monoidal-map {};
+        dependent-sum-aeson-orphans = self.callCabal2nix "dependent-sum-aeson-orphans" src.dependent-sum-aeson-orphans {};
+        reflex-aeson-orphans = self.callCabal2nix "reflex-aeson-orphans" src.reflex-aeson-orphans {};
 
         websockets = self.callCabal2nix "websockets" (pkgs.fetchFromGitHub {
           owner = "obsidiansystems";
@@ -84,11 +95,13 @@ let
           sha256 = "1wd0gkx8a4x6n5cdkra96zvpv8l49i0z90amvrng70ybnzbxpfi5";
         }) {};
 
-        gargoyle = doJailbreak (self.callCabal2nix "gargoyle" (gargoyle-src + /gargoyle) {});
+        vessel = self.callCabal2nix "vessel" src.vessel {};
+
+        gargoyle = doJailbreak (self.callCabal2nix "gargoyle" (src.gargoyle + /gargoyle) {});
         gargoyle-postgresql-nix = pkgs.haskell.lib.addBuildTool
-          (self.callCabal2nix "gargoyle-postgresql-nix" (gargoyle-src + /gargoyle-postgresql-nix) {})
+          (self.callCabal2nix "gargoyle-postgresql-nix" (src.gargoyle + /gargoyle-postgresql-nix) {})
           pkgs.postgresql100; # `staticWhich` requires `psql` on PATH during build time
-        gargoyle-postgresql = addBuildDepend (doJailbreak (self.callCabal2nix "gargoyle-postgresql" (gargoyle-src + /gargoyle-postgresql) {})) pkgs.postgresql100;
+        gargoyle-postgresql = addBuildDepend (doJailbreak (self.callCabal2nix "gargoyle-postgresql" (src.gargoyle + /gargoyle-postgresql) {})) pkgs.postgresql100;
         postgresql-libpq = enableCabalFlag (overrideCabal super.postgresql-libpq (drv: {
           pkgconfigDepends = (drv.pkgconfigDepends or []) ++ [pkgs.postgresql100]; #TODO: Obelisk should probably provide this version of postgresql
         })) "use-pkg-config";
