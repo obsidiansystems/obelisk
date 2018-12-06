@@ -33,7 +33,6 @@ module Obelisk.Command.Thunk
 
 import Control.Applicative
 import Control.Exception (displayException, try)
-import Control.Error.Safe
 import qualified Control.Lens as Lens
 import Control.Lens.Indexed hiding ((<.>))
 import Control.Monad
@@ -66,7 +65,6 @@ import GitHub
 import GitHub.Data.Name
 import Obelisk.Command.Nix
 import System.Directory
-import System.Exit
 import System.FilePath
 import System.IO.Error
 import System.IO.Temp
@@ -382,6 +380,7 @@ createThunkWithLatest target s = do
 
 updateThunkToLatest :: MonadObelisk m => FilePath -> Maybe String -> m ()
 updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $
+  -- check to see if thunk should be updated to a specific branch or just update it's current branch
   case mBranch of
     Nothing -> do
       (overwrite, ptr) <- readThunk target >>= \case
@@ -399,16 +398,17 @@ updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack t
       Left err -> failWith $ T.pack $ "thunk update: " <> show err
       Right c -> case c of
         ThunkData_Packed t -> case _thunkPtr_source t of
-          ThunkSource_Git tsg ->  do
-            newThunkPtr <- uriThunkPtr (_gitSource_url tsg) $ Just $ T.pack branch
-            overwriteThunk target newThunkPtr
-            updateThunkToLatest target Nothing
+          ThunkSource_Git tsg -> setThunk target tsg branch
           ThunkSource_GitHub tsgh -> do
             let tsg = forgetGithub False tsgh
-            newThunkPtr <- uriThunkPtr (_gitSource_url tsg) $ Just $ T.pack branch
-            overwriteThunk target newThunkPtr
-            updateThunkToLatest target Nothing
+            setThunk target tsg branch
         ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> (show target) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
+
+setThunk :: MonadObelisk m => FilePath -> GitSource -> String -> m ()
+setThunk target gs branch = do
+  newThunkPtr <- uriThunkPtr (_gitSource_url gs) $ Just $ T.pack branch
+  overwriteThunk target newThunkPtr
+  updateThunkToLatest target Nothing
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
