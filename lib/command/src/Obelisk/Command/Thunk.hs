@@ -29,7 +29,6 @@ module Obelisk.Command.Thunk
   , getThunkPtr'
   , parseGitUri
   , uriThunkPtr
-  , setThunk
   ) where
 
 import Control.Applicative
@@ -395,7 +394,20 @@ updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack t
         { _thunkPtr_source = src
         , _thunkPtr_rev = rev
         }
-    Just branch -> setThunk branch target
+    Just branch -> readThunk target >>= \case
+      Left err -> failWith $ T.pack $ "thunk update: " <> show err
+      Right c -> case c of
+        ThunkData_Packed t -> case _thunkPtr_source t of
+          ThunkSource_Git tsg ->  do
+            newThunkPtr <- uriThunkPtr (_gitSource_url tsg) $ Just $ T.pack branch
+            overwriteThunk target newThunkPtr
+            updateThunkToLatest target Nothing
+          ThunkSource_GitHub tsgh -> do
+            let tsg = forgetGithub False tsgh
+            newThunkPtr <- uriThunkPtr (_gitSource_url tsg) $ Just $ T.pack branch
+            overwriteThunk target newThunkPtr
+            updateThunkToLatest target Nothing
+        ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> (show target) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
@@ -625,47 +637,6 @@ packThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
       pure thunkPtr
-
--- set thunk to a desired branch
-setThunk :: MonadObelisk m => String -> FilePath -> m ()
-setThunk branch thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
-  Left err -> failWith $ T.pack $ "thunk set : " <> show err
-  Right (ThunkData_Packed thunkptr) -> do
-    let thunkSrc = _thunkPtr_source thunkptr
-        repository = case thunkSrc of
-          ThunkSource_Git gitSource -> T.unpack $ render $ _gitSource_url gitSource
-          ThunkSource_GitHub gitHubSource -> T.unpack $ render $ _gitSource_url $ forgetGithub True gitHubSource
-    -- check to see if branch exists before modifying directory
-    (exitCode, _) <- gitLsRemoteExitCode repository branch
-    case exitCode of
-      ExitSuccess -> do
-        remoteResults <- readGitProcessNoRepo ["ls-remote", repository, branch]
-        uri <- mkURI $ T.pack repository
-        let rev = head $ T.words remoteResults -- TODO: Don't use head
-        sha256 <- nixPrefetchGit uri rev False
-        let newThunkPtr = ThunkPtr
-              { _thunkPtr_source = case _thunkPtr_source thunkptr of
-                  ThunkSource_Git gitSource -> ThunkSource_Git GitSource
-                    { _gitSource_url = _gitSource_url gitSource
-                    , _gitSource_branch = Just $ N $ T.pack branch
-                    , _gitSource_fetchSubmodules = _gitSource_fetchSubmodules gitSource
-                    }
-                  ThunkSource_GitHub gitHubSource -> ThunkSource_GitHub GitHubSource
-                    { _gitHubSource_owner = _gitHubSource_owner gitHubSource
-                    , _gitHubSource_repo = _gitHubSource_repo gitHubSource
-                    , _gitHubSource_branch = Just $ N $ T.pack branch
-                    }
-              , _thunkPtr_rev = ThunkRev
-                  { _thunkRev_commit = Ref.hash $ encodeUtf8 rev
-                  , _thunkRev_nixSha256 = sha256
-                  }
-              }
-        overwriteThunk thunkDir newThunkPtr
-        updateThunkToLatest thunkDir Nothing
-      ExitFailure errNum -> failWith $ T.pack $ if errNum == 2
-        then "Error: branch not found"
-        else ("Error Code: " <> show errNum <> "issue checking out the desired branch")
-  Right (ThunkData_Checkout _) -> failWith $ T.pack $ "thunk located at " <> (show thunkDir) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk set again."
 
 getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
 getThunkPtr = getThunkPtr' True
