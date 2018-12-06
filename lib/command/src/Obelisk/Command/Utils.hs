@@ -123,25 +123,15 @@ gitLsRemote
   :: MonadObelisk m
   => String
   -> Maybe GitRef
-  -> m GitLsRemoteMaps
-gitLsRemote repository mRef = do
-  t <- readProc $ gitProcNoRepo $
-    ["ls-remote", "--symref", repository]
-    ++ (maybeToList $ T.unpack . showGitRef <$> mRef)
-  maps <- case MP.runParser parseLsRemote "" t of
-    Left err -> failWith $ T.pack $ MP.parseErrorPretty' t err
-    Right table -> pure $ bimap M.fromList M.fromList $ partitionEithers $ table
-  putLog Debug $ "git ls-remote maps: " <> T.pack (show maps)
-  pure maps
-
-gitLsRemoteExitCode
-  :: MonadObelisk m
-  => String
-  -> String
+  -> Maybe String
   -> m (ExitCode, GitLsRemoteMaps)
-gitLsRemoteExitCode repository branchName = do
-  (exitCode, out, _err) <- readCreateProcessWithExitCode $ gitProcNoRepo $
-    ["ls-remote", "--exit-code", repository, branchName]
+gitLsRemote repository mRef mBranch = do
+  (exitCode, out, _err) <- case mBranch of
+    Nothing -> readCreateProcessWithExitCode $ gitProcNoRepo $
+        ["ls-remote", "--exit-code", "--symref", repository]
+        ++ (maybeToList $ T.unpack . showGitRef <$> mRef)
+    Just branchName -> readCreateProcessWithExitCode $ gitProcNoRepo $
+        ["ls-remote", "--exit-code", repository, branchName]
   let t = T.pack out
   maps <- case MP.runParser parseLsRemote "" t of
     Left err -> failWith $ T.pack $ MP.parseErrorPretty' t err

@@ -33,6 +33,7 @@ module Obelisk.Command.Thunk
 
 import Control.Applicative
 import Control.Exception (displayException, try)
+import Control.Error.Safe
 import qualified Control.Lens as Lens
 import Control.Lens.Indexed hiding ((<.>))
 import Control.Monad
@@ -882,9 +883,10 @@ gitThunkRev s commit = do
 gitGetCommitBranch
   :: MonadObelisk m => URI -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
-  bothMaps <- gitLsRemote
+  (_, bothMaps) <- gitLsRemote
     (T.unpack $ render uri)
     (GitRef_Branch <$> mbranch)
+    Nothing
   branch <- case mbranch of
     Nothing -> withExitFailMessage "Failed to find default branch" $ do
       b <- rethrowE $ gitLookupDefaultBranch bothMaps
