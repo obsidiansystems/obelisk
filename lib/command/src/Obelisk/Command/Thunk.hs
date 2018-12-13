@@ -639,6 +639,19 @@ getThunkPtr' checkClean thunkDir = do
         ] ++ T.lines stashOutput
     True -> return ()
 
+  -- Get current branch ``
+  mCurrentBranch <- do
+    b <- listToMaybe
+      <$> T.lines
+      <$> readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
+    case b of
+      (Just "HEAD") -> failWith $ T.unlines $
+        [ "thunk pack: You are in 'detached HEAD' state."
+        , "If you want to pack at the current ref \
+          \then please create a new branch with 'git checkout -b <new-branch-name>' and push this upstream."
+        ]
+      _ -> return b
+
   -- Get information on all branches and their (optional) designated upstream
   -- correspondents
   (headDump :: [Text]) <- T.lines <$> readGitProcess thunkDir
@@ -713,11 +726,6 @@ getThunkPtr' checkClean thunkDir = do
 
   -- We assume it's safe to pack the thunk at this point
   putLog Informational $ "All changes safe in git remotes. OK to pack thunk."
-
-  -- Get current branch ``
-  mCurrentBranch <- listToMaybe
-    <$> T.lines
-    <$> readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
 
   let remote = maybe "origin" snd $ flip Map.lookup headUpstream =<< mCurrentBranch
 
