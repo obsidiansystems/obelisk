@@ -265,8 +265,7 @@ in rec {
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
-    let configPath = base + "/config";
-        projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
+    let projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
                           , packages ? {}
@@ -299,7 +298,21 @@ in rec {
                   privateConfigDirs = ["config/backend"];
                   injectableConfig = builtins.filterSource (path: _:
                     !(lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path)) privateConfigDirs)
-                  ) configPath;
+                  );
+                  __android = configPath: {
+                    ${if android == null then null else frontendName} = {
+                      executableName = "frontend";
+                      ${if builtins.pathExists staticFiles then "assets" else null} =
+                        nixpkgs.obeliskExecutableConfig.platforms.android.inject (injectableConfig configPath) processedStatic.symlinked;
+                    } // android;
+                  };
+                  __ios = configPath: {
+                    ${if ios == null then null else frontendName} = {
+                      executableName = "frontend";
+                      ${if builtins.pathExists staticFiles then "staticSrc" else null} =
+                        nixpkgs.obeliskExecutableConfig.platforms.ios.inject (injectableConfig configPath) processedStatic.symlinked;
+                    } // ios;
+                  };
               in {
                 inherit shellToolOverrides tools withHoogle;
                 overrides = totalOverrides;
@@ -319,21 +332,9 @@ in rec {
                     commonName
                   ];
                 };
-                android = {
-                  ${if android == null then null else frontendName} = {
-                    executableName = "frontend";
-                    ${if builtins.pathExists staticFiles then "assets" else null} =
-                      nixpkgs.obeliskExecutableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
-                  } // android;
-                };
-                ios = {
-                  ${if ios == null then null else frontendName} = {
-                    executableName = "frontend";
-                    ${if builtins.pathExists staticFiles then "staticSrc" else null} =
-                      nixpkgs.obeliskExecutableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
-                  } // ios;
-                };
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel; };
+                android = __android null;
+                ios = __ios null;
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __ios __android; };
               };
           in mkProject (projectDefinition args));
       serverOn = sys: version: serverExe
