@@ -15,7 +15,7 @@ module Obelisk.Command.Nix
   , nixCmdConfig_args
   , nixCmdConfig_builders
   , NixBuildConfig (..)
-  , nixBuildConfig_common 
+  , nixBuildConfig_common
   , nixBuildConfig_outLink
   , NixInstantiateConfig (..)
   , nixInstantiateConfig_eval
