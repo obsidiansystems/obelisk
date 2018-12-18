@@ -166,7 +166,7 @@ deployPush deployPath getNixBuilders = do
       callProcessAndLogOutput (Notice, Notice) p
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
-deployUpdate deployPath = updateThunkToLatest $ deployPath </> "src"
+deployUpdate deployPath = updateThunkToLatest (deployPath </> "src") Nothing
 
 keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValueNF Identity)
 keytoolToAndroidConfig conf = runIdentity $ do
