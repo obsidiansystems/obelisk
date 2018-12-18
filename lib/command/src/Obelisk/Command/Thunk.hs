@@ -640,17 +640,20 @@ getThunkPtr' checkClean thunkDir = do
     True -> return ()
 
   -- Get current branch ``
-  mCurrentBranch <- do
+  (mCurrentBranch, mCurrentCommit) <- do
     b <- listToMaybe
       <$> T.lines
       <$> readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
+    c <- listToMaybe
+      <$> T.lines
+      <$> readGitProcess thunkDir ["rev-parse", "HEAD"]
     case b of
       (Just "HEAD") -> failWith $ T.unlines $
         [ "thunk pack: You are in 'detached HEAD' state."
         , "If you want to pack at the current ref \
           \then please create a new branch with 'git checkout -b <new-branch-name>' and push this upstream."
         ]
-      _ -> return b
+      _ -> return (b, c)
 
   -- Get information on all branches and their (optional) designated upstream
   -- correspondents
@@ -738,7 +741,7 @@ getThunkPtr' checkClean thunkDir = do
   remoteUri <- case parseGitUri remoteUri' of
     Nothing -> failWith $ "Could not identify git remote: " <> remoteUri'
     Just uri -> pure uri
-  uriThunkPtr remoteUri mCurrentBranch
+  uriThunkPtr remoteUri mCurrentBranch mCurrentCommit
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
@@ -757,9 +760,11 @@ getLatestRev os = do
 -- performance. If that doesn't work (e.g. authentication issue), we fall back
 -- on just doing things the normal way for git repos in general, and save it as
 -- a regular git thunk.
-uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
-uriThunkPtr uri mbranch = do
-  (_, commit) <- gitGetCommitBranch uri mbranch
+uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> Maybe Text -> m ThunkPtr
+uriThunkPtr uri mbranch mcommit = do
+  commit <- case mcommit of
+    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
+    (Just c) -> return c
   (src, rev) <- case uriToThunkSource uri mbranch of
     ThunkSource_GitHub s -> do
       rev <- runExceptT $ githubThunkRev s commit
