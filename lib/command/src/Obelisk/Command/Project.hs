@@ -26,7 +26,7 @@ import System.FilePath
 import System.IO.Temp
 import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
-import System.Process (CreateProcess, cwd, proc, waitForProcess)
+import System.Process (CreateProcess, cwd, proc, waitForProcess, delegate_ctlc)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -204,13 +204,16 @@ inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> String -> m ()
 projectShell root isPure shellName command = do
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ proc "nix-shell" $
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
      [ "--pure" | isPure ] <>
      [ "-A"
      , "shells." <> shellName
      , "--run", command
      ]
   void $ liftIO $ waitForProcess ph
+
+setCtlc :: CreateProcess -> CreateProcess
+setCtlc cfg = cfg { delegate_ctlc = True }
 
 setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
 setCwd fp cfg = cfg { cwd = fp }

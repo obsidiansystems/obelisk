@@ -142,8 +142,8 @@ deployCommand cfg = hsubparser $ mconcat
   ]
   where
     platformP = hsubparser $ mconcat
-      [ command "android" $ info (pure Android) mempty
-      , command "ios"     $ info (pure IOS <*> strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal")) mempty
+      [ command "android" $ info (pure (Android, [])) mempty
+      , command "ios"     $ info ((,) <$> pure IOS <*> (fmap pure $ strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal"))) mempty
       ]
 
     remoteBuilderParser :: Parser (Maybe RemoteBuilder)
@@ -173,16 +173,13 @@ deployInitOpts = DeployInitOpts
   <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
 
 type TeamID = String
-data PlatformDeployment = Android | IOS TeamID
-  deriving (Show)
-
 data RemoteBuilder = RemoteBuilder_ObeliskVM
   deriving (Eq, Show)
 
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
   | DeployCommand_Push (Maybe RemoteBuilder)
-  | DeployCommand_Test PlatformDeployment
+  | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
   deriving Show
 
@@ -341,8 +338,7 @@ ob = \case
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
-    DeployCommand_Test Android -> deployMobile "android" []
-    DeployCommand_Test (IOS teamID) -> deployMobile "ios" [teamID]
+    DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
