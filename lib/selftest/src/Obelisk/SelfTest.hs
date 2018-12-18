@@ -22,7 +22,7 @@ import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.Socket as Socket
 import Shelly
-import System.Directory (withCurrentDirectory)
+import System.Directory (withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.Info
@@ -212,6 +212,23 @@ main = do
         it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
           void $ unpack
           testThunkPack (dir </> thunk)
+
+      describe "ob thunk update --branch" $ parallel $ do
+        it "can change a thunk to the latest version of a desired branch" $ withTmp $ \dir -> do
+          let branch1 = "master"
+              branch2 = "develop"
+          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch1]
+          run_ "ob" ["thunk" , "pack", toTextIgnore dir]
+          run_ "ob" ["thunk", "update", toTextIgnore dir, "--branch", branch2]
+
+        it "doesn't create anything when given an invalid branch" $ withTmp $ \dir -> do
+          let checkDir dir' = liftIO $ getDirectoryContents $ T.unpack $ toTextIgnore dir'
+          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", "master"]
+          run_ "ob" ["thunk" , "pack", toTextIgnore dir]
+          startingContents <- checkDir dir
+          void $ errExit False $ run "ob" ["thunk", "update", toTextIgnore dir, "--branch", "dumble-palooza"]
+          checkDir dir >>= liftIO . assertEqual "" startingContents
+
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
 testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()

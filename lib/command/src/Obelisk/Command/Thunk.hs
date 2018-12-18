@@ -378,20 +378,38 @@ createThunkWithLatest target s = do
     , _thunkPtr_rev = rev
     }
 
-updateThunkToLatest :: MonadObelisk m => FilePath -> m ()
-updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
+updateThunkToLatest :: MonadObelisk m => FilePath -> Maybe String -> m ()
+updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
   checkThunkDirectory "ob thunk update directory cannot be '.'" target
-  (overwrite, ptr) <- readThunk target >>= \case
-    Left err -> failWith $ T.pack $ "thunk update: " <> show err
-    Right c -> case c of
-      ThunkData_Packed t -> return (target, t)
-      ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
-  let src = _thunkPtr_source ptr
-  rev <- getLatestRev src
-  overwriteThunk overwrite $ ThunkPtr
-    { _thunkPtr_source = src
-    , _thunkPtr_rev = rev
-    }
+  -- check to see if thunk should be updated to a specific branch or just update it's current branch
+  case mBranch of
+    Nothing -> do
+      (overwrite, ptr) <- readThunk target >>= \case
+        Left err -> failWith $ T.pack $ "thunk update: " <> show err
+        Right c -> case c of
+          ThunkData_Packed t -> return (target, t)
+          ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
+      let src = _thunkPtr_source ptr
+      rev <- getLatestRev src
+      overwriteThunk overwrite $ ThunkPtr
+        { _thunkPtr_source = src
+        , _thunkPtr_rev = rev
+        }
+    Just branch -> readThunk target >>= \case
+      Left err -> failWith $ T.pack $ "thunk update: " <> show err
+      Right c -> case c of
+        ThunkData_Packed t -> case _thunkPtr_source t of
+          ThunkSource_Git tsg -> setThunk target tsg branch
+          ThunkSource_GitHub tsgh -> do
+            let tsg = forgetGithub False tsgh
+            setThunk target tsg branch
+        ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> (show target) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
+
+setThunk :: MonadObelisk m => FilePath -> GitSource -> String -> m ()
+setThunk target gs branch = do
+  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (Just $ T.pack branch) Nothing
+  overwriteThunk target newThunkPtr
+  updateThunkToLatest target Nothing
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
@@ -878,9 +896,10 @@ gitThunkRev s commit = do
 gitGetCommitBranch
   :: MonadObelisk m => URI -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
-  bothMaps <- gitLsRemote
+  (_, bothMaps) <- gitLsRemote
     (T.unpack $ render uri)
     (GitRef_Branch <$> mbranch)
+    Nothing
   branch <- case mbranch of
     Nothing -> withExitFailMessage "Failed to find default branch" $ do
       b <- rethrowE $ gitLookupDefaultBranch bothMaps

@@ -208,14 +208,14 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   ]
 
 data ThunkCommand
-   = ThunkCommand_Update [FilePath]
+   = ThunkCommand_Update [FilePath] (Maybe String)
    | ThunkCommand_Unpack [FilePath]
    | ThunkCommand_Pack   [FilePath]
   deriving Show
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser) $ progDesc "Update thunk to latest revision available"
+  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> optional (strOption (long "branch" <> metavar "BRANCH"))) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
   , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
@@ -342,7 +342,7 @@ ob = \case
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
+    ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks packThunk
   ObCommand_Repl -> runRepl
