@@ -123,7 +123,6 @@ deployPush deployPath getNixBuilders = do
         , strArg "routeHost" routeHost
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
-        , rawArg "config" $ deployPath </> "config"
         ]
       & nixCmdConfig_builders .~ builders
     pure result
@@ -133,6 +132,14 @@ deployPush deployPath getNixBuilders = do
     callProcess'
       (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
       "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+  withSpinner "Uploading config" $ ifor_ buildOutputByHost $ \host _ -> do
+    callProcessAndLogOutput (Notice, Warning) $
+      proc "rsync"
+        [ "-e ssh " <> unwords sshOpts
+        , "-qarvz"
+        , deployPath </> "config"
+        , "root@" <> host <> ":/var/lib/backend"
+        ]
   --TODO: Create GC root so we're sure our closure won't go away during this time period
   withSpinner "Switching to new configuration" $ ifor_ buildOutputByHost $ \host outputPath -> do
     callProcessAndLogOutput (Notice, Warning) $
@@ -185,6 +192,7 @@ renderPlatformDeployment = \case
 deployMobile :: MonadObelisk m => PlatformDeployment -> [String] -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
+      configDir = root </> "config"
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
   nixBuildTarget <- case platform of
@@ -217,16 +225,28 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
         Right conf -> do
           let nvset = toValue @(HM.HashMap Text (NValueNF Identity)) @Identity @(NValueNF Identity) $ keytoolToAndroidConfig conf
           return $ printNix $ runIdentity nvset
+      let expr = mconcat
+            [ "with (import ", srcDir, " {});"
+            , "android.frontend.override (drv: { "
+            , "releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; "
+            , "staticSrc = (passthru.__android ", configDir, ").frontend.staticSrc;"
+            , "})"
+            ]
       return $ Target
         { _target_path = Nothing
         , _target_attr = Nothing
-        , _target_expr = Just $ "with (import " <> srcDir <> " {}); "  <> renderPlatformDeployment platform <> ".frontend.override (drv: { releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; })"
+        , _target_expr = Just expr
         }
-    IOS -> return $ Target
-      { _target_path = Nothing
-      , _target_attr = Just "ios.frontend"
-      , _target_expr = Nothing
-      }
+    IOS -> do
+      let expr = mconcat
+            [ "with (import ", srcDir, " {});"
+            , "ios.frontend.override (_: { staticSrc = (passthru.__ios ", configDir, ").frontend.staticSrc; })"
+            ]
+      return $ Target
+        { _target_path = Nothing
+        , _target_attr = Nothing
+        , _target_expr = Just expr
+        }
   result <- nixCmd $ NixCmd_Build $ def
     & nixBuildConfig_outLink .~ OutLink_None
     & nixCmdConfig_target .~ nixBuildTarget
