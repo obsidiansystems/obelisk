@@ -26,6 +26,7 @@ import Control.Monad hiding (sequence, sequence_)
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Control.Monad.Primitive
+import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Class
 import Data.ByteString (ByteString)
@@ -50,7 +51,7 @@ import qualified Reflex.TriggerEvent.Base as TriggerEvent
 
 makePrisms ''Sum
 
-type ObeliskWidget t x route m =
+type ObeliskWidget t route m =
   ( DomBuilder t m
   , MonadFix m
   , MonadHold t m
@@ -58,8 +59,6 @@ type ObeliskWidget t x route m =
   , MonadReflexCreateTrigger t m
   , PostBuild t m
   , PerformEvent t m
-  , MonadIO m
-  , MonadIO (Performable m)
   , TriggerEvent t m
   , HasDocument m
   , MonadRef m
@@ -68,90 +67,18 @@ type ObeliskWidget t x route m =
   , Ref (Performable m) ~ Ref IO
   , MonadFix (Performable m)
   , PrimMonad m
-  , Prerender x m
+  , Prerender t m
   , SetRoute t route m
+  , SetRoute t route (Client m)
   , RouteToUrl route m
+  , RouteToUrl route (Client m)
+  , Monad (Client m)
   )
 
 data Frontend route = Frontend
-  { _frontend_head :: !(forall t m x. ObeliskWidget t x route m => RoutedT t route m ())
-  , _frontend_body :: !(forall t m x. ObeliskWidget t x route m => RoutedT t route m ())
+  { _frontend_head :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
+  , _frontend_body :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
   }
-
-type Widget' x a = HydrationDomBuilderT DomTimeline (DomCoreWidget x) a
-
--- | A widget that isn't attached to any particular part of the DOM hierarchy
-type FloatingWidget x = TriggerEventT DomTimeline (DomCoreWidget x)
-
-type DomCoreWidget x = PostBuildT DomTimeline (WithJSContextSingleton x (PerformEventT DomTimeline DomHost))
-
---TODO: Rename
-{-# INLINABLE attachWidget''' #-}
-attachWidget'''
-  :: IORef HydrationMode
-  -> IORef [(Node, HydrationRunnerT DomTimeline (PostBuildT DomTimeline (WithJSContextSingleton () (PerformEventT DomTimeline DomHost))) ())]
-  -> JSContextSingleton ()
-  -> (EventChannel -> Event DomTimeline () -> PerformEventT DomTimeline DomHost (IORef (Maybe (EventTrigger DomTimeline ()))))
-  -> IO ()
-attachWidget''' hydrationMode rootNodesRef jsSing w = do
-  events <- newChan
-  runDomHost $ flip runTriggerEventT events $ mdo
-    (syncEvent, fireSync) <- newTriggerEvent
-    liftIO $ putStrLn "-------------------------------------- Running host"
-    (postBuildTriggerRef, fc@(FireCommand fire)) <- lift $ hostPerformEventT $ do
-      a <- w events syncEvent
-      runWithReplace (return ()) $ delayedAction <$ syncEvent
-      pure a
-    mPostBuildTrigger <- readRef postBuildTriggerRef
-    lift $ forM_ mPostBuildTrigger $ \postBuildTrigger -> fire [postBuildTrigger :=> Identity ()] $ return ()
-    liftIO $ fireSync ()
-    rootNodes <- liftIO $ readIORef rootNodesRef
-    -- TODO: DomHost is SpiderHost Global only if we're not in profiling mode
-    let delayedAction = do
-          for_ (reverse rootNodes) $ \(rootNode, runner) -> do
-            liftIO $ putStrLn "-------------------------------------- Performing delayed actions"
-            void $ runWithJSContextSingleton (runPostBuildT (runHydrationRunnerT runner Nothing rootNode events) never) jsSing
-            liftIO $ putStrLn "-------------------------------------- Performed delayed actions"
-          liftIO $ writeIORef hydrationMode HydrationMode_Immediate
-    liftIO $ processAsyncEvents events fc
-
---TODO: This is a collection of random stuff; we should make it make some more sense and then upstream to reflex-dom-core
-runWithHeadAndBody
-  :: (   (forall c. Widget' () c -> FloatingWidget () c) -- "Append to head"
-      -> (forall c. Widget' () c -> FloatingWidget () c) -- "Append to body"
-      -> FloatingWidget () ()
-     )
-  -> JSM ()
-runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
-  globalDoc <- currentDocumentUnchecked
-  headElement <- getHeadUnchecked globalDoc
-  bodyElement <- getBodyUnchecked globalDoc
-  unreadyChildren <- liftIO $ newIORef 0
-  hydrationMode <- liftIO $ newIORef HydrationMode_Hydrating
-  hydrationResult <- liftIO $ newIORef []
-  liftIO $ attachWidget''' hydrationMode hydrationResult jsSing $ \events switchover -> flip runWithJSContextSingleton jsSing $ do
-    (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
-    let hydrateDom :: DOM.Node -> Widget' () c -> FloatingWidget () c
-        hydrateDom n w = do
-          events' <- TriggerEvent.askEvents
-          parent <- liftIO $ newIORef $ toNode n
-          lift $ do
-            let builderEnv = HydrationDomBuilderEnv
-                  { _hydrationDomBuilderEnv_document = globalDoc
-                  , _hydrationDomBuilderEnv_parent = parent
-                  , _hydrationDomBuilderEnv_unreadyChildren = unreadyChildren
-                  , _hydrationDomBuilderEnv_commitAction = pure ()
-                  , _hydrationDomBuilderEnv_hydrationMode = hydrationMode
-                  , _hydrationDomBuilderEnv_switchover = switchover
-                  }
-            (a, res) <- runHydrationDomBuilderT w builderEnv events'
-            liftIO $ modifyIORef' hydrationResult ((n, res) :)
-            pure a
-    flip runPostBuildT postBuild $ flip runTriggerEventT events $ app (hydrateDom $ toNode headElement) (hydrateDom $ toNode bodyElement)
---    liftIO (readIORef unreadyChildren) >>= \case
---      0 -> DOM.liftJSM commit
---      _ -> return ()
-    return postBuildTriggerRef
 
 runFrontend :: forall backendRoute route. Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> Frontend (R route) -> JSM ()
 runFrontend validFullEncoder frontend = do
@@ -168,12 +95,21 @@ runFrontend validFullEncoder frontend = do
            , MonadFix m
            , MonadFix (Performable m)
            )
-        => RoutedT t (R route) (SetRouteT t (R route) (RouteToUrlT (R route) m)) a
+        => Event t ()
+        -> RoutedT t (R route) (SetRouteT t (R route) (RouteToUrlT (R route) m)) a
         -> m a
       runMyRouteViewT = runRouteViewT ve
-  runWithHeadAndBody $ \appendHead appendBody -> runMyRouteViewT $ do
-    mapRoutedT (mapSetRouteT (mapRouteToUrlT appendHead)) $ _frontend_head frontend
-    mapRoutedT (mapSetRouteT (mapRouteToUrlT appendBody)) $ _frontend_body frontend
+  runHydrationWidgetWithHeadAndBody (liftIO $ putStrLn "SWITCHOVER") $ \appendHead appendBody -> do
+    rec switchover <- runMyRouteViewT switchover $ do
+          (switchover, fire) <- newTriggerEvent
+          mapRoutedT (mapSetRouteT (mapRouteToUrlT appendHead)) $ do
+            _frontend_head frontend
+          mapRoutedT (mapSetRouteT (mapRouteToUrlT appendBody)) $ do
+            _frontend_body frontend
+            switchover' <- lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
+            performEvent_ $ liftIO (fire ()) <$ switchover'
+          pure switchover
+    pure ()
 
 renderFrontendHtml
   :: (t ~ DomTimeline)
