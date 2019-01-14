@@ -11,6 +11,7 @@ library
                  ghcjs-dom,
                  jsaddle,
                  lens,
+                 mtl,
                  obelisk-route,
                  primitive,
                  ref-tf,

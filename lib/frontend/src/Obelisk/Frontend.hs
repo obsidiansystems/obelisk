@@ -45,7 +45,6 @@ import qualified GHCJS.DOM.Types as DOM
 import Language.Javascript.JSaddle (JSM)
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
-import Reflex.Dom.Builder.Hydration
 import Reflex.Host.Class
 import qualified Reflex.TriggerEvent.Base as TriggerEvent
 
@@ -99,7 +98,7 @@ runFrontend validFullEncoder frontend = do
         -> RoutedT t (R route) (SetRouteT t (R route) (RouteToUrlT (R route) m)) a
         -> m a
       runMyRouteViewT = runRouteViewT ve
-  runHydrationWidgetWithHeadAndBody (liftIO $ putStrLn "SWITCHOVER") $ \appendHead appendBody -> do
+  runHydrationWidgetWithHeadAndBody (pure ()) $ \appendHead appendBody -> do
     rec switchover <- runMyRouteViewT switchover $ do
           (switchover, fire) <- newTriggerEvent
           mapRoutedT (mapSetRouteT (mapRouteToUrlT appendHead)) $ do
