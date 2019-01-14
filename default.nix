@@ -300,17 +300,10 @@ in rec {
                     commonName
                     frontendName
                   ]);
-                  ghc = (lib.filter (x: lib.hasAttr x combinedPackages)[
+                  ghc = (lib.filter (x: lib.hasAttr x combinedPackages) [
                     backendName
                     commonName
                     frontendName
-#                    "obelisk-route"
-#                    "obelisk-frontend"
-#                    "obelisk-backend"
-#                    "obelisk-executable-config"
-#                    "obelisk-run"
-#                    "reflex-dom-core"
-#                    "reflex-dom"
                   ]);
                   ghcjs = lib.filter (x: lib.hasAttr x combinedPackages) [
                     frontendName
