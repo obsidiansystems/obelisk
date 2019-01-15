@@ -303,14 +303,16 @@ in rec {
                     ${if android == null then null else frontendName} = {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "assets" else null} =
-                        nixpkgs.obeliskExecutableConfig.platforms.android.inject (injectableConfig configPath) processedStatic.symlinked;
+                        (if configPath == null then lib.id else  nixpkgs.obeliskExecutableConfig.platforms.android.inject (injectableConfig configPath))
+                         processedStatic.symlinked;
                     } // android;
                   };
                   __ios = configPath: {
                     ${if ios == null then null else frontendName} = {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "staticSrc" else null} =
-                        nixpkgs.obeliskExecutableConfig.platforms.ios.inject (injectableConfig configPath) processedStatic.symlinked;
+                         (if configPath == null then lib.id else nixpkgs.obeliskExecutableConfig.platforms.ios.inject (injectableConfig configPath))
+                         processedStatic.symlinked;
                     } // ios;
                   };
               in {
