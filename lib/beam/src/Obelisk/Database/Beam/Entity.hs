@@ -14,46 +14,56 @@ import Database.Beam
 import Database.Beam.Migrate
 
 -- | Associates a database table's value (non-key) component with its key type.
-type family Key (value :: (* -> *) -> *) :: ((* -> *) -> *)
+type family KeyT (value :: (* -> *) -> *) :: ((* -> *) -> *)
+
+type Key value = KeyT value Identity
 
 -- | Combines a value type and its key type to form a complete database row type.
-data Entity (value :: (* -> *) -> *) (f :: * -> *) = Entity
-  { _entity_key :: (Key value) f
+data EntityT (value :: (* -> *) -> *) (f :: * -> *) = Entity
+  { _entity_key :: KeyT value f
   , _entity_value :: value f
   } deriving Generic
 
-makeLenses ''Entity
+makeLenses ''EntityT
 
-deriving instance (Beamable (Key value), Beamable value) => Beamable (Entity value)
-deriving instance (Eq (Key value Identity), Eq (value Identity)) => Eq (Entity value Identity)
-deriving instance (Ord (Key value Identity), Ord (value Identity)) => Ord (Entity value Identity)
-deriving instance (Show (Key value Identity), Show (value Identity)) => Show (Entity value Identity)
-deriving instance (Read (Key value Identity), Read (value Identity)) => Read (Entity value Identity)
+type Entity value = EntityT value Identity
 
-instance (Typeable (Key value), Beamable (Key value), Typeable value, Beamable value) => Table (Entity value) where
-  data PrimaryKey (Entity value) f = EntityKey (Key value f) deriving Generic
+deriving instance (Beamable (KeyT value), Beamable value) => Beamable (EntityT value)
+deriving instance (Eq (KeyT value f), Eq (value f)) => Eq (EntityT value f)
+deriving instance (Ord (KeyT value f), Ord (value f)) => Ord (EntityT value f)
+deriving instance (Show (KeyT value f), Show (value f)) => Show (EntityT value f)
+deriving instance (Read (KeyT value f), Read (value f)) => Read (EntityT value f)
+
+instance (Typeable (KeyT value), Beamable (KeyT value), Typeable value, Beamable value) => Table (EntityT value) where
+  data PrimaryKey (EntityT value) f = EntityKey (KeyT value f) deriving Generic
   primaryKey = EntityKey . _entity_key
 
-instance (Typeable (Key value), Beamable (Key value), Typeable value, Beamable value) => Beamable (PrimaryKey (Entity value))
+instance (Typeable (KeyT value), Beamable (KeyT value), Typeable value, Beamable value) => Beamable (PrimaryKey (EntityT value))
+deriving instance (Typeable (KeyT value), Beamable (KeyT value), Typeable value, Beamable value, Eq (KeyT value f)) => Eq (EntityKeyT f value)
+deriving instance (Typeable (KeyT value), Beamable (KeyT value), Typeable value, Beamable value, Ord (KeyT value f)) => Ord (EntityKeyT f value)
+deriving instance (Typeable (KeyT value), Beamable (KeyT value), Typeable value, Beamable value, Show (KeyT value f)) => Show (EntityKeyT f value)
+deriving instance (Typeable (KeyT value), Beamable (KeyT value), Typeable value, Beamable value, Read (KeyT value f)) => Read (EntityKeyT f value)
 
 -- | Gets the 'PrimaryKey' of an 'Entity' and switches the argument order for
 -- consistency with 'Columnar'.
-type ForeignKey f value = PrimaryKey (Entity value) f
+type EntityKeyT f value = PrimaryKey (EntityT value) f
+
+type EntityKey value = EntityKeyT Identity value
 
 -- | A single-column primary key.
 newtype Id k f = Id { getId :: Columnar f k }
   deriving (Generic, Beamable)
 
-deriving instance Eq k => Eq (Id k Identity)
-deriving instance Ord k => Ord (Id k Identity)
-deriving instance Show k => Show (Id k Identity)
-deriving instance Read k => Read (Id k Identity)
+deriving instance Eq (Columnar f k) => Eq (Id k f)
+deriving instance Ord (Columnar f k) => Ord (Id k f)
+deriving instance Show (Columnar f k) => Show (Id k f)
+deriving instance Read (Columnar f k) => Read (Id k f)
 
 checkedEntity
   :: Text -- ^ The table name in the schema.
-  -> (Key e) (CheckedFieldModification (Entity e))
-  -> e (CheckedFieldModification (Entity e))
-  -> EntityModification (CheckedDatabaseEntity be db) be (TableEntity (Entity e))
+  -> KeyT e (CheckedFieldModification (EntityT e))
+  -> e (CheckedFieldModification (EntityT e))
+  -> EntityModification (CheckedDatabaseEntity be db) be (TableEntity (EntityT e))
 checkedEntity name key value = modifyCheckedTable (const name) $ Entity
   { _entity_key = key
   , _entity_value = value
@@ -62,10 +72,10 @@ checkedEntity name key value = modifyCheckedTable (const name) $ Entity
 -- | Construct a 'CheckedDatabaseEntity' for an 'Entity' table with a
 -- single-column 'Id'-based primary key which will be named "id" in the schema.
 checkedEntityWithId
-  :: Key e ~ Id a
+  :: KeyT e ~ Id a
   => Text
-  -> e (CheckedFieldModification (Entity e))
-  -> EntityModification (CheckedDatabaseEntity be db) be (TableEntity (Entity e))
+  -> e (CheckedFieldModification (EntityT e))
+  -> EntityModification (CheckedDatabaseEntity be db) be (TableEntity (EntityT e))
 checkedEntityWithId name value = modifyCheckedTable (const name) $ Entity
   { _entity_key = Id $ checkedFieldNamed $ pack "id"
   , _entity_value = value
@@ -74,7 +84,7 @@ checkedEntityWithId name value = modifyCheckedTable (const name) $ Entity
 -- | Construct a 'CheckedFieldModification' for a foreign key to an 'Entity'
 -- table.
 checkedEntityForeignKeyFieldNamed
-  :: Key value ~ Id a
+  :: KeyT value ~ Id a
   => Text
-  -> PrimaryKey (Entity value) (CheckedFieldModification (Entity e))
+  -> PrimaryKey (EntityT value) (CheckedFieldModification (EntityT e))
 checkedEntityForeignKeyFieldNamed = EntityKey . Id . checkedFieldNamed
