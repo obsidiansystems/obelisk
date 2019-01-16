@@ -27,6 +27,8 @@ makeLenses ''Entity
 deriving instance (Beamable (Key value), Beamable value) => Beamable (Entity value)
 deriving instance (Eq (Key value Identity), Eq (value Identity)) => Eq (Entity value Identity)
 deriving instance (Ord (Key value Identity), Ord (value Identity)) => Ord (Entity value Identity)
+deriving instance (Show (Key value Identity), Show (value Identity)) => Show (Entity value Identity)
+deriving instance (Read (Key value Identity), Read (value Identity)) => Read (Entity value Identity)
 
 instance (Typeable (Key value), Beamable (Key value), Typeable value, Beamable value) => Table (Entity value) where
   data PrimaryKey (Entity value) f = EntityKey (Key value f) deriving Generic
@@ -44,6 +46,8 @@ newtype Id k f = Id { getId :: Columnar f k }
 
 deriving instance Eq k => Eq (Id k Identity)
 deriving instance Ord k => Ord (Id k Identity)
+deriving instance Show k => Show (Id k Identity)
+deriving instance Read k => Read (Id k Identity)
 
 checkedEntity
   :: Text -- ^ The table name in the schema.
