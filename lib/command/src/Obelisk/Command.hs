@@ -142,8 +142,8 @@ deployCommand cfg = hsubparser $ mconcat
   ]
   where
     platformP = hsubparser $ mconcat
-      [ command "android" $ info (pure Android) mempty
-      , command "ios"     $ info (pure IOS <*> strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal")) mempty
+      [ command "android" $ info (pure (Android, [])) mempty
+      , command "ios"     $ info ((,) <$> pure IOS <*> (fmap pure $ strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal"))) mempty
       ]
 
     remoteBuilderParser :: Parser (Maybe RemoteBuilder)
@@ -173,16 +173,13 @@ deployInitOpts = DeployInitOpts
   <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
 
 type TeamID = String
-data PlatformDeployment = Android | IOS TeamID
-  deriving (Show)
-
 data RemoteBuilder = RemoteBuilder_ObeliskVM
   deriving (Eq, Show)
 
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
   | DeployCommand_Push (Maybe RemoteBuilder)
-  | DeployCommand_Test PlatformDeployment
+  | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
   deriving Show
 
@@ -211,14 +208,14 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   ]
 
 data ThunkCommand
-   = ThunkCommand_Update [FilePath]
+   = ThunkCommand_Update [FilePath] (Maybe String)
    | ThunkCommand_Unpack [FilePath]
    | ThunkCommand_Pack   [FilePath]
   deriving Show
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser) $ progDesc "Update thunk to latest revision available"
+  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> optional (strOption (long "branch" <> metavar "BRANCH"))) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
   , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
@@ -341,12 +338,11 @@ ob = \case
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
-    DeployCommand_Test Android -> deployMobile "android" []
-    DeployCommand_Test (IOS teamID) -> deployMobile "ios" [teamID]
+    DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
+    ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks packThunk
   ObCommand_Repl -> runRepl
