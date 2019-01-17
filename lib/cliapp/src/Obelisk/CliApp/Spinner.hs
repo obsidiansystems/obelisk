@@ -72,11 +72,11 @@ withSpinner' msg mkTrail action = do
       logMessage Output_ClearLine
       logsM <- modifyStack $ popSpinner $ case resultM of
         Nothing ->
-          ( TerminalString_Colorized Red "✖"
+          ( TerminalString_Colorized Red "FAILED"
           , Just msg  -- Always display final message if there was an exception.
           )
         Just result ->
-          ( TerminalString_Colorized Green "✔"
+          ( TerminalString_Colorized Green "DONE"
           , mkTrail <*> pure result
           )
       -- Last message, finish off with newline.
@@ -102,7 +102,7 @@ withSpinner' msg mkTrail action = do
       =<< fmap _cliConfig_spinnerStack getCliConfig
     modifyStack f = liftIO . flip atomicModifyIORef' f
       =<< fmap _cliConfig_spinnerStack getCliConfig
-    spinner = coloredSpinner defaultSpinnerTheme
+    spinner = coloredSpinner minimalSpinnerTheme
 
 -- | How nested spinner logs should be displayed
 renderSpinnerStack
@@ -114,7 +114,7 @@ renderSpinnerStack mark = L.intersperse space . go . L.reverse
     go [] = []
     go (x:[]) = mark : [x]
     go (x:xs) = arrow : x : go xs
-    arrow = TerminalString_Colorized Blue "⇾"
+    arrow = TerminalString_Colorized Blue "->"
     space = TerminalString_Normal " "
 
 -- | A spinner is simply an infinite list of strings that supplant each other in a delayed loop, creating the
@@ -133,14 +133,14 @@ runSpinner spinner f = forM_ spinner $ f >=> const delay
 type SpinnerTheme = [Text]
 
 -- Find more spinners at https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
-_spinnerCircleHalves :: SpinnerTheme
-_spinnerCircleHalves = ["◐", "◓", "◑", "◒"]
+_spinnerSticks :: SpinnerTheme
+_spinnerSticks = ["|", "/", "-", "\\"]
 
-spinnerMoon :: SpinnerTheme
-spinnerMoon = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
+spinnerStick :: SpinnerTheme
+spinnerStick = ["|", "/", "-", "\\"]
 
-defaultSpinnerTheme :: SpinnerTheme
-defaultSpinnerTheme = spinnerMoon
+minimalSpinnerTheme :: SpinnerTheme
+minimalSpinnerTheme = spinnerStick
 
 -- | Like `bracket` but the `release` function can know whether an exception was raised
 bracket' :: MonadMask m => m a -> (a -> Maybe c -> m b) -> (a -> m c) -> m c
