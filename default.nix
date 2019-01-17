@@ -4,17 +4,6 @@
 , __useLegacyCompilers ? false
 }:
 let
-  cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
-    builtins.match "^\\.ghc\\.environment.*" baseName != null ||
-    baseName == "cabal.project.local"
-  ));
-
-  commandRuntimeDeps = pkgs: with pkgs; [
-    coreutils
-    git
-    nix-prefetch-git
-    openssh
-  ];
 
   getReflexPlatform = getReflexPlatform' __useLegacyCompilers;
   getReflexPlatform' = __useLegacyCompilers: sys: import ./dep/reflex-platform {
@@ -23,92 +12,13 @@ let
     enableLibraryProfiling = profiling;
 
     nixpkgsOverlays = [
-      (self: super: {
-        obeliskExecutableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
-      })
+      (import ./nixpkgs-overlays)
     ];
 
     haskellOverlays = [
-
-      # Fix misc upstream packages
-      (self: super: let
-        pkgs = self.callPackage ({ pkgs }: pkgs) {};
-      in {
-        hnix = pkgs.haskell.lib.dontCheck (self.callCabal2nix "hnix" (pkgs.fetchFromGitHub {
-          owner = "haskell-nix";
-          repo = "hnix";
-          rev = "42afdc21da5d9e076eab57eaa42bfdde938192b8";
-          sha256 = "0psw384dx9bw2dp93xrzw8rd9amvcwgzn64jzzwby7sfspj6k349";
-        }) {});
-        # Need 8.0.2 build support
-        # PR: https://github.com/dmwit/universe/pull/33
-        universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
-          owner = "obsidiansystems";
-          repo = "universe";
-          rev = "6a71119bfa5db2b9990a2491c941469ff8ef5d13";
-          sha256 = "0z8smyainnlzcglv3dlx6x1n9j6d2jv48aa8f2421iayfkxg3js5";
-        } + /template) {};
-      })
-
-      # Add obelisk packages
-      (self: super: let
-        pkgs = self.callPackage ({ pkgs }: pkgs) {};
-      in {
-        obelisk-executable-config = pkgs.obeliskExecutableConfig.haskellPackage self;
-        obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
-
-        obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" ./lib/asset/manifest {};
-        obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" ./lib/asset/serve-snap {};
-        obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
-        obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-        obelisk-command = self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {};
-        obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
-        obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
-        obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
-        obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
-        obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
-      })
-
-      (self: super: let
-        pkgs = self.callPackage ({ pkgs }: pkgs) {};
-        haskellLib = pkgs.haskell.lib;
-        #TODO: Upstream
-        # Modify a Haskell package to add completion scripts for the given
-        # executable produced by it.  These completion scripts will be picked up
-        # automatically if the resulting derivation is installed, e.g. by
-        # `nix-env -i`.
-        addOptparseApplicativeCompletionScripts = exeName: pkg: haskellLib.overrideCabal pkg (drv: {
-          postInstall = (drv.postInstall or "") + ''
-            BASH_COMP_DIR="$out/share/bash-completion/completions"
-            mkdir -p "$BASH_COMP_DIR"
-            "$out/bin/${exeName}" --bash-completion-script "$out/bin/${exeName}" >"$BASH_COMP_DIR/ob"
-
-            ZSH_COMP_DIR="$out/share/zsh/vendor-completions"
-            mkdir -p "$ZSH_COMP_DIR"
-            "$out/bin/${exeName}" --zsh-completion-script "$out/bin/${exeName}" >"$ZSH_COMP_DIR/_ob"
-
-            FISH_COMP_DIR="$out/share/fish/vendor_completions.d"
-            mkdir -p "$FISH_COMP_DIR"
-            "$out/bin/${exeName}" --fish-completion-script "$out/bin/${exeName}" >"$FISH_COMP_DIR/ob.fish"
-          '';
-        });
-      in {
-        # Dynamic linking with split objects dramatically increases startup time (about
-        # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.
-        obelisk-command = haskellLib.overrideCabal
-          (addOptparseApplicativeCompletionScripts "ob"
-            (haskellLib.justStaticExecutables super.obelisk-command))
-          (drv: {
-            buildTools = (drv.buildTools or []) ++ [ pkgs.buildPackages.makeWrapper ];
-            postFixup = ''
-              ${drv.postFixup or ""}
-              # Make `ob` reference its runtime dependencies.
-              wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
-            '';
-          });
-        obelisk-selftest = haskellLib.justStaticExecutables super.obelisk-selftest;
-      })
-
+      (import ./haskell-overlays/misc-deps.nix)
+      (import ./haskell-overlays/obelisk.nix)
+      (import ./haskell-overlays/tighten-ob-exes.nix)
     ];
   };
 
@@ -135,7 +45,7 @@ in rec {
   obelisk = ghcObelisk;
   obeliskEnvs = ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
-  shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
+  shell = pinBuildInputs "obelisk-shell" ([command] ++ command.commandRuntimeDeps) [];
 
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
