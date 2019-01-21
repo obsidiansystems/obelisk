@@ -19,6 +19,7 @@
 module Obelisk.Route
   ( R
   , pattern (:/)
+  , hoistR
   , PageName
   , PathQuery
   , Encoder
@@ -148,6 +149,9 @@ pattern a :/ b = a :=> Identity b
 
 mapSome :: (forall a. f a -> g a) -> Some f -> Some g
 mapSome f (Some.This a) = Some.This $ f a
+
+hoistR :: (forall x. f x -> g x) -> R f -> R g
+hoistR f (x :=> Identity y) = f x :/ y
 
 --------------------------------------------------------------------------------
 -- Encoder fundamentals
