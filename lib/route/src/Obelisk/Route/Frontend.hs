@@ -3,6 +3,7 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -96,12 +97,13 @@ pattern a :~ b <- a :=> (coerceDynamic . getCompose -> b)
 
 class Routed t r m | m -> t r where
   askRoute :: m (Dynamic t r)
+  default askRoute :: (Monad m', MonadTrans f, Routed t r m', m ~ f m') => m (Dynamic t r)
+  askRoute = lift askRoute
 
 instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
-instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m) where
-  askRoute = lift askRoute
+instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m)
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
@@ -259,16 +261,17 @@ runSetRouteT = runEventWriterT . unSetRouteT
 class Reflex t => SetRoute t r m | m -> t r where
   setRoute :: Event t r -> m ()
   modifyRoute :: Event t (r -> r) -> m ()
+  default modifyRoute :: (Monad m', MonadTrans f, SetRoute t r m', m ~ f m') => Event t (r -> r) -> m ()
+  modifyRoute = lift . modifyRoute
+
   setRoute = modifyRoute . fmap const
 
 instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
   modifyRoute = SetRouteT . tellEvent . fmap Endo
 
-instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
-  modifyRoute = lift . modifyRoute
+instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m)
 
-instance (Monad m, SetRoute t r m) => SetRoute t r (ReaderT r' m) where
-  modifyRoute = lift . modifyRoute
+instance (Monad m, SetRoute t r m) => SetRoute t r (ReaderT r' m)
 
 instance Prerender js m => Prerender js (SetRouteT t r m) where
   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
@@ -315,6 +318,8 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (SetRouteT t r m) where
 
 class RouteToUrl r m | m -> r where
   askRouteToUrl :: m (r -> Text)
+  default askRouteToUrl :: (Monad m', MonadTrans f, RouteToUrl r m', m ~ f m') => m (r -> Text)
+  askRouteToUrl = lift askRouteToUrl
 
 newtype RouteToUrlT r m a = RouteToUrlT { unRouteToUrlT :: ReaderT (r -> Text) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
@@ -332,13 +337,10 @@ instance Monad m => RouteToUrl r (RouteToUrlT r m) where
   askRouteToUrl = RouteToUrlT ask
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (SetRouteT t r' m) where
-  askRouteToUrl = lift askRouteToUrl
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RoutedT t r' m) where
-  askRouteToUrl = lift askRouteToUrl
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (ReaderT r' m) where
-  askRouteToUrl = lift askRouteToUrl
 
 instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
   type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
