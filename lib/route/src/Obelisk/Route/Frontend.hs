@@ -57,10 +57,9 @@ import Control.Category.Cartesian
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
 import Control.Monad.Fix
 import Control.Monad.Primitive
+import Control.Monad.Reader
 import Control.Monad.Ref
-import Control.Monad.Trans
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Reader
 import Data.Coerce
 import Data.Constraint (Dict (..))
 import Data.Dependent.Sum (DSum (..))
@@ -101,8 +100,15 @@ class Routed t r m | m -> t r where
 instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
+instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m) where
+  askRoute = lift askRoute
+
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+
+instance MonadReader r' m => MonadReader r' (RoutedT t r m) where
+  ask = lift ask
+  local = mapRoutedT . local
 
 instance HasJSContext m => HasJSContext (RoutedT t r m) where
   type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
@@ -261,6 +267,9 @@ instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
 instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
   modifyRoute = lift . modifyRoute
 
+instance (Monad m, SetRoute t r m) => SetRoute t r (ReaderT r' m) where
+  modifyRoute = lift . modifyRoute
+
 instance Prerender js m => Prerender js (SetRouteT t r m) where
   prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
 
@@ -326,6 +335,9 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (SetRouteT t r' m) where
   askRouteToUrl = lift askRouteToUrl
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RoutedT t r' m) where
+  askRouteToUrl = lift askRouteToUrl
+
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (ReaderT r' m) where
   askRouteToUrl = lift askRouteToUrl
 
 instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
