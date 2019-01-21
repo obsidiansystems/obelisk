@@ -79,6 +79,8 @@ module Obelisk.Route
   , void1Encoder
   , pathSegmentsTextEncoder
   , queryParametersTextEncoder
+  , renderBackendRoute
+  , unsafeRenderBackendRoute
   ) where
 
 import Prelude hiding ((.), id)
@@ -827,5 +829,28 @@ makePrisms ''ObeliskRoute
 
 deriveGEq ''Void1
 deriveGCompare ''Void1
+
+-- | Given a backend route and the standard backend route encoder,
+-- render the route (path and query string).
+renderBackendRoute
+  :: forall br a.
+     Encoder Identity Identity (R (Sum br a)) PageName
+  -> R br
+  -> Text
+renderBackendRoute backendRouteEncoder r =
+  let enc :: Encoder Identity (Either Text) (R (Sum br a)) PathQuery
+      enc = (pageNameEncoder . hoistParse (pure . runIdentity) backendRouteEncoder)
+  in (T.pack . uncurry (<>)) . encode enc . hoistR InL $ r
+
+-- | Renders a backend route and assumes that the supplied encoder is valid.
+-- If you have a valid (i.e., checked) encoder, you can use 'renderBackendRoute'
+-- instead. See 'checkEncoder' for more information.
+unsafeRenderBackendRoute
+  :: Encoder (Either Text) Identity (R (Sum br a)) PageName
+  -> R br
+  -> Text
+unsafeRenderBackendRoute backendRouteEncoder =
+  let Right enc = checkEncoder backendRouteEncoder
+  in renderBackendRoute enc
 
 --TODO: decodeURIComponent as appropriate
