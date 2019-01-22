@@ -79,8 +79,11 @@ module Obelisk.Route
   , void1Encoder
   , pathSegmentsTextEncoder
   , queryParametersTextEncoder
+  , renderObeliskRoute
   , renderBackendRoute
+  , renderBackendUrl
   , unsafeRenderBackendRoute
+  , renderFrontendRoute
   ) where
 
 import Prelude hiding ((.), id)
@@ -837,10 +840,7 @@ renderBackendRoute
      Encoder Identity Identity (R (Sum br a)) PageName
   -> R br
   -> Text
-renderBackendRoute backendRouteEncoder r =
-  let enc :: Encoder Identity (Either Text) (R (Sum br a)) PathQuery
-      enc = (pageNameEncoder . hoistParse (pure . runIdentity) backendRouteEncoder)
-  in (T.pack . uncurry (<>)) . encode enc . hoistR InL $ r
+renderBackendRoute enc = renderObeliskRoute enc . hoistR InL
 
 -- | Renders a backend route and assumes that the supplied encoder is valid.
 -- If you have a valid (i.e., checked) encoder, you can use 'renderBackendRoute'
@@ -852,5 +852,34 @@ unsafeRenderBackendRoute
 unsafeRenderBackendRoute backendRouteEncoder =
   let Right enc = checkEncoder backendRouteEncoder
   in renderBackendRoute enc
+
+-- | Renders a full backend url, using the provided route prefix (typically the scheme and authority).
+-- This is typically retrived from the "route" configuration in Obelisk applications. The prefix is
+-- assumed not to have a trailing slash.
+renderBackendUrl
+  :: Text -- ^ Base application route
+  -> Encoder Identity Identity (R (Sum br a)) PageName
+  -> R br
+  -> Text
+renderBackendUrl prefix enc = (prefix <>) . renderBackendRoute enc
+
+-- | Renders a frontend route with the supplied checked encoder
+renderFrontendRoute
+  :: forall a fr.
+     Encoder Identity Identity (R (Sum a (ObeliskRoute fr))) PageName
+  -> R fr
+  -> Text
+renderFrontendRoute enc = renderObeliskRoute enc . hoistR (InR . ObeliskRoute_App)
+
+-- | Renders a route of the form typically found in an Obelisk project
+renderObeliskRoute
+  :: forall a b.
+     Encoder Identity Identity (R (Sum a b)) PageName
+  -> R (Sum a b)
+  -> Text
+renderObeliskRoute e r =
+  let enc :: Encoder Identity (Either Text) (R (Sum a b)) PathQuery
+      enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
+  in (T.pack . uncurry (<>)) $ encode enc r
 
 --TODO: decodeURIComponent as appropriate
