@@ -833,8 +833,8 @@ makePrisms ''ObeliskRoute
 deriveGEq ''Void1
 deriveGCompare ''Void1
 
--- | Given a backend route and the standard backend route encoder,
--- render the route (path and query string).
+-- | Given a backend route and a checked route encoder, render the route (path
+-- and query string). See 'checkEncoder' for how to produce a checked encoder.
 renderBackendRoute
   :: forall br a.
      Encoder Identity Identity (R (Sum br a)) PageName
