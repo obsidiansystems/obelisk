@@ -842,17 +842,6 @@ renderBackendRoute
   -> Text
 renderBackendRoute enc = renderObeliskRoute enc . hoistR InL
 
--- | Renders a backend route and assumes that the supplied encoder is valid.
--- If you have a valid (i.e., checked) encoder, you can use 'renderBackendRoute'
--- instead. See 'checkEncoder' for more information.
-unsafeRenderBackendRoute
-  :: Encoder (Either Text) Identity (R (Sum br a)) PageName
-  -> R br
-  -> Text
-unsafeRenderBackendRoute backendRouteEncoder =
-  let Right enc = checkEncoder backendRouteEncoder
-  in renderBackendRoute enc
-
 -- | Renders a full backend url, using the provided route prefix (typically the scheme and authority).
 -- This is typically retrived from the "route" configuration in Obelisk applications. The prefix is
 -- assumed not to have a trailing slash.
