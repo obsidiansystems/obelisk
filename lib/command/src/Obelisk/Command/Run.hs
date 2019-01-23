@@ -10,8 +10,8 @@ import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
 import Data.Either
-import Data.List
-import Data.List.NonEmpty as NE
+import qualified Data.List as L
+import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import qualified Data.Text as T
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
@@ -46,6 +46,8 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of hs src dirs of the library component
   , _cabalPackageInfo_defaultExtensions :: [Extension]
     -- ^ List of globally enable extensions of the library component
+  , _cabalPackageInfo_defaultLanguage :: Maybe Language
+    -- ^ List of globally set languages of the library component
   }
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
@@ -121,6 +123,8 @@ parseCabalPackage dir = do
                 fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
             , _cabalPackageInfo_defaultExtensions =
                 defaultExtensions $ libBuildInfo lib
+            , _cabalPackageInfo_defaultLanguage =
+                defaultLanguage $ libBuildInfo lib
             }
       Left (_, errors) -> do
         putLog Error $ T.pack $ "Failed to parse " <> cabalFp <> ":"
@@ -150,17 +154,20 @@ withGhciScript pkgs f = do
     putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
 
   let extensions = packageInfos >>= _cabalPackageInfo_defaultExtensions
+      language = L.nub $ mapMaybe _cabalPackageInfo_defaultLanguage packageInfos
       extensionsLine = if extensions == mempty
         then ""
         else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
       dotGhci = unlines $
         [ ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
         , extensionsLine
+        , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
         , ":load Backend Frontend"
         , "import Obelisk.Run"
         , "import qualified Frontend"
         , "import qualified Backend"
         ]
+  warnDifferentLanguages language
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
     liftIO $ writeFile dotGhciPath dotGhci
@@ -169,6 +176,10 @@ withGhciScript pkgs f = do
   where
     rootedSourceDirs pkg = NE.toList $
       (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
+
+warnDifferentLanguages :: MonadObelisk m => [Language] -> m ()
+warnDifferentLanguages (_:_:_) = putLog Warning "Different languages detected across packages which may result in errors when loading the repl"
+warnDifferentLanguages _ = return ()
 
 -- | Run ghci repl
 runGhciRepl
