@@ -842,16 +842,6 @@ renderBackendRoute
   -> Text
 renderBackendRoute enc = renderObeliskRoute enc . hoistR InL
 
--- | Renders a full backend url, using the provided route prefix (typically the scheme and authority).
--- This is typically retrived from the "route" configuration in Obelisk applications. The prefix is
--- assumed not to have a trailing slash.
-renderBackendUrl
-  :: Text -- ^ Base application route
-  -> Encoder Identity Identity (R (Sum br a)) PageName
-  -> R br
-  -> Text
-renderBackendUrl prefix enc = (prefix <>) . renderBackendRoute enc
-
 -- | Renders a frontend route with the supplied checked encoder
 renderFrontendRoute
   :: forall a fr.
