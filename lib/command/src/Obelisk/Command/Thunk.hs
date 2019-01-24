@@ -416,8 +416,8 @@ setThunk target gs branch = do
 gitHubStandaloneLoaders :: NonEmpty Text
 gitHubStandaloneLoaders =
   gitHubStandaloneLoaderV4 :|
-  [ gitHubStandaloneLoaderV2
-  , gitHubStandaloneLoaderV3
+  [ gitHubStandaloneLoaderV3
+  , gitHubStandaloneLoaderV2
   , gitHubStandaloneLoaderV1
   ]
 
