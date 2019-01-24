@@ -154,7 +154,9 @@ withGhciScript pkgs f = do
     putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
 
   let extensions = packageInfos >>= _cabalPackageInfo_defaultExtensions
-      language = L.nub $ mapMaybe _cabalPackageInfo_defaultLanguage packageInfos
+      languageFromPkgs = L.nub $ mapMaybe _cabalPackageInfo_defaultLanguage packageInfos
+      -- NOTE when no default-language is present cabal sets Haskell98
+      language = NE.toList $ fromMaybe (Haskell98 NE.:| []) $ NE.nonEmpty languageFromPkgs
       extensionsLine = if extensions == mempty
         then ""
         else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
