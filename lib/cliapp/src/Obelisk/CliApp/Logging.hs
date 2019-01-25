@@ -47,7 +47,7 @@ import System.Console.ANSI (Color (Red, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (SetColor, SetConsoleIntensity), clearLine)
 import System.Exit (ExitCode (..))
-import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stderr, stdin, stdout)
+import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stderr, stdin, stdout, hGetEncoding)
 
 import qualified Obelisk.CliApp.TerminalString as TS
 import Obelisk.CliApp.Types
@@ -63,7 +63,8 @@ newCliConfig sev noColor noSpinner errorLogExitCode = do
   lock <- newMVar False
   tipDisplayed <- newIORef False
   stack <- newIORef ([], [])
-  return $ CliConfig level noColor noSpinner lock tipDisplayed stack errorLogExitCode
+  textEncoding <- hGetEncoding stdout
+  return $ CliConfig level noColor noSpinner lock tipDisplayed stack errorLogExitCode textEncoding
 
 runCli :: MonadIO m => CliConfig e -> CliT e m a -> m a
 runCli c =
