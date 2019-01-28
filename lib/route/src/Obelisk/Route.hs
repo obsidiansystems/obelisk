@@ -81,8 +81,6 @@ module Obelisk.Route
   , queryParametersTextEncoder
   , renderObeliskRoute
   , renderBackendRoute
-  , renderBackendUrl
-  , unsafeRenderBackendRoute
   , renderFrontendRoute
   ) where
 
