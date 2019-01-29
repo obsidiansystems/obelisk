@@ -19,10 +19,12 @@ library
     , data-default
     , directory
     , either
+    , errors
     , filepath
     , github
     , here
     , hit
+    , hnix
     , hpack
     , io-streams
     , exceptions
@@ -43,6 +45,7 @@ library
     , time
     , transformers
     , unix
+    , unordered-containers
     , yaml
   exposed-modules:
     Obelisk.App

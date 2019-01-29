@@ -12,7 +12,6 @@ let
   commandRuntimeDeps = pkgs: with pkgs; [
     coreutils
     git
-    gitAndTools.hub
     nix-prefetch-git
     openssh
   ];
@@ -35,6 +34,12 @@ let
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
       in {
+        hnix = pkgs.haskell.lib.dontCheck (self.callCabal2nix "hnix" (pkgs.fetchFromGitHub {
+          owner = "haskell-nix";
+          repo = "hnix";
+          rev = "42afdc21da5d9e076eab57eaa42bfdde938192b8";
+          sha256 = "0psw384dx9bw2dp93xrzw8rd9amvcwgzn64jzzwby7sfspj6k349";
+        }) {});
         # Need 8.0.2 build support
         # PR: https://github.com/dmwit/universe/pull/33
         universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
@@ -114,6 +119,9 @@ let
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
   ghcObelisk = reflex-platform.ghc;
 
+  # Development environments for obelisk packages.
+  ghcObeliskEnvs = pkgs.lib.mapAttrs (n: v: reflex-platform.workOn ghcObelisk v) ghcObelisk;
+
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
 
   haskellLib = pkgs.haskell.lib;
@@ -125,6 +133,7 @@ in rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
+  obeliskEnvs = ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
 
@@ -152,7 +161,7 @@ in rec {
     set -euo pipefail
     touch "$out"
     mkdir -p "$symlinked"
-    obelisk-asset-manifest-generate "$src" "${builtins.toString src}" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
+    obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
@@ -230,18 +239,17 @@ in rec {
     };
   };
 
-  serverExe = backend: frontend: assets: config: optimizationLevel: version:
+  serverExe = backend: frontend: assets: optimizationLevel: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
-      cp -r ${config} $out/config
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, config, version }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -257,8 +265,7 @@ in rec {
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
-    let configPath = base + "/config";
-        projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
+    let projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
                           , packages ? {}
@@ -273,6 +280,7 @@ in rec {
                   backendName = "backend";
                   commonName = "common";
                   staticName = "obelisk-generated-static";
+                  staticFilesImpure = if lib.isDerivation staticFiles then staticFiles else toString staticFiles;
                   processedStatic = processAssets { src = staticFiles; };
                   # The packages whose names and roles are defined by this package
                   predefinedPackages = lib.filterAttrs (_: x: x != null) {
@@ -290,7 +298,23 @@ in rec {
                   privateConfigDirs = ["config/backend"];
                   injectableConfig = builtins.filterSource (path: _:
                     !(lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path)) privateConfigDirs)
-                  ) configPath;
+                  );
+                  __android = configPath: {
+                    ${if android == null then null else frontendName} = {
+                      executableName = "frontend";
+                      ${if builtins.pathExists staticFiles then "assets" else null} =
+                        (if configPath == null then lib.id else  nixpkgs.obeliskExecutableConfig.platforms.android.inject (injectableConfig configPath))
+                         processedStatic.symlinked;
+                    } // android;
+                  };
+                  __ios = configPath: {
+                    ${if ios == null then null else frontendName} = {
+                      executableName = "frontend";
+                      ${if builtins.pathExists staticFiles then "staticSrc" else null} =
+                         (if configPath == null then lib.id else nixpkgs.obeliskExecutableConfig.platforms.ios.inject (injectableConfig configPath))
+                         processedStatic.symlinked;
+                    } // ios;
+                  };
               in {
                 inherit shellToolOverrides tools withHoogle;
                 overrides = totalOverrides;
@@ -310,39 +334,25 @@ in rec {
                     commonName
                   ];
                 };
-                android = {
-                  ${if android == null then null else frontendName} = {
-                    executableName = "frontend";
-                    ${if builtins.pathExists staticFiles then "assets" else null} =
-                      nixpkgs.obeliskExecutableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
-                  } // android;
-                };
-                ios = {
-                  ${if ios == null then null else frontendName} = {
-                    executableName = "frontend";
-                    ${if builtins.pathExists staticFiles then "staticSrc" else null} =
-                      nixpkgs.obeliskExecutableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
-                  } // ios;
-                };
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles __closureCompilerOptimizationLevel; };
+                android = __android null;
+                ios = __ios null;
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __ios __android; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: config: version: serverExe
+      serverOn = sys: version: serverExe
         (projectOut sys).ghc.backend
         (projectOut system).ghcjs.frontend
         (projectOut sys).passthru.staticFiles
-        config
         (projectOut sys).passthru.__closureCompilerOptimizationLevel
         version;
       linuxExe = serverOn "x86_64-linux";
       dummyVersion = "Version number is only available for deployments";
     in projectOut system // {
       linuxExeConfigurable = linuxExe;
-      linuxExe = linuxExe (base + "/config") dummyVersion;
-      exe = serverOn system (base + "/config") dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, config, version }: let
-        injectableConfig = builtins.filterSource (path: _: !(lib.hasPrefix (toString config + "/backend") (toString path))) config;
-      in server (args // { exe = linuxExe injectableConfig version; });
+      linuxExe = linuxExe dummyVersion;
+      exe = serverOn system dummyVersion;
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
+        server (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {

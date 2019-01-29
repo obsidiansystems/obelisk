@@ -33,6 +33,7 @@ module Obelisk.Command.Thunk
 
 import Control.Applicative
 import Control.Exception (displayException, try)
+import qualified Control.Lens as Lens
 import Control.Lens.Indexed hiding ((<.>))
 import Control.Monad
 import Control.Monad.Catch (handle)
@@ -377,19 +378,38 @@ createThunkWithLatest target s = do
     , _thunkPtr_rev = rev
     }
 
-updateThunkToLatest :: MonadObelisk m => FilePath -> m ()
-updateThunkToLatest target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
-  (overwrite, ptr) <- readThunk target >>= \case
-    Left err -> failWith $ T.pack $ "thunk update: " <> show err
-    Right c -> case c of
-      ThunkData_Packed t -> return (target, t)
-      ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
-  let src = _thunkPtr_source ptr
-  rev <- getLatestRev src
-  overwriteThunk overwrite $ ThunkPtr
-    { _thunkPtr_source = src
-    , _thunkPtr_rev = rev
-    }
+updateThunkToLatest :: MonadObelisk m => FilePath -> Maybe String -> m ()
+updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
+  checkThunkDirectory "ob thunk update directory cannot be '.'" target
+  -- check to see if thunk should be updated to a specific branch or just update it's current branch
+  case mBranch of
+    Nothing -> do
+      (overwrite, ptr) <- readThunk target >>= \case
+        Left err -> failWith $ T.pack $ "thunk update: " <> show err
+        Right c -> case c of
+          ThunkData_Packed t -> return (target, t)
+          ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
+      let src = _thunkPtr_source ptr
+      rev <- getLatestRev src
+      overwriteThunk overwrite $ ThunkPtr
+        { _thunkPtr_source = src
+        , _thunkPtr_rev = rev
+        }
+    Just branch -> readThunk target >>= \case
+      Left err -> failWith $ T.pack $ "thunk update: " <> show err
+      Right c -> case c of
+        ThunkData_Packed t -> case _thunkPtr_source t of
+          ThunkSource_Git tsg -> setThunk target tsg branch
+          ThunkSource_GitHub tsgh -> do
+            let tsg = forgetGithub False tsgh
+            setThunk target tsg branch
+        ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> (show target) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
+
+setThunk :: MonadObelisk m => FilePath -> GitSource -> String -> m ()
+setThunk target gs branch = do
+  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (Just $ T.pack branch) Nothing
+  overwriteThunk target newThunkPtr
+  updateThunkToLatest target Nothing
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
@@ -501,13 +521,13 @@ nixBuildThunkAttrWithCache thunkDir attr = do
     Just c -> return c
     Nothing -> do
       putLog Warning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
-      _ <- nixBuild $ def
-        { _nixBuildConfig_target = Target
-          { _target_path = thunkDir
+      _ <- nixCmd $ NixCmd_Build$ def
+        Lens.& nixBuildConfig_outLink Lens..~ OutLink_IndirectRoot cachePath
+        Lens.& nixCmdConfig_target Lens..~ Target
+          { _target_path = Just thunkDir
           , _target_attr = Just attr
+          , _target_expr = Nothing
           }
-        , _nixBuildConfig_outLink = OutLink_IndirectRoot cachePath
-        }
       return cachePath
 
 -- | Build a nix attribute, and cache the result if possible
@@ -523,13 +543,13 @@ nixBuildAttrWithCache exprPath attr = do
   readThunk exprPath >>= \case
     -- Only packed thunks are cached. in particular, checkouts are not
     Right (ThunkData_Packed _) -> nixBuildThunkAttrWithCache exprPath attr
-    _ -> nixBuild $ def
-      { _nixBuildConfig_target = Target
-        { _target_path = exprPath
+    _ -> nixCmd $ NixCmd_Build $ def
+      Lens.& nixBuildConfig_outLink Lens..~ OutLink_None
+      Lens.& nixCmdConfig_target Lens..~ Target
+        { _target_path = Just exprPath
         , _target_attr = Just attr
+        , _target_expr = Nothing
         }
-      , _nixBuildConfig_outLink = OutLink_None
-      }
 
 -- | Safely update thunk using a custom action
 --
@@ -564,15 +584,14 @@ unpackThunk :: MonadObelisk m => FilePath -> m ()
 unpackThunk = unpackThunk' False
 
 -- | Check that we are not somewhere inside the thunk directory
-checkThunkDirectory :: MonadObelisk m => FilePath -> m ()
-checkThunkDirectory thunkDir = do
+checkThunkDirectory :: MonadObelisk m => Text -> FilePath -> m ()
+checkThunkDirectory msg thunkDir = do
   currentDir <- liftIO getCurrentDirectory
   thunkDir' <- liftIO $ canonicalizePath thunkDir
-  when (thunkDir' `L.isInfixOf` currentDir) $
-    failWith "Can't pack/unpack from within the thunk directory"
+  when (thunkDir' `L.isInfixOf` currentDir) $ failWith msg
 
 unpackThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
-unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
+unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ "thunk unpack: " <> T.pack (show err)
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right (ThunkData_Checkout _) -> failWith "thunk unpack: thunk is already unpacked"
@@ -609,7 +628,7 @@ packThunk :: MonadObelisk m => FilePath -> m ThunkPtr
 packThunk = packThunk' False
 
 packThunk' :: MonadObelisk m => Bool -> FilePath -> m ThunkPtr
-packThunk' noTrail thunkDir = checkThunkDirectory thunkDir >> readThunk thunkDir >>= \case
+packThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
@@ -637,6 +656,22 @@ getThunkPtr' checkClean thunkDir = do
         , "git stash list:"
         ] ++ T.lines stashOutput
     True -> return ()
+
+  -- Get current branch ``
+  (mCurrentBranch, mCurrentCommit) <- do
+    b <- listToMaybe
+      <$> T.lines
+      <$> readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
+    c <- listToMaybe
+      <$> T.lines
+      <$> readGitProcess thunkDir ["rev-parse", "HEAD"]
+    case b of
+      (Just "HEAD") -> failWith $ T.unlines $
+        [ "thunk pack: You are in 'detached HEAD' state."
+        , "If you want to pack at the current ref \
+          \then please create a new branch with 'git checkout -b <new-branch-name>' and push this upstream."
+        ]
+      _ -> return (b, c)
 
   -- Get information on all branches and their (optional) designated upstream
   -- correspondents
@@ -713,11 +748,6 @@ getThunkPtr' checkClean thunkDir = do
   -- We assume it's safe to pack the thunk at this point
   putLog Informational $ "All changes safe in git remotes. OK to pack thunk."
 
-  -- Get current branch ``
-  mCurrentBranch <- listToMaybe
-    <$> T.lines
-    <$> readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
-
   let remote = maybe "origin" snd $ flip Map.lookup headUpstream =<< mCurrentBranch
 
   [remoteUri'] <- fmap T.lines $ readGitProcess thunkDir
@@ -729,7 +759,7 @@ getThunkPtr' checkClean thunkDir = do
   remoteUri <- case parseGitUri remoteUri' of
     Nothing -> failWith $ "Could not identify git remote: " <> remoteUri'
     Just uri -> pure uri
-  uriThunkPtr remoteUri mCurrentBranch
+  uriThunkPtr remoteUri mCurrentBranch mCurrentCommit
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
@@ -748,9 +778,11 @@ getLatestRev os = do
 -- performance. If that doesn't work (e.g. authentication issue), we fall back
 -- on just doing things the normal way for git repos in general, and save it as
 -- a regular git thunk.
-uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> m ThunkPtr
-uriThunkPtr uri mbranch = do
-  (_, commit) <- gitGetCommitBranch uri mbranch
+uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> Maybe Text -> m ThunkPtr
+uriThunkPtr uri mbranch mcommit = do
+  commit <- case mcommit of
+    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
+    (Just c) -> return c
   (src, rev) <- case uriToThunkSource uri mbranch of
     ThunkSource_GitHub s -> do
       rev <- runExceptT $ githubThunkRev s commit
@@ -864,9 +896,10 @@ gitThunkRev s commit = do
 gitGetCommitBranch
   :: MonadObelisk m => URI -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
-  bothMaps <- gitLsRemote
+  (_, bothMaps) <- gitLsRemote
     (T.unpack $ render uri)
     (GitRef_Branch <$> mbranch)
+    Nothing
   branch <- case mbranch of
     Nothing -> withExitFailMessage "Failed to find default branch" $ do
       b <- rethrowE $ gitLookupDefaultBranch bothMaps
