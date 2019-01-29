@@ -19,6 +19,7 @@
 module Obelisk.Route
   ( R
   , pattern (:/)
+  , hoistR
   , PageName
   , PathQuery
   , Encoder
@@ -78,6 +79,9 @@ module Obelisk.Route
   , void1Encoder
   , pathSegmentsTextEncoder
   , queryParametersTextEncoder
+  , renderObeliskRoute
+  , renderBackendRoute
+  , renderFrontendRoute
   ) where
 
 import Prelude hiding ((.), id)
@@ -148,6 +152,9 @@ pattern a :/ b = a :=> Identity b
 
 mapSome :: (forall a. f a -> g a) -> Some f -> Some g
 mapSome f (Some.This a) = Some.This $ f a
+
+hoistR :: (forall x. f x -> g x) -> R f -> R g
+hoistR f (x :=> Identity y) = f x :/ y
 
 --------------------------------------------------------------------------------
 -- Encoder fundamentals
@@ -823,5 +830,33 @@ makePrisms ''ObeliskRoute
 
 deriveGEq ''Void1
 deriveGCompare ''Void1
+
+-- | Given a backend route and a checked route encoder, render the route (path
+-- and query string). See 'checkEncoder' for how to produce a checked encoder.
+renderBackendRoute
+  :: forall br a.
+     Encoder Identity Identity (R (Sum br a)) PageName
+  -> R br
+  -> Text
+renderBackendRoute enc = renderObeliskRoute enc . hoistR InL
+
+-- | Renders a frontend route with the supplied checked encoder
+renderFrontendRoute
+  :: forall a fr.
+     Encoder Identity Identity (R (Sum a (ObeliskRoute fr))) PageName
+  -> R fr
+  -> Text
+renderFrontendRoute enc = renderObeliskRoute enc . hoistR (InR . ObeliskRoute_App)
+
+-- | Renders a route of the form typically found in an Obelisk project
+renderObeliskRoute
+  :: forall a b.
+     Encoder Identity Identity (R (Sum a b)) PageName
+  -> R (Sum a b)
+  -> Text
+renderObeliskRoute e r =
+  let enc :: Encoder Identity (Either Text) (R (Sum a b)) PathQuery
+      enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
+  in (T.pack . uncurry (<>)) $ encode enc r
 
 --TODO: decodeURIComponent as appropriate
