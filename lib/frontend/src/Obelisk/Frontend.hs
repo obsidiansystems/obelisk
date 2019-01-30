@@ -67,11 +67,14 @@ type ObeliskWidget js t route m =
   , MonadFix (Performable m)
   , PrimMonad m
   , Prerender js t m
-  , SetRoute t route m
-  , SetRoute t route (Client m)
+  , PrebuildAgonstic t route m
+  , PrebuildAgonstic t route (Client m)
+  )
+
+type PrebuildAgonstic t route m =
+  ( SetRoute t route m
   , RouteToUrl route m
-  , RouteToUrl route (Client m)
-  , Monad (Client m)
+  , MonadFix m
   )
 
 data Frontend route = Frontend
