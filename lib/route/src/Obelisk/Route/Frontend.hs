@@ -63,7 +63,6 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
 import Data.Coerce
-import Data.Constraint (Dict (..))
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
@@ -109,11 +108,11 @@ instance HasJSContext m => HasJSContext (RoutedT t r m) where
   type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
   askJSContext = lift askJSContext
 
-instance (Prerender t m, Monad m) => Prerender t (RoutedT t r m) where
+instance (Prerender js t m, Monad m) => Prerender js t (RoutedT t r m) where
   type Client (RoutedT t r m) = RoutedT t r (Client m)
-  prerenderImpl (RoutedT server) client = RoutedT $ do
+  prerender server client = RoutedT $ do
     r <- ask
-    prerenderImpl server (runRoutedT client r)
+    lift $ prerender (runRoutedT server r) (runRoutedT client r)
 
 instance Requester t m => Requester t (RoutedT t r m) where
   type Request (RoutedT t r m) = Request m
@@ -265,16 +264,14 @@ instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
 instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
   modifyRoute = lift . modifyRoute
 
-instance (PerformEvent t m, MonadIO (Performable m), Prerender t m, Monad m, Reflex t, MonadIO m) => Prerender t (SetRouteT t r m) where
+instance (PerformEvent t m, Prerender js t m, Monad m, Reflex t) => Prerender js t (SetRouteT t r m) where
   type Client (SetRouteT t r m) = SetRouteT t r (Client m)
-  prerenderImpl server client = do
-    liftIO $ putStrLn "SetRouteT prerenderImpl"
-    (ma, dt) :: (Maybe a, Dynamic t (b, Event t (Endo r))) <- lift $ prerenderImpl
-      (do ((a, b), e) <- runSetRouteT server; pure (a, (b, e)))
-      (runSetRouteT client)
+  prerender server client = do
+    d <- lift $ prerender (runSetRouteT server) (runSetRouteT client)
+    let (a, r) = splitDynPure d
     -- Must be prompt here
-    SetRouteT $ tellEvent $ switchPromptlyDyn $ Prelude.snd <$> dt
-    pure (ma, Prelude.fst <$> dt)
+    SetRouteT . tellEvent $ switchPromptlyDyn r
+    pure a
 
 instance Requester t m => Requester t (SetRouteT t r m) where
   type Request (SetRouteT t r m) = Request m
@@ -344,11 +341,11 @@ instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
   type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
   askJSContext = lift askJSContext
 
-instance (Prerender t m, Monad m) => Prerender t (RouteToUrlT r m) where
+instance (Prerender js t m, Monad m) => Prerender js t (RouteToUrlT r m) where
   type Client (RouteToUrlT r m) = RouteToUrlT r (Client m)
-  prerenderImpl (RouteToUrlT server) client = do
+  prerender server client = do
     r <- RouteToUrlT ask
-    RouteToUrlT $ prerenderImpl server (runRouteToUrlT client r)
+    lift $ prerender (runRouteToUrlT server r) (runRouteToUrlT client r)
 
 instance Requester t m => Requester t (RouteToUrlT r m) where
   type Request (RouteToUrlT r m) = Request m
