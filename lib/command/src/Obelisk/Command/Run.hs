@@ -69,9 +69,11 @@ run = do
           -- marks and trailing newline, so is very convenient for shelling out.
           ]
       -- Check whether the impure static files are a derivation (and so must be built)
-      readProcessAndLogStderr Debug $ if isDerivation == "1"
-        then proc "nix-build" ["-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"]
-        else proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+      if isDerivation == "1"
+        then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
+          proc "nix-build" ["-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"]
+        else readProcessAndLogStderr Debug $
+          proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
     runGhcid dotGhciPath $ Just $ unwords
       [ "run"
