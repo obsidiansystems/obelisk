@@ -270,10 +270,10 @@ project ./. ({ pkgs, ... }: {
 # ...
   overrides = self: super: let
     aeson = pkgs.fetchFromGitHub {
-      owner = "bos";
-      repo = "aeson";
-      rev = "3e5b02876c36d7471534c558b61ee5ff0e705a96";
-      sha256 = "1n29pd2is0w4d8g037r8hl2xpdi60d34i803xps1wvp0r8x90d0w";
+      owner = "obsidiansystems";
+      repo = "aeson-gadt-th";
+      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
+      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
     };
   in
   {
