@@ -38,11 +38,13 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Log (Severity (..), WithSeverity (..), logMessage, runLoggingT)
 import Control.Monad.Loops (iterateUntil)
 import Control.Monad.Reader (MonadIO, ReaderT (..))
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC8
 import Data.IORef (atomicModifyIORef', newIORef, readIORef, writeIORef)
 import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
+import Data.Text.Encoding (encodeUtf8)
 import System.Console.ANSI (Color (Red, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (SetColor, SetConsoleIntensity), clearLine)
@@ -122,11 +124,11 @@ handleLog' noColor output = do
       writeLog False noColor m
       hFlush stdout  -- Explicitly flush, as there is no newline
     Output_Write ts -> liftIO $ do
-      T.putStrLn $ TS.render (not noColor) Nothing ts
+      BSC8.putStrLn . encodeUtf8 $ TS.render (not noColor) Nothing ts
       hFlush stdout
     Output_Overwrite ts -> liftIO $ do
       width <- TS.getTerminalWidth
-      T.putStr $ "\r" <> (TS.render (not noColor) width ts)
+      BS.putStr . encodeUtf8 $ "\r" <> (TS.render (not noColor) width ts)
       hFlush stdout
     Output_ClearLine -> liftIO $ do
       -- Go to the first column and clear the whole line
@@ -179,7 +181,7 @@ writeLog withNewLine noColor (WithSeverity severity s)
   | not noColor && severity >= Debug = TS.putStrWithSGR debugColors h withNewLine s
   | otherwise = liftIO $ putFn s
   where
-    putFn = if withNewLine then (T.hPutStrLn h) else (T.hPutStr h)
+    putFn = (if withNewLine then BSC8.hPutStrLn h else BS.hPutStr h) . encodeUtf8
     h = if severity <= Error then stderr else stdout
     errorColors = [SetColor Foreground Vivid Red]
     warningColors = [SetColor Foreground Vivid Yellow]

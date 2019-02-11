@@ -8,12 +8,13 @@ import Control.Applicative (liftA2)
 import Control.Monad (when, unless)
 import Control.Monad.Catch (handle)
 import Control.Monad.IO.Class (liftIO)
+import qualified Data.ByteString as BS
 import Data.Monoid ((<>))
 import Data.String (IsString)
 import Data.String.Here.Uninterpolated (hereLit)
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
+import Data.Text.Encoding (encodeUtf8)
 import System.Directory (createDirectoryIfMissing)
 import System.Exit (ExitCode(..))
 import System.FilePath ((<.>), (</>))
@@ -92,7 +93,7 @@ setupNixDocker :: MonadObelisk m => FilePath -> m ()
 setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> containerName) $ do
   liftIO $ do
     createDirectoryIfMissing True stateDir
-    T.writeFile (stateDir </> "Dockerfile") dockerfile
+    BS.writeFile (stateDir </> "Dockerfile") (encodeUtf8 dockerfile)
 
   -- Create new SSH keys for this container
   callProcessAndLogOutput (Debug, Error) $

@@ -14,10 +14,12 @@ import Control.Monad (when)
 import Control.Monad.Catch (bracket_)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC8
 import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
+import Data.Text.Encoding (encodeUtf8)
 import System.Console.ANSI
 import qualified System.Console.Terminal.Size as TerminalSize
 import System.IO (Handle)
@@ -66,10 +68,10 @@ colorizeText color s = mconcat
 
 -- | Safely print the string with the given ANSI control codes, resetting in the end.
 putStrWithSGR :: MonadIO m => [SGR] -> Handle -> Bool -> Text -> m ()
-putStrWithSGR sgr h withNewLine s = liftIO $ bracket_ (hSetSGR h sgr) reset $ T.hPutStr h s
+putStrWithSGR sgr h withNewLine s = liftIO $ bracket_ (hSetSGR h sgr) reset $ BS.hPutStr h (encodeUtf8 s)
   where
     reset = hSetSGR h [Reset] >> newline -- New line should come *after* reset (to reset cursor color).
-    newline = when withNewLine $ T.hPutStrLn h ""
+    newline = when withNewLine $ BSC8.hPutStrLn h ""
 
 -- | Code for https://en.wikipedia.org/wiki/Enquiry_character
 enquiryCode :: String

@@ -42,6 +42,7 @@ import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.Aeson.Types as Aeson
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Default
 import Data.Either.Combinators (fromRight', rightToMaybe)
@@ -58,7 +59,6 @@ import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
-import qualified Data.Text.IO as T
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Yaml (parseMaybe)
 import GitHub
@@ -260,7 +260,7 @@ readPackedThunk :: FilePath -> IO (Either ReadThunkError ThunkPtr)
 readPackedThunk thunkDir = runExceptT $ do
   thunkType <- ExceptT $ findThunkType thunkTypes thunkDir
   -- Ensure that we recognize the thunk loader
-  loader <- liftIO $ T.readFile $ thunkDir </> _thunkType_loader thunkType
+  loader <- liftIO $ fmap decodeUtf8 $ BS.readFile $ thunkDir </> _thunkType_loader thunkType
   unless (loader `elem` _thunkType_loaderVersions thunkType) $ do
     throwError $ ReadThunkError_UnrecognizedLoader loader
 
@@ -363,7 +363,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
 createThunk :: MonadIO m => FilePath -> ThunkPtr -> m ()
 createThunk target thunk = liftIO $ do
   createDirectoryIfMissing True (target </> ".attr-cache")
-  T.writeFile (target </> "default.nix") (thunkPtrLoader thunk)
+  BS.writeFile (target </> "default.nix") (encodeUtf8 $ thunkPtrLoader thunk)
   let
     jsonFileName = case _thunkPtr_source thunk of
       ThunkSource_GitHub _ -> "github"

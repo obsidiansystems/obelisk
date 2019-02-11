@@ -13,6 +13,7 @@ import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, tr
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
 import qualified Data.HashMap.Strict as HM
@@ -20,7 +21,7 @@ import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Set as Set
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
+import Data.Text.Encoding (decodeUtf8)
 import GHC.Generics
 import Nix.Convert
 import Nix.Pretty
@@ -288,7 +289,7 @@ writeDeployConfig deployDir fname = liftIO . writeFile (deployDir </> fname)
 
 readDeployConfig :: MonadObelisk m => FilePath -> FilePath -> m String
 readDeployConfig deployDir fname = liftIO $ do
-  fmap (T.unpack . T.strip) $ T.readFile $ deployDir </> fname
+  fmap (T.unpack . T.strip) $ fmap decodeUtf8 $ BS.readFile $ deployDir </> fname
 
 verifyHostKey :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
 verifyHostKey knownHostsPath keyPath hostName =
