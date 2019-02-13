@@ -102,7 +102,7 @@ instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
 
 instance HasJSContext m => HasJSContext (RoutedT t r m) where
   type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
@@ -234,7 +234,7 @@ strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   pure ()
 
 newtype SetRouteT t r m a = SetRouteT { unSetRouteT :: EventWriterT t (Endo r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, MonadIO, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, MonadIO, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
 
 instance (MonadFix m, MonadHold t m, DomBuilder t m) => DomBuilder t (SetRouteT t r m) where
   type DomBuilderSpace (SetRouteT t r m) = DomBuilderSpace m
@@ -317,7 +317,7 @@ class RouteToUrl r m | m -> r where
   askRouteToUrl :: m (r -> Text)
 
 newtype RouteToUrlT r m a = RouteToUrlT { unRouteToUrlT :: ReaderT (r -> Text) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
 
 runRouteToUrlT
   :: RouteToUrlT r m a
