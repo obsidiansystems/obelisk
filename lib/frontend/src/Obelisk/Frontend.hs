@@ -69,6 +69,9 @@ type ObeliskWidget js t route m =
   , Prerender js t m
   , PrebuildAgnostic t route m
   , PrebuildAgnostic t route (Client m)
+  -- TODO Remove these. Probably requires a new class to allow executable-configs to work without being inside a `prerender`
+  , MonadIO m
+  , MonadIO (Performable m)
   )
 
 type PrebuildAgnostic t route m =
