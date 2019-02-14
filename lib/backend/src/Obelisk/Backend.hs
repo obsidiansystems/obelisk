@@ -171,5 +171,5 @@ renderGhcjsFrontend urlEnc route f = do
       ghcjsPreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "ghcjs/all.js") blank
       ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
   liftIO $ renderFrontendHtml urlEnc route
-    (_frontend_head f >> injectExecutableConfigs >> baseTag >> ghcjsPreload)
+    (baseTag >> _frontend_head f >> injectExecutableConfigs >> ghcjsPreload)
     (_frontend_body f >> ghcjsScript)

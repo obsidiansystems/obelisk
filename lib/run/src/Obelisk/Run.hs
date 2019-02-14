@@ -152,7 +152,8 @@ renderJsaddleFrontend :: (route -> Text) -> route -> Frontend route -> IO ByteSt
 renderJsaddleFrontend urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
       jsaddlePreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "/jsaddle/jsaddle.js") blank
-  in renderFrontendHtml urlEnc r (_frontend_head f >> injectExecutableConfigs >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
+      baseTag  = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+  in renderFrontendHtml urlEnc r (baseTag >> _frontend_head f >> injectExecutableConfigs >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
