@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "ts-hydration",
-  "rev": "78de5ea47edb418e19b358e638c2c195328813ec",
-  "sha256": "00njpqqrp9qwjj8djc010phm55b3wlvyl8893n7w6z8m6055fdpj"
+  "branch": "hydration",
+  "rev": "883faf98a3610b87d1506085dc9dc872ba35f61d",
+  "sha256": "14bph1vp9lpi8q1q9jhjvm54zvdd4si27kwhzjrc5scsq5mnpfx0"
 }
