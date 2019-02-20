@@ -13,6 +13,8 @@ import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, tr
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
 import qualified Data.HashMap.Strict as HM
@@ -34,6 +36,7 @@ import System.Process (delegate_ctlc, env, proc, cwd)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
+import qualified Web.ClientSession as ClientSession
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
@@ -79,11 +82,13 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
                    , deployDir </> "config" </> "common"
                    , deployDir </> "config" </> "frontend"
                    ]
+  (keyBytes, _) <- liftIO ClientSession.randomKey
   withSpinner "Writing deployment configuration" $ do
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
     writeDeployConfig deployDir "enable_https" $ show enableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
     writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
+    writeDeployConfigBS deployDir ("config" </> "clientSessionKey") keyBytes
   withSpinner "Creating source thunk (./src)" $ liftIO $ do
     createThunk (deployDir </> "src") thunkPtr
     setupObeliskImpl deployDir
@@ -290,6 +295,9 @@ createKeystore root config = do
 -- | Simplified deployment configuration mechanism. At one point we may revisit this.
 writeDeployConfig :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
 writeDeployConfig deployDir fname = liftIO . writeFile (deployDir </> fname)
+
+writeDeployConfigBS :: MonadObelisk m => FilePath -> FilePath -> ByteString -> m ()
+writeDeployConfigBS deployDir fname = liftIO . BS.writeFile (deployDir </> fname)
 
 readDeployConfig :: MonadObelisk m => FilePath -> FilePath -> m String
 readDeployConfig deployDir fname = liftIO $ do

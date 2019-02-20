@@ -15,6 +15,7 @@ library
     , binary
     , bytestring
     , obelisk-cliapp
+    , clientsession
     , containers
     , data-default
     , directory
