@@ -17,6 +17,7 @@ import Data.List
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Text.Encoding
+import Data.Text.Encoding.Error (lenientDecode)
 import GHC.StaticPtr
 import Options.Applicative
 import System.Directory
@@ -361,7 +362,7 @@ getArgsConfig :: IO ArgsConfig
 getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = System.Info.os == "darwin" }
 
 encodeStaticKey :: StaticKey -> String
-encodeStaticKey = T.unpack . decodeUtf8 . Base16.encode . LBS.toStrict . Binary.encode
+encodeStaticKey = T.unpack . decodeUtf8With lenientDecode . Base16.encode . LBS.toStrict . Binary.encode
 
 -- TODO: Use failWith in place of fail to be consistent.
 decodeStaticKey :: String -> Either String StaticKey
