@@ -331,8 +331,7 @@ ob = \case
           route = _deployInitOpts_route deployOpts
           adminEmail = _deployInitOpts_adminEmail deployOpts
           enableHttps = _deployInitOpts_enableHttps deployOpts
-      deployInit thunkPtr (root </> "config") deployDir
-        sshKeyPath hostname route adminEmail enableHttps
+      deployInit thunkPtr deployDir sshKeyPath hostname route adminEmail enableHttps
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployPush deployPath $ case remoteBuilder of
