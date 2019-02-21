@@ -140,7 +140,8 @@ deployPush deployPath getNixBuilders = do
   withSpinner "Uploading config" $ ifor_ buildOutputByHost $ \host _ -> do
     callProcessAndLogOutput (Notice, Warning) $
       proc "rsync"
-        [ "-e ssh " <> unwords sshOpts
+        [ "-e"
+        , "ssh " <> unwords sshOpts
         , "-qarvz"
         , deployPath </> "config"
         , "root@" <> host <> ":/var/lib/backend"
