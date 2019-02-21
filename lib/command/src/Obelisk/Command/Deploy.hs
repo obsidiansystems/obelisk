@@ -143,6 +143,7 @@ deployPush deployPath getNixBuilders = do
         [ "-e"
         , "ssh " <> unwords sshOpts
         , "-qarvz"
+        , "--chown=backend:backend"
         , deployPath </> "config"
         , "root@" <> host <> ":/var/lib/backend"
         ]
