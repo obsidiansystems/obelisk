@@ -194,6 +194,8 @@ in rec {
       , name ? "backend"
       , user ? name
       , group ? user
+      , uid ? 500
+      , gid ? 500
       , baseUrl ? "/"
       , internalPort ? 8000
       , backendArgs ? "--port=${toString internalPort}"
@@ -233,9 +235,10 @@ in rec {
           home = "/var/lib/${user}";
           createHome = true;
           isSystemUser = true;
+          inherit uid;
           group = group;
         };
-        groups.${group} = {};
+        users.extraGroups.${group}.gid = gid;
       };
     };
   };
