@@ -238,7 +238,7 @@ in rec {
           inherit uid;
           group = group;
         };
-        users.extraGroups.${group}.gid = gid;
+        groups.${group}.gid = gid;
       };
     };
   };
