@@ -37,7 +37,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Obelisk.Asset.Serve.Snap (serveAsset)
-import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.Frontend
 import Obelisk.Route
 import Obelisk.Snap.Extras (doNotCache, serveFileIfExistsAs)
@@ -167,9 +166,8 @@ mkRouteToUrl validFullEncoder =
 
 renderGhcjsFrontend :: MonadIO m => (route -> Text) -> route -> Frontend route -> m ByteString
 renderGhcjsFrontend urlEnc route f = do
-  let baseTag  = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
-      ghcjsPreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "ghcjs/all.js") blank
+  let ghcjsPreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "ghcjs/all.js") blank
       ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
   liftIO $ renderFrontendHtml urlEnc route
-    (baseTag >> _frontend_head f >> injectExecutableConfigs >> ghcjsPreload)
+    (_frontend_head f >> ghcjsPreload)
     (_frontend_body f >> ghcjsScript)

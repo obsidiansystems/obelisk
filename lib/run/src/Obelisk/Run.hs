@@ -50,7 +50,6 @@ import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.ExecutableConfig (get)
-import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
@@ -152,8 +151,7 @@ renderJsaddleFrontend :: (route -> Text) -> route -> Frontend route -> IO ByteSt
 renderJsaddleFrontend urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
       jsaddlePreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "/jsaddle/jsaddle.js") blank
-      baseTag  = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
-  in renderFrontendHtml urlEnc r (baseTag >> _frontend_head f >> injectExecutableConfigs >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
+  in renderFrontendHtml urlEnc r (_frontend_head f >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
