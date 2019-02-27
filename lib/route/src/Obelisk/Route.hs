@@ -41,6 +41,7 @@ module Obelisk.Route
   , checkEnum1EncoderFunc
   , unitEncoder
   , pathOnlyEncoder
+  , pathSegmentConsEncoder
   , singletonListEncoder
   , unpackTextEncoder
   , prefixTextEncoder
@@ -411,6 +412,29 @@ pathComponentEncoderImpl :: forall check parse p. (Monad check, Monad parse)
   -> Encoder check parse (R p) PageName
 pathComponentEncoderImpl this rest =
   chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consEncoder) this rest
+
+pathSegmentConsEncoder
+  :: forall check parse a b.
+     ( Monad check
+     , Applicative parse
+     , MonadError Text parse
+     )
+  => Encoder check parse a Text
+  -> Encoder check parse b PageName
+  -> Encoder check parse (a, b) PageName
+pathSegmentConsEncoder this rest = Encoder $ do
+  thisValid <- unEncoder this
+  restValid <- unEncoder rest
+  pure $ EncoderImpl
+    { _encoderImpl_decode = \case
+        ([], _)     -> throwError "Expected at least one path part. Got none"
+        ((p:ps),qs) -> (,) <$> _encoderImpl_decode thisValid p <*> _encoderImpl_decode restValid (ps,qs)
+    , _encoderImpl_encode = \(a,b) ->
+        let
+          p       = _encoderImpl_encode thisValid a
+          (ps,qs) = _encoderImpl_encode restValid b
+        in (p:ps,qs)
+    }
 
 --NOTE: Naming convention in this module is to always talk about things in the *encoding* direction, never in the *decoding* direction
 
