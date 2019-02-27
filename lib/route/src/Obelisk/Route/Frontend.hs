@@ -33,7 +33,7 @@ module Obelisk.Route.Frontend
   , mapRoutedT
   , subRoute
   , subRoute_
-  , subDynamicPathRoute
+  , pathSegmentTupleRoute
   , maybeRoute
   , maybeRoute_
   , maybeRouted
@@ -186,8 +186,8 @@ subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
-subDynamicPathRoute :: (Functor (Dynamic t)) => (Dynamic t a -> RoutedT t b m c) -> RoutedT t (a, b) m c
-subDynamicPathRoute f = RoutedT . ReaderT $ \tupleDyn -> 
+pathSegmentTupleRoute :: (Functor (Dynamic t)) => (Dynamic t a -> RoutedT t b m c) -> RoutedT t (a, b) m c
+pathSegmentTupleRoute f = RoutedT . ReaderT $ \tupleDyn -> 
   runRoutedT (f (Prelude.fst <$> tupleDyn)) (Prelude.snd <$> tupleDyn) 
 
 maybeRoute_ :: (MonadFix m, MonadHold t m, Adjustable t m) => m () -> RoutedT t r m () -> RoutedT t (Maybe r) m ()
