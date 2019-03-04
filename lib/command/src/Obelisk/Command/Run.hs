@@ -54,11 +54,26 @@ run = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
-    assets <- withProjectRoot "." $ \root ->
-      -- `--raw` is not available with old nix-instantiate. It drops quotation
-      -- marks and trailing newline, so is very convenient for shelling out.
-      readProcessAndLogStderr Debug $
-        proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+    assets <- withProjectRoot "." $ \root -> do
+      let importableRoot = if "/" `isInfixOf` root
+            then root
+            else "./" <> root
+      isDerivation <- readProcessAndLogStderr Debug $
+        proc "nix"
+          [ "eval"
+          , "-f"
+          , root
+          , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+          , "--raw"
+          -- `--raw` is not available with old nix-instantiate. It drops quotation
+          -- marks and trailing newline, so is very convenient for shelling out.
+          ]
+      -- Check whether the impure static files are a derivation (and so must be built)
+      if isDerivation == "1"
+        then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
+          proc "nix-build" ["-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"]
+        else readProcessAndLogStderr Debug $
+          proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
     runGhcid dotGhciPath $ Just $ unwords
       [ "run"
@@ -175,7 +190,7 @@ runGhciRepl
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
   -> m ()
-runGhciRepl dotGhci = inProjectShell "ghc" $ unwords $ "ghci" : ["-ghci-script", dotGhci]
+runGhciRepl dotGhci = inProjectShell "ghc" $ unwords $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci]
 
 -- | Run ghcid
 runGhcid
@@ -188,7 +203,7 @@ runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
     opts =
       [ "-W"
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -ghci-script " <> dotGhci <> "' "
+      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -no-user-package-db -ghci-script " <> dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd

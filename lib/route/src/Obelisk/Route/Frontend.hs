@@ -161,6 +161,13 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (QueryT t q m) where
+  askRouteToUrl = lift askRouteToUrl
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (QueryT t q m) where
+  setRoute = lift . setRoute
+  modifyRoute = lift . modifyRoute
+
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
 

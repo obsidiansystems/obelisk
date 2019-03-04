@@ -8,6 +8,7 @@ library
   build-depends: base,
                  categories,
                  constraints,
+                 constraints-extras,
                  containers,
                  dependent-map,
                  dependent-sum,

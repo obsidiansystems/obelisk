@@ -17,6 +17,7 @@ import Data.List
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Text.Encoding
+import Data.Text.Encoding.Error (lenientDecode)
 import GHC.StaticPtr
 import Options.Applicative
 import System.Directory
@@ -208,14 +209,14 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   ]
 
 data ThunkCommand
-   = ThunkCommand_Update [FilePath]
+   = ThunkCommand_Update [FilePath] (Maybe String)
    | ThunkCommand_Unpack [FilePath]
    | ThunkCommand_Pack   [FilePath]
   deriving Show
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser) $ progDesc "Update thunk to latest revision available"
+  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> optional (strOption (long "branch" <> metavar "BRANCH"))) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
   , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
@@ -330,8 +331,7 @@ ob = \case
           route = _deployInitOpts_route deployOpts
           adminEmail = _deployInitOpts_adminEmail deployOpts
           enableHttps = _deployInitOpts_enableHttps deployOpts
-      deployInit thunkPtr (root </> "config") deployDir
-        sshKeyPath hostname route adminEmail enableHttps
+      deployInit thunkPtr deployDir sshKeyPath hostname route adminEmail enableHttps
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployPush deployPath $ case remoteBuilder of
@@ -342,7 +342,7 @@ ob = \case
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
+    ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks -> forM_ thunks packThunk
   ObCommand_Repl -> runRepl
@@ -361,7 +361,7 @@ getArgsConfig :: IO ArgsConfig
 getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = System.Info.os == "darwin" }
 
 encodeStaticKey :: StaticKey -> String
-encodeStaticKey = T.unpack . decodeUtf8 . Base16.encode . LBS.toStrict . Binary.encode
+encodeStaticKey = T.unpack . decodeUtf8With lenientDecode . Base16.encode . LBS.toStrict . Binary.encode
 
 -- TODO: Use failWith in place of fail to be consistent.
 decodeStaticKey :: String -> Either String StaticKey

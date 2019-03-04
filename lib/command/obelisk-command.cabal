@@ -19,6 +19,7 @@ library
     , data-default
     , directory
     , either
+    , errors
     , filepath
     , github
     , here

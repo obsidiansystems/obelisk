@@ -58,6 +58,7 @@ import Snap.Core (Snap)
 import System.Environment
 import System.IO
 import System.Process
+import System.Exit (ExitCode(..))
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
@@ -170,10 +171,15 @@ logPortBindErr p e = getProcessIdForPort p >>= \case
 
 getProcessIdForPort :: Int -> IO (Maybe Int)
 getProcessIdForPort port = do
-  xs <- lines <$> readProcess "ss" ["-lptn", "sport = " <> show port] mempty
-  case uncons xs of
-    Just (_, x:_) -> return $ A.maybeResult $ A.parse parseSsPid $ BSC.pack x
-    _ -> return Nothing
+  -- First check if 'ss' is available
+  (c, _, _) <- readProcessWithExitCode "which" ["ss"] mempty
+  case c of
+   ExitSuccess -> do
+     xs <- lines <$> readProcess "ss" ["-lptn", "sport = " <> show port] mempty
+     case uncons xs of
+       Just (_, x:_) -> return $ A.maybeResult $ A.parse parseSsPid $ BSC.pack x
+       _ -> return Nothing
+   _ -> return Nothing
 
 parseSsPid :: A.Parser Int
 parseSsPid = do
