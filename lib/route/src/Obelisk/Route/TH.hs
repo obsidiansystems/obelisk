@@ -1,6 +1,5 @@
 module Obelisk.Route.TH (deriveRouteComponent) where
 
-import Data.Constraint.Extras.TH
 import Data.GADT.Show.TH
 import Data.GADT.Compare.TH
 import Data.Universe.TH
@@ -12,6 +11,8 @@ deriveRouteComponent x = concat <$> traverse ($ x)
   [ deriveGShow
   , deriveGEq
   , deriveGCompare
+  , deriveShowTagIdentity
+  , deriveEqTagIdentity
+  , deriveOrdTagIdentity
   , deriveSomeUniverse
-  , deriveArgDict
   ]
