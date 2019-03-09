@@ -47,6 +47,7 @@ import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
 import qualified Reflex.TriggerEvent.Base as TriggerEvent
+import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 
 makePrisms ''Sum
 
@@ -127,6 +128,9 @@ renderFrontendHtml urlEnc route headWidget bodyWidget = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
   html <- fmap snd $ renderStatic $ fmap fst $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
-      el "head" headWidget
+      el "head" $ do
+        let baseTag = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+        -- The order here is important - baseTag has to be before headWidget!
+        baseTag >> injectExecutableConfigs >> headWidget
       el "body" bodyWidget
   return $ "<!DOCTYPE html>" <> html

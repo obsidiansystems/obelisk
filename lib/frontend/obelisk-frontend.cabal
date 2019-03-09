@@ -12,6 +12,7 @@ library
                  jsaddle,
                  lens,
                  mtl,
+                 obelisk-executable-config-inject,
                  obelisk-route,
                  primitive,
                  ref-tf,
