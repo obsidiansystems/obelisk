@@ -76,7 +76,7 @@ run = do
           proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
     runGhcid dotGhciPath $ Just $ unwords
-      [ "run"
+      [ "Obelisk.Run.run"
       , show freePort
       , "(runServeAsset " ++ show assets ++ ")"
       , "Backend.backend"

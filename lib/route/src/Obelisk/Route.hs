@@ -82,6 +82,9 @@ module Obelisk.Route
   , renderObeliskRoute
   , renderBackendRoute
   , renderFrontendRoute
+  , readShowEncoder
+  , integralEncoder
+  , pathSegmentEncoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -118,6 +121,7 @@ import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Universe
 import Network.HTTP.Types.URI
+import qualified Numeric.Lens
 import Obelisk.Route.TH
 import Text.Read (readMaybe)
 
@@ -858,5 +862,21 @@ renderObeliskRoute e r =
   let enc :: Encoder Identity (Either Text) (R (Sum a b)) PathQuery
       enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
   in (T.pack . uncurry (<>)) $ encode enc r
+
+readShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) => Encoder check parse a PageName
+readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
+
+
+integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
+integralEncoder = prismEncoder (Numeric.Lens.integral)
+
+pathSegmentEncoder :: (MonadError Text parse, Applicative check) =>
+  Encoder check parse (Text, PageName) PageName
+pathSegmentEncoder = unsafeMkEncoder EncoderImpl
+  { _encoderImpl_encode = \(x, (y, z)) -> (x:y, z)
+  , _encoderImpl_decode = \(xss, y) -> case xss of
+    [] -> throwError "not enough path segments"
+    (x:xs) -> pure (x, (xs, y))
+  }
 
 --TODO: decodeURIComponent as appropriate

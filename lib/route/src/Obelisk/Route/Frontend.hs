@@ -14,6 +14,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -62,7 +63,6 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
 import Data.Coerce
-import Data.Constraint (Dict (..))
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
@@ -102,14 +102,17 @@ instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
 
 instance HasJSContext m => HasJSContext (RoutedT t r m) where
   type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
   askJSContext = lift askJSContext
 
-instance Prerender js m => Prerender js (RoutedT t r m) where
-  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+instance (Prerender js t m, Monad m) => Prerender js t (RoutedT t r m) where
+  type Client (RoutedT t r m) = RoutedT t r (Client m)
+  prerender server client = RoutedT $ do
+    r <- ask
+    lift $ prerender (runRoutedT server r) (runRoutedT client r)
 
 instance Requester t m => Requester t (RoutedT t r m) where
   type Request (RoutedT t r m) = Request m
@@ -231,7 +234,7 @@ strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   pure ()
 
 newtype SetRouteT t r m a = SetRouteT { unSetRouteT :: EventWriterT t (Endo r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, MonadIO, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, MonadIO, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
 
 instance (MonadFix m, MonadHold t m, DomBuilder t m) => DomBuilder t (SetRouteT t r m) where
   type DomBuilderSpace (SetRouteT t r m) = DomBuilderSpace m
@@ -261,8 +264,14 @@ instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
 instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
   modifyRoute = lift . modifyRoute
 
-instance Prerender js m => Prerender js (SetRouteT t r m) where
-  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+instance (PerformEvent t m, Prerender js t m, Monad m, Reflex t) => Prerender js t (SetRouteT t r m) where
+  type Client (SetRouteT t r m) = SetRouteT t r (Client m)
+  prerender server client = do
+    d <- lift $ prerender (runSetRouteT server) (runSetRouteT client)
+    let (a, r) = splitDynPure d
+    -- Must be prompt here
+    SetRouteT . tellEvent $ switchPromptlyDyn r
+    pure a
 
 instance Requester t m => Requester t (SetRouteT t r m) where
   type Request (SetRouteT t r m) = Request m
@@ -308,7 +317,7 @@ class RouteToUrl r m | m -> r where
   askRouteToUrl :: m (r -> Text)
 
 newtype RouteToUrlT r m a = RouteToUrlT { unRouteToUrlT :: ReaderT (r -> Text) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
 
 runRouteToUrlT
   :: RouteToUrlT r m a
@@ -332,8 +341,11 @@ instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
   type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
   askJSContext = lift askJSContext
 
-instance Prerender js m => Prerender js (RouteToUrlT r m) where
-  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+instance (Prerender js t m, Monad m) => Prerender js t (RouteToUrlT r m) where
+  type Client (RouteToUrlT r m) = RouteToUrlT r (Client m)
+  prerender server client = do
+    r <- RouteToUrlT ask
+    lift $ prerender (runRouteToUrlT server r) (runRouteToUrlT client r)
 
 instance Requester t m => Requester t (RouteToUrlT r m) where
   type Request (RouteToUrlT r m) = Request m
@@ -393,10 +405,11 @@ runRouteViewT
      , MonadFix m
      )
   => (Encoder Identity Identity r PageName)
+  -> Event t () -- ^ Switchover event, nothing is done until this event fires. Used to prevent incorrect DOM expectations at hydration switchover time
   -> RoutedT t r (SetRouteT t r (RouteToUrlT r m)) a
   -> m a
-runRouteViewT routeEncoder a = do
-  rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
+runRouteViewT routeEncoder switchover a = do
+  rec historyState <- manageHistory' switchover $ HistoryCommand_PushState <$> setState
       let theEncoder = pageNameEncoder . hoistParse (pure . runIdentity) routeEncoder
           -- NB: The can only fail if the uriPath doesn't begin with a '/' or if the uriQuery
           -- is nonempty, but begins with a character that isn't '?'. Since we don't expect
