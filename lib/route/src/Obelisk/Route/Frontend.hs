@@ -279,6 +279,10 @@ instance Requester t m => Requester t (SetRouteT t r m) where
   requesting = SetRouteT . requesting
   requesting_ = SetRouteT . requesting_
 
+instance (Monad m, SetRoute t r m) => SetRoute t r (RequesterT t req rsp m) where
+  setRoute = lift . setRoute
+  modifyRoute = lift . modifyRoute
+
 #ifndef ghcjs_HOST_OS
 deriving instance MonadJSM m => MonadJSM (SetRouteT t r m)
 #endif
