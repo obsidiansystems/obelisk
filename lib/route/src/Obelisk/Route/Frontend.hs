@@ -341,6 +341,9 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (SetRouteT t r' m) where
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RoutedT t r' m) where
   askRouteToUrl = lift askRouteToUrl
 
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m) where
+  askRouteToUrl = lift askRouteToUrl
+
 instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
   type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
   askJSContext = lift askJSContext
