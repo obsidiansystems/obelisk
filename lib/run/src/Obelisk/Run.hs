@@ -1,17 +1,12 @@
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE EmptyCase #-}
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-} -- Due to instance HasJS x (EventWriterT t w m)
@@ -34,6 +29,7 @@ import Data.List (uncons)
 import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
+import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Language.Javascript.JSaddle.Run (syncPoint)
@@ -49,6 +45,7 @@ import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import qualified Obelisk.Asset.Serve.Snap as Snap
+import Obelisk.Backend
 import Obelisk.ExecutableConfig (get)
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
@@ -61,7 +58,7 @@ import System.Exit (ExitCode(..))
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
-import Obelisk.Backend
+import Web.Cookie
 
 run
   :: Int -- ^ Port to run the backend
@@ -143,15 +140,16 @@ obeliskApp opts frontend validFullEncoder uri backend = do
           { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
       InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
-        html <- renderJsaddleFrontend (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
+        let cookies = maybe [] parseCookies $ lookup (fromString "Cookie") (W.requestHeaders req)
+        html <- renderJsaddleFrontend cookies (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
       _ -> backend req sendResponse
 
-renderJsaddleFrontend :: (route -> Text) -> route -> Frontend route -> IO ByteString
-renderJsaddleFrontend urlEnc r f =
+renderJsaddleFrontend :: Cookies -> (route -> Text) -> route -> Frontend route -> IO ByteString
+renderJsaddleFrontend cookies urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
       jsaddlePreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "/jsaddle/jsaddle.js") blank
-  in renderFrontendHtml urlEnc r (_frontend_head f >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
+  in renderFrontendHtml cookies urlEnc r (_frontend_head f >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
