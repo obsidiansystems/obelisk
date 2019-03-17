@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -54,7 +55,9 @@ newtype CookiesT m a = CookiesT { unCookiesT :: ReaderT Cookies m a }
     , MonadFix
     , MonadHold t
     , MonadIO
+#ifndef ghcjs_HOST_OS
     , MonadJSM
+#endif
     , MonadRef
     , MonadReflexCreateTrigger t
     , MonadSample t
