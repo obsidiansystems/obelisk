@@ -26,8 +26,8 @@
 module Obelisk.Route.Frontend
   ( module Obelisk.Route
   , pattern (:~)
-  , Routed(..)
-  , RoutedT(..)
+  , Routed (..)
+  , RoutedT (..)
   , runRoutedT
   , askRoute
   , withRoutedT
