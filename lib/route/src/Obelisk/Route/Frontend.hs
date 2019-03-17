@@ -37,6 +37,9 @@ module Obelisk.Route.Frontend
   , maybeRoute
   , maybeRoute_
   , maybeRouted
+  , eitherRoute
+  , eitherRoute_
+  , eitherRouted
   , runRouteViewT
   , SetRouteT(..)
   , SetRoute(..)
@@ -56,6 +59,7 @@ import Obelisk.Route
 import Control.Category (Category (..), (.))
 import Control.Category.Cartesian
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
+import Control.Monad ((<=<))
 import Control.Monad.Fix
 import Control.Monad.Primitive
 import Control.Monad.Ref
@@ -204,6 +208,20 @@ maybeRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
 -}
 
+eitherRoute_
+  :: (MonadFix m, MonadHold t m, Adjustable t m)
+  => RoutedT t l m ()
+  -> RoutedT t r m ()
+  -> RoutedT t (Either l r) m ()
+eitherRoute_ l r = eitherRouted $ strictDynWidget_ $ either (runRoutedT l) (runRoutedT r)
+
+eitherRoute
+  :: (MonadFix m, MonadHold t m, Adjustable t m)
+  => RoutedT t l m a
+  -> RoutedT t r m a
+  -> RoutedT t (Either l r) m (Dynamic t a)
+eitherRoute l r = eitherRouted $ strictDynWidget $ either (runRoutedT l) (runRoutedT r)
+
 dsumValueCoercion :: Coercion f g -> Coercion (DSum k f) (DSum k g)
 dsumValueCoercion Coercion = Coercion
 
@@ -219,6 +237,9 @@ maybeRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Maybe (Dynami
 maybeRouted r = RoutedT $ ReaderT $ \d -> do
   d' <- maybeDyn d
   runRoutedT r d'
+
+eitherRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Either (Dynamic t a) (Dynamic t b)) m c -> RoutedT t (Either a b) m c
+eitherRouted r = RoutedT $ ReaderT $ runRoutedT r <=< eitherDyn
 
 -- | WARNING: The input 'Dynamic' must be fully constructed when this is run
 strictDynWidget :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
