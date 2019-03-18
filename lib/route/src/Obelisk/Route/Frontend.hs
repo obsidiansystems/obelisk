@@ -168,6 +168,13 @@ instance (Monad m, SetRoute t r m) => SetRoute t r (QueryT t q m) where
   setRoute = lift . setRoute
   modifyRoute = lift . modifyRoute
 
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (EventWriterT t w m) where
+  askRouteToUrl = lift askRouteToUrl
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (EventWriterT t w m) where
+  setRoute = lift . setRoute
+  modifyRoute = lift . modifyRoute
+
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
 
