@@ -10,6 +10,7 @@ library
       attoparsec
     , base
     , bytestring
+    , cookie
     , dependent-sum
     , dependent-sum-template
     , ghcjs-dom

@@ -300,6 +300,10 @@ instance Requester t m => Requester t (SetRouteT t r m) where
   requesting = SetRouteT . requesting
   requesting_ = SetRouteT . requesting_
 
+instance (Monad m, SetRoute t r m) => SetRoute t r (RequesterT t req rsp m) where
+  setRoute = lift . setRoute
+  modifyRoute = lift . modifyRoute
+
 #ifndef ghcjs_HOST_OS
 deriving instance MonadJSM m => MonadJSM (SetRouteT t r m)
 #endif
@@ -356,6 +360,9 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (SetRouteT t r' m) where
   askRouteToUrl = lift askRouteToUrl
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RoutedT t r' m) where
+  askRouteToUrl = lift askRouteToUrl
+
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m) where
   askRouteToUrl = lift askRouteToUrl
 
 instance HasJSContext m => HasJSContext (RouteToUrlT r m) where

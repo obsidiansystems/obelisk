@@ -7,6 +7,7 @@ library
   hs-source-dirs: src
   build-depends: base,
                  bytestring,
+                 cookie,
                  dependent-sum,
                  ghcjs-dom,
                  jsaddle,
@@ -20,5 +21,7 @@ library
                  reflex-dom-core,
                  text,
                  transformers
-  exposed-modules: Obelisk.Frontend
+  exposed-modules:
+    Obelisk.Frontend
+    Obelisk.Frontend.Cookie
   ghc-options: -Wall
