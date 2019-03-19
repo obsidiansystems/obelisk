@@ -136,7 +136,7 @@ deployPush deployPath getNixBuilders = do
   withSpinner "Uploading closures" $ ifor_ buildOutputByHost $ \host outputPath -> do
     callProcess'
       (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
-      "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+      "nix-copy-closure" ["-v", "--to", "--use-substitutes", "root@" <> host, "--gzip", outputPath]
   withSpinner "Uploading config" $ ifor_ buildOutputByHost $ \host _ -> do
     callProcessAndLogOutput (Notice, Warning) $
       proc "rsync"
