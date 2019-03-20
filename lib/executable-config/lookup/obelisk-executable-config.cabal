@@ -21,6 +21,7 @@ library
         build-depends: ghcjs-dom
       else
         hs-source-dirs: src
+        build-depends: directory
 
   build-depends:
     base, 
