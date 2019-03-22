@@ -94,10 +94,10 @@ withSpinner' msg mkTrail action = do
       )
       where
         isTemporary = isNothing mkTrail
-    popSpinner mTextEncoding (mark, trailMsgM) (flag, old) =
+    popSpinner theme (mark, trailMsgM) (flag, old) =
       ( (newFlag, new)
       -- With final trail spinner message to render
-      , renderSpinnerStack mTextEncoding mark . (: new) . TerminalString_Normal <$> (
+      , renderSpinnerStack theme mark . (: new) . TerminalString_Normal <$> (
           if inTemporarySpinner then Nothing else trailMsgM
           )
       )
