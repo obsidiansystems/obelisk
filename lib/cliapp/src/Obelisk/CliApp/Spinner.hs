@@ -163,23 +163,11 @@ runSpinner spinner f = forM_ spinner $ f >=> const delay
 type SpinnerTheme = [Text]
 
 -- Find more spinners at https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
-_spinnerSticks :: SpinnerTheme
-_spinnerSticks = ["|", "/", "-", "\\"]
-
-spinnerStick :: SpinnerTheme
-spinnerStick = ["|", "/", "-", "\\"]
-
-_spinnerCircleHalves :: SpinnerTheme
-_spinnerCircleHalves = ["◐", "◓", "◑", "◒"]
-
-spinnerMoon :: SpinnerTheme
-spinnerMoon = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
-
 minimalSpinnerTheme :: SpinnerTheme
-minimalSpinnerTheme = spinnerStick
+minimalSpinnerTheme = ["|", "/", "-", "\\"]
 
 defaultSpinnerTheme :: SpinnerTheme
-defaultSpinnerTheme = spinnerMoon
+defaultSpinnerTheme = ["◐", "◓", "◑", "◒"]
 
 -- | Like `bracket` but the `release` function can know whether an exception was raised
 bracket' :: MonadMask m => m a -> (a -> Maybe c -> m b) -> (a -> m c) -> m c

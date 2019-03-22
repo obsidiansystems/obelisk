@@ -171,7 +171,7 @@ instance (Monad m, SetRoute t r m) => SetRoute t r (QueryT t q m) where
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
 
-mapRoutedT :: (m a -> n a) -> RoutedT t r m a -> RoutedT t r n a
+mapRoutedT :: (m a -> n b) -> RoutedT t r m a -> RoutedT t r n b
 mapRoutedT f = RoutedT . mapReaderT f . unRoutedT
 
 withRoutedT :: (Dynamic t r -> Dynamic t r') -> RoutedT t r' m a -> RoutedT t r m a
