@@ -76,7 +76,7 @@ withSpinner' msg mkTrail action = do
       logMessage Output_ClearLine
       logsM <- modifyStack $ (popSpinner mTextEncoding) $ case resultM of
         Nothing -> case mTextEncoding of
-          Just enc | supportUnicode enc ->
+          Just enc | supportsUnicode enc ->
             ( TerminalString_Colorized Red "✖"
             , Just msg  -- Always display final message if there was an exception.
             )
@@ -85,7 +85,7 @@ withSpinner' msg mkTrail action = do
             , Just msg  -- Always display final message if there was an exception.
             )
         Just result -> case mTextEncoding of
-          Just enc | supportUnicode enc ->
+          Just enc | supportsUnicode enc ->
             ( TerminalString_Colorized Green "✔"
             , mkTrail <*> pure result
             )
@@ -117,7 +117,7 @@ withSpinner' msg mkTrail action = do
     modifyStack f = liftIO . flip atomicModifyIORef' f
       =<< fmap _cliConfig_spinnerStack getCliConfig
     spinner mTextEncoding = case mTextEncoding of
-      Just enc | supportUnicode enc -> coloredSpinner defaultSpinnerTheme
+      Just enc | supportsUnicode enc -> coloredSpinner defaultSpinnerTheme
       _ -> coloredSpinner minimalSpinnerTheme
 
 -- | Conservatively determines whether the encoding supports Unicode.
@@ -125,8 +125,8 @@ withSpinner' msg mkTrail action = do
 -- Currently this uses a whitelist of known-to-work encodings. In principle it
 -- could test dynamically by opening a file with this encoding, but it doesn't
 -- look like base exposes any way to determine this in a pure fashion.
-supportUnicode :: TextEncoding -> Bool
-supportUnicode enc = any ((textEncodingName enc ==) . textEncodingName)
+supportsUnicode :: TextEncoding -> Bool
+supportsUnicode enc = any ((textEncodingName enc ==) . textEncodingName)
   [ utf8
   , utf8_bom
   , utf16
@@ -149,7 +149,7 @@ renderSpinnerStack mTextEncoding mark = L.intersperse space . go . L.reverse
     go (x:[]) = mark : [x]
     go (x:xs) = arrow : x : go xs
     arrow = case mTextEncoding of
-      Just enc | supportUnicode enc -> TerminalString_Colorized Blue "⇾"
+      Just enc | supportsUnicode enc -> TerminalString_Colorized Blue "⇾"
       _ -> TerminalString_Colorized Blue "->"
     space = TerminalString_Normal " "
 
