@@ -20,6 +20,7 @@ import Data.IORef
 import qualified Data.List as L
 import Data.Maybe (isNothing)
 import Data.Text (Text)
+import GHC.IO.Encoding.Types
 import System.Console.ANSI (Color (Blue, Cyan, Green, Red))
 import System.IO (utf8, utf8_bom,  utf16, utf16be, utf16le, utf32, utf32be, utf32le, TextEncoding)
 
@@ -120,7 +121,7 @@ withSpinner' msg mkTrail action = do
       _ -> coloredSpinner minimalSpinnerTheme
 
 supportUnicode :: TextEncoding -> Bool
-supportUnicode enc = any ((show enc ==) . show)
+supportUnicode enc = any ((textEncodingName enc ==) . textEncodingName)
   [ utf8
   , utf8_bom
   , utf16
