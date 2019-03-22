@@ -21,10 +21,10 @@ import qualified Data.List as L
 import Data.Maybe (isNothing)
 import Data.Text (Text)
 import System.Console.ANSI (Color (Blue, Cyan, Green, Red))
-import System.IO (utf8, utf8_bom,  utf16, utf16be, utf16le, utf32, utf32be, utf32le, TextEncoding)
 
 import Obelisk.CliApp.Logging (allowUserToMakeLoggingVerbose, fork, putLog)
 import Obelisk.CliApp.TerminalString (TerminalString (..), enquiryCode)
+import Obelisk.CliApp.Theme
 import Obelisk.CliApp.Types (CliLog, CliConfig (..), HasCliConfig, Output (..), getCliConfig)
 
 -- | Run an action with a CLI spinner.
@@ -54,44 +54,38 @@ withSpinner'
 withSpinner' msg mkTrail action = do
   cliConf <- getCliConfig
   let noSpinner = _cliConfig_noSpinner cliConf
-      mTextEncoding = _cliConfig_textEncoding cliConf
   if noSpinner
     then putLog Notice msg >> action
-    else bracket' (run mTextEncoding) (cleanup mTextEncoding) $ const action
+    else bracket' run cleanup $ const action
   where
-    run mTextEncoding = do
+    run = do
       -- Add this log to the spinner stack, and start a spinner if it is top-level.
       modifyStack pushSpinner >>= \case
         True -> do -- Top-level spinner; fork a thread to manage output of anything on the stack
           ctrleThread <- fork $ allowUserToMakeLoggingVerbose enquiryCode
-          spinnerThread <- fork $ runSpinner (spinner mTextEncoding) $ \c -> do
-            logs <- renderSpinnerStack mTextEncoding c . snd <$> readStack
+          cliConf <- getCliConfig
+          let theme = _cliConfig_theme cliConf
+              spinner = coloredSpinner $ _cliTheme_spinner theme
+          spinnerThread <- fork $ runSpinner spinner $ \c -> do
+            logs <- renderSpinnerStack theme c . snd <$> readStack
             logMessage $ Output_Overwrite logs
           pure [ctrleThread, spinnerThread]
         False -> -- Sub-spinner; nothing to do.
           pure []
-    cleanup mTextEncoding tids resultM = do
+    cleanup tids resultM = do
       liftIO $ mapM_ killThread tids
       logMessage Output_ClearLine
-      logsM <- modifyStack $ (popSpinner mTextEncoding) $ case resultM of
-        Nothing -> case mTextEncoding of
-          Just enc | supportUnicode enc ->
-            ( TerminalString_Colorized Red "✖"
-            , Just msg  -- Always display final message if there was an exception.
-            )
-          _ ->
-            ( TerminalString_Colorized Red "FAILED"
-            , Just msg  -- Always display final message if there was an exception.
-            )
-        Just result -> case mTextEncoding of
-          Just enc | supportUnicode enc ->
-            ( TerminalString_Colorized Green "✔"
-            , mkTrail <*> pure result
-            )
-          _ ->
-            ( TerminalString_Colorized Green "DONE"
-            , mkTrail <*> pure result
-            )
+      cliConf <- getCliConfig
+      let theme = _cliConfig_theme cliConf
+      logsM <- modifyStack $ (popSpinner theme) $ case resultM of
+        Nothing ->
+          ( TerminalString_Colorized Red $ _cliTheme_failed $ _cliConfig_theme cliConf
+          , Just msg  -- Always display final message if there was an exception.
+          )
+        Just result ->
+          ( TerminalString_Colorized Green $ _cliTheme_done $ _cliConfig_theme cliConf
+          , mkTrail <*> pure result
+          )
       -- Last message, finish off with newline.
       forM_ logsM $ logMessage . Output_Write
     pushSpinner (flag, old) =
@@ -115,36 +109,19 @@ withSpinner' msg mkTrail action = do
       =<< fmap _cliConfig_spinnerStack getCliConfig
     modifyStack f = liftIO . flip atomicModifyIORef' f
       =<< fmap _cliConfig_spinnerStack getCliConfig
-    spinner mTextEncoding = case mTextEncoding of
-      Just enc | supportUnicode enc -> coloredSpinner defaultSpinnerTheme
-      _ -> coloredSpinner minimalSpinnerTheme
-
-supportUnicode :: TextEncoding -> Bool
-supportUnicode enc = any ((show enc ==) . show)
-  [ utf8
-  , utf8_bom
-  , utf16
-  , utf16be
-  , utf16le
-  , utf32
-  , utf32be
-  , utf32le
-  ]
 
 -- | How nested spinner logs should be displayed
 renderSpinnerStack
-  :: Maybe TextEncoding
+  :: CliTheme
   -> TerminalString  -- ^ That which comes before the final element in stack
   -> [TerminalString]  -- ^ Spinner elements in reverse order
   -> [TerminalString]
-renderSpinnerStack mTextEncoding mark = L.intersperse space . go . L.reverse
+renderSpinnerStack theme mark = L.intersperse space . go . L.reverse
   where
     go [] = []
     go (x:[]) = mark : [x]
     go (x:xs) = arrow : x : go xs
-    arrow = case mTextEncoding of
-      Just enc | supportUnicode enc -> TerminalString_Colorized Blue "⇾"
-      _ -> TerminalString_Colorized Blue "->"
+    arrow = TerminalString_Colorized Blue $ _cliTheme_arrow theme
     space = TerminalString_Normal " "
 
 -- | A spinner is simply an infinite list of strings that supplant each other in a delayed loop, creating the
@@ -159,27 +136,6 @@ runSpinner :: MonadIO m => Spinner -> (TerminalString -> m ()) -> m ()
 runSpinner spinner f = forM_ spinner $ f >=> const delay
   where
     delay = liftIO $ threadDelay 100000  -- A shorter delay ensures that we update promptly.
-
-type SpinnerTheme = [Text]
-
--- Find more spinners at https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
-_spinnerSticks :: SpinnerTheme
-_spinnerSticks = ["|", "/", "-", "\\"]
-
-spinnerStick :: SpinnerTheme
-spinnerStick = ["|", "/", "-", "\\"]
-
-_spinnerCircleHalves :: SpinnerTheme
-_spinnerCircleHalves = ["◐", "◓", "◑", "◒"]
-
-spinnerMoon :: SpinnerTheme
-spinnerMoon = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
-
-minimalSpinnerTheme :: SpinnerTheme
-minimalSpinnerTheme = spinnerStick
-
-defaultSpinnerTheme :: SpinnerTheme
-defaultSpinnerTheme = spinnerMoon
 
 -- | Like `bracket` but the `release` function can know whether an exception was raised
 bracket' :: MonadMask m => m a -> (a -> Maybe c -> m b) -> (a -> m c) -> m c

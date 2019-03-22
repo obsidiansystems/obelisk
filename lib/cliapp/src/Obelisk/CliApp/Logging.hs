@@ -39,17 +39,20 @@ import Control.Monad.Log (Severity (..), WithSeverity (..), logMessage, runLoggi
 import Control.Monad.Loops (iterateUntil)
 import Control.Monad.Reader (MonadIO, ReaderT (..))
 import Data.IORef (atomicModifyIORef', newIORef, readIORef, writeIORef)
+import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import GHC.IO.Encoding.Types
 import System.Console.ANSI (Color (Red, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (SetColor, SetConsoleIntensity), clearLine)
 import System.Exit (ExitCode (..))
-import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stderr, stdin, stdout, hGetEncoding)
+import System.IO
 
 import qualified Obelisk.CliApp.TerminalString as TS
+import Obelisk.CliApp.Theme
 import Obelisk.CliApp.Types
 
 newCliConfig
@@ -64,7 +67,10 @@ newCliConfig sev noColor noSpinner errorLogExitCode = do
   tipDisplayed <- newIORef False
   stack <- newIORef ([], [])
   textEncoding <- hGetEncoding stdout
-  return $ CliConfig level noColor noSpinner lock tipDisplayed stack errorLogExitCode textEncoding
+  let theme = if fromMaybe False $ supportsUnicode <$> textEncoding
+        then unicodeTheme
+        else noUnicodeTheme
+  return $ CliConfig level noColor noSpinner lock tipDisplayed stack errorLogExitCode theme
 
 runCli :: MonadIO m => CliConfig e -> CliT e m a -> m a
 runCli c =
@@ -227,3 +233,20 @@ fork :: (HasCliConfig e m, MonadIO m) => CliT e IO () -> m ThreadId
 fork f = do
   c <- getCliConfig
   liftIO $ forkIO $ runCli c f
+
+-- | Conservatively determines whether the encoding supports Unicode.
+--
+-- Currently this uses a whitelist of known-to-work encodings. In principle it
+-- could test dynamically by opening a file with this encoding, but it doesn't
+-- look like base exposes any way to determine this in a pure fashion.
+supportsUnicode :: TextEncoding -> Bool
+supportsUnicode enc = any ((textEncodingName enc ==) . textEncodingName)
+  [ utf8
+  , utf8_bom
+  , utf16
+  , utf16be
+  , utf16le
+  , utf32
+  , utf32be
+  , utf32le
+  ]

@@ -33,6 +33,7 @@ import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.Text.Encoding.Error (lenientDecode)
 import System.Exit (ExitCode (..))
 import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
@@ -64,7 +65,7 @@ readProcessAndLogStderr
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
     streamToLog =<< liftIO (streamHandle sev err)
-  liftIO $ T.decodeUtf8 <$> BS.hGetContents out
+  liftIO $ T.decodeUtf8With lenientDecode <$> BS.hGetContents out
 
 readCreateProcessWithExitCode
   :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
@@ -89,7 +90,7 @@ readProcessAndLogOutput (sev_out, sev_err) process = do
 
   -- TODO interleave stdout and stderr in log correctly
   streamToLog =<< liftIO (streamHandle sev_err err)
-  outText <- liftIO $ T.decodeUtf8 <$> BS.hGetContents out
+  outText <- liftIO $ T.decodeUtf8With lenientDecode <$> BS.hGetContents out
   putLogRaw sev_out outText
 
   liftIO (waitForProcess p) >>= \case
@@ -173,7 +174,7 @@ streamToLog
 streamToLog stream = fix $ \loop -> do
   liftIO (Streams.read stream) >>= \case
     Nothing -> return ()
-    Just (sev, line) -> putLogRaw sev (T.decodeUtf8 line) >> loop
+    Just (sev, line) -> putLogRaw sev (T.decodeUtf8With lenientDecode line) >> loop
 
 -- | Pretty print a 'CmdSpec'
 reconstructCommand :: Process.CmdSpec -> Text

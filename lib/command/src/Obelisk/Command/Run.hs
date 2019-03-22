@@ -54,11 +54,26 @@ run = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
-    assets <- withProjectRoot "." $ \root ->
-      -- `--raw` is not available with old nix-instantiate. It drops quotation
-      -- marks and trailing newline, so is very convenient for shelling out.
-      readProcessAndLogStderr Debug $
-        proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+    assets <- withProjectRoot "." $ \root -> do
+      let importableRoot = if "/" `isInfixOf` root
+            then root
+            else "./" <> root
+      isDerivation <- readProcessAndLogStderr Debug $
+        proc "nix"
+          [ "eval"
+          , "-f"
+          , root
+          , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+          , "--raw"
+          -- `--raw` is not available with old nix-instantiate. It drops quotation
+          -- marks and trailing newline, so is very convenient for shelling out.
+          ]
+      -- Check whether the impure static files are a derivation (and so must be built)
+      if isDerivation == "1"
+        then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
+          proc "nix-build" ["-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"]
+        else readProcessAndLogStderr Debug $
+          proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
     runGhcid dotGhciPath $ Just $ unwords
       [ "run"
