@@ -120,6 +120,11 @@ withSpinner' msg mkTrail action = do
       Just enc | supportUnicode enc -> coloredSpinner defaultSpinnerTheme
       _ -> coloredSpinner minimalSpinnerTheme
 
+-- | Conservatively determines whether the encoding supports Unicode.
+--
+-- Currently this uses a whitelist of known-to-work encodings. In principle it
+-- could test dynamically by opening a file with this encoding, but it doesn't
+-- look like base exposes any way to determine this in a pure fashion.
 supportUnicode :: TextEncoding -> Bool
 supportUnicode enc = any ((textEncodingName enc ==) . textEncodingName)
   [ utf8
