@@ -3,6 +3,7 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -62,10 +63,9 @@ import Control.Lens hiding (Bifunctor, bimap, universe, element)
 import Control.Monad ((<=<))
 import Control.Monad.Fix
 import Control.Monad.Primitive
+import Control.Monad.Reader
 import Control.Monad.Ref
-import Control.Monad.Trans
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Reader
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
@@ -101,12 +101,20 @@ pattern a :~ b <- a :=> (coerceDynamic . getCompose -> b)
 
 class Routed t r m | m -> t r where
   askRoute :: m (Dynamic t r)
+  default askRoute :: (Monad m', MonadTrans f, Routed t r m', m ~ f m') => m (Dynamic t r)
+  askRoute = lift askRoute
 
 instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
+instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m)
+
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
+
+instance MonadReader r' m => MonadReader r' (RoutedT t r m) where
+  ask = lift ask
+  local = mapRoutedT . local
 
 instance HasJSContext m => HasJSContext (RoutedT t r m) where
   type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
@@ -284,13 +292,17 @@ runSetRouteT = runEventWriterT . unSetRouteT
 class Reflex t => SetRoute t r m | m -> t r where
   setRoute :: Event t r -> m ()
   modifyRoute :: Event t (r -> r) -> m ()
+  default modifyRoute :: (Monad m', MonadTrans f, SetRoute t r m', m ~ f m') => Event t (r -> r) -> m ()
+  modifyRoute = lift . modifyRoute
+
   setRoute = modifyRoute . fmap const
 
 instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
   modifyRoute = SetRouteT . tellEvent . fmap Endo
 
-instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
-  modifyRoute = lift . modifyRoute
+instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m)
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (ReaderT r' m)
 
 instance (PerformEvent t m, Prerender js t m, Monad m, Reflex t) => Prerender js t (SetRouteT t r m) where
   type Client (SetRouteT t r m) = SetRouteT t r (Client m)
@@ -347,6 +359,8 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (SetRouteT t r m) where
 
 class RouteToUrl r m | m -> r where
   askRouteToUrl :: m (r -> Text)
+  default askRouteToUrl :: (Monad m', MonadTrans f, RouteToUrl r m', m ~ f m') => m (r -> Text)
+  askRouteToUrl = lift askRouteToUrl
 
 newtype RouteToUrlT r m a = RouteToUrlT { unRouteToUrlT :: ReaderT (r -> Text) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
@@ -364,10 +378,10 @@ instance Monad m => RouteToUrl r (RouteToUrlT r m) where
   askRouteToUrl = RouteToUrlT ask
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (SetRouteT t r' m) where
-  askRouteToUrl = lift askRouteToUrl
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RoutedT t r' m) where
-  askRouteToUrl = lift askRouteToUrl
+
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (ReaderT r' m) where
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m) where
   askRouteToUrl = lift askRouteToUrl
