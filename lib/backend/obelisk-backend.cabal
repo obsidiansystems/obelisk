@@ -14,7 +14,6 @@ library
                  lens,
                  mtl,
                  obelisk-asset-serve-snap,
-                 obelisk-executable-config-inject,
                  obelisk-frontend,
                  obelisk-route,
                  obelisk-snap-extras,

@@ -215,6 +215,7 @@ in rec {
           forceSSL = enableHttps;
           locations.${baseUrl} = {
             proxyPass = "http://localhost:" + toString internalPort;
+            proxyWebsockets = true;
           };
         };
       };
