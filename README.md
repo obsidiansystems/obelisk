@@ -4,6 +4,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
+  - [Hoogle](#hoogle)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
@@ -83,6 +84,12 @@ ob run
 Now go to http://localhost:8000 (or the port specified in `config/common/route`) to access your app.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
+
+### Hoogle
+
+To enter a nix-shell from which you can run the hoogle command-line client or a hoogle server for your project:
+
+`nix-shell -A shells.ghc --arg withHoogle true`
 
 ## Deploying
 
