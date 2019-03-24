@@ -5,6 +5,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
   - [Hoogle](#hoogle)
+  - [Adding Package Overrides](#adding-package-overrides)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
@@ -13,7 +14,6 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Mobile](#mobile)
   - [iOS](#ios)
   - [Android](#android)
-- [Tips](#tips)
 
 ## Installing Obelisk
 1. [Install Nix](https://nixos.org/nix/).
@@ -90,6 +90,30 @@ Every time you change the Haskell source files in frontend, common or backend, `
 To enter a nix-shell from which you can run the hoogle command-line client or a hoogle server for your project:
 
 `nix-shell -A shells.ghc --arg withHoogle true`
+
+### Adding package overrides
+
+To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package, your `default.nix` will look like:
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  overrides = self: super: let
+    aeson = pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "aeson-gadt-th";
+      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
+      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
+    };
+  in
+  {
+    aeson = self.callCabal2nix "aeson" aeson {};
+  };
+# ...
+```
+
+For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
 
 ## Deploying
 
@@ -273,29 +297,3 @@ This should copy over and install the application on your device (if you see a  
 ##### Build a release version
 
 After having configured signing for your app, you may proceed to build a release version of the app. This is no different to how you build the non-release version, so consult the section [Android](#android) further above for exact instructions on building and deploying to your device.
-
-## Tips
-
-### Adding package overrides
-
-To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package, your `default.nix` will look like:
-
-```nix
-# ...
-project ./. ({ pkgs, ... }: {
-# ...
-  overrides = self: super: let
-    aeson = pkgs.fetchFromGitHub {
-      owner = "obsidiansystems";
-      repo = "aeson-gadt-th";
-      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
-      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
-    };
-  in
-  {
-    aeson = self.callCabal2nix "aeson" aeson {};
-  };
-# ...
-```
-
-For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
