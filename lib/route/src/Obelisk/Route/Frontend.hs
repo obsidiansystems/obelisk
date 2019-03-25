@@ -176,19 +176,13 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
-instance (Monad m, RouteToUrl r m) => RouteToUrl r (QueryT t q m) where
-  askRouteToUrl = lift askRouteToUrl
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (QueryT t q m)
 
-instance (Monad m, SetRoute t r m) => SetRoute t r (QueryT t q m) where
-  setRoute = lift . setRoute
-  modifyRoute = lift . modifyRoute
+instance (Monad m, SetRoute t r m) => SetRoute t r (QueryT t q m)
 
-instance (Monad m, RouteToUrl r m) => RouteToUrl r (EventWriterT t w m) where
-  askRouteToUrl = lift askRouteToUrl
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (EventWriterT t w m)
 
-instance (Monad m, SetRoute t r m) => SetRoute t r (EventWriterT t w m) where
-  setRoute = lift . setRoute
-  modifyRoute = lift . modifyRoute
+instance (Monad m, SetRoute t r m) => SetRoute t r (EventWriterT t w m)
 
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
@@ -319,9 +313,7 @@ instance Requester t m => Requester t (SetRouteT t r m) where
   requesting = SetRouteT . requesting
   requesting_ = SetRouteT . requesting_
 
-instance (Monad m, SetRoute t r m) => SetRoute t r (RequesterT t req rsp m) where
-  setRoute = lift . setRoute
-  modifyRoute = lift . modifyRoute
+instance (Monad m, SetRoute t r m) => SetRoute t r (RequesterT t req rsp m)
 
 #ifndef ghcjs_HOST_OS
 deriving instance MonadJSM m => MonadJSM (SetRouteT t r m)
@@ -383,8 +375,7 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (RoutedT t r' m) where
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (ReaderT r' m) where
 
-instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m) where
-  askRouteToUrl = lift askRouteToUrl
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m)
 
 instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
   type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
