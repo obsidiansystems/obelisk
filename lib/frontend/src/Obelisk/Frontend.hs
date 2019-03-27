@@ -70,6 +70,7 @@ type PrebuildAgnostic t route m =
   ( SetRoute t route m
   , RouteToUrl route m
   , MonadFix m
+  , MonadFix (Performable m)
   )
 
 data Frontend route = Frontend
