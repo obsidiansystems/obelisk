@@ -237,6 +237,8 @@ It's also possible to inspect iOS WkWebView apps once they are installed in the 
 
 ### Android
 
+NOTE: Currently Android builds are only supported on Linux.
+
 1. In your project's `default.nix` set a suitable value for `android.applicationId` and `android.displayName`.
 1. Run `nix-build -A android.frontend -o result-android` to build the Android app.
 1. A debug version of the app should be generated at `result-android/android-app-debug.apk`
