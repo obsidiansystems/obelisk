@@ -29,6 +29,8 @@ Before opening an issue, please check whether your issue has already been report
 
 ## Submitting Changes
 
+Most pull requests should target the `develop` branch.
+
 ### Guidelines for Commit Messages
 
 #### Summary Line
