@@ -33,11 +33,7 @@ import Data.ByteString (ByteString)
 import Data.Functor.Sum
 import Data.Monoid ((<>))
 import Data.Text (Text)
-import GHCJS.DOM hiding (bracket, catch)
-import GHCJS.DOM.Document
-import GHCJS.DOM.Node
 import qualified GHCJS.DOM as DOM
-import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.History as DOM
 import qualified GHCJS.DOM.Window as DOM
 import Language.Javascript.JSaddle (JSM, jsNull)
