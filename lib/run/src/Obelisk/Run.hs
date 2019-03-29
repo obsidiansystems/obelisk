@@ -149,7 +149,7 @@ renderJsaddleFrontend :: Cookies -> (route -> Text) -> route -> Frontend route -
 renderJsaddleFrontend cookies urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
       jsaddlePreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "/jsaddle/jsaddle.js") blank
-  in renderFrontendHtml cookies urlEnc r (_frontend_head f >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
+  in renderFrontendHtml cookies urlEnc r f jsaddlePreload jsaddleScript
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
