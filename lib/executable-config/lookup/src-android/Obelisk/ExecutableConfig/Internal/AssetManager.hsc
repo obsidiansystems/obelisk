@@ -17,13 +17,21 @@ newtype AAssetManager = AAssetManager { unAAssetManager :: Ptr AAssetManager }
 
 newtype AAsset = AAsset { unAAsset :: Ptr AAsset }
 
+newtype AAssetDir = AAssetDir { unAAssetDir :: Ptr AAssetDir }
+
 foreign import ccall "ExecutableConfig_getAssets" getAssets :: IO JObject
 
 foreign import ccall "ExecutableConfig_aassetManagerFromJava" assetManagerFromJava :: JObject -> IO AAssetManager
 
 foreign import ccall "ExecutableConfig_freeAssetManager" freeAssetManager :: JObject -> IO ()
 
+foreign import ccall "AAssetDir_getNextFileName" assetDir_getNextFileName :: AAssetDir -> IO (Ptr CChar)
+
+foreign import ccall "AAssetDir_close" assetDir_close :: AAssetDir -> IO ()
+
 foreign import ccall "AAssetManager_open" assetManager_open :: AAssetManager -> CString -> CInt -> IO AAsset
+
+foreign import ccall "AAssetManager_openDir" assetManager_openDir :: AAssetManager -> CString -> IO AAssetDir
 
 foreign import ccall "AAsset_getBuffer" asset_getBuffer :: AAsset -> IO (Ptr CChar)
 
