@@ -4,11 +4,13 @@ import Control.Exception
 import Control.Monad
 import Control.Monad.Trans.Maybe
 import Data.ByteString as BS
+import Data.List (sortOn)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as T
 import Language.Javascript.JSaddle.WKWebView
+import System.Directory
 import System.FilePath.Posix ((</>))
 import System.IO.Error
 

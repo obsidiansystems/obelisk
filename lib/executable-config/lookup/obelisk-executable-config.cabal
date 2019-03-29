@@ -5,9 +5,11 @@ build-type: Simple
 
 library
   exposed-modules: Obelisk.ExecutableConfig
+  exposed-modules: Obelisk.ExecutableConfig.Internal
   if os(ios)
     hs-source-dirs: src-ios
     build-depends: jsaddle-wkwebview
+    build-depends: directory
   else
     if os(linux-android)
       hs-source-dirs: src-android
@@ -21,6 +23,7 @@ library
         build-depends: ghcjs-dom
       else
         hs-source-dirs: src
+        build-depends: directory
 
   build-depends:
     base, 

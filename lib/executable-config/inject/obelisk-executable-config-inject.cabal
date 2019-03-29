@@ -9,8 +9,8 @@ library
   build-depends:
     base,
     bytestring,
-    directory,
     filepath,
+    obelisk-executable-config,
     reflex-dom-core,
     text
 

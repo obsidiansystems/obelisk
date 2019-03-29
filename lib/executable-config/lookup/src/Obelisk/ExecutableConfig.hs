@@ -1,11 +1,14 @@
 module Obelisk.ExecutableConfig (get) where
 
 import Control.Exception
+import Data.List (sortOn)
 import Data.Text (Text)
 import Data.Text as T
 import Data.Text.IO as T
+import System.Directory
 import System.FilePath.Posix ((</>))
 import System.IO.Error
+
 
 get :: Text -> IO (Maybe Text)
 get path = do

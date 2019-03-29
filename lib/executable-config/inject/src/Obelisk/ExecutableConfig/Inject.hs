@@ -8,9 +8,8 @@ import Data.ByteString (ByteString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import Obelisk.ExecutableConfig.Internal (getFrontendConfigs)
 import Reflex.Dom.Core hiding (value)
-import System.Directory
-import System.FilePath ((</>))
 
 -- | Produces a @<script>@ tag containing the contents of the config item,
 -- rendered as a 'ByteString'.
@@ -31,21 +30,5 @@ injectPure key value =
 -- values.
 injectExecutableConfigs :: (MonadIO m, DomBuilder t m) => m ()
 injectExecutableConfigs = do
-  cfgC <- getConfigs "config/common"
-  cfgF <- getConfigs "config/frontend"
-  mapM_ (uncurry injectPure) (cfgC <> cfgF)
-
-getConfigs :: MonadIO m => FilePath -> m [(Text, Text)]
-getConfigs fp = liftIO $ do
-  dir <- doesDirectoryExist fp
-  if dir
-    then do
-      ps <- listDirectory fp
-      fmap concat $ mapM (\p -> getConfigs $ fp </> p) ps
-    else do
-      file <- doesFileExist fp
-      if file
-        then do
-          f <- T.readFile fp
-          return [(T.pack fp, f)]
-        else return []
+  cfg <- liftIO getFrontendConfigs
+  mapM_ (uncurry injectPure) cfg
