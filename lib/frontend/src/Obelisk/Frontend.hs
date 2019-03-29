@@ -27,15 +27,26 @@ import Control.Monad.IO.Class
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
+import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.ByteString (ByteString)
+import Data.Foldable (for_)
 import Data.Functor.Sum
+import qualified Data.Map as Map
+import Data.Maybe (catMaybes, isJust)
 import Data.Monoid ((<>))
 import Data.Text (Text)
+import GHCJS.DOM (currentDocument)
+import GHCJS.DOM.Document (getHead)
+import GHCJS.DOM.Element (getAttribute, getElementsByTagName)
+import GHCJS.DOM.HTMLCollection (item, getLength)
+import GHCJS.DOM.Node (removeChild_)
 import Language.Javascript.JSaddle (JSM)
+import Obelisk.Frontend.Config
 import Obelisk.Frontend.Cookie
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
+import Obelisk.ExecutableConfig (getFrontendConfigs)
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Web.Cookie
 
@@ -60,6 +71,7 @@ type ObeliskWidget js t route m =
   , Prerender js t m
   , PrebuildAgnostic t route m
   , PrebuildAgnostic t route (Client m)
+  , HasConfigs m
   , HasCookies m
   -- TODO Remove these. Probably requires a new class to allow executable-configs to work without being inside a `prerender`
   , MonadIO m
@@ -77,6 +89,23 @@ data Frontend route = Frontend
   , _frontend_body :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
   }
 
+baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
+baseTag = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+
+removeHTMLConfigs :: JSM ()
+removeHTMLConfigs = void $ runMaybeT $ do
+  doc <- MaybeT currentDocument
+  hd <- MaybeT $ getHead doc
+  es <- collToList =<< getElementsByTagName hd ("script" :: Text)
+  for_ es $ \e -> do
+    isConfig <- (isJust :: Maybe Text -> Bool) <$> getAttribute e ("data-executable-config-inject" :: Text)
+    when isConfig $ removeChild_ hd e
+  where
+    collToList es = do
+      len <- getLength es
+      lst <- traverse (item es) $ take (fromIntegral len) $ [0..] -- fun with unsigned types ...
+      pure $ catMaybes lst
+
 runFrontend
   :: forall backendRoute route
   .  Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
@@ -87,14 +116,18 @@ runFrontend validFullEncoder frontend = do
       errorLeft = \case
         Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
         Right x -> Identity x
+  configs <- liftIO $ Map.fromList <$> getFrontendConfigs
+  removeHTMLConfigs
   runHydrationWidgetWithHeadAndBody (pure ()) $ \appendHead appendBody -> do
     rec switchover <- runRouteViewT ve switchover $ do
           (switchover'', fire) <- newTriggerEvent
-          mapRoutedT (mapSetRouteT (mapRouteToUrlT appendHead)) $ do
+          mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
+            -- The order here is important - baseTag has to be before headWidget!
+            baseTag
             _frontend_head frontend
-          mapRoutedT (mapSetRouteT (mapRouteToUrlT appendBody)) $ do
+          mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runConfigsT configs))) $ do
             _frontend_body frontend
-            switchover' <- lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
+            switchover' <- lift $ lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
             performEvent_ $ liftIO (fire ()) <$ switchover'
           pure switchover''
     pure ()
@@ -102,21 +135,26 @@ runFrontend validFullEncoder frontend = do
 renderFrontendHtml
   :: ( t ~ DomTimeline
      , MonadIO m
-     , widget ~ RoutedT t r (SetRouteT t r' (RouteToUrlT r' (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost))))))
+     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost)))))))
      )
   => Cookies
-  -> (r' -> Text)
+  -> (r -> Text)
   -> r
+  -> Frontend r
   -> widget ()
   -> widget ()
   -> m ByteString
-renderFrontendHtml cookies urlEnc route headWidget bodyWidget = do
+renderFrontendHtml cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
+  configs <- liftIO $ Map.fromList <$> getFrontendConfigs
+  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
       el "head" $ do
-        let baseTag = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
-        -- The order here is important - baseTag has to be before headWidget!
-        baseTag >> injectExecutableConfigs >> headWidget
-      el "body" bodyWidget
+        baseTag
+        injectExecutableConfigs
+        _frontend_head frontend
+        headExtra
+      el "body" $ do
+        _frontend_body frontend
+        bodyExtra
   return $ "<!DOCTYPE html>" <> html

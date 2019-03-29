@@ -193,9 +193,7 @@ renderGhcjsFrontend urlEnc route f = do
   let ghcjsPreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "ghcjs/all.js") blank
       ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
   cookies <- askCookies
-  renderFrontendHtml cookies urlEnc route
-    (_frontend_head f >> ghcjsPreload)
-    (_frontend_body f >> ghcjsScript)
+  renderFrontendHtml cookies urlEnc route f ghcjsPreload ghcjsScript
 
 instance HasCookies Snap where
   askCookies = map (\c -> (cookieName c, cookieValue c)) <$> getsRequest rqCookies
