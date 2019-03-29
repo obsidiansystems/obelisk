@@ -1,10 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns #-}
 -- | Functions for collecting up files to be processed by the asset pipeline
 module Obelisk.Asset.Gather
   ( gatherHashedPaths
   , toHashedPath
   ) where
 
+import Control.DeepSeq
 import Control.Monad (forM)
 import Data.Bits
 import qualified Data.ByteString.Lazy as LBS
@@ -33,7 +35,7 @@ gatherHashedPaths root = go ""
         let relativePath = subdir </> sub
         isFile <- doesFileExist $ root </> relativePath
         if isFile
-          then do hashedRelativePath <- toHashedPath root relativePath
+          then do !hashedRelativePath <- force <$> toHashedPath root relativePath
                   return $ Map.singleton relativePath hashedRelativePath
           else go relativePath
 
