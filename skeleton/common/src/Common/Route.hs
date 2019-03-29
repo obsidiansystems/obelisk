@@ -43,6 +43,9 @@ backendRouteEncoder = handleEncoder (const (InL BackendRoute_Missing :/ ())) $
     InR obeliskRoute -> obeliskRouteSegment obeliskRoute $ \case
       -- The encoder given to PathEnd determines how to parse query parameters,
       -- in this example, we have none, so we insist on it.
+      -- NOTE: On non-web platforms (Android and iOS), the initial route starts
+      -- at "/" since none is provided explicitly, so some route must encode to
+      -- "/" for the application to work on these platforms.
       FrontendRoute_Main -> PathEnd $ unitEncoder mempty
 
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -13,6 +14,7 @@ module Obelisk.Frontend
   ( ObeliskWidget
   , Frontend (..)
   , runFrontend
+  , runFrontendWithCurrentRoute
   , renderFrontendHtml
   ) where
 
@@ -36,8 +38,11 @@ import Data.Text (Text)
 import GHCJS.DOM hiding (bracket, catch)
 import GHCJS.DOM.Document
 import GHCJS.DOM.Node
+import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
-import Language.Javascript.JSaddle (JSM)
+import qualified GHCJS.DOM.History as DOM
+import qualified GHCJS.DOM.Window as DOM
+import Language.Javascript.JSaddle (JSM, jsNull)
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
@@ -131,8 +136,18 @@ runWithHeadAndBody app = withJSContextSingletonMono $ \jsSing -> do
       _ -> return ()
     return postBuildTriggerRef
 
-runFrontend :: forall backendRoute route. Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> Frontend (R route) -> JSM ()
-runFrontend validFullEncoder frontend = do
+setInitialRoute :: JSM ()
+setInitialRoute = do
+  window <- DOM.currentWindowUnchecked
+  initialLocation <- DOM.getLocation window
+  initialUri <- getLocationUri initialLocation
+  history <- DOM.getHistory window
+  DOM.replaceState history jsNull ("" :: Text) $ Just $
+    show $ setAdaptedUriPath "/" initialUri
+
+-- | Run the frontend decoding the initial route from the browser's location URL.
+runFrontendWithCurrentRoute :: forall backendRoute route. Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> Frontend (R route) -> JSM ()
+runFrontendWithCurrentRoute validFullEncoder frontend = do
   let ve = validFullEncoder . hoistParse errorLeft (prismEncoder (rPrism $ _InR . _ObeliskRoute_App))
       errorLeft = \case
         Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
@@ -152,6 +167,15 @@ runFrontend validFullEncoder frontend = do
   runWithHeadAndBody $ \appendHead appendBody -> runMyRouteViewT $ do
     mapRoutedT (mapSetRouteT (mapRouteToUrlT appendHead)) $ _frontend_head frontend
     mapRoutedT (mapSetRouteT (mapRouteToUrlT appendBody)) $ _frontend_body frontend
+
+-- | Run the frontend, setting the initial route to "/" on platforms where no
+-- route exists ambiently in the context (e.g. anything but web).
+runFrontend :: forall backendRoute route. Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> Frontend (R route) -> JSM ()
+runFrontend validFullEncoder frontend = do
+#ifndef ghcjs_HOST_OS
+  setInitialRoute
+#endif
+  runFrontendWithCurrentRoute validFullEncoder frontend
 
 renderFrontendHtml
   :: (t ~ DomTimeline)

@@ -46,6 +46,8 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , adaptedUriPath
+  , setAdaptedUriPath
   ) where
 
 import Prelude hiding ((.), id)

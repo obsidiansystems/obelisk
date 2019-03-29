@@ -129,7 +129,7 @@ obeliskApp
   -> IO Application
 obeliskApp opts frontend validFullEncoder uri backend = do
   let entryPoint = do
-        runFrontend validFullEncoder frontend
+        runFrontendWithCurrentRoute validFullEncoder frontend
         syncPoint
   jsaddlePath <- URI.mkPathPiece "jsaddle"
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
