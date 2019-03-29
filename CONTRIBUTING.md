@@ -29,7 +29,7 @@ Before opening an issue, please check whether your issue has already been report
 
 ## Submitting Changes
 
-Most pull requests should target the `develop` branch.
+Most pull requests should target the `develop` branch. `master` is the release branch. `develop` is periodically merged into master after a period of testing.
 
 ### Guidelines for Commit Messages
 
