@@ -8,6 +8,7 @@ library
   build-depends: base,
                  bytestring,
                  categories,
+                 cookie,
                  data-default,
                  dependent-sum,
                  dependent-sum-template,

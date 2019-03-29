@@ -4,6 +4,8 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
+  - [Hoogle](#hoogle)
+  - [Adding Package Overrides](#adding-package-overrides)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
@@ -82,6 +84,36 @@ ob run
 Now go to http://localhost:8000 (or the port specified in `config/common/route`) to access your app.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
+
+### Hoogle
+
+To enter a nix-shell from which you can run the hoogle command-line client or a hoogle server for your project:
+
+`nix-shell -A shells.ghc --arg withHoogle true`
+
+### Adding package overrides
+
+To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package, your `default.nix` will look like:
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  overrides = self: super: let
+    aeson = pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "aeson-gadt-th";
+      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
+      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
+    };
+  in
+  {
+    aeson = self.callCabal2nix "aeson" aeson {};
+  };
+# ...
+```
+
+For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
 
 ## Deploying
 
@@ -236,6 +268,8 @@ It's also possible to inspect iOS WkWebView apps once they are installed in the 
 1. In the desktop's Safari Develop menu, you should see your iPhone. Select the screen under the name of the app.
 
 ### Android
+
+NOTE: Currently Android builds are only supported on Linux.
 
 1. In your project's `default.nix` set a suitable value for `android.applicationId` and `android.displayName`.
 1. Run `nix-build -A android.frontend -o result-android` to build the Android app.
