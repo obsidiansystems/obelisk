@@ -16,6 +16,7 @@ let injectConfig = config: assets: nixpkgs.runCommand "inject-config" {} (''
         exit 1
       fi
       cp -a "${config}"/* "$out/config"
+      (cd $out && find config -type f -print0 >config.files)
     '');
 in with nixpkgs.haskell.lib; {
   haskellPackage = self: self.callPackage (filterGitSource ./lookup) {};
