@@ -304,16 +304,18 @@ in rec {
                     ${if android == null then null else frontendName} = {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "assets" else null} =
-                        (if configPath == null then lib.id else  nixpkgs.obeliskExecutableConfig.platforms.android.inject (injectableConfig configPath))
-                         processedStatic.symlinked;
+                        nixpkgs.obeliskExecutableConfig.platforms.android.inject
+                          (if configPath == null then null else injectableConfig configPath)
+                          processedStatic.symlinked;
                     } // android;
                   };
                   __ios = configPath: {
                     ${if ios == null then null else frontendName} = {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "staticSrc" else null} =
-                         (if configPath == null then lib.id else nixpkgs.obeliskExecutableConfig.platforms.ios.inject (injectableConfig configPath))
-                         processedStatic.symlinked;
+                        nixpkgs.obeliskExecutableConfig.platforms.ios.inject
+                          (if configPath == null then null else injectableConfig configPath)
+                          processedStatic.symlinked;
                     } // ios;
                   };
               in {
