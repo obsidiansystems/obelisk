@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "develop",
-  "rev": "f86e8363ab1a5068b8419a61856e1aefea952bb0",
-  "sha256": "1f5qhrkj9h07j5xzw8s10x0r7b19vbh8j9z9lbzy23yxwmj78y7f"
+  "branch": "km-fix-androidndk-cc-wrapper-flags",
+  "rev": "7cd70c28310a3ced1c5a8729222e896f36e48abb",
+  "sha256": "1958kqb12ygsfqbhr19h6z40nd9skgcqpbm448g1k43569lnbnny"
 }
