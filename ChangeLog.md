@@ -4,7 +4,8 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
-* Fixed crashes of Android apps on 32-bit ARM devices.
+* Fix crashes of Android apps on 32-bit ARM devices.
+* Provide a way to indicate acceptance of the Android SDK license by passing `config.android_sdk.accept_license = true;` in the arguments to the import of `.obelisk/impl` in the project's `default.nix`.
 
 ## v0.1.0.0 - 2019-03-29
 

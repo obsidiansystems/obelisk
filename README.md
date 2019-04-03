@@ -272,6 +272,7 @@ It's also possible to inspect iOS WkWebView apps once they are installed in the 
 NOTE: Currently Android builds are only supported on Linux.
 
 1. In your project's `default.nix` set a suitable value for `android.applicationId` and `android.displayName`.
+1. In your project's `default.nix` pass `config.android_sdk.accept_license = true;` in the arguments to the import of of `.obelisk/impl` to indicate your acceptance of the [Android Software Development Kit License Agreement](https://developer.android.com/studio/terms), which is required to build Android apps.
 1. Run `nix-build -A android.frontend -o result-android` to build the Android app.
 1. A debug version of the app should be generated at `result-android/android-app-debug.apk`
 

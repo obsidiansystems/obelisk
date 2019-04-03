@@ -1,6 +1,7 @@
 { system ? builtins.currentSystem
 , profiling ? false
 , iosSdkVersion ? "10.2"
+, config ? {}
 }:
 let
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -16,7 +17,7 @@ let
   ];
 
   getReflexPlatform = sys: import ./dep/reflex-platform {
-    inherit iosSdkVersion;
+    inherit iosSdkVersion config;
     system = sys;
     enableLibraryProfiling = profiling;
 
