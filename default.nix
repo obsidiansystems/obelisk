@@ -299,7 +299,7 @@ in rec {
                   injectableConfig = builtins.filterSource (path: _:
                     !(lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path)) privateConfigDirs)
                   );
-                  __android = configPath: {
+                  __androidWithConfig = configPath: {
                     ${if android == null then null else frontendName} = {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "assets" else null} =
@@ -308,7 +308,7 @@ in rec {
                           processedStatic.symlinked;
                     } // android;
                   };
-                  __ios = configPath: {
+                  __iosWithConfig = configPath: {
                     ${if ios == null then null else frontendName} = {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "staticSrc" else null} =
@@ -336,9 +336,9 @@ in rec {
                     commonName
                   ];
                 };
-                android = __android (base + "/config");
-                ios = __ios (base + "/config");
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __ios __android; };
+                android = __androidWithConfig (base + "/config");
+                ios = __iosWithConfig (base + "/config");
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __iosWithConfig __androidWithConfig; };
               };
           in mkProject (projectDefinition args));
       serverOn = sys: version: serverExe
