@@ -336,8 +336,8 @@ in rec {
                     commonName
                   ];
                 };
-                android = __android null;
-                ios = __ios null;
+                android = __android (base + "/config");
+                ios = __ios (base + "/config");
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __ios __android; };
               };
           in mkProject (projectDefinition args));
