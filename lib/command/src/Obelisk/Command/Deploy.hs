@@ -30,7 +30,7 @@ import System.Environment (getEnvironment)
 import System.FilePath
 import System.IO
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc, cwd)
+import System.Process (delegate_ctlc, env, proc, cwd, shell)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
@@ -131,6 +131,7 @@ deployPush deployPath getNixBuilders = do
         ]
       & nixCmdConfig_builders .~ builders
     pure result
+  checkConfig builders srcPath
   let knownHostsPath = deployPath </> "backend_known_hosts"
       sshOpts = sshArgs knownHostsPath (deployPath </> "ssh_key") False
   withSpinner "Uploading closures" $ ifor_ buildOutputByHost $ \host outputPath -> do
@@ -169,6 +170,20 @@ deployPush deployPath getNixBuilders = do
       processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
       let p = (proc cmd args) { delegate_ctlc = True, env = Just processEnv }
       callProcessAndLogOutput (Notice, Notice) p
+
+    checkConfig builders srcPath = do
+      --TODO: What does it mean if this returns more or less than 1 line of output?
+      [result] <- fmap lines $ nixCmd $ NixCmd_Build $ def
+        & nixCmdConfig_target .~ Target
+          { _target_path = Just srcPath
+          , _target_attr = Just "ghc.backend"
+          , _target_expr = Nothing
+          }
+        & nixBuildConfig_outLink .~ OutLink_None
+        & nixCmdConfig_builders .~ builders
+
+      callProcessAndLogOutput (Debug, Error) $
+        shell $ "cd " <> deployPath <> " && " <> result <> "/bin/backend check-deployment"
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest (deployPath </> "src") Nothing
