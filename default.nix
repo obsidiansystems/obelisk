@@ -304,7 +304,7 @@ in rec {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "assets" else null} =
                         nixpkgs.obeliskExecutableConfig.platforms.android.inject
-                          (if configPath == null then null else injectableConfig configPath)
+                          (injectableConfig configPath)
                           processedStatic.symlinked;
                     } // android;
                   };
@@ -313,7 +313,7 @@ in rec {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "staticSrc" else null} =
                         nixpkgs.obeliskExecutableConfig.platforms.ios.inject
-                          (if configPath == null then null else injectableConfig configPath)
+                          (injectableConfig configPath)
                           processedStatic.symlinked;
                     } // ios;
                   };
