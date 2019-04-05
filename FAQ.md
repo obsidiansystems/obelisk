@@ -2,6 +2,8 @@
 
 1. [How do I fix invalid entitlements?  ](#how-do-i-fix-invalid-entitlements)
 1. [`ob thunk update` or `ob deploy update` fails](#ob-thunk-update-or-ob-deploy-update-fails)
+1. [How do I fix `Ambiguous module name` errors?](#how-do-i-fix-ambiguous-module-name-errors)
+
 
 ### How do I fix invalid entitlements?
 
@@ -44,3 +46,16 @@ ob thunk pack $SOME_THUNK
 Substitute the directory of your thunk for `$SOME_THUNK`.  In the case of `ob deploy update`, `$SOME_THUNK` will be `src` in the deployment directory.
 
 (Based on issue #351).
+
+### How do I fix `Ambiguous module name` errors?
+Since obelisk places the common/backend/frontend modules packages into the same ghci, and ghci doesn't "sandbox" them, it is possible to have conflicting module errors inside `ob repl/watch/run` that do not appear when doing a cabal build.
+
+You can disambiguate this via [PackageImports](https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/glasgow_exts.html#package-qualified-imports). For instance, if you see
+```
+error:
+    Ambiguous module name ‘Crypto.Hash’:
+      it was found in multiple packages:
+      cryptohash-0.11.9 cryptonite-0.25
+```
+then specify the package you want in the import, e.g:
+`import "cryptonite" Crypto.Hash`
