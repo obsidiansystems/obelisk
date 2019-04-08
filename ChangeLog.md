@@ -6,6 +6,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 * Fix crashes of Android apps on 32-bit ARM devices.
 * Provide a way to indicate acceptance of the Android SDK license by passing `config.android_sdk.accept_license = true;` in the arguments to the import of `.obelisk/impl` in the project's `default.nix`.
+* Add `COMPLETE` pragma to `(:/)`. Using this pattern synonym should no longer generate spurious warnings about non-exhaustive pattern matching.
 
 ## v0.1.0.0 - 2019-03-29
 
