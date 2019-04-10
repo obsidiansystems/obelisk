@@ -30,3 +30,5 @@ executable frontend
   ghc-options: -threaded
   if os(darwin)
      ghc-options: -dynamic
+  if impl(ghjcs)
+     ghcjs-options: -dedupe
