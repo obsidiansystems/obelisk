@@ -7,11 +7,13 @@ library
   hs-source-dirs: src
   build-depends: base
                , common
+               , obelisk-executable-config
                , obelisk-frontend
                , obelisk-route
                , reflex-dom
                , obelisk-generated-static
                , text
+               , transformers
   exposed-modules:
     Frontend
   ghc-options: -Wall
