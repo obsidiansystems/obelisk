@@ -56,7 +56,8 @@ getConfigs p = bracket getAssets freeAssetManager $ \mgrObj -> do
       l <- asset_getLength asset
       lines0 <$> BS.packCStringLen (b, fromIntegral l)
     Nothing -> error "could not open configuration manifest 'config.files'"
-  fmap catMaybes $ forM (filter p configPaths) $ \fp ->
+  fmap catMaybes $ forM (filter p configPaths) $ \fp -> do
+    withCString "obelisk.getConfigs" $ \t -> BS.useAsCString fp $ \next -> log_write androidLogInfo t next
     fmap (\v -> (T.decodeUtf8 fp,v)) <$> getFromMgr mgr BS.useAsCString fp
 
 lines0 :: BS.ByteString -> [BS.ByteString]

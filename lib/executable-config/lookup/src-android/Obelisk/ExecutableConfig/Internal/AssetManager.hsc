@@ -5,6 +5,7 @@ module Obelisk.ExecutableConfig.Internal.AssetManager where
 #include <jni.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
+#include <android/log.h>
 
 import Data.Int
 import Foreign.C.String
@@ -30,3 +31,8 @@ foreign import ccall "AAsset_getBuffer" asset_getBuffer :: AAsset -> IO (Ptr CCh
 foreign import ccall "AAsset_getLength" asset_getLength :: AAsset -> IO #{type off_t}
 
 foreign import ccall "AAsset_close" asset_close :: AAsset -> IO ()
+
+newtype AndroidLogPriority = AndroidLogPriority #{type int}
+#enum AndroidLogPriority, AndroidLogPriority, ANDROID_LOG_UNKNOWN, ANDROID_LOG_DEFAULT, ANDROID_LOG_VERBOSE, ANDROID_LOG_DEBUG, ANDROID_LOG_INFO, ANDROID_LOG_WARN, ANDROID_LOG_ERROR, ANDROID_LOG_FATAL, ANDROID_LOG_SILENT
+
+foreign import ccall "__android_log_write" log_write :: AndroidLogPriority -> CString -> CString -> IO CInt
