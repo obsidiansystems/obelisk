@@ -136,7 +136,7 @@ deployPush deployPath getNixBuilders = do
   withSpinner "Uploading closures" $ ifor_ buildOutputByHost $ \host outputPath -> do
     callProcess'
       (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
-      "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+      "nix-copy-closure" ["-v", "--to", "--use-substitutes", "root@" <> host, "--gzip", outputPath]
   withSpinner "Uploading config" $ ifor_ buildOutputByHost $ \host _ -> do
     callProcessAndLogOutput (Notice, Warning) $
       proc "rsync"
@@ -234,7 +234,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
             [ "with (import ", srcDir, " {});"
             , "android.frontend.override (drv: { "
             , "releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; "
-            , "staticSrc = (passthru.__android ", configDir, ").frontend.staticSrc;"
+            , "staticSrc = (passthru.__androidWithConfig ", configDir, ").frontend.staticSrc;"
             , "})"
             ]
       return $ Target
@@ -245,7 +245,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     IOS -> do
       let expr = mconcat
             [ "with (import ", srcDir, " {});"
-            , "ios.frontend.override (_: { staticSrc = (passthru.__ios ", configDir, ").frontend.staticSrc; })"
+            , "ios.frontend.override (_: { staticSrc = (passthru.__iosWithConfig ", configDir, ").frontend.staticSrc; })"
             ]
       return $ Target
         { _target_path = Nothing

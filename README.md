@@ -4,6 +4,8 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
+  - [Hoogle](#hoogle)
+  - [Adding Package Overrides](#adding-package-overrides)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
@@ -83,6 +85,36 @@ Now go to http://localhost:8000 (or the port specified in `config/common/route`)
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
 
+### Hoogle
+
+To enter a nix-shell from which you can run the hoogle command-line client or a hoogle server for your project:
+
+`nix-shell -A shells.ghc --arg withHoogle true`
+
+### Adding package overrides
+
+To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package, your `default.nix` will look like:
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  overrides = self: super: let
+    aeson = pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "aeson-gadt-th";
+      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
+      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
+    };
+  in
+  {
+    aeson = self.callCabal2nix "aeson" aeson {};
+  };
+# ...
+```
+
+For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
+
 ## Deploying
 
 ### Locally
@@ -106,7 +138,7 @@ In this section we will demonstrate how to deploy your Obelisk app to an Amazon 
 
 First create a new EC2 instance:
 
-1. Launch a NixOS 17.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-40bee63a))
+1. Launch a NixOS 18.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-009c9c3f1af480ff3))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
 1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and 443.
@@ -237,7 +269,10 @@ It's also possible to inspect iOS WkWebView apps once they are installed in the 
 
 ### Android
 
+NOTE: Currently Android builds are only supported on Linux.
+
 1. In your project's `default.nix` set a suitable value for `android.applicationId` and `android.displayName`.
+1. In your project's `default.nix` pass `config.android_sdk.accept_license = true;` in the arguments to the import of of `.obelisk/impl` to indicate your acceptance of the [Android Software Development Kit License Agreement](https://developer.android.com/studio/terms), which is required to build Android apps.
 1. Run `nix-build -A android.frontend -o result-android` to build the Android app.
 1. A debug version of the app should be generated at `result-android/android-app-debug.apk`
 
