@@ -3,7 +3,7 @@
 1. [How do I fix invalid entitlements?  ](#how-do-i-fix-invalid-entitlements)
 1. [`ob thunk update` or `ob deploy update` fails](#ob-thunk-update-or-ob-deploy-update-fails)
 1. [How do I fix `Ambiguous module name` errors?](#how-do-i-fix-ambiguous-module-name-errors)
-
+1. [What does `ob run` actually do?](#what-does-ob-run-actually-do)
 
 ### How do I fix invalid entitlements?
 
@@ -59,3 +59,62 @@ error:
 ```
 then specify the package you want in the import, e.g:
 `import "cryptonite" Crypto.Hash`
+
+
+### What does `ob run` actually do?
+
+
+#### Short version:
+
+`ob run` starts a [`ndmitchell/ghcid`](https://github.com/ndmitchell/ghcid)
+process, within a carefully crafted `nix-shell`, which tries to build your
+project and,
+
+* either displays compilation errors,
+* or starts the Obelisk server, which serves:
+     * your backend's route handlers,
+     * the static assets,
+     * the result of compiling & linking your frontend with GHCJS.
+
+#### Longer version:
+
+Assuming we are in a project created with `ob init`, `ob run` calls (see
+`./lib/command/src/Obelisk/Command.hs`):
+
+    nix-shell -A shells.ghc --run 'ob --no-handoff internal run-static-io <real-run-function>'
+
+where
+
+* `shells.ghc` is defined in `./default.nix` by importing `./.obelisk/impl/default.nix` which
+   is `./default.nix` in the present (Obelisk) repository,
+* `run-static-io` is a logging-enabled command wrapper
+   (cf. `runObelisk` in `./lib/command/src/Obelisk/App.hs`).
+
+In this case, it runs the function `Obelisk.Command.Command.run` (defined in
+`./lib/command/src/Obelisk/Command/Run.hs`).
+
+* It creates a GHCid config from a Nix expression:
+    * which loads 3 packages: "backend", "common", "frontend", and
+    * obtains a free port number.
+* Then runs `ghcid`
+    * with a `--test` command that reruns `Obelisk.Run.run` at each restart.
+
+It is defined in `./obelisk/lib/run/src/Obelisk/Run.hs`:
+
+* It creates a thread (`forkIO`) which starts the main backend.
+  This runs `runSnapWithCommandLineArgs` and
+    * passes routes to the backend
+      (result of the `_backend_run` field of the `Backend x y` “user” record)
+    * or to `serveDefaultObeliskApp` (`./lib/backend/src/Obelisk/Backend.hs`) to serve
+      static assets (incl. the GHCJS output of the frontend).
+* Starts `runWidget`
+  which itself runs 
+  [runSettingsSocket](https://hoogle.haskell.org/?hoogle=runSettingsSocket)
+  (the *“TCP listen loop”*):
+    * it binds to TCP socket, and
+    * creates the HTTP connection manager
+      ( [`newManager`](https://hackage.haskell.org/package/http-client-0.6.3/docs/Network-HTTP-Client.html#v:newManager))
+    * calls `obeliskApp` which
+        * has a route to serve [`ghcjs/jsaddle`](https://github.com/ghcjs/jsaddle) (GHCJS bindings to JS/Dom),
+        * runs the frontend (*on* the server), to produce pre-rendered pages,
+        * falls back to proxying the backend (`fallbackProxy`)
