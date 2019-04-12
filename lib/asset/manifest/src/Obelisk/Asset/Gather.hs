@@ -35,7 +35,7 @@ gatherHashedPaths root = go ""
         let relativePath = subdir </> sub
         isFile <- doesFileExist $ root </> relativePath
         if isFile
-          then do !hashedRelativePath <- force <$> toHashedPath root relativePath
+          then do hashedRelativePath <- toHashedPath root relativePath
                   return $ Map.singleton relativePath hashedRelativePath
           else go relativePath
 
@@ -49,7 +49,8 @@ toHashedPath root relativePath = do
   contents <- LBS.readFile path
   let hashPrefix = T.unpack $ decodeUtf8 $ LBS.toStrict $ toNixBase32 $ bytestringDigest $ sha256 contents
       (dir, filename) = splitFileName relativePath
-  return $ normalise $ dir </> (hashPrefix <> "-" <> filename)
+      !hashedRelativePath = force $ normalise $ dir </> (hashPrefix <> "-" <> filename)
+  return hashedRelativePath
 
 -- | Convert a ByteString to base 32 in the way that Nix does
 toNixBase32 :: LBS.ByteString -> LBS.ByteString
