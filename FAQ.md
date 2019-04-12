@@ -74,7 +74,7 @@ project and,
 * or starts the Obelisk server, which serves:
      * your backend's route handlers,
      * the static assets,
-     * the result of compiling & linking your frontend with GHCJS.
+     * the [JSaddle](https://github.com/ghcjs/jsaddle) frontend code (while opening its websocket).
 
 #### Longer version:
 
@@ -105,8 +105,8 @@ It is defined in `./obelisk/lib/run/src/Obelisk/Run.hs`:
   This runs `runSnapWithCommandLineArgs` and
     * passes routes to the backend
       (result of the `_backend_run` field of the `Backend x y` “user” record)
-    * or to `serveDefaultObeliskApp` (`./lib/backend/src/Obelisk/Backend.hs`) to serve
-      static assets (incl. the GHCJS output of the frontend).
+    * or to `serveDefaultObeliskApp` (`./lib/backend/src/Obelisk/Backend.hs`) to
+      serve static assets.
 * Starts `runWidget`
   which itself runs 
   [runSettingsSocket](https://hoogle.haskell.org/?hoogle=runSettingsSocket)
@@ -115,6 +115,7 @@ It is defined in `./obelisk/lib/run/src/Obelisk/Run.hs`:
     * creates the HTTP connection manager
       ( [`newManager`](https://hackage.haskell.org/package/http-client-0.6.3/docs/Network-HTTP-Client.html#v:newManager))
     * calls `obeliskApp` which
-        * has a route to serve [`ghcjs/jsaddle`](https://github.com/ghcjs/jsaddle) (GHCJS bindings to JS/Dom),
+        * has a route to serve the [JSaddle](https://github.com/ghcjs/jsaddle) frontend,
         * runs the frontend (*on* the server), to produce pre-rendered pages,
-        * falls back to proxying the backend (`fallbackProxy`)
+        * starts the JSaddle web-socket,
+        * “falls back” to proxying the backend (`fallbackProxy`).
