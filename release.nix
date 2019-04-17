@@ -60,16 +60,19 @@ let
     ];
     command = local-self.command;
     serverExeSkeleton = (import ./skeleton {}).exe;
-    builtSkeleton = (import ./skeleton {}).all;
+    builtSkeletons = let skeleton = import ./skeleton { inherit system; }; in {
+      android = if skeleton.reflex.androidSupport then skeleton.android else {};
+      ios = if skeleton.reflex.iosSupport then skeleton.ios else {};
+    } // lib.mapAttrs (compiler: pkgList: lib.genAttrs pkgList (pkg: skeleton.${compiler}.${pkg})) { ghc = ["common" "frontend" "backend"]; ghcjs = ["common" "frontend"]; };
   in {
     inherit
       command
       ghc ghcjs
-      serverExeSkeleton builtSkeleton;
+      serverExeSkeleton builtSkeletons;
     cache = reflex-platform.pinBuildInputs
       "obelisk-${system}"
       cachePackages
-      [command serverExeSkeleton builtSkeleton];
+      ([command serverExeSkeleton] ++ lib.concatMap builtins.attrValues (builtins.attrValues builtSkeletons));
   });
 
   metaCache = local-self.pinBuildInputs
