@@ -66,11 +66,11 @@ then specify the package you want in the import, e.g:
 
 #### Short version:
 
-`ob run` starts a [`ndmitchell/ghcid`](https://github.com/ndmitchell/ghcid)
-process, within a carefully crafted `nix-shell`, which tries to build your
-project and,
+`ob run` starts a [`ghcid`](https://github.com/ndmitchell/ghcid) process which
+tries to build your project within a carefully crafted `nix-shell` with all the
+project's dependencies and,
 
-* either displays compilation errors,
+* either displays compilation errors/warnings,
 * or starts the Obelisk server, which serves:
      * your backend's route handlers,
      * the static assets,
@@ -79,37 +79,38 @@ project and,
 #### Longer version:
 
 Assuming we are in a project created with `ob init`, `ob run` calls (see
-`./lib/command/src/Obelisk/Command.hs`):
+`lib/command/src/Obelisk/Command.hs`):
 
     nix-shell -A shells.ghc --run 'ob --no-handoff internal run-static-io <real-run-function>'
 
 where
 
 * `shells.ghc` is defined in `./default.nix` by importing `./.obelisk/impl/default.nix` which
-   is `./default.nix` in the present (Obelisk) repository,
+   is `default.nix` in the present (Obelisk) repository,
 * `run-static-io` is a logging-enabled command wrapper
-   (cf. `runObelisk` in `./lib/command/src/Obelisk/App.hs`).
+   (cf. `runObelisk` in `lib/command/src/Obelisk/App.hs`).
 
 In this case, it runs the function `Obelisk.Command.Command.run` (defined in
-`./lib/command/src/Obelisk/Command/Run.hs`).
+`lib/command/src/Obelisk/Command/Run.hs`).
 
-* It creates a GHCid config from a Nix expression:
-    * which loads 3 packages: "backend", "common", "frontend", and
+* It creates a GHCi config from a Nix expression which:
+    * loads three packages: `backend`, `common`, `frontend`,
     * obtains a free port number.
 * Then runs `ghcid`
-    * with a `--test` command that reruns `Obelisk.Run.run` at each restart.
+    * with a command that reruns `Obelisk.Run.run` at each restart (option
+      `--test`).
 
-It is defined in `./obelisk/lib/run/src/Obelisk/Run.hs`:
+It is defined in `lib/run/src/Obelisk/Run.hs`:
 
-* It creates a thread (`forkIO`) which starts the main backend.
-  This runs `runSnapWithCommandLineArgs` and
-    * passes routes to the backend
-      (result of the `_backend_run` field of the `Backend x y` “user” record)
-    * or to `serveDefaultObeliskApp` (`./lib/backend/src/Obelisk/Backend.hs`) to
+* It creates a thread which starts the main backend.
+  This runs `runSnapWithCommandLineArgs` and passes routes:
+    * to the backend (result of the `_backend_run` field of your
+      implementation of the `Backend fullRoute frontendRoute` record),
+    * or to `serveDefaultObeliskApp` (`lib/backend/src/Obelisk/Backend.hs`) to
       serve static assets.
 * Starts `runWidget`
   which itself runs 
-  [runSettingsSocket](https://hoogle.haskell.org/?hoogle=runSettingsSocket)
+  [runSettingsSocket](https://hackage.haskell.org/package/warp-3.2.26/docs/Network-Wai-Handler-Warp.html#v:runSettingsSocket)
   (the *“TCP listen loop”*):
     * it binds to TCP socket, and
     * creates the HTTP connection manager
