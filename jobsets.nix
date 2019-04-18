@@ -28,6 +28,11 @@ let
         value = "https://github.com/NixOS/nixpkgs-channels nixos-unstable";
         emailresponsible = false;
       };
+      self-args = {
+        type = "nix";
+        value = "{ config.android_sdk.accept_license = true; }";
+        emailresponsible = false;
+      };
     };
   };
   branchJobset = branch: defaults {

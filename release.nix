@@ -1,4 +1,5 @@
-{ local-self ? import ./. {}
+{ self-args ? {}
+, local-self ? import ./. self-args
 }:
 
 let
@@ -44,7 +45,7 @@ let
   in pkgAttrs: builtins.concatLists (map extractDeps (builtins.attrValues pkgAttrs));
 
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
-    obelisk = import ./. { inherit system; };
+    obelisk = import ./. (self-args // { inherit system; });
     reflex-platform = obelisk.reflex-platform;
     ghc = pnameToAttrs
       obelisk.haskellPackageSets.ghc
@@ -59,8 +60,8 @@ let
       (concatDepends ghcjs)
     ];
     command = local-self.command;
-    serverExeSkeleton = (import ./skeleton {}).exe;
-    builtSkeletons = let skeleton = import ./skeleton { inherit system; }; in {
+    serverExeSkeleton = (import ./skeleton (self-args // { inherit system; })).exe;
+    builtSkeletons = let skeleton = import ./skeleton (self-args // { inherit system; }); in {
       android = if skeleton.reflex.androidSupport then skeleton.android else {};
       ios = if skeleton.reflex.iosSupport then skeleton.ios else {};
     } // lib.mapAttrs (compiler: pkgList: lib.genAttrs pkgList (pkg: skeleton.${compiler}.${pkg})) { ghc = ["common" "frontend" "backend"]; ghcjs = ["common" "frontend"]; };
