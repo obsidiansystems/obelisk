@@ -50,7 +50,7 @@ import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 data Backend backendRoute frontendRoute m otherCfg = Backend
   { _backend_routeEncoder :: Encoder (Either Text) Identity (R (Sum backendRoute (ObeliskRoute frontendRoute))) PageName
   , _backend_routes :: R backendRoute -> m ()
-  , _backend_runner :: Config m otherCfg -> m () -> IO ()
+  , _backend_runner :: Config Snap otherCfg -> m () -> IO ()
   -- ^ Runner takes the Config and the Snap action for the obelisk portion of the app.
   -- TODO It might be nice to expose some mechanism that allows the user to define a
   -- route prefix for the obelisk routes, giving the user much more control over the
