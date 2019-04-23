@@ -63,7 +63,7 @@ import Web.Cookie
 run
   :: Int -- ^ Port to run the backend
   -> ([Text] -> Snap ()) -- ^ Static asset handler
-  -> Backend fullRoute frontendRoute Snap -- ^ Backend
+  -> Backend fullRoute frontendRoute Snap otherCfg -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
 run port serveStaticAsset backend frontend = do
@@ -75,7 +75,7 @@ run port serveStaticAsset backend frontend = do
     Right validFullEncoder -> do
       backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
         cfg <- obeliskSnapConfig
-        _backend_appRunner cfg (serveBackend backend frontend)
+        _backend_runner backend cfg (serveBackend backend frontend)
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf frontend validFullEncoder `finally` killThread backendTid
 

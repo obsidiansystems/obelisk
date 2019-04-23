@@ -13,5 +13,5 @@ backend :: Backend BackendRoute FrontendRoute
 backend = Backend
   { _backend_routeEncoder = backendRouteEncoder
   , _backend_routes = const $ return ()
-  , _backend_appRunner = httpServe
+  , _backend_runner = httpServe
   }
