@@ -7,9 +7,11 @@ module Backend where
 
 import Common.Route
 import Obelisk.Backend
+import Snap.Http.Server
 
 backend :: Backend BackendRoute FrontendRoute
 backend = Backend
   { _backend_routeEncoder = backendRouteEncoder
   , _backend_routes = const $ return ()
+  , _backend_appRunner = httpServe
   }

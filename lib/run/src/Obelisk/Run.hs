@@ -74,7 +74,8 @@ run port serveStaticAsset backend frontend = do
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
     Right validFullEncoder -> do
       backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
-        runSnapWithCommandLineArgs $ serveBackend backend frontend
+        cfg <- obeliskSnapConfig
+        _backend_appRunner cfg (serveBackend backend frontend)
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf frontend validFullEncoder `finally` killThread backendTid
 
