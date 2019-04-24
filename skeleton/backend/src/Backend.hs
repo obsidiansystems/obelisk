@@ -7,7 +7,7 @@ module Backend where
 
 import Common.Route
 import Obelisk.Backend
-import Snap.Http.Server
+import Snap
 
 backend :: Backend BackendRoute FrontendRoute Snap AppConfig
 backend = Backend
