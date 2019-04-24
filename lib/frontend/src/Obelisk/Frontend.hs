@@ -36,7 +36,7 @@ import Data.Text (Text)
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.History as DOM
 import qualified GHCJS.DOM.Window as DOM
-import Language.Javascript.JSaddle (JSM, jsNull)
+import Language.Javascript.JSaddle (JSM, jsNull, syncPoint)
 import Obelisk.Frontend.Cookie
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
@@ -101,8 +101,10 @@ setInitialRoute = do
   initialLocation <- DOM.getLocation window
   initialUri <- getLocationUri initialLocation
   history <- DOM.getHistory window
+  syncPoint
   DOM.replaceState history jsNull ("" :: Text) $ Just $
     show $ setAdaptedUriPath "/" initialUri
+  syncPoint
 
 -- | Run the frontend decoding the initial route from the browser's location URL.
 runFrontendWithCurrentRoute
