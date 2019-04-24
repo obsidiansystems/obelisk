@@ -32,7 +32,7 @@ data BackendRoute :: * -> * where
 
 data FrontendRoute :: * -> * where
   FrontendRoute_Main :: FrontendRoute ()
-  -- This type is used to define frontend routes, i.e. ones for which the backend will serve the frontend.
+  FrontendRoute_Foo :: FrontendRoute ()
 
 backendRouteEncoder
   :: Encoder (Either Text) Identity (R (Sum BackendRoute (ObeliskRoute FrontendRoute))) PageName
@@ -43,10 +43,8 @@ backendRouteEncoder = handleEncoder (const (InL BackendRoute_Missing :/ ())) $
     InR obeliskRoute -> obeliskRouteSegment obeliskRoute $ \case
       -- The encoder given to PathEnd determines how to parse query parameters,
       -- in this example, we have none, so we insist on it.
-      -- NOTE: On non-web platforms (Android and iOS), the initial route starts
-      -- at "/" since none is provided explicitly, so some route must encode to
-      -- "/" for the application to work on these platforms.
       FrontendRoute_Main -> PathEnd $ unitEncoder mempty
+      FrontendRoute_Foo -> PathSegment "foo" $ unitEncoder mempty
 
 
 concat <$> mapM deriveRouteComponent
