@@ -13,10 +13,12 @@ module Obelisk.Backend
   , Default (def)
   , getPageName
   , getRouteWith
-  , runSnapWithCommandLineArgs
+  , obeliskSnapConfig
   , serveDefaultObeliskApp
   , prettifyOutput
-  , runBackend
+  , serveBackend
+  , Obelisk
+  , snapletObelisk
   , staticRenderContentType
   , mkRouteToUrl
   ) where
@@ -41,15 +43,18 @@ import Obelisk.Frontend
 import Obelisk.Route
 import Obelisk.Snap.Extras (doNotCache, serveFileIfExistsAs)
 import Reflex.Dom
-import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, modifyResponse
-            , rqPathInfo, rqQueryString, setContentType, writeBS, writeText
-            , rqCookies, Cookie(..))
+import Snap
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
-data Backend backendRoute frontendRoute = Backend
+data Backend backendRoute frontendRoute m otherCfg = Backend
   { _backend_routeEncoder :: Encoder (Either Text) Identity (R (Sum backendRoute (ObeliskRoute frontendRoute))) PageName
-  , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
+  , _backend_routes :: R backendRoute -> m ()
+  , _backend_runner :: Config Snap otherCfg -> m () -> IO ()
+  -- ^ Runner takes the Config and the Snap action for the obelisk portion of the app.
+  -- TODO It might be nice to expose some mechanism that allows the user to define a
+  -- route prefix for the obelisk routes, giving the user much more control over the
+  -- route structure of their site.
   }
 
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
@@ -62,10 +67,8 @@ data GhcjsApp route = GhcjsApp
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
 serveDefaultObeliskApp
   :: (MonadSnap m, HasCookies m)
-  => (R appRoute
-  -> Text)
-  -> ([Text]
-  -> m ())
+  => (R appRoute -> Text)
+  -> ([Text] -> m ())
   -> Frontend (R appRoute)
   -> R (ObeliskRoute appRoute)
   -> m ()
@@ -94,16 +97,13 @@ defaultFrontendGhcjsAssets = StaticAssets
   , _staticAssets_unprocessed = "frontend.jsexe"
   }
 
-runSnapWithCommandLineArgs :: Snap () -> IO ()
-runSnapWithCommandLineArgs a = do
-  -- Get the web server configuration from the command line
+obeliskSnapConfig :: MonadSnap m => IO (Config m a)
+obeliskSnapConfig = do
   cmdLineConf <- commandLineConfig defaultConfig
-  let httpConf = cmdLineConf
-        { accessLog = Just $ ConfigIoLog BSC8.putStrLn
-        , errorLog = Just $ ConfigIoLog BSC8.putStrLn
-        }
-  -- Start the web server
-  httpServe httpConf a
+  return $ cmdLineConf
+    { accessLog = Just $ ConfigIoLog BSC8.putStrLn
+    , errorLog = Just $ ConfigIoLog BSC8.putStrLn
+    }
 
 getPageName :: (MonadSnap m) => m PageName
 getPageName = do
@@ -167,16 +167,34 @@ serveGhcjsApp urlEnc app = \case
     writeBS <=< renderGhcjsFrontend urlEnc (appRouteComponent :/ appRouteRest) $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
-runBackend :: Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
-runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+serveBackend
+  :: (MonadSnap m, HasCookies m)
+  => Backend fullRoute frontendRoute m otherCfg
+  -> Frontend (R frontendRoute)
+  -> m ()
+serveBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
-  Right validFullEncoder -> _backend_run backend $ \serveRoute -> do
-    runSnapWithCommandLineArgs $ do
-      getRouteWith validFullEncoder >>= \case
-        Identity r -> case r of
-          InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-          InR obeliskRoute :=> Identity a ->
-            serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) (serveStaticAssets defaultStaticAssets) frontend $ obeliskRoute :/ a
+  Right validFullEncoder ->
+    getRouteWith validFullEncoder >>= \case
+      Identity r -> case r of
+        InL backendRoute :=> Identity a ->
+          _backend_routes backend (backendRoute :/ a)
+        InR obeliskRoute :=> Identity a ->
+          serveDefaultObeliskApp
+            (mkRouteToUrl validFullEncoder) (serveStaticAssets defaultStaticAssets)
+            frontend (obeliskRoute :/ a)
+
+data Obelisk = Obelisk
+
+snapletObelisk
+  :: HasCookies (Handler b Obelisk)
+  => Backend fullRoute frontendRoute (Handler b Obelisk) otherCfg
+  -> Frontend (R frontendRoute)
+  -> SnapletInit b Obelisk
+snapletObelisk backend frontend = makeSnaplet "obelisk" "Obelisk snaplet" Nothing $ do
+  addRoutes [("", serveBackend backend frontend)]
+  return Obelisk
+
 
 mkRouteToUrl :: Encoder Identity parse (R (Sum f (ObeliskRoute r))) PageName -> R r -> Text
 mkRouteToUrl validFullEncoder =
@@ -189,11 +207,11 @@ renderGhcjsFrontend
   -> route
   -> Frontend route
   -> m ByteString
-renderGhcjsFrontend urlEnc route f = do
+renderGhcjsFrontend urlEnc r f = do
   let ghcjsPreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "ghcjs/all.js") blank
       ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
   cookies <- askCookies
-  renderFrontendHtml cookies urlEnc route
+  renderFrontendHtml cookies urlEnc r
     (_frontend_head f >> ghcjsPreload)
     (_frontend_body f >> ghcjsScript)
 
