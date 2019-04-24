@@ -451,7 +451,7 @@ runRouteViewT
   -> RoutedT t r (SetRouteT t r (RouteToUrlT r m)) a
   -> m a
 runRouteViewT routeEncoder switchover a = do
-  rec historyState <- manageHistory' switchover $ HistoryCommand_PushState <$> setState
+  rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
       let theEncoder = pageNameEncoder . hoistParse (pure . runIdentity) routeEncoder
           -- NB: The can only fail if the uriPath doesn't begin with a '/' or if the uriQuery
           -- is nonempty, but begins with a character that isn't '?'. Since we don't expect
