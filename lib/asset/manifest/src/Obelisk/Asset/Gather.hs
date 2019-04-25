@@ -35,7 +35,7 @@ gatherHashedPaths root = go ""
         let relativePath = subdir </> sub
         isFile <- doesFileExist $ root </> relativePath
         if isFile
-          then do hashedRelativePath <- toHashedPath root relativePath
+          then do !hashedRelativePath <- force <$> toHashedPath root relativePath
                   return $ Map.singleton relativePath hashedRelativePath
           else go relativePath
 
