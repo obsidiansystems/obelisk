@@ -22,7 +22,7 @@ inject key = do
 -- whose value is the provided configuration
 injectPure :: DomBuilder t m => Text -> Text -> m ()
 injectPure key value =
-  let attrs = ("type" =: "text/plain" <> "id" =: ("config-" <> key) <> "data-executable-config-inject" =: "1")
+  let attrs = ("type" =: "text/plain" <> "id" =: ("config-" <> key) <> "class" =: "obelisk-executable-config-inject")
   in elAttr "script" attrs $ text value
 
 -- | Scans the "common" and "frontend" configuration folders and produces

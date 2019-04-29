@@ -32,12 +32,12 @@ import Data.ByteString (ByteString)
 import Data.Foldable (for_)
 import Data.Functor.Sum
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes, isJust)
+import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import GHCJS.DOM (currentDocument)
 import GHCJS.DOM.Document (getHead)
-import GHCJS.DOM.Element (getAttribute, getElementsByTagName)
+import GHCJS.DOM.Element (getElementsByClassName)
 import GHCJS.DOM.HTMLCollection (item, getLength)
 import GHCJS.DOM.Node (removeChild_)
 import Language.Javascript.JSaddle (JSM)
@@ -96,10 +96,8 @@ removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
   doc <- MaybeT currentDocument
   hd <- MaybeT $ getHead doc
-  es <- collToList =<< getElementsByTagName hd ("script" :: Text)
-  for_ es $ \e -> do
-    isConfig <- (isJust :: Maybe Text -> Bool) <$> getAttribute e ("data-executable-config-inject" :: Text)
-    when isConfig $ removeChild_ hd e
+  es <- collToList =<< getElementsByClassName hd ("obelisk-executable-config-inject" :: Text)
+  for_ es $ removeChild_ hd
   where
     collToList es = do
       len <- getLength es

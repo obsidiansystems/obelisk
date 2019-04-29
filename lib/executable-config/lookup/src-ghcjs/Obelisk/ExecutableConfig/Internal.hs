@@ -10,7 +10,7 @@ import qualified Data.Text as T
 import Data.Traversable (for)
 import GHCJS.DOM
 import GHCJS.DOM.Document (getHead)
-import GHCJS.DOM.Element (Element, getElementsByTagName, getId, getInnerHTML)
+import GHCJS.DOM.Element (getElementsByClassName, getId, getInnerHTML)
 import GHCJS.DOM.HTMLCollection (HTMLCollection, item, getLength)
 import GHCJS.DOM.NonElementParentNode
 
@@ -18,7 +18,7 @@ getFrontendConfigs :: IO [(Text, Text)]
 getFrontendConfigs = fmap concat $ runMaybeT $ do
   doc <- MaybeT currentDocument
   hd <- MaybeT $ getHead doc
-  es <- collToList =<< getElementsByTagName hd ("script" :: Text)
+  es <- collToList =<< getElementsByClassName hd ("obelisk-executable-config-inject" :: Text)
   cfg <- for es $ \e -> runMaybeT $ do
     ident <- getId e
     k <- MaybeT $ pure $ T.stripPrefix "config-" ident
