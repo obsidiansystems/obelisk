@@ -1,12 +1,12 @@
-module Obelisk.ExecutableConfig (get) where
+module Obelisk.ExecutableConfig where
 
-import Control.Exception
+import Data.Map (Map)
 import Data.Text (Text)
-import Data.Text as T
-import Data.Text.IO as T
-import System.IO.Error
 
-get :: Text -> IO (Maybe Text)
-get path = do
-  let doesNotExist = \e -> if isDoesNotExistError e then Just () else Nothing
-  catchJust doesNotExist (fmap Just $ T.readFile $ T.unpack path) (\_ -> pure Nothing)
+import Obelisk.ExecutableConfig.Internal.ConfigDirectory
+
+getFrontendConfigs :: IO (Map Text Text)
+getFrontendConfigs = do
+  cfgC <- getConfigs "." "config/common"
+  cfgF <- getConfigs "." "config/frontend"
+  return $ cfgC <> cfgF

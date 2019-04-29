@@ -10,6 +10,7 @@ library
       attoparsec
     , base
     , bytestring
+    , containers
     , cookie
     , dependent-sum
     , dependent-sum-template

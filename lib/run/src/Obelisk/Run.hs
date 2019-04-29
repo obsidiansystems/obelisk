@@ -26,6 +26,7 @@ import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Identity
 import Data.Functor.Sum
 import Data.List (uncons)
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
@@ -46,7 +47,7 @@ import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.Backend
-import Obelisk.ExecutableConfig (get)
+import Obelisk.ExecutableConfig (getFrontendConfigs)
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
@@ -89,7 +90,7 @@ runServeAsset :: FilePath -> [Text] -> Snap ()
 runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
 
 getConfigRoute :: IO (Maybe URI)
-getConfigRoute = get "config/common/route" >>= \case
+getConfigRoute = (Map.lookup "config/common/route" <$> getFrontendConfigs) >>= \case
   Just r -> case URI.mkURI $ T.strip r of
     Just route -> pure $ Just route
     Nothing -> do

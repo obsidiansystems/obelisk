@@ -5,7 +5,6 @@ build-type: Simple
 
 library
   exposed-modules: Obelisk.ExecutableConfig
-  exposed-modules: Obelisk.ExecutableConfig.Internal
   if os(ios)
     hs-source-dirs: src-ios, src-directory
     other-modules: Obelisk.ExecutableConfig.Internal.ConfigDirectory

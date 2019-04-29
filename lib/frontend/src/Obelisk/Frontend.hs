@@ -46,7 +46,7 @@ import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
-import Obelisk.ExecutableConfig.Internal (getFrontendConfigs)
+import Obelisk.ExecutableConfig (getFrontendConfigs)
 import Web.Cookie
 
 makePrisms ''Sum

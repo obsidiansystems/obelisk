@@ -9,7 +9,7 @@ import Data.ByteString (ByteString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import Obelisk.ExecutableConfig.Internal (getFrontendConfigs)
+import Obelisk.ExecutableConfig (getFrontendConfigs)
 import Reflex.Dom.Core hiding (value)
 
 -- | Produces a @<script>@ tag containing the contents of the config item,
