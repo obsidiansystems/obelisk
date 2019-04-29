@@ -2,9 +2,7 @@ module Obelisk.ExecutableConfig (get) where
 
 import Control.Exception (bracket)
 import Data.Text (Text)
-import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import Foreign.C.String (withCString)
 
 import Obelisk.ExecutableConfig.Internal
 import Obelisk.ExecutableConfig.Internal.AssetManager
