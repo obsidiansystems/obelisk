@@ -18,6 +18,7 @@ import Control.Category
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((%~), (^?), _Just, _Right)
+import Control.Monad.IO.Class
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -127,7 +128,9 @@ obeliskApp
   -> IO Application
 obeliskApp opts frontend validFullEncoder uri backend = do
   let entryPoint = do
-        runFrontend validFullEncoder frontend
+        configs <- liftIO getFrontendConfigs
+        removeHTMLConfigs
+        runFrontendWithConfigs configs validFullEncoder frontend
         syncPoint
   jsaddlePath <- URI.mkPathPiece "jsaddle"
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])

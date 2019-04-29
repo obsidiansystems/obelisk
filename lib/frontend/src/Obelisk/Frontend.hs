@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
@@ -14,7 +15,9 @@ module Obelisk.Frontend
   ( ObeliskWidget
   , Frontend (..)
   , runFrontend
+  , runFrontendWithConfigs
   , renderFrontendHtml
+  , removeHTMLConfigs
   , module Obelisk.Frontend.Cookie
   ) where
 
@@ -31,6 +34,7 @@ import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.ByteString (ByteString)
 import Data.Foldable (for_)
 import Data.Functor.Sum
+import Data.Map (Map)
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -106,12 +110,23 @@ runFrontend
   -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
+  configs <- liftIO getFrontendConfigs
+#ifdef ghcjs_HOST_OS
+  removeHTMLConfigs
+#endif
+  runFrontendWithConfigs configs validFullEncoder frontend
+
+runFrontendWithConfigs
+  :: forall backendRoute route
+  .  Map Text Text
+  -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
+  -> Frontend (R route)
+  -> JSM ()
+runFrontendWithConfigs configs validFullEncoder frontend = do
   let ve = validFullEncoder . hoistParse errorLeft (prismEncoder (rPrism $ _InR . _ObeliskRoute_App))
       errorLeft = \case
         Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
         Right x -> Identity x
-  configs <- liftIO getFrontendConfigs
-  removeHTMLConfigs
   runHydrationWidgetWithHeadAndBody (pure ()) $ \appendHead appendBody -> do
     rec switchover <- runRouteViewT ve switchover $ do
           (switchover'', fire) <- newTriggerEvent
