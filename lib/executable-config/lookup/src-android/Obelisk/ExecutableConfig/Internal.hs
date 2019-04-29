@@ -15,9 +15,10 @@ import System.FilePath.Posix ((</>))
 
 import Obelisk.ExecutableConfig.Internal.AssetManager
 
-getFromMgr mgr withCS name = do
+getFromMgr :: AAssetManager -> BS.ByteString -> IO (Maybe Text)
+getFromMgr mgr name = do
   let open = do
-        a <- withCS name $ \fn ->
+        a <- BS.useAsCString name $ \fn ->
           assetManager_open mgr fn 3
         return $ if unAAsset a == nullPtr
           then Nothing
@@ -29,14 +30,7 @@ getFromMgr mgr withCS name = do
     fmap T.decodeUtf8 $ BS.packCStringLen (b, fromIntegral l)
 
 getFrontendConfigs :: IO [(Text, Text)]
-getFrontendConfigs
-  = fmap (sortOn fst)
-  $ getConfigs
-  $ \fp -> BS.isPrefixOf (BS.pack $ fmap (fromIntegral . fromEnum) "config/common/") fp
-        || BS.isPrefixOf (BS.pack $ fmap (fromIntegral . fromEnum) "config/frontend/") fp
-
-getConfigs :: (BS.ByteString -> Bool) -> IO [(Text, Text)]
-getConfigs p = bracket getAssets freeAssetManager $ \mgrObj -> do
+getFrontendConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
   mgr <- assetManagerFromJava mgrObj
   let openDir = do
         d <- withCString "config.files" $ \fn ->
@@ -51,12 +45,12 @@ getConfigs p = bracket getAssets freeAssetManager $ \mgrObj -> do
       l <- asset_getLength asset
       lines0 <$> BS.packCStringLen (b, fromIntegral l)
     Nothing -> error "could not open configuration manifest 'config.files'"
-  fmap catMaybes $ forM (filter p configPaths) $ \fp ->
-    fmap (\v -> (T.decodeUtf8 fp,v)) <$> getFromMgr mgr BS.useAsCString fp
+  fmap catMaybes $ forM configPaths $ \fp ->
+    fmap (\v -> (T.decodeUtf8 fp,v)) <$> getFromMgr mgr fp
 
 lines0 :: BS.ByteString -> [BS.ByteString]
 lines0 ps
-    | BS.null ps = []
-    | otherwise = case BS.elemIndex 0 ps of
-             Nothing -> [ps]
-             Just n  -> BS.take n ps : lines0 (BS.drop (n+1) ps)
+  | BS.null ps = []
+  | otherwise = case BS.elemIndex 0 ps of
+      Nothing -> [ps]
+      Just n  -> BS.take n ps : lines0 (BS.drop (n+1) ps)
