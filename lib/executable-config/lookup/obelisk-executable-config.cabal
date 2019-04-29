@@ -31,3 +31,5 @@ library
     filepath,
     text,
     transformers
+
+  ghc-options: -Wall
