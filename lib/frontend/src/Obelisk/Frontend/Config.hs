@@ -32,9 +32,9 @@ import Obelisk.Route.Frontend
 newtype Configs = Configs { unConfigs :: Map Text Text }
 
 class Monad m => HasConfigs m where
-  askConfigs :: m Configs
-  default askConfigs :: (HasConfigs m', m ~ t m', MonadTrans t) => m Configs
-  askConfigs = lift askConfigs
+  getConfig :: Text -> m (Maybe Text)
+  default getConfig :: (HasConfigs m', m ~ t m', MonadTrans t) => Text -> m (Maybe Text)
+  getConfig = lift . getConfig
 
 instance HasConfigs m => HasConfigs (BehaviorWriterT t w m)
 instance HasConfigs m => HasConfigs (DynamicWriterT t w m)
@@ -92,16 +92,10 @@ runConfigsT
 runConfigsT cs child = runReaderT (unConfigsT child) (Configs cs)
 
 instance Monad m => HasConfigs (ConfigsT m) where
-  askConfigs = ConfigsT ask
+  getConfig k = ConfigsT $ Map.lookup k . unConfigs <$> ask
 
 mapConfigsT
   :: (forall x. m x -> n x)
   -> ConfigsT m a
   -> ConfigsT n a
 mapConfigsT f (ConfigsT x) = ConfigsT $ mapReaderT f x
-
-getConfig
-  :: HasConfigs m
-  => Text
-  -> m (Maybe Text)
-getConfig key = Map.lookup key . unConfigs <$> askConfigs
