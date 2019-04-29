@@ -4,14 +4,12 @@ module Obelisk.ExecutableConfig.Internal where
 import Control.Exception (bracket)
 import Control.Monad (forM)
 import qualified Data.ByteString as BS
-import Data.List (sortOn)
-import Data.Maybe (catMaybes, maybe)
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Text (Text)
-import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Foreign.C.String (withCString)
 import Foreign.Ptr (nullPtr)
-import System.FilePath.Posix ((</>))
 
 import Obelisk.ExecutableConfig.Internal.AssetManager
 
@@ -29,7 +27,7 @@ getFromMgr mgr name = do
     l <- asset_getLength asset
     fmap T.decodeUtf8 $ BS.packCStringLen (b, fromIntegral l)
 
-getFrontendConfigs :: IO [(Text, Text)]
+getFrontendConfigs :: IO (Map Text Text)
 getFrontendConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
   mgr <- assetManagerFromJava mgrObj
   let openDir = do
@@ -45,8 +43,10 @@ getFrontendConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
       l <- asset_getLength asset
       lines0 <$> BS.packCStringLen (b, fromIntegral l)
     Nothing -> error "could not open configuration manifest 'config.files'"
-  fmap catMaybes $ forM configPaths $ \fp ->
-    fmap (\v -> (T.decodeUtf8 fp,v)) <$> getFromMgr mgr fp
+  fmap Map.fromList $ forM configPaths $ \fp ->
+    getFromMgr mgr fp >>= \case
+      Just v -> return (T.decodeUtf8 fp, v)
+      Nothing -> error $ "Config present in config.files but not in assets: " <> show fp
 
 lines0 :: BS.ByteString -> [BS.ByteString]
 lines0 ps

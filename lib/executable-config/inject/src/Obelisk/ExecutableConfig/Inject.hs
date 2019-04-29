@@ -3,6 +3,7 @@ module Obelisk.ExecutableConfig.Inject where
 
 import Control.Monad (mapM_)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import qualified Data.Map as Map
 import Data.Semigroup ((<>))
 import Data.ByteString (ByteString)
 import Data.Text (Text)
@@ -31,4 +32,4 @@ injectPure key value =
 injectExecutableConfigs :: (MonadIO m, DomBuilder t m) => m ()
 injectExecutableConfigs = do
   cfg <- liftIO getFrontendConfigs
-  mapM_ (uncurry injectPure) cfg
+  mapM_ (uncurry injectPure) $ Map.toList cfg

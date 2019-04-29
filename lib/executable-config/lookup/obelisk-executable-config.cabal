@@ -7,7 +7,8 @@ library
   exposed-modules: Obelisk.ExecutableConfig
   exposed-modules: Obelisk.ExecutableConfig.Internal
   if os(ios)
-    hs-source-dirs: src-ios
+    hs-source-dirs: src-ios, src-directory
+    other-modules: Obelisk.ExecutableConfig.Internal.ConfigDirectory
     build-depends: jsaddle-wkwebview
     build-depends: directory
   else
@@ -22,12 +23,14 @@ library
         hs-source-dirs: src-ghcjs
         build-depends: ghcjs-dom
       else
-        hs-source-dirs: src
+        hs-source-dirs: src, src-directory
+        other-modules: Obelisk.ExecutableConfig.Internal.ConfigDirectory
         build-depends: directory
 
   build-depends:
     base, 
     bytestring,
+    containers,
     filepath,
     text,
     transformers

@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Internal where
 
-import Control.Monad.Trans.Maybe
-import Data.List (sortOn)
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Semigroup ((<>))
 import Data.Text (Text)
@@ -11,20 +11,21 @@ import Data.Traversable (for)
 import GHCJS.DOM
 import GHCJS.DOM.Document (getHead)
 import GHCJS.DOM.Element (getElementsByClassName, getId, getInnerHTML)
-import GHCJS.DOM.HTMLCollection (HTMLCollection, item, getLength)
-import GHCJS.DOM.NonElementParentNode
+import GHCJS.DOM.HTMLCollection (item, getLength)
 
-getFrontendConfigs :: IO [(Text, Text)]
-getFrontendConfigs = fmap concat $ runMaybeT $ do
-  doc <- MaybeT currentDocument
-  hd <- MaybeT $ getHead doc
+getFrontendConfigs :: IO (Map Text Text)
+getFrontendConfigs = do
+  Just doc <- currentDocument
+  Just hd <- getHead doc
   es <- collToList =<< getElementsByClassName hd ("obelisk-executable-config-inject" :: Text)
-  cfg <- for es $ \e -> runMaybeT $ do
+  cfg <- for es $ \e -> do
     ident <- getId e
-    k <- MaybeT $ pure $ T.stripPrefix "config-" ident
     v <- getInnerHTML e
-    pure (k,v)
-  pure $ sortOn fst $ catMaybes cfg
+    return $ case T.stripPrefix "config-" ident of
+      Just k -> (k, v)
+      Nothing -> error $
+        "Element '" <> show ident <> "' has class 'obelisk-executable-config-inject' but does not start with 'config-'."
+  return $ Map.fromList cfg
   where
     collToList es = do
       len <- getLength es

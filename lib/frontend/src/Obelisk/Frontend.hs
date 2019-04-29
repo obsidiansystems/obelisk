@@ -31,7 +31,6 @@ import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.ByteString (ByteString)
 import Data.Foldable (for_)
 import Data.Functor.Sum
-import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -114,7 +113,7 @@ runFrontend validFullEncoder frontend = do
       errorLeft = \case
         Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
         Right x -> Identity x
-  configs <- liftIO $ Map.fromList <$> getFrontendConfigs
+  configs <- liftIO getFrontendConfigs
   removeHTMLConfigs
   runHydrationWidgetWithHeadAndBody (pure ()) $ \appendHead appendBody -> do
     rec switchover <- runRouteViewT ve switchover $ do
@@ -144,7 +143,7 @@ renderFrontendHtml
   -> m ByteString
 renderFrontendHtml cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-  configs <- liftIO $ Map.fromList <$> getFrontendConfigs
+  configs <- liftIO getFrontendConfigs
   html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
       el "head" $ do
