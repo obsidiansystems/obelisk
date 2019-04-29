@@ -92,6 +92,7 @@ data ObCommand
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
    | ObCommand_Watch
+   | ObCommand_Shell ShellOpts
    | ObCommand_Internal ObInternal
    deriving Show
 
@@ -103,7 +104,7 @@ data ObInternal
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
-  projectShell root False "ghc" cmd
+  projectShell root False "ghc" (Just cmd)
   where
     mkCmd = do
       argsCfg <- getArgsConfig
@@ -127,6 +128,7 @@ obCommand cfg = hsubparser
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
       , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+      , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
       ])
   <|> subparser
     (mconcat
@@ -220,6 +222,21 @@ thunkCommand = hsubparser $ mconcat
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
   , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
+
+data ShellOpts
+  = ShellOpts
+    { _shellOpts_shell :: String
+    , _shellOpts_command :: Maybe String
+    }
+  deriving Show
+
+shellOpts :: Parser ShellOpts
+shellOpts = ShellOpts
+  <$> (    flag' "ghc" (long "ghc" <> help "Enter a shell environment having ghc (default)")
+       <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
+       <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
+      )
+  <*> optional (strArgument (metavar "COMMAND"))
 
 parserPrefs :: ParserPrefs
 parserPrefs = defaultPrefs
@@ -347,6 +364,8 @@ ob = \case
     ThunkCommand_Pack thunks -> forM_ thunks packThunk
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
+  ObCommand_Shell so -> withProjectRoot "." $ \root ->
+    projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)

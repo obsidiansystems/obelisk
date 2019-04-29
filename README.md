@@ -24,6 +24,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
         nix.binaryCaches = [ "https://cache.nixos.org/" "https://nixcache.reflex-frp.org" ];
         nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
+        and rebuild your NixOS configuration (e.g. `sudo nixos-rebuild switch`).
     1. If you are using another operating system or linux distribution, ensure that these lines are present in your Nix configuration file (`/etc/nix/nix.conf` on most systems; [see full list](https://nixos.org/nix/manual/#sec-conf-file)):
         ```
         substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
