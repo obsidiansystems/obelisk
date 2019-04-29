@@ -9,6 +9,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Add `COMPLETE` pragma to `(:/)`. Using this pattern synonym should no longer generate spurious warnings about non-exhaustive pattern matching.
 * Make asset path hashing strict (see `Obelisk.Asset.Gather`)
 * Add the `ob shell` command to enter a nix shell for an obelisk project
+* Allow skeleton's obelisk to be overridden. This changes the skeleton's default.nix interface: the arguments that it used to take are now part of the new "obelisk" argument.
 
 ## v0.1.0.0 - 2019-03-29
 
