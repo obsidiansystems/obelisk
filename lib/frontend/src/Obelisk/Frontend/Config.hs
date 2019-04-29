@@ -24,7 +24,9 @@ import Data.Text (Text)
 import Reflex
 import Reflex.Host.Class
 import Reflex.Dom.Core
+#ifndef ghcjs_HOST_OS
 import GHCJS.DOM.Types (MonadJSM)
+#endif
 
 import Obelisk.Frontend.Cookie (CookiesT, HasCookies)
 import Obelisk.Route.Frontend
