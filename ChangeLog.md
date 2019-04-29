@@ -9,6 +9,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Add `COMPLETE` pragma to `(:/)`. Using this pattern synonym should no longer generate spurious warnings about non-exhaustive pattern matching.
 * Make asset path hashing strict (see `Obelisk.Asset.Gather`)
 * Add the `ob shell` command to enter a nix shell for an obelisk project
+* Removed `MonadIO` from `ObeliskWidget` to prevent accidental IO during prerendering. If you need to do IO in a widget it should be on the right hand side of a `prerender`.
 
 ## v0.1.0.0 - 2019-03-29
 
