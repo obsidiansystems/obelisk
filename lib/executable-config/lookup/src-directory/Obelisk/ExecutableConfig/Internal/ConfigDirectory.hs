@@ -8,13 +8,13 @@ import Data.Text.IO as T
 import System.Directory
 import System.FilePath.Posix ((</>))
 
-getConfigs :: FilePath -> FilePath -> IO (Map Text Text)
-getConfigs base fp = do
+getConfigsFromDirectory :: FilePath -> FilePath -> IO (Map Text Text)
+getConfigsFromDirectory base fp = do
   dir <- doesDirectoryExist (base </> fp)
   if dir
     then do
       ps <- listDirectory (base </> fp)
-      fmap mconcat $ mapM (\p -> getConfigs base $ fp </> p) ps
+      fmap mconcat $ mapM (\p -> getConfigsFromDirectory base $ fp </> p) ps
     else do
       file <- doesFileExist (base </> fp)
       if file

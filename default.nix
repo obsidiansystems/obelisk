@@ -49,11 +49,12 @@ let
         } + /template) {};
       })
 
+      pkgs.obeliskExecutableConfig.haskellOverlay
+
       # Add obelisk packages
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
       in {
-        obelisk-executable-config = pkgs.obeliskExecutableConfig.haskellPackage self;
         obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
 
         obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};

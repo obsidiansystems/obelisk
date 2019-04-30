@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Obelisk.ExecutableConfig where
+module Obelisk.ExecutableConfig.Lookup where
 
 import Control.Exception (bracket)
 import Control.Monad (forM)
@@ -27,8 +27,8 @@ getFromMgr mgr name = do
     l <- asset_getLength asset
     fmap T.decodeUtf8 $ BS.packCStringLen (b, fromIntegral l)
 
-getFrontendConfigs :: IO (Map Text Text)
-getFrontendConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
+getConfigs :: IO (Map Text Text)
+getConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
   mgr <- assetManagerFromJava mgrObj
   let openDir = do
         d <- withCString "config.files" $ \fn ->

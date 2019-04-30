@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Obelisk.ExecutableConfig where
+module Obelisk.ExecutableConfig.Lookup where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -13,8 +13,8 @@ import GHCJS.DOM.Document (getHead)
 import GHCJS.DOM.Element (getElementsByClassName, getId, getInnerHTML)
 import GHCJS.DOM.HTMLCollection (item, getLength)
 
-getFrontendConfigs :: IO (Map Text Text)
-getFrontendConfigs = do
+getConfigs :: IO (Map Text Text)
+getConfigs = do
   Just doc <- currentDocument
   Just hd <- getHead doc
   es <- collToList =<< getElementsByClassName hd ("obelisk-executable-config-inject" :: Text)

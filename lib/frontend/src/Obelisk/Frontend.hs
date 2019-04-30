@@ -44,13 +44,13 @@ import GHCJS.DOM.Element (getElementsByClassName)
 import GHCJS.DOM.HTMLCollection (item, getLength)
 import GHCJS.DOM.Node (removeChild_)
 import Language.Javascript.JSaddle (JSM)
-import Obelisk.Frontend.Config
 import Obelisk.Frontend.Cookie
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
+import Obelisk.ExecutableConfig.Frontend
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
-import Obelisk.ExecutableConfig (getFrontendConfigs)
+import Obelisk.ExecutableConfig.Lookup (getConfigs)
 import Web.Cookie
 
 makePrisms ''Sum
@@ -74,7 +74,7 @@ type ObeliskWidget js t route m =
   , Prerender js t m
   , PrebuildAgnostic t route m
   , PrebuildAgnostic t route (Client m)
-  , HasConfigs m
+  , HasFrontendConfigs m
   , HasCookies m
   )
 
@@ -110,7 +110,7 @@ runFrontend
   -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
-  configs <- liftIO getFrontendConfigs
+  configs <- liftIO getConfigs
 #ifdef ghcjs_HOST_OS
   removeHTMLConfigs
 #endif
@@ -130,11 +130,11 @@ runFrontendWithConfigs configs validFullEncoder frontend = do
   runHydrationWidgetWithHeadAndBody (pure ()) $ \appendHead appendBody -> do
     rec switchover <- runRouteViewT ve switchover $ do
           (switchover'', fire) <- newTriggerEvent
-          mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
+          mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runFrontendConfigsT configs))) $ do
             -- The order here is important - baseTag has to be before headWidget!
             baseTag
             _frontend_head frontend
-          mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runConfigsT configs))) $ do
+          mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runFrontendConfigsT configs))) $ do
             _frontend_body frontend
             switchover' <- lift $ lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
             performEvent_ $ liftIO (fire ()) <$ switchover'
@@ -144,23 +144,23 @@ runFrontendWithConfigs configs validFullEncoder frontend = do
 renderFrontendHtml
   :: ( t ~ DomTimeline
      , MonadIO m
-     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost)))))))
+     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (FrontendConfigsT (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost)))))))
      )
-  => Cookies
+  => Map Text Text
+  -> Cookies
   -> (r -> Text)
   -> r
   -> Frontend r
   -> widget ()
   -> widget ()
   -> m ByteString
-renderFrontendHtml cookies urlEnc route frontend headExtra bodyExtra = do
+renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-  configs <- liftIO getFrontendConfigs
-  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
+  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runFrontendConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
       el "head" $ do
         baseTag
-        injectExecutableConfigs
+        injectExecutableConfigs configs
         _frontend_head frontend
         headExtra
       el "body" $ do

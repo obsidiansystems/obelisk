@@ -1,10 +1,10 @@
-name: obelisk-executable-config
+name: obelisk-executable-config-lookup
 version: 0.1.1
 cabal-version: >= 1.2
 build-type: Simple
 
 library
-  exposed-modules: Obelisk.ExecutableConfig
+  exposed-modules: Obelisk.ExecutableConfig.Lookup
   if os(ios)
     hs-source-dirs: src-ios, src-directory
     other-modules: Obelisk.ExecutableConfig.Internal.ConfigDirectory

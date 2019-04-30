@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Obelisk.ExecutableConfig where
+module Obelisk.ExecutableConfig.Lookup where
 
 import Data.Map (Map)
 import Data.Text (Text)
@@ -9,7 +9,7 @@ import Language.Javascript.JSaddle.WKWebView
 
 import Obelisk.ExecutableConfig.Internal.ConfigDirectory
 
-getFrontendConfigs :: IO (Map Text Text)
-getFrontendConfigs = mainBundleResourcePath >>= \case
+getConfigs :: IO (Map Text Text)
+getConfigs = mainBundleResourcePath >>= \case
   Nothing -> error "Could not get bundle resource path."
-  Just p -> getConfigs (T.unpack (T.decodeUtf8 p)) "config"
+  Just p -> getConfigsFromDirectory (T.unpack (T.decodeUtf8 p)) "config"
