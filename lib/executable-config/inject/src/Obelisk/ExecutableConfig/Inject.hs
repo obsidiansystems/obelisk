@@ -13,7 +13,7 @@ import Reflex.Dom.Core hiding (value)
 -- whose value is the provided configuration
 injectPure :: DomBuilder t m => Text -> Text -> m ()
 injectPure key value =
-  let attrs = ("type" =: "text/plain" <> "id" =: ("config-" <> key) <> "class" =: "obelisk-executable-config-inject")
+  let attrs = ("type" =: "text/plain" <> "data-obelisk-executable-config-inject-key" =: key)
   in elAttr "script" attrs $ text value
 
 -- | Produces injectable @<script>@ tags containing the configuration keys

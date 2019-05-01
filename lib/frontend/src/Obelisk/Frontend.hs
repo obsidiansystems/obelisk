@@ -40,9 +40,9 @@ import Data.Monoid ((<>))
 import Data.Text (Text)
 import GHCJS.DOM (currentDocument)
 import GHCJS.DOM.Document (getHead)
-import GHCJS.DOM.Element (getElementsByClassName)
-import GHCJS.DOM.HTMLCollection (item, getLength)
 import GHCJS.DOM.Node (removeChild_)
+import GHCJS.DOM.NodeList (item, getLength)
+import GHCJS.DOM.ParentNode (querySelectorAll)
 import Language.Javascript.JSaddle (JSM)
 import Obelisk.Frontend.Cookie
 import Obelisk.Route.Frontend
@@ -96,7 +96,7 @@ removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
   doc <- MaybeT currentDocument
   hd <- MaybeT $ getHead doc
-  es <- collToList =<< getElementsByClassName hd ("obelisk-executable-config-inject" :: Text)
+  es <- collToList =<< querySelectorAll hd ("[data-obelisk-executable-config-inject-key]" :: Text)
   for_ es $ removeChild_ hd
   where
     collToList es = do

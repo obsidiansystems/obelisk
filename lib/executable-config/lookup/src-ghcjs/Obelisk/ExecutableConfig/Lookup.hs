@@ -1,31 +1,34 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Lookup where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
-import Data.Semigroup ((<>))
 import Data.Text (Text)
-import qualified Data.Text as T
 import Data.Traversable (for)
 import GHCJS.DOM
 import GHCJS.DOM.Document (getHead)
-import GHCJS.DOM.Element (getElementsByClassName, getId, getInnerHTML)
-import GHCJS.DOM.HTMLCollection (item, getLength)
+import GHCJS.DOM.DOMStringMap (get)
+import GHCJS.DOM.Element (getInnerHTML)
+import GHCJS.DOM.HTMLElement (HTMLElement(HTMLElement), getDataset)
+import GHCJS.DOM.NodeList (item, getLength)
+import GHCJS.DOM.ParentNode (querySelectorAll)
+import GHCJS.DOM.Types (Node(Node), castTo)
 
 getConfigs :: IO (Map Text Text)
 getConfigs = do
   Just doc <- currentDocument
   Just hd <- getHead doc
-  es <- collToList =<< getElementsByClassName hd ("obelisk-executable-config-inject" :: Text)
-  cfg <- for es $ \e -> do
-    ident <- getId e
-    v <- getInnerHTML e
-    return $ case T.stripPrefix "config-" ident of
-      Just k -> (k, v)
-      Nothing -> error $
-        "Element '" <> show ident <> "' has class 'obelisk-executable-config-inject' but does not start with 'config-'."
-  return $ Map.fromList cfg
+  nodes <- collToList =<< querySelectorAll hd ("[data-obelisk-executable-config-inject-key]" :: Text)
+  fmap Map.fromList $ for nodes $ \node -> do
+    e <- castTo HTMLElement node >>= \case
+      Nothing -> error "Found node with data attribute obelisk-executable-config-inject-key that is not an HTMLElement."
+      Just htmlE -> return htmlE
+    dataset <- getDataset e
+    (,)
+      <$> get dataset ("obelisk-executable-config-inject-key" :: Text)
+      <*> getInnerHTML e
   where
     collToList es = do
       len <- getLength es
