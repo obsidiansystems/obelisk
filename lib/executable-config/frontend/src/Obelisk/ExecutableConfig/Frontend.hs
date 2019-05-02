@@ -70,9 +70,11 @@ newtype FrontendConfigsT m a = FrontendConfigsT { unFrontendConfigsT :: ReaderT 
     , NotReady t
     , PerformEvent t
     , PostBuild t
-    , Prerender js t
     , TriggerEvent t
     , HasDocument
+    , DomRenderHook t
+    , HasJSContext
+    , HasJS js
     )
 
 instance Adjustable t m => Adjustable t (FrontendConfigsT m) where
@@ -80,6 +82,11 @@ instance Adjustable t m => Adjustable t (FrontendConfigsT m) where
   traverseDMapWithKeyWithAdjust f m e = FrontendConfigsT $ traverseDMapWithKeyWithAdjust (\k v -> unFrontendConfigsT $ f k v) m e
   traverseIntMapWithKeyWithAdjust f m e = FrontendConfigsT $ traverseIntMapWithKeyWithAdjust (\k v -> unFrontendConfigsT $ f k v) m e
   traverseDMapWithKeyWithAdjustWithMove f m e = FrontendConfigsT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> unFrontendConfigsT $ f k v) m e
+
+instance Prerender js t m => Prerender js t (FrontendConfigsT m) where
+  type Client (FrontendConfigsT m) = FrontendConfigsT (Client m)
+  prerender server client = FrontendConfigsT $ ReaderT $ \configs ->
+    prerender (runFrontendConfigsT configs server) (runFrontendConfigsT configs client)
 
 instance PrimMonad m => PrimMonad (FrontendConfigsT m) where
   type PrimState (FrontendConfigsT m) = PrimState m
