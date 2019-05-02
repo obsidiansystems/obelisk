@@ -68,7 +68,6 @@ newtype FrontendConfigsT m a = FrontendConfigsT { unFrontendConfigsT :: ReaderT 
     , MonadSample t
     , MonadTrans
     , NotReady t
-    , PerformEvent t
     , PostBuild t
     , TriggerEvent t
     , HasDocument
@@ -76,6 +75,13 @@ newtype FrontendConfigsT m a = FrontendConfigsT { unFrontendConfigsT :: ReaderT 
     , HasJSContext
     , HasJS js
     )
+
+instance PerformEvent t m => PerformEvent t (FrontendConfigsT m) where
+  type Performable (FrontendConfigsT m) = FrontendConfigsT (Performable m)
+  performEvent e = FrontendConfigsT $ ReaderT $ \configs ->
+    performEvent $ runFrontendConfigsT configs <$> e
+  performEvent_ e = FrontendConfigsT $ ReaderT $ \configs ->
+    performEvent_ $ runFrontendConfigsT configs <$> e
 
 instance Adjustable t m => Adjustable t (FrontendConfigsT m) where
   runWithReplace a e = FrontendConfigsT $ runWithReplace (unFrontendConfigsT a) (unFrontendConfigsT <$> e)
