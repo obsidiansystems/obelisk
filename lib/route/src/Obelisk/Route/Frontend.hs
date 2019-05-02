@@ -497,7 +497,7 @@ routeLink
   -> m a
 routeLink r w = routeLinkAttr r mempty w
   
--- | Link `routeLink` but allows setting attributes of the "a" element.
+-- | Like `routeLink` but allows setting attributes of the "a" element.
 routeLinkAttr
   :: forall t m a route.
      ( DomBuilder t m
@@ -516,7 +516,6 @@ routeLinkAttr r attr w = do
   (e, a) <- element "a" cfg w
   setRoute $ r <$ domEvent Click e
   return a
-
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
