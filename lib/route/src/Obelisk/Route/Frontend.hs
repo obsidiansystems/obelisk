@@ -69,6 +69,7 @@ import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
+import Data.Map (Map)
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
@@ -494,14 +495,28 @@ routeLink
   => R route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-routeLink r w = do
+routeLink r w = routeLinkAttr r mempty w
+  
+-- | Link `routeLink` but allows setting attributes of the "a" element.
+routeLinkAttr
+  :: forall t m a route.
+     ( DomBuilder t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => R route -- ^ Target route
+  -> Map AttributeName Text -- ^ Attributes of inner element
+  -> m a -- ^ Child widget
+  -> m a
+routeLinkAttr r attr w = do
   enc <- askRouteToUrl
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
-        & elementConfig_initialAttributes .~ "href" =: enc r
+        & elementConfig_initialAttributes .~ (attr <> "href" =: enc r)
   (e, a) <- element "a" cfg w
   setRoute $ r <$ domEvent Click e
   return a
+
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
