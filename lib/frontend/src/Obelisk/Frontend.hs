@@ -83,6 +83,7 @@ type PrebuildAgnostic t route m =
   , RouteToUrl route m
   , MonadFix m
   , HasFrontendConfigs m
+  , HasFrontendConfigs (Performable m)
   )
 
 data Frontend route = Frontend
