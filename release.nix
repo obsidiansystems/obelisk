@@ -1,4 +1,5 @@
-{ local-self ? import ./. {}
+{ self-args ? {}
+, local-self ? import ./. self-args
 }:
 
 let
@@ -59,17 +60,24 @@ let
       (concatDepends ghcjs)
     ];
     command = local-self.command;
-    serverExeSkeleton = (import ./skeleton {}).exe;
-    builtSkeleton = (import ./skeleton {}).all;
+    serverExeSkeleton = (import ./skeleton { obelisk = local-self; }).exe;
+    androidSkeleton = (import ./skeleton { obelisk = local-self; }).android.frontend;
+    iosObelisk = import ./. (self-args // {
+      system = "x86_64-darwin";
+      iosSdkVersion = "10.2";
+    });
+    iosSkeleton = (import ./skeleton { obelisk = iosObelisk; }).ios.frontend;
   in {
     inherit
       command
       ghc ghcjs
-      serverExeSkeleton builtSkeleton;
+      serverExeSkeleton
+      iosSkeleton
+      androidSkeleton;
     cache = reflex-platform.pinBuildInputs
       "obelisk-${system}"
       cachePackages
-      [command serverExeSkeleton builtSkeleton];
+      [command serverExeSkeleton iosSkeleton androidSkeleton];
   });
 
   metaCache = local-self.pinBuildInputs
