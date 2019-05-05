@@ -56,6 +56,7 @@ module Obelisk.Route
   , isoViaEncoded
   , wrappedEncoder
   , unwrappedEncoder
+  , pairEncoders
   , listToNonEmptyEncoder
   , prefixNonemptyTextEncoder
   , joinPairTextEncoder
@@ -351,6 +352,15 @@ wrappedEncoder = isoEncoder $ from _Wrapped'
 
 unwrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse a (Unwrapped a)
 unwrappedEncoder = isoEncoder _Wrapped'
+
+-- | Combine two encoders into a more complex one given isomorphisms for decoded/encoded formats
+pairEncoders
+  :: (Applicative check, Monad parse)
+  => Iso' (d1, d2) d
+  -> Iso' (e1, e2) e
+  -> (Encoder check parse d1 e1, Encoder check parse d2 e2)
+  -> Encoder check parse d e
+pairEncoders isoD isoE = view (isoViaDecoded isoD) . view (isoViaEncoded isoE) . uncurry bimap
 
 maybeToEitherEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Maybe a) (Either () a)
 maybeToEitherEncoder = unsafeMkEncoder $ EncoderImpl
