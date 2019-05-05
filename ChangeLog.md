@@ -10,6 +10,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Make asset path hashing strict (see `Obelisk.Asset.Gather`)
 * Add the `ob shell` command to enter a nix shell for an obelisk project
 * Allow skeleton's obelisk to be overridden. This changes the skeleton's default.nix interface: the arguments that it used to take are now part of the new "obelisk" argument.
+* Add `isoViaDecoded` and `isoViaEncoded` for extending isomorphisms to encoders.
 
 ## v0.1.0.0 - 2019-03-29
 

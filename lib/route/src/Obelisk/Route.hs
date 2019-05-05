@@ -52,6 +52,8 @@ module Obelisk.Route
   , justEncoder
   , nothingEncoder
   , isoEncoder
+  , isoViaDecoded
+  , isoViaEncoded
   , wrappedEncoder
   , unwrappedEncoder
   , listToNonEmptyEncoder
@@ -95,7 +97,7 @@ import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
 import Control.Category.Associative
 import Control.Category.Monoidal
-import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, view, Wrapped (..))
+import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, iso, view, withIso, Wrapped (..))
 import Control.Monad.Except
 import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
@@ -311,6 +313,38 @@ isoEncoder f = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode = view f
   , _encoderImpl_decode = pure . view (from f)
   }
+
+-- | Lift an 'Iso' over the decoded format to an 'Iso' over encoders
+isoViaDecoded
+  :: (Functor check, Functor parse)
+  => Iso' d d'
+  -> Iso' (Encoder check parse d e) (Encoder check parse d' e)
+isoViaDecoded i = withIso isoImpl $ \forward backward ->
+  iso
+    (Encoder . fmap forward . unEncoder)
+    (Encoder . fmap backward . unEncoder)
+  where
+    isoImpl = withIso i $ \forward backward -> iso (f backward forward) (f forward backward)
+    f bw fw impl = EncoderImpl
+      { _encoderImpl_encode = _encoderImpl_encode impl . bw
+      , _encoderImpl_decode = fmap fw . _encoderImpl_decode impl
+      }
+
+-- | Lift an 'Iso' over the encoded format to an 'Iso' over encoders
+isoViaEncoded
+  :: Functor check
+  => Iso' e e'
+  -> Iso' (Encoder check parse d e) (Encoder check parse d e')
+isoViaEncoded i = withIso isoImpl $ \forward backward ->
+  iso
+    (Encoder . fmap forward . unEncoder)
+    (Encoder . fmap backward . unEncoder)
+  where
+    isoImpl = withIso i $ \forward backward -> iso (f backward forward) (f forward backward)
+    f bw fw impl = EncoderImpl
+      { _encoderImpl_encode = fw . _encoderImpl_encode impl
+      , _encoderImpl_decode = _encoderImpl_decode impl . bw
+      }
 
 wrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse (Unwrapped a) a
 wrappedEncoder = isoEncoder $ from _Wrapped'
