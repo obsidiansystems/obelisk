@@ -98,7 +98,7 @@ import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
 import Control.Category.Associative
 import Control.Category.Monoidal
-import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, iso, view, withIso, Wrapped (..))
+import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, iso, view, Wrapped (..))
 import Control.Monad.Except
 import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
@@ -317,35 +317,17 @@ isoEncoder f = unsafeMkEncoder $ EncoderImpl
 
 -- | Lift an 'Iso' over the decoded format to an 'Iso' over encoders
 isoViaDecoded
-  :: (Functor check, Functor parse)
+  :: (Applicative check, Monad parse)
   => Iso' d d'
   -> Iso' (Encoder check parse d e) (Encoder check parse d' e)
-isoViaDecoded i = withIso isoImpl $ \forward backward ->
-  iso
-    (Encoder . fmap forward . unEncoder)
-    (Encoder . fmap backward . unEncoder)
-  where
-    isoImpl = withIso i $ \forward backward -> iso (f backward forward) (f forward backward)
-    f bw fw impl = EncoderImpl
-      { _encoderImpl_encode = _encoderImpl_encode impl . bw
-      , _encoderImpl_decode = fmap fw . _encoderImpl_decode impl
-      }
+isoViaDecoded i = iso (. isoEncoder (from i)) (. isoEncoder i)
 
 -- | Lift an 'Iso' over the encoded format to an 'Iso' over encoders
 isoViaEncoded
-  :: Functor check
+  :: (Applicative check, Monad parse)
   => Iso' e e'
   -> Iso' (Encoder check parse d e) (Encoder check parse d e')
-isoViaEncoded i = withIso isoImpl $ \forward backward ->
-  iso
-    (Encoder . fmap forward . unEncoder)
-    (Encoder . fmap backward . unEncoder)
-  where
-    isoImpl = withIso i $ \forward backward -> iso (f backward forward) (f forward backward)
-    f bw fw impl = EncoderImpl
-      { _encoderImpl_encode = fw . _encoderImpl_encode impl
-      , _encoderImpl_decode = _encoderImpl_decode impl . bw
-      }
+isoViaEncoded i = iso (isoEncoder i .) (isoEncoder (from i) .)
 
 wrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse (Unwrapped a) a
 wrappedEncoder = isoEncoder $ from _Wrapped'
@@ -360,7 +342,7 @@ pairEncoders
   -> Iso' (e1, e2) e
   -> (Encoder check parse d1 e1, Encoder check parse d2 e2)
   -> Encoder check parse d e
-pairEncoders isoD isoE = view (isoViaDecoded isoD) . view (isoViaEncoded isoE) . uncurry bimap
+pairEncoders isoD isoE (f,g) = isoEncoder isoE . bimap f g . isoEncoder (from isoD)
 
 maybeToEitherEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Maybe a) (Either () a)
 maybeToEitherEncoder = unsafeMkEncoder $ EncoderImpl
