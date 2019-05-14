@@ -47,6 +47,7 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , dynRouteLink
   ) where
 
 import Prelude hiding ((.), id)
@@ -468,6 +469,29 @@ routeLink r w = do
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
   setRoute $ r <$ domEvent Click e
+  return a
+
+-- | A link widget that, when clicked, sets the route to current value of the
+-- provided dynamic route. In non-javascript contexts the value of the dynamic post
+-- build is used so the link still works like 'routeLink'.
+dynRouteLink
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+dynRouteLink dr w = do
+  enc <- askRouteToUrl
+  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_modifyAttributes .~ er
+  (e, a) <- element "a" cfg w
+  setRoute $ tag (current dr) $ domEvent Click e
   return a
 
 -- On ios due to sandboxing when loading the page from a file adapt the
