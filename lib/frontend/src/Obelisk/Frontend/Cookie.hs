@@ -26,6 +26,7 @@ import GHCJS.DOM.Document (getCookie, Document)
 import GHCJS.DOM.Types (MonadJSM)
 import Web.Cookie
 
+import Obelisk.ExecutableConfig.Frontend
 import Obelisk.Route.Frontend
 
 class Monad m => HasCookies m where
@@ -45,6 +46,8 @@ instance HasCookies m => HasCookies (SetRouteT t r m)
 instance HasCookies m => HasCookies (StaticDomBuilderT t m)
 instance HasCookies m => HasCookies (TriggerEventT t m)
 instance HasCookies m => HasCookies (RoutedT t r m)
+instance HasCookies m => HasCookies (FrontendConfigsT m)
+instance HasFrontendConfigs m => HasFrontendConfigs (CookiesT m)
 
 newtype CookiesT m a = CookiesT { unCookiesT :: ReaderT Cookies m a }
   deriving

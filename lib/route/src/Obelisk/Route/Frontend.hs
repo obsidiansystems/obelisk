@@ -56,6 +56,7 @@ module Obelisk.Route.Frontend
 
 import Prelude hiding ((.), id)
 
+import Obelisk.ExecutableConfig.Frontend
 import Obelisk.Route
 
 import Control.Category (Category (..), (.))
@@ -176,6 +177,8 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
+
+instance HasFrontendConfigs m => HasFrontendConfigs (RoutedT t r m)
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (QueryT t q m)
 
@@ -339,6 +342,8 @@ instance PrimMonad m => PrimMonad (SetRouteT t r m ) where
   type PrimState (SetRouteT t r m) = PrimState m
   primitive = lift . primitive
 
+instance HasFrontendConfigs m => HasFrontendConfigs (SetRouteT t r m)
+
 instance (MonadHold t m, Adjustable t m) => Adjustable t (SetRouteT t r m) where
   runWithReplace a0 a' = SetRouteT $ runWithReplace (coerce a0) $ coerceEvent a'
   traverseIntMapWithKeyWithAdjust f a0 a' = SetRouteT $ traverseIntMapWithKeyWithAdjust (coerce f) (coerce a0) $ coerce a'
@@ -435,6 +440,8 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RouteToUrlT r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
+
+instance HasFrontendConfigs m => HasFrontendConfigs (RouteToUrlT t m)
 
 runRouteViewT
   :: forall t m r a.
