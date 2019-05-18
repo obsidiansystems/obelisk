@@ -46,7 +46,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 1. Install obelisk: `nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command`
     * In case of failing this command due to a ssh error, the following may work:
         ```
-        $ wgat https://github.com/obsidiansystems/obelisk/archive/master.tar.gz
+        $ wget https://github.com/obsidiansystems/obelisk/archive/master.tar.gz
         $ tar -zxvf master.tar.gz  # this extracts `obelisk-master` directory
         $ cd obelisk-master
         $ nix-build
