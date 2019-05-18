@@ -213,14 +213,17 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
 data ThunkCommand
    = ThunkCommand_Update [FilePath] (Maybe String)
    | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack   [FilePath]
+   | ThunkCommand_Pack   [FilePath] Bool
   deriving Show
+
+forceFlag :: Parser Bool
+forceFlag = switch $ long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes, etc."
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
   [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> optional (strOption (long "branch" <> metavar "BRANCH"))) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> forceFlag) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
 
 data ShellOpts
@@ -342,7 +345,7 @@ ob = \case
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr' False root
+          getThunkPtr False root
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
           route = _deployInitOpts_route deployOpts
@@ -361,7 +364,7 @@ ob = \case
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
-    ThunkCommand_Pack thunks -> forM_ thunks packThunk
+    ThunkCommand_Pack thunks force -> forM_ thunks (packThunk force)
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
