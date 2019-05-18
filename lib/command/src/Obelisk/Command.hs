@@ -217,7 +217,7 @@ data ThunkCommand
   deriving Show
 
 forceFlag :: Parser Bool
-forceFlag = switch $ long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes, etc."
+forceFlag = switch $ long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care."
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
