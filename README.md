@@ -24,6 +24,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
         nix.binaryCaches = [ "https://cache.nixos.org/" "https://nixcache.reflex-frp.org" ];
         nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
+        and rebuild your NixOS configuration (e.g. `sudo nixos-rebuild switch`).
     1. If you are using another operating system or linux distribution, ensure that these lines are present in your Nix configuration file (`/etc/nix/nix.conf` on most systems; [see full list](https://nixos.org/nix/manual/#sec-conf-file)):
         ```
         substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
@@ -81,7 +82,7 @@ Obelisk leverages ghcid to provide a live-reloading server that handles both fro
 ob run
 ```
 
-Now go to http://localhost:8000 (or the port specified in `config/common/route`) to access your app.
+Now go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
 
@@ -272,6 +273,7 @@ It's also possible to inspect iOS WkWebView apps once they are installed in the 
 NOTE: Currently Android builds are only supported on Linux.
 
 1. In your project's `default.nix` set a suitable value for `android.applicationId` and `android.displayName`.
+1. In your project's `default.nix` pass `config.android_sdk.accept_license = true;` in the arguments to the import of of `.obelisk/impl` to indicate your acceptance of the [Android Software Development Kit License Agreement](https://developer.android.com/studio/terms), which is required to build Android apps.
 1. Run `nix-build -A android.frontend -o result-android` to build the Android app.
 1. A debug version of the app should be generated at `result-android/android-app-debug.apk`
 

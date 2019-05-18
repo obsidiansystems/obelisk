@@ -1,6 +1,7 @@
 { system ? builtins.currentSystem
 , profiling ? false
 , iosSdkVersion ? "10.2"
+, config ? {}
 }:
 let
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -16,7 +17,7 @@ let
   ];
 
   getReflexPlatform = sys: import ./dep/reflex-platform {
-    inherit iosSdkVersion;
+    inherit iosSdkVersion config;
     system = sys;
     enableLibraryProfiling = profiling;
 
@@ -48,11 +49,12 @@ let
         } + /template) {};
       })
 
+      pkgs.obeliskExecutableConfig.haskellOverlay
+
       # Add obelisk packages
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
       in {
-        obelisk-executable-config = pkgs.obeliskExecutableConfig.haskellPackage self;
         obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
 
         obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
@@ -298,21 +300,21 @@ in rec {
                   injectableConfig = builtins.filterSource (path: _:
                     !(lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path)) privateConfigDirs)
                   );
-                  __android = configPath: {
+                  __androidWithConfig = configPath: {
                     ${if android == null then null else frontendName} = {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "assets" else null} =
                         nixpkgs.obeliskExecutableConfig.platforms.android.inject
-                          (if configPath == null then null else injectableConfig configPath)
+                          (injectableConfig configPath)
                           processedStatic.symlinked;
                     } // android;
                   };
-                  __ios = configPath: {
+                  __iosWithConfig = configPath: {
                     ${if ios == null then null else frontendName} = {
                       executableName = "frontend";
                       ${if builtins.pathExists staticFiles then "staticSrc" else null} =
                         nixpkgs.obeliskExecutableConfig.platforms.ios.inject
-                          (if configPath == null then null else injectableConfig configPath)
+                          (injectableConfig configPath)
                           processedStatic.symlinked;
                     } // ios;
                   };
@@ -335,9 +337,9 @@ in rec {
                     commonName
                   ];
                 };
-                android = __android null;
-                ios = __ios null;
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __ios __android; };
+                android = __androidWithConfig (base + "/config");
+                ios = __iosWithConfig (base + "/config");
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __iosWithConfig __androidWithConfig; };
               };
           in mkProject (projectDefinition args));
       serverOn = sys: version: serverExe

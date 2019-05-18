@@ -1,0 +1,20 @@
+name: obelisk-executable-config-backend
+version: 0.1
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  hs-source-dirs: src
+  build-depends: base,
+                 containers,
+                 monad-control,
+                 mtl,
+                 primitive,
+                 ref-tf,
+                 snap-core,
+                 text,
+                 transformers,
+                 transformers-base
+  exposed-modules:
+    Obelisk.ExecutableConfig.Backend
+  ghc-options: -Wall

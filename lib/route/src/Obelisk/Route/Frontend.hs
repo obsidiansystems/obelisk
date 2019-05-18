@@ -51,10 +51,12 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , dynRouteLink
   ) where
 
 import Prelude hiding ((.), id)
 
+import Obelisk.ExecutableConfig.Frontend
 import Obelisk.Route
 
 import Control.Category (Category (..), (.))
@@ -175,6 +177,8 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
+
+instance HasFrontendConfigs m => HasFrontendConfigs (RoutedT t r m)
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (QueryT t q m)
 
@@ -338,6 +342,8 @@ instance PrimMonad m => PrimMonad (SetRouteT t r m ) where
   type PrimState (SetRouteT t r m) = PrimState m
   primitive = lift . primitive
 
+instance HasFrontendConfigs m => HasFrontendConfigs (SetRouteT t r m)
+
 instance (MonadHold t m, Adjustable t m) => Adjustable t (SetRouteT t r m) where
   runWithReplace a0 a' = SetRouteT $ runWithReplace (coerce a0) $ coerceEvent a'
   traverseIntMapWithKeyWithAdjust f a0 a' = SetRouteT $ traverseIntMapWithKeyWithAdjust (coerce f) (coerce a0) $ coerce a'
@@ -435,6 +441,8 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RouteToUrlT r m) where
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
+instance HasFrontendConfigs m => HasFrontendConfigs (RouteToUrlT t m)
+
 runRouteViewT
   :: forall t m r a.
      ( TriggerEvent t m
@@ -501,6 +509,29 @@ routeLink r w = do
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
   setRoute $ r <$ domEvent Click e
+  return a
+
+-- | A link widget that, when clicked, sets the route to current value of the
+-- provided dynamic route. In non-javascript contexts the value of the dynamic post
+-- build is used so the link still works like 'routeLink'.
+dynRouteLink
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+dynRouteLink dr w = do
+  enc <- askRouteToUrl
+  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_modifyAttributes .~ er
+  (e, a) <- element "a" cfg w
+  setRoute $ tag (current dr) $ domEvent Click e
   return a
 
 -- On ios due to sandboxing when loading the page from a file adapt the

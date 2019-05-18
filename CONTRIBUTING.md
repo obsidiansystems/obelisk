@@ -28,6 +28,9 @@ The summary line of your commit message should summarize the changes being made.
 One way to think about it is that your commit message should be able to complete the sentence:
 "When applied, this commit will..."
 
+##### Note on bumping dependencies
+Commits that update a dependency should include some information about why the dependency was updated in the commit message.
+
 #### Body
 For breaking changes, new features, refactors, or other major changes, the body of the commit message should describe the motivation behind the change in greater detail and may include references to the issue tracker. The body shouldn't repeat code/comments from the diff.
 
