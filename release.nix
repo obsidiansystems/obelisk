@@ -10,7 +10,7 @@ let
   obeliskPackagesCommon = [
     "obelisk-frontend"
     "obelisk-route"
-    "obelisk-executable-config"
+    "obelisk-executable-config-lookup"
   ];
 
   obeliskPackagesBackend = obeliskPackagesCommon ++ [
