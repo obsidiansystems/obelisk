@@ -95,7 +95,7 @@ runServeAsset :: FilePath -> [Text] -> Snap ()
 runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
 
 getConfigRoute :: Map Text Text -> IO (Maybe URI)
-getConfigRoute configs = case Map.lookup "common/route" configs of
+getConfigRoute configs = case Map.lookup "config/common/route" configs of
   Just r -> case URI.mkURI $ T.strip r of
     Just route -> pure $ Just route
     Nothing -> do
