@@ -39,13 +39,12 @@ let
           rev = "42afdc21da5d9e076eab57eaa42bfdde938192b8";
           sha256 = "0psw384dx9bw2dp93xrzw8rd9amvcwgzn64jzzwby7sfspj6k349";
         }) {});
-        # Need 8.0.2 build support
-        # PR: https://github.com/dmwit/universe/pull/33
+
         universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
-          owner = "obsidiansystems";
+          owner = "dmwit";
           repo = "universe";
-          rev = "6a71119bfa5db2b9990a2491c941469ff8ef5d13";
-          sha256 = "0z8smyainnlzcglv3dlx6x1n9j6d2jv48aa8f2421iayfkxg3js5";
+          rev = "30d9f5d5667ed2358e74718127500e0ab9edcf58";
+          sha256 = "1clzj2bwx8g6aibhvkspi2mgz7sv4cl4mpz82bwcdw8ylnlaz8i1";
         } + /template) {};
       })
 
