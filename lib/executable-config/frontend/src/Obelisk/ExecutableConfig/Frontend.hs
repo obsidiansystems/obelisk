@@ -105,8 +105,8 @@ runFrontendConfigsT
 runFrontendConfigsT cs child = runReaderT (unFrontendConfigsT child) cs
 
 instance Monad m => HasFrontendConfigs (FrontendConfigsT m) where
-  getFrontendConfig k = FrontendConfigsT $ Map.lookup ("config/frontend/" <> k) <$> ask
-  getCommonConfig k = FrontendConfigsT $ Map.lookup ("config/common/" <> k) <$> ask
+  getFrontendConfig k = FrontendConfigsT $ Map.lookup ("frontend/" <> k) <$> ask
+  getCommonConfig k = FrontendConfigsT $ Map.lookup ("common/" <> k) <$> ask
 
 mapFrontendConfigsT
   :: (forall x. m x -> n x)
