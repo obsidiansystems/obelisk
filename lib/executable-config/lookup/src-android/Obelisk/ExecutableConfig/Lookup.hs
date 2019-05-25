@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Lookup where
 
 import Control.Exception (bracket)
@@ -43,10 +44,12 @@ getConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
       l <- asset_getLength asset
       lines0 <$> BS.packCStringLen (b, fromIntegral l)
     Nothing -> error "could not open configuration manifest 'config.files'"
-  fmap Map.fromList $ forM configPaths $ \fp ->
-    getFromMgr mgr fp >>= \case
+  result <- fmap Map.fromList $ forM configPaths $ \fp ->
+    getFromMgr mgr ("config/" <> fp) >>= \case
       Just v -> return (T.decodeUtf8 fp, v)
       Nothing -> error $ "Config present in config.files but not in assets: " <> show fp
+  putStrLn $ "getConfigs: found " <> show result
+  pure result
 
 lines0 :: BS.ByteString -> [BS.ByteString]
 lines0 ps

@@ -133,9 +133,12 @@ obeliskApp
   -> Application
   -> IO Application
 obeliskApp configs opts frontend validFullEncoder uri backend = do
-  let entryPoint = do
-        removeHTMLConfigs
-        runFrontendWithConfigs configs validFullEncoder frontend
+  let mode = FrontendMode
+        { _frontendMode_hydrate = True
+        , _frontendMode_adjustRoute = False
+        }
+      entryPoint = do
+        runFrontendWithConfigs mode configs validFullEncoder frontend
         syncPoint
   jsaddlePath <- URI.mkPathPiece "jsaddle"
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
