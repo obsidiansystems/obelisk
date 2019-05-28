@@ -164,12 +164,16 @@ in rec {
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
-  compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
+  compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
     mkdir $out
     cd $out
     ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-    closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
-    echo "//# sourceMappingURL=all.js.map" >> all.js
+    ${if optimizationLevel == null then ''
+      ln -s all.unminified.js all.js
+    '' else ''
+      ${pkgs.closurecompiler}/bin/closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+      echo "//# sourceMappingURL=all.js.map" >> all.js
+    ''}
   '';
 
   serverModules = {
@@ -275,7 +279,7 @@ in rec {
                           , tools ? _: []
                           , shellToolOverrides ? _: _: {}
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
-                          , __closureCompilerOptimizationLevel ? "ADVANCED"
+                          , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
                           }:
               let frontendName = "frontend";
                   backendName = "backend";
