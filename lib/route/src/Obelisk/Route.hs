@@ -90,6 +90,7 @@ module Obelisk.Route
   , Decoder(..)
   , dmapEncoder
   , fieldMapEncoder
+  , jsonEncoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -102,6 +103,7 @@ import Control.Category.Associative
 import Control.Category.Monoidal
 import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, view, Wrapped (..))
 import Control.Monad.Except
+import qualified Data.ByteString.Lazy as BSL
 import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
@@ -130,6 +132,8 @@ import qualified Numeric.Lens
 import Obelisk.Route.TH
 import Text.Read (readMaybe)
 import Data.Tabulation
+import qualified Data.Aeson as Aeson
+import Data.Aeson (FromJSON, ToJSON)
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -349,7 +353,7 @@ maybeEncoder f g = shadowEncoder f g . maybeToEitherEncoder
 justEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a (Maybe a)
 justEncoder = prismEncoder _Just
 
--- |
+-- | Encode () to 'Nothing'.
 nothingEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse () (Maybe a)
 nothingEncoder = prismEncoder _Nothing
 
@@ -931,6 +935,22 @@ fieldMapEncoder = unsafeEncoder $ do
       case DMap.lookup f dm of
         Nothing -> throwError $ "fieldMapEncoder: Couldn't find key for `" <> T.pack (gshow f) <> "' in DMap."
         Just (Identity v) -> return v
+    }
+
+-- | Use ToJSON/FromJSON to encode to Text. The correctness of this encoder is dependent on the encoding being injective and round-tripping correctly.
+jsonEncoder :: forall check parse r.
+  ( ToJSON r
+  , FromJSON r
+  , Applicative check
+  , MonadError Text parse
+  )
+  => Encoder check parse r Text
+jsonEncoder = unsafeEncoder $ do
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \r -> decodeUtf8 . BSL.toStrict $ Aeson.encode r
+    , _encoderImpl_decode = \t -> case Aeson.eitherDecodeStrict $ encodeUtf8 t of
+        Left err -> throwError ("jsonEncoder: " <> T.pack err)
+        Right x -> return x
     }
 
 --TODO: decodeURIComponent as appropriate
