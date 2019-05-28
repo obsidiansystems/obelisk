@@ -6,7 +6,7 @@ let isAndroid = hostPlatform.libc == "bionic";
     isIOS = hostPlatform.isDarwin && hostPlatform.isAarch64;
     isGhcjs = ghc.isGhcjs or false;
 in mkDerivation {
-  pname = "obelisk-executable-config";
+  pname = "obelisk-executable-config-lookup";
   version = "0.1";
   src = ./.;
   libraryHaskellDepends = [

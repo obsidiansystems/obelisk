@@ -155,7 +155,7 @@ import Data.Tabulation
 
 type R f = DSum f Identity --TODO: Better name
 
---TODO: COMPLETE pragma
+{-# COMPLETE (:/) #-}
 infixr 5 :/
 pattern (:/) :: f a -> a -> R f
 pattern a :/ b = a :=> Identity b
