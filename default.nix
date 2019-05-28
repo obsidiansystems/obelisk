@@ -67,6 +67,7 @@ let
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
         obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
+        tabulation = self.callCabal2nix "tabulation" (cleanSource ./lib/tabulation) {};
       })
 
       (self: super: let
