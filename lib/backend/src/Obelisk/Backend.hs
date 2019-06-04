@@ -123,11 +123,7 @@ getPageName :: (MonadSnap m) => m PageName
 getPageName = do
   p <- getsRequest rqPathInfo
   q <- getsRequest rqQueryString
-  let pageNameEncoder' :: Encoder Identity Identity PageName (String, String)
-      pageNameEncoder' = bimap
-        (unpackTextEncoder . pathSegmentsTextEncoder . listToNonEmptyEncoder)
-        (unpackTextEncoder . queryParametersTextEncoder . toListMapEncoder)
-  return $ decode pageNameEncoder' (T.unpack (decodeUtf8 p), T.unpack (decodeUtf8 q))
+  return $ byteStringsToPageName p q
 
 getRouteWith :: (MonadSnap m) => Encoder Identity parse route PageName -> m (parse route)
 getRouteWith e = do

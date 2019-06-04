@@ -20,8 +20,10 @@ import Control.Exception
 import Control.Lens ((%~), (^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy.Char8 as BSLC
+import Data.Char (ord)
 import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Identity
 import Data.Functor.Sum
@@ -146,7 +148,7 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
   Right (jsaddleWarpRouteValidEncoder :: Encoder Identity (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
   jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
-  return $ \req sendResponse -> case tryDecode validFullEncoder (W.pathInfo req, mempty) of --TODO: Query strings
+  return $ \req sendResponse -> case tryDecode validFullEncoder $ byteStringsToPageName (BS.dropWhile (== (fromIntegral $ ord '/')) $ W.rawPathInfo req) (BS.drop 1 $ W.rawQueryString req) of
     Identity r -> case r of
       InR (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :=> Identity jsaddleRoute -> case jsaddleRoute of
         JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just jsaddleUri) False
