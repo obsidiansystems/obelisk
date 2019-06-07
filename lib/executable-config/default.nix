@@ -16,7 +16,7 @@ let injectConfig = config: assets: nixpkgs.runCommand "inject-config" {} (''
         exit 1
       fi
       cp -a "${config}"/* "$out/config"
-      (cd $out && find config -type f -print0 >config.files)
+      find "$out/config" -type f -printf '%P\0' >"$out/config.files"
     '');
 in with nixpkgs.haskell.lib; {
   haskellOverlay = self: super: {
