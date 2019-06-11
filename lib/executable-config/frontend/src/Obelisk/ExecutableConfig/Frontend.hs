@@ -32,14 +32,12 @@ import Reflex.Dom.Core
 #ifndef ghcjs_HOST_OS
 import GHCJS.DOM.Types (MonadJSM)
 #endif
+import Obelisk.ExecutableConfig.Common
 
 class Monad m => HasFrontendConfigs m where
   getFrontendConfig :: Text -> m (Maybe Text)
   default getFrontendConfig :: (HasFrontendConfigs m', m ~ t m', MonadTrans t) => Text -> m (Maybe Text)
   getFrontendConfig = lift . getFrontendConfig
-  getCommonConfig :: Text -> m (Maybe Text)
-  default getCommonConfig :: (HasFrontendConfigs m', m ~ t m', MonadTrans t) => Text -> m (Maybe Text)
-  getCommonConfig = lift . getCommonConfig
 
 instance HasFrontendConfigs m => HasFrontendConfigs (BehaviorWriterT t w m)
 instance HasFrontendConfigs m => HasFrontendConfigs (DynamicWriterT t w m)
@@ -106,6 +104,8 @@ runFrontendConfigsT cs child = runReaderT (unFrontendConfigsT child) cs
 
 instance Monad m => HasFrontendConfigs (FrontendConfigsT m) where
   getFrontendConfig k = FrontendConfigsT $ Map.lookup ("frontend/" <> k) <$> ask
+
+instance Monad m => HasCommonConfigs (FrontendConfigsT m) where
   getCommonConfig k = FrontendConfigsT $ Map.lookup ("common/" <> k) <$> ask
 
 mapFrontendConfigsT

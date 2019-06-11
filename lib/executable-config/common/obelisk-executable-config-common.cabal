@@ -1,4 +1,4 @@
-name: obelisk-executable-config-frontend
+name: obelisk-executable-config-common
 version: 0.1
 cabal-version: >= 1.2
 build-type: Simple
@@ -6,17 +6,11 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base,
-                 containers,
-                 ghcjs-dom,
-                 jsaddle,
                  mtl,
-                 obelisk-executable-config-common,
-                 primitive,
-                 ref-tf,
                  reflex,
                  reflex-dom-core,
                  text,
                  transformers
   exposed-modules:
-    Obelisk.ExecutableConfig.Frontend
+    Obelisk.ExecutableConfig.Common
   ghc-options: -Wall

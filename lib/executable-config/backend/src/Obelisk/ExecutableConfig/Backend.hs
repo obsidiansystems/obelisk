@@ -31,14 +31,12 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
 import Snap.Core (MonadSnap)
+import Obelisk.ExecutableConfig.Common
 
 class Monad m => HasBackendConfigs m where
   getBackendConfig :: Text -> m (Maybe Text)
   default getBackendConfig :: (HasBackendConfigs m', m ~ t m', MonadTrans t) => Text -> m (Maybe Text)
   getBackendConfig = lift . getBackendConfig
-  getCommonConfig :: Text -> m (Maybe Text)
-  default getCommonConfig :: (HasBackendConfigs m', m ~ t m', MonadTrans t) => Text -> m (Maybe Text)
-  getCommonConfig = lift . getCommonConfig
 
 newtype BackendConfigsT m a = BackendConfigsT { unBackendConfigsT :: ReaderT (Map Text Text) m a }
   deriving
@@ -68,6 +66,8 @@ runBackendConfigsT cs child = runReaderT (unBackendConfigsT child) cs
 
 instance Monad m => HasBackendConfigs (BackendConfigsT m) where
   getBackendConfig k = BackendConfigsT $ Map.lookup ("backend/" <> k) <$> ask
+
+instance Monad m => HasCommonConfigs (BackendConfigsT m) where
   getCommonConfig k = BackendConfigsT $ Map.lookup ("common/" <> k) <$> ask
 
 mapBackendConfigsT
