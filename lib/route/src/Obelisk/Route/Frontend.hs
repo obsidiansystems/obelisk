@@ -56,6 +56,7 @@ module Obelisk.Route.Frontend
 
 import Prelude hiding ((.), id)
 
+import Obelisk.ExecutableConfig.Common
 import Obelisk.ExecutableConfig.Frontend
 import Obelisk.Route
 
@@ -178,6 +179,7 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
+instance HasCommonConfigs m => HasCommonConfigs (RoutedT t r m)
 instance HasFrontendConfigs m => HasFrontendConfigs (RoutedT t r m)
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (QueryT t q m)
@@ -342,6 +344,7 @@ instance PrimMonad m => PrimMonad (SetRouteT t r m ) where
   type PrimState (SetRouteT t r m) = PrimState m
   primitive = lift . primitive
 
+instance HasCommonConfigs m => HasCommonConfigs (SetRouteT t r m)
 instance HasFrontendConfigs m => HasFrontendConfigs (SetRouteT t r m)
 
 instance (MonadHold t m, Adjustable t m) => Adjustable t (SetRouteT t r m) where
@@ -441,6 +444,7 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RouteToUrlT r m) where
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
+instance HasCommonConfigs m => HasCommonConfigs (RouteToUrlT t m)
 instance HasFrontendConfigs m => HasFrontendConfigs (RouteToUrlT t m)
 
 runRouteViewT
