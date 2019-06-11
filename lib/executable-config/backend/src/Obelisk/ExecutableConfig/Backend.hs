@@ -12,7 +12,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Obelisk.ExecutableConfig.Backend
   ( HasBackendConfigs(..)
-  , BackendConfigsT
+  , BackendConfigsT(..)
   , runBackendConfigsT
   , mapBackendConfigsT
   ) where
