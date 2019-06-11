@@ -62,6 +62,7 @@ module Obelisk.Route
   , shadowEncoder
   , prismEncoder
   , rPrism
+  , _R
   , obeliskRouteEncoder
   , obeliskRouteSegment
   , pageNameEncoder
@@ -107,21 +108,22 @@ import Control.Lens
   ( Identity (..)
   , (^.)
   , (^?)
-  , Iso'
-  , Prism'
-  , Wrapped (..)
   , _Just
   , _Nothing
+  , Cons(..)
   , from
   , imap
   , iso
+  , Iso'
   , itraverse
   , makePrisms
   , matching
   , prism
+  , Prism'
+  , prism'
   , re
   , view
-  , Cons(..)
+  , Wrapped (..)
   )
 import Control.Monad.Except
 import Control.Monad.Writer (execWriter, tell)
@@ -719,10 +721,81 @@ joinPairTextEncoder = Encoder . \case
           _ -> return (kt, T.drop (T.length separator) vt)
     }
 
---TODO: Rewrite this by composing the given prism with a lens on the first element of the DSum
--- Or, more likely, the user can compose it themselves
-rPrism :: forall f g. (forall a. Prism' (f a) (g a)) -> Prism' (R f) (R g)
-rPrism p = prism (\(g :/ x) -> g ^. re p :/ x) (\(f :/ x) -> bimap (:/ x) (:/ x) $ matching p f)
+-- -- | Like '_2' but for DSum not '(,)'.
+-- dSumFirstLensLike
+--   :: forall f g g' h
+--   .  Functor f
+--   => (forall a. g a -> f (g' a))
+--   -> (DSum g h) -> f (DSum g' h)
+-- dSumFirstLensLike f (l :=> r) = (:=> r) <$> f l
+--
+-- -- | Like '_2' but for DSum not '(,)'.
+-- dSumSecondLensLike
+--   :: forall f g h h'
+--   .  Functor f
+--   => (forall a. h a -> f (h' a))
+--   -> (DSum g h) -> f (DSum g h')
+-- dSumSecondLensLike f (l :=> r) = (l :=>) <$> f r
+
+-- TODO: Rewrite this by composing the given prism with a lens on the first
+-- element of the DSum Or, more likely, the user can compose it themselves
+--
+-- TODO I (@Ericson2314) think this previous comment is wrong. I wrote the lenses above.
+-- It didn't help. Combining lenses and prisms yields (affine) traversals, not
+-- prisms. Perhaps If we had "DStrong", like, 'Strong' but for 'DSum', not '(,)', we
+-- could get something like:
+--
+-- > dSumFirstOptic
+-- >   :: forall f g g' h
+-- >   .  DStrong p
+-- >   => (forall a. p (g a) (g' a))
+-- >   -> p (DSum g h) (DSum g' h)
+-- > dSumFirstOptic = ???
+--
+-- That is certainly a science project, and I don't anticipate any additional
+-- generality between that and what is written.
+
+-- This slight generalization of 'rPrism' happens to be enough to write all our
+-- prism combinators so far.
+dSumPrism
+  :: forall f f' g
+  .  (forall a. Prism' (f a) (f' a))
+  -> Prism' (DSum f g) (DSum f' g)
+dSumPrism p = prism'
+  (\(f' :=> x) -> f' ^. re p :=> x)
+  (\(f :=> x) -> (:=> x) <$> (f ^? p))
+
+-- already in obelisk
+rPrism
+  :: forall f f'
+  .  (forall a. Prism' (f a) (f' a))
+  -> Prism' (R f) (R f')
+rPrism p = dSumPrism p
+
+dSumPrism'
+  :: forall f g a
+  .  (forall b. Prism' (f b) (a :~: b))
+  -> Prism' (DSum f g) (g a)
+dSumPrism' p = dSumPrism p . iso (\(Refl :=> b) -> b) (Refl :=>)
+
+dSumGEqPrism
+  :: GEq f
+  => f a
+  -> Prism' (DSum f g) (g a)
+dSumGEqPrism variant = dSumPrism' $ prism' (\Refl -> variant) (\x -> geq variant x)
+
+-- | Given a 'tag :: f a', make a prism for 'R f'. This generalizes the usual
+-- prisms for a sum type (the ones that 'mkPrisms' would make), just as 'R'
+-- generalized a usual sum type.
+--
+-- [This is given the '_R' name of the "cannonical" prism not because it is the
+-- most general, but because it seems the most useful for routes, and 'R' itself
+-- trades generality for route-specificity.]
+_R
+  :: GEq f
+  => f a
+  -> Prism' (R f) a
+_R variant = dSumGEqPrism variant . iso runIdentity Identity
 
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
