@@ -9,6 +9,7 @@ library
                  containers,
                  monad-control,
                  mtl,
+                 obelisk-executable-config-common,
                  primitive,
                  ref-tf,
                  snap-core,
