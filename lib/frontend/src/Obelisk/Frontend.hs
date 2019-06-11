@@ -48,6 +48,7 @@ import Obelisk.Frontend.Cookie
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
+import Obelisk.ExecutableConfig.Common
 import Obelisk.ExecutableConfig.Frontend
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.ExecutableConfig.Lookup (getConfigs)
@@ -74,7 +75,6 @@ type ObeliskWidget js t route m =
   , Prerender js t m
   , PrebuildAgnostic t route m
   , PrebuildAgnostic t route (Client m)
-  , HasFrontendConfigs m
   , HasCookies m
   )
 
@@ -84,6 +84,8 @@ type PrebuildAgnostic t route m =
   , MonadFix m
   , HasFrontendConfigs m
   , HasFrontendConfigs (Performable m)
+  , HasCommonConfigs m
+  , HasCommonConfigs (Performable m)
   )
 
 data Frontend route = Frontend
