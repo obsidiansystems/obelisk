@@ -12,4 +12,4 @@ import Obelisk.ExecutableConfig.Internal.ConfigDirectory
 getConfigs :: IO (Map Text Text)
 getConfigs = mainBundleResourcePath >>= \case
   Nothing -> error "Could not get bundle resource path."
-  Just p -> getConfigsFromDirectory (T.unpack (T.decodeUtf8 p)) "config"
+  Just _ -> getConfigsFromDirectory "config"
