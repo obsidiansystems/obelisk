@@ -6,4 +6,4 @@ import Data.Text (Text)
 import Obelisk.ExecutableConfig.Internal.ConfigDirectory
 
 getConfigs :: IO (Map Text Text)
-getConfigs = getConfigsFromDirectory "." "config"
+getConfigs = getConfigsFromDirectory "config"
