@@ -129,7 +129,8 @@ main = do
 
         it "produces a valid route config" $ inTmpObInit $ \tmp -> liftIO $ do
           configs <- getConfigs
-          withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ getConfigRoute configs `shouldNotReturn` Nothing
+          withCurrentDirectory (T.unpack $ toTextIgnore tmp) $
+            return (either (const Nothing) Just $ getConfigRoute configs) `shouldNotReturn` Nothing
 
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'
