@@ -901,18 +901,18 @@ dmapEncoder :: forall check parse k k' v.
   -> Encoder check parse (DMap k' Identity) (Map k v)
 dmapEncoder keyEncoder' valueEncoderFor = unsafeEncoder $ do
   keyEncoder :: Encoder Identity parse (Some k') k <- checkEncoder keyEncoder'
-  valueDecoders :: DMap k' (Decoder Identity parse v) <- fmap DMap.fromList . forM universe $ \(Some.This (k' :: k' t)) -> do
+  valueDecoders :: DMap k' (Decoder Identity parse v) <- fmap DMap.fromList . forM universe $ \(Some (k' :: k' t)) -> do
     ve :: Encoder Identity parse t v <- checkEncoder (valueEncoderFor k')
     return $ (k' :: k' t) :=> (Decoder ve :: Decoder Identity parse v t)
   let keyError k = "dmapEncoder: key `" <> k <> "' was missing from the Universe instance for its type."
   return $ EncoderImpl
     { _encoderImpl_encode = \dm -> Map.fromList $ do
         ((k' :: k' t) :=> Identity v') <- DMap.toList dm
-        return ( encode keyEncoder (Some.This k')
+        return ( encode keyEncoder (Some k')
                , encode (toEncoder (DMap.findWithDefault (error . keyError $ gshow k') k' valueDecoders)) v'
                )
     , _encoderImpl_decode = \m -> fmap DMap.fromList . forM (Map.toList m) $ \(k,v) -> do
-          Some.This (k' :: k' t) <- tryDecode keyEncoder k
+          Some (k' :: k' t) <- tryDecode keyEncoder k
           case DMap.lookup k' valueDecoders of
             Nothing -> throwError . T.pack . keyError $ gshow k'
             Just (Decoder e) -> do
@@ -931,7 +931,7 @@ fieldMapEncoder :: forall check parse r.
   => Encoder check parse r (DMap (Field r) Identity)
 fieldMapEncoder = unsafeEncoder $ do
   pure $ EncoderImpl
-    { _encoderImpl_encode = \r -> DMap.fromList [ f :=> Identity (indexField r f) | Some.This f <- universe ]
+    { _encoderImpl_encode = \r -> DMap.fromList [ f :=> Identity (indexField r f) | Some f <- universe ]
     , _encoderImpl_decode = \dm -> tabulateFieldsA $ \f -> do
       case DMap.lookup f dm of
         Nothing -> throwError $ "fieldMapEncoder: Couldn't find key for `" <> T.pack (gshow f) <> "' in DMap."
@@ -948,8 +948,8 @@ jsonEncoder :: forall check parse r.
   => Encoder check parse r Text
 jsonEncoder = unsafeEncoder $ do
   pure $ EncoderImpl
-    { _encoderImpl_encode = \r -> decodeUtf8 . BSL.toStrict $ Aeson.encode r
-    , _encoderImpl_decode = \t -> case Aeson.eitherDecodeStrict $ encodeUtf8 t of
+    { _encoderImpl_encode = \r -> T.decodeUtf8 . BSL.toStrict $ Aeson.encode r
+    , _encoderImpl_decode = \t -> case Aeson.eitherDecodeStrict $ T.encodeUtf8 t of
         Left err -> throwError ("jsonEncoder: " <> T.pack err)
         Right x -> return x
     }
