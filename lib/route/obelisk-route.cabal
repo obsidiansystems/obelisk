@@ -8,10 +8,10 @@ library
   build-depends: base,
                  categories,
                  constraints,
+                 constraints-extras,
                  containers,
                  dependent-map,
                  dependent-sum,
-                 dependent-sum-universe-orphans,
                  dependent-sum-template,
                  either,
                  ghcjs-dom,
@@ -28,9 +28,10 @@ library
                  reflex-dom-core,
                  template-haskell,
                  text,
+                 th-extras,
                  transformers,
                  universe,
-                 universe-template
+                 universe-dependent-sum
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend
