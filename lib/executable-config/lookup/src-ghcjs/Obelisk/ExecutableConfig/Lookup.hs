@@ -9,6 +9,7 @@ import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Data.Traversable (for)
 import GHCJS.DOM
 import GHCJS.DOM.Document (getHead)
