@@ -7,6 +7,8 @@ This project's release branch is `master`. This log is written from the perspect
 * FrontendConfigsT and BackendConfigsT have been unified into ConfigsT and changes are made available via getConfig/getConfigs
   * The frontend will still only have access to configs that are placed in config/frontend and config/common, while the backend has access to the entire contents of the config directory.
   * You will need to use paths like "backend/clientSessionKey" to access a backend key for example, as there are no longer separate functions like getBackendConfig/getFrontendConfig.
+* Add tabulation package. See Data.Tabulation for details.
+* Add encoders for `DMap`, `HasFields` (cf. Data.Tabulation), and JSON.
 
 ## v0.1.1.0 - 2019-05-17
 

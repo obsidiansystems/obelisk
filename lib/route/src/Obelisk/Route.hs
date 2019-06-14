@@ -13,6 +13,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -85,6 +86,11 @@ module Obelisk.Route
   , readShowEncoder
   , integralEncoder
   , pathSegmentEncoder
+  , queryOnlyEncoder
+  , Decoder(..)
+  , dmapEncoder
+  , fieldMapEncoder
+  , jsonEncoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -97,6 +103,7 @@ import Control.Category.Associative
 import Control.Category.Monoidal
 import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, view, Wrapped (..))
 import Control.Monad.Except
+import qualified Data.ByteString.Lazy as BSL
 import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
@@ -123,6 +130,9 @@ import Network.HTTP.Types.URI
 import qualified Numeric.Lens
 import Obelisk.Route.TH
 import Text.Read (readMaybe)
+import Data.Tabulation
+import qualified Data.Aeson as Aeson
+import Data.Aeson (FromJSON, ToJSON)
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -342,7 +352,7 @@ maybeEncoder f g = shadowEncoder f g . maybeToEitherEncoder
 justEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a (Maybe a)
 justEncoder = prismEncoder _Just
 
--- |
+-- | Encode () to 'Nothing'.
 nothingEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse () (Maybe a)
 nothingEncoder = prismEncoder _Nothing
 
@@ -546,13 +556,10 @@ pathOnlyEncoderIgnoringQuery = unsafeMkEncoder $ EncoderImpl
   }
 
 pathOnlyEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse [Text] PageName
-pathOnlyEncoder = unsafeMkEncoder $ EncoderImpl
-  { _encoderImpl_decode = \(path, query) ->
-      if query == mempty
-      then pure path
-      else throwError "pathOnlyEncoderImpl: query was provided"
-  , _encoderImpl_encode = \path -> (path, mempty)
-  }
+pathOnlyEncoder = second (unitEncoder mempty) . coidr
+
+queryOnlyEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Map Text (Maybe Text)) PageName
+queryOnlyEncoder = first (unitEncoder []) . coidl
 
 singletonListEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a [a]
 singletonListEncoder = unsafeMkEncoder $ EncoderImpl
@@ -867,7 +874,6 @@ renderObeliskRoute e r =
 readShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) => Encoder check parse a PageName
 readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
 
-
 integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
 integralEncoder = prismEncoder (Numeric.Lens.integral)
 
@@ -879,5 +885,73 @@ pathSegmentEncoder = unsafeMkEncoder EncoderImpl
     [] -> throwError "not enough path segments"
     (x:xs) -> pure (x, (xs, y))
   }
+
+newtype Decoder check parse b a = Decoder { toEncoder :: Encoder check parse a b }
+
+dmapEncoder :: forall check parse k k' v.
+   ( Monad check
+   , MonadError Text parse
+   , Universe (Some k')
+   , Ord k
+   , GCompare k'
+   , GShow k'
+   )
+  => Encoder check parse (Some k') k
+  -> (forall v'. k' v' -> Encoder check parse v' v)
+  -> Encoder check parse (DMap k' Identity) (Map k v)
+dmapEncoder keyEncoder' valueEncoderFor = unsafeEncoder $ do
+  keyEncoder :: Encoder Identity parse (Some k') k <- checkEncoder keyEncoder'
+  valueDecoders :: DMap k' (Decoder Identity parse v) <- fmap DMap.fromList . forM universe $ \(Some.This (k' :: k' t)) -> do
+    ve :: Encoder Identity parse t v <- checkEncoder (valueEncoderFor k')
+    return $ (k' :: k' t) :=> (Decoder ve :: Decoder Identity parse v t)
+  let keyError k = "dmapEncoder: key `" <> k <> "' was missing from the Universe instance for its type."
+  return $ EncoderImpl
+    { _encoderImpl_encode = \dm -> Map.fromList $ do
+        ((k' :: k' t) :=> Identity v') <- DMap.toList dm
+        return ( encode keyEncoder (Some.This k')
+               , encode (toEncoder (DMap.findWithDefault (error . keyError $ gshow k') k' valueDecoders)) v'
+               )
+    , _encoderImpl_decode = \m -> fmap DMap.fromList . forM (Map.toList m) $ \(k,v) -> do
+          Some.This (k' :: k' t) <- tryDecode keyEncoder k
+          case DMap.lookup k' valueDecoders of
+            Nothing -> throwError . T.pack . keyError $ gshow k'
+            Just (Decoder e) -> do
+              v' <- tryDecode e v
+              return (k' :=> Identity v')
+    }
+
+fieldMapEncoder :: forall check parse r.
+   ( Applicative check
+   , MonadError Text parse
+   , HasFields r
+   , Universe (Some (Field r))
+   , GShow (Field r)
+   , GCompare (Field r)
+   )
+  => Encoder check parse r (DMap (Field r) Identity)
+fieldMapEncoder = unsafeEncoder $ do
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \r -> DMap.fromList [ f :=> Identity (indexField r f) | Some.This f <- universe ]
+    , _encoderImpl_decode = \dm -> tabulateFieldsA $ \f -> do
+      case DMap.lookup f dm of
+        Nothing -> throwError $ "fieldMapEncoder: Couldn't find key for `" <> T.pack (gshow f) <> "' in DMap."
+        Just (Identity v) -> return v
+    }
+
+-- | Use ToJSON/FromJSON to encode to Text. The correctness of this encoder is dependent on the encoding being injective and round-tripping correctly.
+jsonEncoder :: forall check parse r.
+  ( ToJSON r
+  , FromJSON r
+  , Applicative check
+  , MonadError Text parse
+  )
+  => Encoder check parse r Text
+jsonEncoder = unsafeEncoder $ do
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \r -> decodeUtf8 . BSL.toStrict $ Aeson.encode r
+    , _encoderImpl_decode = \t -> case Aeson.eitherDecodeStrict $ encodeUtf8 t of
+        Left err -> throwError ("jsonEncoder: " <> T.pack err)
+        Right x -> return x
+    }
 
 --TODO: decodeURIComponent as appropriate

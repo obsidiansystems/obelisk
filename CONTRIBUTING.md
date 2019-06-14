@@ -49,6 +49,14 @@ You can run the tests like this:
 $(nix-build -A selftest --no-out-link)
 ```
 
+To test that your changes build across platforms, you can also try to build release.nix, like this:
+```bash
+nix-build release.nix
+```
+
+Note, however, that to build release.nix you must accept the android license agreement and your machine must be configured to build both ios and android executables (usually via remote builders).
+
+
 ### Documentation
 
 #### In the code
