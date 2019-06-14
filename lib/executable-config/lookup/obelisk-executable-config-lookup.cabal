@@ -27,6 +27,7 @@ library
 
   build-depends:
     base, 
+    base64-bytestring,
     bytestring,
     containers,
     filepath,
