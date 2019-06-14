@@ -14,7 +14,6 @@ library
                  jsaddle,
                  lens,
                  mtl,
-                 obelisk-executable-config-frontend,
                  obelisk-executable-config-inject,
                  obelisk-executable-config-lookup,
                  obelisk-route,

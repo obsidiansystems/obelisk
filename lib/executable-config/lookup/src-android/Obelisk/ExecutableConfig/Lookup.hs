@@ -14,7 +14,7 @@ import Foreign.Ptr (nullPtr)
 
 import Obelisk.ExecutableConfig.Internal.AssetManager
 
-getFromMgr :: AAssetManager -> BS.ByteString -> IO (Maybe Text)
+getFromMgr :: AAssetManager -> BS.ByteString -> IO (Maybe ByteString)
 getFromMgr mgr name = do
   let open = do
         a <- BS.useAsCString name $ \fn ->
@@ -26,9 +26,9 @@ getFromMgr mgr name = do
   bracket open close $ mapM $ \asset -> do
     b <- asset_getBuffer asset
     l <- asset_getLength asset
-    fmap T.decodeUtf8 $ BS.packCStringLen (b, fromIntegral l)
+    BS.packCStringLen (b, fromIntegral l)
 
-getConfigs :: IO (Map Text Text)
+getConfigs :: IO (Map Text ByteString)
 getConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
   mgr <- assetManagerFromJava mgrObj
   let openDir = do
@@ -46,7 +46,7 @@ getConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
     Nothing -> error "could not open configuration manifest 'config.files'"
   result <- fmap Map.fromList $ forM configPaths $ \fp ->
     getFromMgr mgr ("config/" <> fp) >>= \case
-      Just v -> return (T.decodeUtf8 fp, v)
+      Just v -> return (fp, v)
       Nothing -> error $ "Config present in config.files but not in assets: " <> show fp
   putStrLn $ "getConfigs: found " <> show result
   pure result

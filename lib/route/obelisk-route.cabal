@@ -21,7 +21,7 @@ library
                  monad-control,
                  mtl,
                  network-uri,
-                 obelisk-executable-config-frontend,
+                 obelisk-executable-config-lookup,
                  primitive,
                  ref-tf,
                  reflex,

@@ -2,10 +2,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Lookup where
 
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Base64 as B64
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Traversable (for)
 import GHCJS.DOM
 import GHCJS.DOM.Document (getHead)
@@ -16,7 +19,7 @@ import GHCJS.DOM.NodeList (item, getLength)
 import GHCJS.DOM.ParentNode (querySelectorAll)
 import GHCJS.DOM.Types (Node(Node), castTo)
 
-getConfigs :: IO (Map Text Text)
+getConfigs :: IO (Map Text ByteString)
 getConfigs = do
   Just doc <- currentDocument
   Just hd <- getHead doc
@@ -28,9 +31,12 @@ getConfigs = do
     dataset <- getDataset e
     (,)
       <$> get dataset ("obelisk-executable-config-inject-key" :: Text)
-      <*> getInnerHTML e
+      <*> (fmap decodeOrFail (getInnerHTML e))
   where
     collToList es = do
       len <- getLength es
       list <- traverse (item es) [0..len-1]
       pure $ catMaybes list
+    decodeOrFail x = case B64.decode (T.decodeUtf8 x) of
+      Left e -> error ("Obelisk.ExecutableConfig.Lookup.getConfigs: error when decoding base64: " ++ e)
+      Right x -> x

@@ -16,7 +16,7 @@ library
                  lens,
                  mtl,
                  obelisk-asset-serve-snap,
-                 obelisk-executable-config-backend,
+                 obelisk-executable-config-inject,
                  obelisk-executable-config-lookup,
                  obelisk-frontend,
                  obelisk-route,

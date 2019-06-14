@@ -34,6 +34,7 @@ import Data.Streaming.Network (bindPortTCP)
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -48,7 +49,7 @@ import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.Backend
-import Obelisk.ExecutableConfig.Backend
+import Obelisk.Configs
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
@@ -77,13 +78,13 @@ run port serveStaticAsset backend frontend = do
     Right validFullEncoder -> do
       configs <- getComponentConfigs
       backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
-        runBackendConfigsT (_componentConfigs_backend configs) $
+        runConfigsT (_componentConfigs_backend configs) $
           _backend_run backend $ \serveRoute -> do
             runSnapWithCommandLineArgs $ do
               getRouteWith validFullEncoder >>= \case
                 Identity r -> case r of
                   InL backendRoute :=> Identity a ->
-                    runBackendConfigsT (_componentConfigs_backend configs) $
+                    runConfigsT (_componentConfigs_backend configs) $
                       serveRoute $ backendRoute :/ a
                   InR obeliskRoute :=> Identity a ->
                     serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend (_componentConfigs_frontend configs) $ obeliskRoute :/ a
@@ -94,16 +95,18 @@ run port serveStaticAsset backend frontend = do
 runServeAsset :: FilePath -> [Text] -> Snap ()
 runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
 
-getConfigRoute :: Map Text Text -> Either Text URI
+getConfigRoute :: Map Text ByteString -> Either Text URI
 getConfigRoute configs = case Map.lookup "common/route" configs of
-  Just r -> case URI.mkURI $ T.strip r of
-    Just route -> Right route
-    Nothing -> Left $ "Couldn't parse route as URI; value read was: " <> T.pack (show r)
-  Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
+    Just r -> 
+      let stripped = T.strip (T.decodeUtf8 r)
+      in case URI.mkURI stripped of
+          Just route -> Right route
+          Nothing -> Left $ "Couldn't parse route as URI; value read was: " <> T.pack (show stripped)
+    Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
 
 runWidget
   :: RunConfig
-  -> Map Text Text
+  -> Map Text ByteString
   -> Frontend (R route)
   -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
   -> IO ()
@@ -125,7 +128,7 @@ runWidget conf configs frontend validFullEncoder = do
 
 obeliskApp
   :: forall route backendRoute
-  .  Map Text Text
+  .  Map Text ByteString
   -> ConnectionOptions
   -> Frontend (R route)
   -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
@@ -158,7 +161,7 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
       _ -> backend req sendResponse
 
 renderJsaddleFrontend
-  :: Map Text Text
+  :: Map Text ByteString
   -> Cookies
   -> (route -> Text)
   -> route

@@ -53,9 +53,9 @@ import Obelisk.Frontend.Cookie
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
-import Obelisk.ExecutableConfig.Frontend
+import Obelisk.Configs
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
-import Obelisk.ExecutableConfig.Lookup (getConfigs)
+import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Web.Cookie
 
 import Debug.Trace
@@ -81,7 +81,7 @@ type ObeliskWidget js t route m =
   , Prerender js t m
   , PrebuildAgnostic t route m
   , PrebuildAgnostic t route (Client m)
-  , HasFrontendConfigs m
+  , HasConfigs m
   , HasCookies m
   )
 
@@ -89,8 +89,8 @@ type PrebuildAgnostic t route m =
   ( SetRoute t route m
   , RouteToUrl route m
   , MonadFix m
-  , HasFrontendConfigs m
-  , HasFrontendConfigs (Performable m)
+  , HasConfigs m
+  , HasConfigs (Performable m)
   )
 
 data Frontend route = Frontend
@@ -155,7 +155,7 @@ runFrontend validFullEncoder frontend = do
           True
 #endif
         }
-  configs <- liftIO getConfigs
+  configs <- liftIO Lookup.getConfigs
   when (_frontendMode_hydrate mode) removeHTMLConfigs
   -- There's no fundamental reason that adjustRoute needs to control setting the
   -- initial route and *also* the useHash parameter; that's why these are
@@ -167,7 +167,7 @@ runFrontend validFullEncoder frontend = do
 runFrontendWithConfigsAndCurrentRoute
   :: forall backendRoute route
   .  FrontendMode
-  -> Map Text Text
+  -> Map Text ByteString
   -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
   -> Frontend (R route)
   -> JSM ()
@@ -202,11 +202,11 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
       w appendHead appendBody = do
         rec switchover <- runRouteViewT ve switchover (_frontendMode_adjustRoute mode) $ do
               (switchover'', fire) <- newTriggerEvent
-              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runFrontendConfigsT configs))) $ do
+              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
                 -- The order here is important - baseTag has to be before headWidget!
                 baseTag
                 _frontend_head frontend
-              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runFrontendConfigsT configs))) $ do
+              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runConfigsT configs))) $ do
                 _frontend_body frontend
                 switchover' <- case _frontendMode_hydrate mode of
                   True -> lift $ lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
@@ -221,9 +221,9 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
 renderFrontendHtml
   :: ( t ~ DomTimeline
      , MonadIO m
-     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (FrontendConfigsT (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost)))))))
+     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost)))))))
      )
-  => Map Text Text
+  => Map Text ByteString
   -> Cookies
   -> (r -> Text)
   -> r
@@ -233,7 +233,7 @@ renderFrontendHtml
   -> m ByteString
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runFrontendConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
+  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
       el "head" $ do
         baseTag
