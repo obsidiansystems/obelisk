@@ -30,7 +30,7 @@ getFromMgr mgr name = do
     BS.packCStringLen (b, fromIntegral l)
 
 getConfigs :: IO (Map Text ByteString)
-getConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
+getConfigs = fmap (Map.mapKeys T.decodeUtf8) $ bracket getAssets freeAssetManager $ \mgrObj -> do
   mgr <- assetManagerFromJava mgrObj
   let openDir = do
         d <- withCString "config.files" $ \fn ->
