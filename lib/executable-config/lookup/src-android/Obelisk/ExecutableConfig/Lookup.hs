@@ -4,6 +4,7 @@ module Obelisk.ExecutableConfig.Lookup where
 
 import Control.Exception (bracket)
 import Control.Monad (forM)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Map (Map)
 import qualified Data.Map as Map

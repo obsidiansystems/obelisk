@@ -8,7 +8,6 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
-import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Traversable (for)
 import GHCJS.DOM
@@ -40,4 +39,4 @@ getConfigs = do
       pure $ catMaybes list
     decodeOrFail x = case B64.decode (T.encodeUtf8 x) of
       Left e -> error ("Obelisk.ExecutableConfig.Lookup.getConfigs: error when decoding base64: " ++ e)
-      Right x -> x
+      Right x' -> x'
