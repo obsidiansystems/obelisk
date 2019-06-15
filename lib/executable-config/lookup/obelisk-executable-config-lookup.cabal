@@ -7,7 +7,7 @@ library
   exposed-modules: Obelisk.ExecutableConfig.Lookup, Obelisk.Configs
   if os(ios)
     hs-source-dirs: src-ios, src
-    other-modules: Obelisk.ExecutableConfig.Internal.ConfigDirectory
+    other-modules: Obelisk.Configs.Internal.Directory
     build-depends: jsaddle-wkwebview
     build-depends: directory
   else
@@ -23,6 +23,7 @@ library
         build-depends: ghcjs-dom
       else
         hs-source-dirs: src-other, src
+        other-modules: Obelisk.Configs.Internal.Directory
         build-depends: directory
 
   build-depends:

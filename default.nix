@@ -32,7 +32,6 @@ let
       # Fix misc upstream packages
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
-        universeRepo = hackGet ./dep/universe;
       in {
         hnix = pkgs.haskell.lib.dontCheck (self.callCabal2nix "hnix" (pkgs.fetchFromGitHub {
           owner = "haskell-nix";
@@ -40,16 +39,6 @@ let
           rev = "42afdc21da5d9e076eab57eaa42bfdde938192b8";
           sha256 = "0psw384dx9bw2dp93xrzw8rd9amvcwgzn64jzzwby7sfspj6k349";
         }) {});
-        universe = self.callCabal2nixWithOptions "universe" universeRepo "--subpath universe" {};
-        universe-base = self.callCabal2nixWithOptions "universe" universeRepo "--subpath universe-base" {};
-        universe-dependent-sum = pkgs.haskell.lib.doJailbreak (self.callCabal2nixWithOptions "universe" universeRepo "--subpath universe-dependent-sum" {});
-        universe-instances-extended = self.callCabal2nixWithOptions "universe" universeRepo "--subpath universe-instances-extended" {};
-        universe-reverse-instances = self.callCabal2nixWithOptions "universe" universeRepo "--subpath universe-reverse-instances" {};
-        universe-instances-base = self.callCabal2nixWithOptions "universe" universeRepo "--subpath deprecated/universe-instances-base" {};
-        constraints-extras = self.callCabal2nix "constraints-extras" (hackGet ./dep/constraints-extras) {};
-        dependent-map = self.callCabal2nix "dependent-map" (hackGet ./dep/dependent-map) {};
-        dependent-sum = self.callCabal2nixWithOptions "dependent-sum" (hackGet ./dep/dependent-sum) "--subpath dependent-sum" {};
-        dependent-sum-template = self.callCabal2nixWithOptions "dependent-sum-template" (hackGet ./dep/dependent-sum) "--subpath dependent-sum-template" {};
       })
 
       pkgs.obeliskExecutableConfig.haskellOverlay
