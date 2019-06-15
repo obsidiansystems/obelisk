@@ -34,7 +34,8 @@ library
                  text,
                  transformers,
                  universe,
-                 universe-template
+                 universe-template,
+                 writer-cps-mtl
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend
