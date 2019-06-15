@@ -49,7 +49,6 @@ import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.Backend
-import Obelisk.Configs
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
@@ -76,20 +75,17 @@ run port serveStaticAsset backend frontend = do
   case checkEncoder $ _backend_routeEncoder backend of
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
     Right validFullEncoder -> do
-      configs <- getComponentConfigs
+      publicConfigs <- getPublicConfigs
       backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
-        runConfigsT (_componentConfigs_backend configs) $
-          _backend_run backend $ \serveRoute -> do
-            runSnapWithCommandLineArgs $ do
-              getRouteWith validFullEncoder >>= \case
-                Identity r -> case r of
-                  InL backendRoute :=> Identity a ->
-                    runConfigsT (_componentConfigs_backend configs) $
-                      serveRoute $ backendRoute :/ a
-                  InR obeliskRoute :=> Identity a ->
-                    serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend (_componentConfigs_frontend configs) $ obeliskRoute :/ a
+        _backend_run backend $ \serveRoute -> do
+          runSnapWithCommandLineArgs $ do
+            getRouteWith validFullEncoder >>= \case
+              Identity r -> case r of
+                InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
+                InR obeliskRoute :=> Identity a ->
+                  serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
       let conf = defRunConfig { _runConfig_redirectPort = port }
-      runWidget conf (_componentConfigs_frontend configs) frontend validFullEncoder `finally` killThread backendTid
+      runWidget conf publicConfigs frontend validFullEncoder `finally` killThread backendTid
 
 -- Convenience wrapper to handle path segments for 'Snap.serveAsset'
 runServeAsset :: FilePath -> [Text] -> Snap ()
