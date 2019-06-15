@@ -212,18 +212,24 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
 
 data ThunkCommand
    = ThunkCommand_Update [FilePath] (Maybe String)
-   | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack   [FilePath] Bool
+   | ThunkCommand_Unpack [FilePath] ThunkScheme
+   | ThunkCommand_Pack   [FilePath] ThunkScheme Bool
   deriving Show
 
 forceFlag :: Parser Bool
 forceFlag = switch $ long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care."
 
+thunkScheme :: Parser ThunkScheme
+thunkScheme = foldl1 (<|>)
+  [ pure ThunkScheme_Keep
+  , ThunkScheme_Override <$> strOption (long "scheme" <> metavar "SCHEME")
+  ]
+
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
   [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> optional (strOption (long "branch" <> metavar "BRANCH"))) $ progDesc "Update thunk to latest revision available"
-  , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> forceFlag) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+  , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser <*> thunkScheme) $ progDesc "Unpack thunk into git checkout of revision it points to"
+  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> thunkScheme <*> forceFlag) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
 
 data ShellOpts
@@ -363,8 +369,8 @@ ob = \case
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
-    ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
-    ThunkCommand_Pack thunks force -> forM_ thunks (packThunk force)
+    ThunkCommand_Unpack thunks schemeHandling -> mapM_ (unpackThunk schemeHandling) thunks
+    ThunkCommand_Pack thunks schemeHandling force -> forM_ thunks (packThunk force schemeHandling)
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
