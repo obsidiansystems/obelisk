@@ -61,7 +61,10 @@ let
     ];
     command = local-self.command;
     serverExeSkeleton = (import ./skeleton { obelisk = local-self; }).exe;
-    androidSkeleton = (import ./skeleton { obelisk = local-self; }).android.frontend;
+    androidObelisk = import ./. (self-args // {
+      config.android_sdk.accept_license = true;
+    });
+    androidSkeleton = (import ./skeleton { obelisk = androidObelisk; }).android.frontend;
     iosObelisk = import ./. (self-args // {
       system = "x86_64-darwin";
       iosSdkVersion = "10.2";
