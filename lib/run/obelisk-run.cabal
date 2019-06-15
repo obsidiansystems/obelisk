@@ -26,7 +26,7 @@ library
     , network
     , obelisk-asset-serve-snap
     , obelisk-backend
-    , obelisk-executable-config-backend
+    , obelisk-executable-config-lookup
     , obelisk-frontend
     , obelisk-route
     , process

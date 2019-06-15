@@ -14,7 +14,6 @@ library
                  containers,
                  dependent-map,
                  dependent-sum,
-                 dependent-sum-universe-orphans,
                  dependent-sum-template,
                  either,
                  ghcjs-dom,
@@ -24,7 +23,7 @@ library
                  monad-control,
                  mtl,
                  network-uri,
-                 obelisk-executable-config-frontend,
+                 obelisk-executable-config-lookup,
                  primitive,
                  ref-tf,
                  reflex,
@@ -32,9 +31,10 @@ library
                  template-haskell,
                  tabulation,
                  text,
+                 th-extras,
                  transformers,
                  universe,
-                 universe-template
+                 universe-dependent-sum
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend

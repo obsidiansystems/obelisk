@@ -1,8 +1,10 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Lookup where
 
 import Control.Exception (bracket)
 import Control.Monad (forM)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -13,7 +15,7 @@ import Foreign.Ptr (nullPtr)
 
 import Obelisk.ExecutableConfig.Internal.AssetManager
 
-getFromMgr :: AAssetManager -> BS.ByteString -> IO (Maybe Text)
+getFromMgr :: AAssetManager -> BS.ByteString -> IO (Maybe ByteString)
 getFromMgr mgr name = do
   let open = do
         a <- BS.useAsCString name $ \fn ->
@@ -25,10 +27,10 @@ getFromMgr mgr name = do
   bracket open close $ mapM $ \asset -> do
     b <- asset_getBuffer asset
     l <- asset_getLength asset
-    fmap T.decodeUtf8 $ BS.packCStringLen (b, fromIntegral l)
+    BS.packCStringLen (b, fromIntegral l)
 
-getConfigs :: IO (Map Text Text)
-getConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
+getConfigs :: IO (Map Text ByteString)
+getConfigs = fmap (Map.mapKeys T.decodeUtf8) $ bracket getAssets freeAssetManager $ \mgrObj -> do
   mgr <- assetManagerFromJava mgrObj
   let openDir = do
         d <- withCString "config.files" $ \fn ->
@@ -43,10 +45,12 @@ getConfigs = bracket getAssets freeAssetManager $ \mgrObj -> do
       l <- asset_getLength asset
       lines0 <$> BS.packCStringLen (b, fromIntegral l)
     Nothing -> error "could not open configuration manifest 'config.files'"
-  fmap Map.fromList $ forM configPaths $ \fp ->
-    getFromMgr mgr fp >>= \case
-      Just v -> return (T.decodeUtf8 fp, v)
+  result <- fmap Map.fromList $ forM configPaths $ \fp ->
+    getFromMgr mgr ("config/" <> fp) >>= \case
+      Just v -> return (fp, v)
       Nothing -> error $ "Config present in config.files but not in assets: " <> show fp
+  putStrLn $ "getConfigs: found " <> show result
+  pure result
 
 lines0 :: BS.ByteString -> [BS.ByteString]
 lines0 ps
