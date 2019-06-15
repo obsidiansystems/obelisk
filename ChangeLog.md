@@ -4,9 +4,9 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 * Configs become ByteStrings.
-* FrontendConfigsT and BackendConfigsT have been unified into ConfigsT and changes are made available via getConfig/getConfigs
-  * The frontend will still only have access to configs that are placed in config/frontend and config/common, while the backend has access to the entire contents of the config directory.
-  * You will need to use paths like "backend/clientSessionKey" to access a backend key for example, as there are no longer separate functions like getBackendConfig/getFrontendConfig.
+* FrontendConfigsT has been changed into ConfigsT and configs are made available via getConfig/getConfigs
+  * The frontend will still only have access to configs that are placed in config/frontend and config/common, while the backend has access to the entire contents of the config directory via `Obelisk.ExecutableConfig.Lookup.getConfigs`.
+* The backend no longer runs in BackendConfigsT.
 * Add tabulation package. See Data.Tabulation for details.
 * Add encoders for `DMap`, `HasFields` (cf. Data.Tabulation), and JSON.
 
