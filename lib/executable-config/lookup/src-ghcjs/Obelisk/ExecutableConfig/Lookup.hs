@@ -38,6 +38,6 @@ getConfigs = do
       len <- getLength es
       list <- traverse (item es) [0..len-1]
       pure $ catMaybes list
-    decodeOrFail x = case B64.decode (T.decodeUtf8 x) of
+    decodeOrFail x = case B64.decode (T.encodeUtf8 x) of
       Left e -> error ("Obelisk.ExecutableConfig.Lookup.getConfigs: error when decoding base64: " ++ e)
       Right x -> x
