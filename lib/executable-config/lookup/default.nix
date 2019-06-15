@@ -1,5 +1,5 @@
 { hostPlatform, ghc
-, mkDerivation, base, bytestring, filepath, stdenv, text, transformers
+, mkDerivation, base, base64-bytestring, bytestring, filepath, stdenv, text, transformers
 , transformers-base, ref-tf, primitive, monad-control, reflex, reflex-dom
 , jsaddle
 , android-activity ? null, jsaddle-wkwebview ? null, ghcjs-dom ? null
