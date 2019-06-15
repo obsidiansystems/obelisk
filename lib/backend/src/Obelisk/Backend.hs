@@ -229,4 +229,4 @@ getComponentConfigs = do
     , _componentConfigs_frontend =
         Map.filterWithKey (\k _ -> isMemberOf k ["common", "frontend"]) allConfigs
     }
-  where isMemberOf k dirs = or $ map (\dir -> ("config/" <> dir) `T.isPrefixOf` k) dirs
+  where isMemberOf k dirs = or $ map (`T.isPrefixOf` k) dirs

@@ -94,17 +94,12 @@ run port serveStaticAsset backend frontend = do
 runServeAsset :: FilePath -> [Text] -> Snap ()
 runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
 
-getConfigRoute :: Map Text Text -> IO (Maybe URI)
+getConfigRoute :: Map Text Text -> Either Text URI
 getConfigRoute configs = case Map.lookup "common/route" configs of
   Just r -> case URI.mkURI $ T.strip r of
-    Just route -> pure $ Just route
-    Nothing -> do
-      putStrLn $ "Route is invalid: " <> show r
-      pure Nothing
-  Nothing -> pure Nothing
-
-defAppUri :: URI
-defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
+    Just route -> Right route
+    Nothing -> Left $ "Couldn't parse route as URI; value read was: " <> T.pack (show r)
+  Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
 
 runWidget
   :: RunConfig
@@ -113,7 +108,7 @@ runWidget
   -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
   -> IO ()
 runWidget conf configs frontend validFullEncoder = do
-  uri <- fromMaybe defAppUri <$> getConfigRoute configs
+  uri <- either (fail . T.unpack) pure $ getConfigRoute configs
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf

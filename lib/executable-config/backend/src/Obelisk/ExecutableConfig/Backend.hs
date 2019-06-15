@@ -67,8 +67,8 @@ runBackendConfigsT
 runBackendConfigsT cs child = runReaderT (unBackendConfigsT child) cs
 
 instance Monad m => HasBackendConfigs (BackendConfigsT m) where
-  getBackendConfig k = BackendConfigsT $ Map.lookup ("config/backend/" <> k) <$> ask
-  getCommonConfig k = BackendConfigsT $ Map.lookup ("config/common/" <> k) <$> ask
+  getBackendConfig k = BackendConfigsT $ Map.lookup ("backend/" <> k) <$> ask
+  getCommonConfig k = BackendConfigsT $ Map.lookup ("common/" <> k) <$> ask
 
 mapBackendConfigsT
   :: (forall x. m x -> n x)
