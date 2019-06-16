@@ -26,6 +26,7 @@ import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
+import Data.Char (toLower)
 
 import Obelisk.App
 import Obelisk.CliApp
@@ -221,9 +222,16 @@ forceFlag = switch $ long "force" <> short 'f' <> help "Force packing thunks eve
 
 thunkScheme :: Parser ThunkScheme
 thunkScheme = foldl1 (<|>)
-  [ pure ThunkScheme_Keep
-  , ThunkScheme_Override <$> strOption (long "scheme" <> metavar "SCHEME")
-  ]
+    [ pure ThunkScheme_Keep
+    , option parseThunkScheme (long "scheme" <> metavar "SCHEME")
+    ]
+  where
+    parseThunkScheme :: ReadM ThunkScheme
+    parseThunkScheme = eitherReader $ \s -> case map toLower s of
+      "https" -> Right ThunkScheme_Https
+      "ssh"   -> Right ThunkScheme_Ssh
+      _       -> Left $ "Unsupported scheme: '" <> s <> "'"
+
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat

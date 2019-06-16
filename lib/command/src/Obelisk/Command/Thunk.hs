@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Obelisk.Command.Thunk
   ( ThunkPtr (..), thunkPtr_source, thunkPtr_rev
   , ThunkRev (..)
@@ -35,7 +36,7 @@ module Obelisk.Command.Thunk
 import Control.Applicative
 import Control.Exception (displayException, try)
 import qualified Control.Lens as Lens
-import Control.Lens (makeLenses, makePrisms, (%~))
+import Control.Lens (makeLenses, makeLensesFor, makePrisms, (%~), (.~), _Right)
 import Control.Lens.Indexed hiding ((<.>))
 import Control.Monad
 import Control.Monad.Catch (handle)
@@ -73,6 +74,8 @@ import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
 import System.Process (proc)
 import Text.URI
+import qualified Text.URI.Lens as URI
+import qualified Text.URI.QQ as URIQQ
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
@@ -100,6 +103,8 @@ data GitSource = GitSource
   , _gitSource_fetchSubmodules :: Bool
   }
   deriving (Show, Eq, Ord)
+
+makeLensesFor [("_gitSource_url", "gitSource_url")] ''GitSource
 
 -- | A location from which a thunk's data can be retrieved
 data ThunkSource
@@ -132,8 +137,10 @@ data ThunkData
 data ThunkScheme
   = ThunkScheme_Keep
   -- ^ Keep the protocol https/ssh as it was.
-  | ThunkScheme_Override Text
-  -- ^ Switch protocol when packing/unpacking to the specified one.
+  | ThunkScheme_Https
+  -- ^ Switch to https://host/.... like uri.
+  | ThunkScheme_Ssh
+  -- ^ Switch to ssh://git@host/.... like uri.
   deriving (Show, Eq, Ord)
 
 -- | Convert a GitHub source to a regular Git source. Assumes no submodules.
@@ -612,7 +619,7 @@ unpackThunk' noTrail tScheme thunkDir = checkThunkDirectory "Can't pack/unpack f
   Right (ThunkData_Packed tptr) -> do
     let (thunkParent, thunkName) = splitFileName thunkDir
     withTempDirectory thunkParent thunkName $ \tmpRepo -> do
-      overrideScheme <- getThunkSchemeOverride tScheme
+      let overrideScheme = applyThunkScheme tScheme
       let obGitDir = tmpRepo </> ".git" </> "obelisk"
           s = overrideScheme $ case _thunkPtr_source tptr of
             ThunkSource_GitHub s' -> forgetGithub False s'
@@ -648,7 +655,7 @@ packThunk' noTrail force tScheme thunkDir = checkThunkDirectory "Can't pack/unpa
   Right (ThunkData_Checkout _) -> do
     withSpinner' ("Packing thunk " <> T.pack thunkDir)
                  (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
-      overrideScheme <- getThunkSchemeOverride tScheme
+      let overrideScheme = applyThunkScheme tScheme
       let overrideSchemeThunkPtr = thunkPtr_source . _ThunkSource_Git %~ overrideScheme
       thunkPtr <- overrideSchemeThunkPtr <$> getThunkPtr (not force) thunkDir
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
@@ -952,10 +959,17 @@ parseSshShorthand uri = do
         && not (T.null colonAndPath)
   mkURI properUri
 
-getThunkSchemeOverride :: MonadObelisk m => ThunkScheme -> m (GitSource -> GitSource)
-getThunkSchemeOverride = \case
-  ThunkScheme_Keep ->
-    pure id
-  ThunkScheme_Override s -> do
-    sp <- maybe (failWith $ "Provided scheme was not valid: '" <> s <> "'") pure $ mkScheme s
-    pure $ \source -> source { _gitSource_url = (_gitSource_url source) { uriScheme = Just sp }}
+applyThunkScheme :: ThunkScheme -> (GitSource -> GitSource)
+applyThunkScheme = \case
+  ThunkScheme_Keep -> id
+  ThunkScheme_Https ->
+    let https = [URIQQ.scheme|https|]
+    in gitSource_url . URI.uriScheme .~ Just https
+  ThunkScheme_Ssh ->
+    let
+      ssh = [URIQQ.scheme|ssh|]
+      setUserInfo = URI.uriAuthority . _Right . URI.authUserInfo .~ Just (UserInfo [URIQQ.username|git|]  Nothing)
+      setScheme = URI.uriScheme .~ Just ssh
+      uriToSsh = setUserInfo . setScheme
+    in
+      gitSource_url %~ uriToSsh
