@@ -21,6 +21,7 @@
 module Obelisk.Route
   ( R
   , pattern (:/)
+  , (?/)
   , hoistR
   , PageName
   , PathQuery
@@ -193,6 +194,10 @@ type R f = DSum f Identity --TODO: Better name
 infixr 5 :/
 pattern (:/) :: f a -> a -> R f
 pattern a :/ b = a :=> Identity b
+
+infixr 5 ?/
+(?/) :: f (Maybe a) -> a -> R f
+r ?/ a = r :/ Just a
 
 mapSome :: (forall a. f a -> g a) -> Some f -> Some g
 mapSome f (Some a) = Some $ f a
