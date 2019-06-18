@@ -16,12 +16,10 @@ let injectConfig = config: assets: nixpkgs.runCommand "inject-config" {} (''
         exit 1
       fi
       cp -a "${config}"/* "$out/config"
-      (cd $out && find config -type f -print0 >config.files)
+      find "$out/config" -type f -printf '%P\0' >"$out/config.files"
     '');
 in with nixpkgs.haskell.lib; {
   haskellOverlay = self: super: {
-    obelisk-executable-config-backend = self.callCabal2nix "obelisk-executable-config-backend" (filterGitSource ./backend) {};
-    obelisk-executable-config-frontend = self.callCabal2nix "obelisk-executable-config-frontend" (filterGitSource ./frontend) {};
     obelisk-executable-config-lookup = self.callPackage (filterGitSource ./lookup) {};
   };
   platforms = {
