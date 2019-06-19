@@ -117,8 +117,6 @@ import Control.Lens
   , Iso'
   , itraverse
   , makePrisms
-  , matching
-  , prism
   , Prism'
   , prism'
   , re
@@ -720,40 +718,6 @@ joinPairTextEncoder = Encoder . \case
           "" -> throwError $ "joinPairTextEncoder: separator not found; expected " <> tshow separator
           _ -> return (kt, T.drop (T.length separator) vt)
     }
-
--- -- | Like '_2' but for DSum not '(,)'.
--- dSumFirstLensLike
---   :: forall f g g' h
---   .  Functor f
---   => (forall a. g a -> f (g' a))
---   -> (DSum g h) -> f (DSum g' h)
--- dSumFirstLensLike f (l :=> r) = (:=> r) <$> f l
---
--- -- | Like '_2' but for DSum not '(,)'.
--- dSumSecondLensLike
---   :: forall f g h h'
---   .  Functor f
---   => (forall a. h a -> f (h' a))
---   -> (DSum g h) -> f (DSum g h')
--- dSumSecondLensLike f (l :=> r) = (l :=>) <$> f r
-
--- TODO: Rewrite this by composing the given prism with a lens on the first
--- element of the DSum Or, more likely, the user can compose it themselves
---
--- TODO I (@Ericson2314) think this previous comment is wrong. I wrote the lenses above.
--- It didn't help. Combining lenses and prisms yields (affine) traversals, not
--- prisms. Perhaps If we had "DStrong", like, 'Strong' but for 'DSum', not '(,)', we
--- could get something like:
---
--- > dSumFirstOptic
--- >   :: forall f g g' h
--- >   .  DStrong p
--- >   => (forall a. p (g a) (g' a))
--- >   -> p (DSum g h) (DSum g' h)
--- > dSumFirstOptic = ???
---
--- That is certainly a science project, and I don't anticipate any additional
--- generality between that and what is written.
 
 -- This slight generalization of 'rPrism' happens to be enough to write all our
 -- prism combinators so far.
