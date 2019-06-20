@@ -92,7 +92,7 @@ run port serveStaticAsset backend frontend = do
       publicConfigs <- getPublicConfigs
       backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
         _backend_run backend $ \serveRoute -> do
-          runSnapWithCommandLineArgs $ do
+          runSnapWithCommandLineArgs Nothing $ do
             getRouteWith validFullEncoder >>= \case
               Identity r -> case r of
                 FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
