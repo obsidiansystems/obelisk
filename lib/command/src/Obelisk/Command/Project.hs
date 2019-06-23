@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Obelisk.Command.Project
   ( InitSource (..)
   , initProject
@@ -20,6 +21,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
 import Data.Bits
 import Data.Function (on)
+import Data.Text (Text)
 import qualified Data.Text as T
 import System.Directory
 import System.FilePath
@@ -27,9 +29,10 @@ import System.IO.Temp
 import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process (CreateProcess, cwd, proc, waitForProcess, delegate_ctlc)
+import Text.URI
 
 import GitHub.Data.GitData (Branch)
-import GitHub.Data.Name (Name)
+import GitHub.Data.Name (Name, untagName)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
@@ -53,6 +56,7 @@ data InitSource
    = InitSource_Default
    | InitSource_Branch (Name Branch)
    | InitSource_Symlink FilePath
+   | InitSource_WithCustomSkeleton Text (Name Branch)
    deriving Show
 
 -- | Path to obelisk directory in given path
@@ -82,6 +86,10 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
               then path
               else ".." </> path
         liftIO $ createSymbolicLink symlinkPath implDir
+      InitSource_WithCustomSkeleton uri branch  -> do
+        uri' <- mkURI $ uri
+        customSkeletonThunk <- return $ uriToThunkSource uri' (Just $ untagName branch)
+        createThunkWithLatest implDir customSkeletonThunk
     _ <- nixBuildAttrWithCache implDir "command"
     --TODO: We should probably handoff to the impl here
     skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this

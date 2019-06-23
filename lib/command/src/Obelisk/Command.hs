@@ -80,6 +80,7 @@ initSource = foldl1 (<|>)
   [ pure InitSource_Default
   , InitSource_Branch <$> strOption (long "branch" <> metavar "BRANCH")
   , InitSource_Symlink <$> strOption (long "symlink" <> action "directory" <> metavar "PATH")
+  , InitSource_WithCustomSkeleton <$> strOption (long "gitlink") <*> strOption (long "branch" <> metavar "BRANCH")
   ]
 
 initForce :: Parser Bool
@@ -119,6 +120,7 @@ inNixShell' p = withProjectRoot "." $ \root -> do
         , Just $ encodeStaticKey $ staticKey p
         ]
 
+-- TODO: WIP: There needs to be a flag to be set that will allow ob init to take a custom skeleton repository
 obCommand :: ArgsConfig -> Parser ObCommand
 obCommand cfg = hsubparser
     (mconcat

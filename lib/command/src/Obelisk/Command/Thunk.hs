@@ -28,6 +28,7 @@ module Obelisk.Command.Thunk
   , getThunkPtr
   , parseGitUri
   , uriThunkPtr
+  ,uriToThunkSource
   ) where
 
 import Control.Applicative
