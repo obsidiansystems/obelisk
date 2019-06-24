@@ -68,8 +68,8 @@ toImplDir :: FilePath -> FilePath
 toImplDir p = toObeliskDir p </> "impl"
 
 -- | Create a new project rooted in the current directory
-initProject :: MonadObelisk m => InitSource -> Bool -> m ()
-initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
+initProject :: MonadObelisk m => InitSource -> Bool -> Bool -> m ()
+initProject source force alt = withSystemTempDirectory "ob-init" $ \tmpDir -> do
   let implDir = toImplDir tmpDir
       obDir   = toObeliskDir tmpDir
   liftIO (listDirectory ".") >>= \case
@@ -86,10 +86,11 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
               then path
               else ".." </> path
         liftIO $ createSymbolicLink symlinkPath implDir
-      InitSource_WithCustomSkeleton uri branch  -> do
+      InitSource_WithCustomSkeleton uri branch | alt == True -> do
         uri' <- mkURI $ uri
         customSkeletonThunk <- return $ uriToThunkSource uri' (Just $ untagName branch)
         createThunkWithLatest implDir customSkeletonThunk
+      InitSource_WithCustomSkeleton _ _ -> failWith "ob init --alt must be set to use custom project skeleton."
     _ <- nixBuildAttrWithCache implDir "command"
     --TODO: We should probably handoff to the impl here
     skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this

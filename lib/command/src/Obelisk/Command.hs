@@ -86,8 +86,11 @@ initSource = foldl1 (<|>)
 initForce :: Parser Bool
 initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 
+customSkeletonFlag :: Parser Bool
+customSkeletonFlag = switch (long "alt" <> help "Allow ob init to be initiated with custom project directory")
+
 data ObCommand
-   = ObCommand_Init InitSource Bool
+   = ObCommand_Init InitSource Bool Bool
    | ObCommand_Deploy DeployCommand
    | ObCommand_Run
    | ObCommand_Thunk ThunkCommand
@@ -124,7 +127,7 @@ inNixShell' p = withProjectRoot "." $ \root -> do
 obCommand :: ArgsConfig -> Parser ObCommand
 obCommand cfg = hsubparser
     (mconcat
-      [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
+      [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce <*> customSkeletonFlag) $ progDesc "Initialize an Obelisk project"
       , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
@@ -329,7 +332,7 @@ main' argsCfg = do
 
 ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
-  ObCommand_Init source force -> initProject source force
+  ObCommand_Init source force alt -> initProject source force alt
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
       let deployDir = _deployInitOpts_outputDir deployOpts
