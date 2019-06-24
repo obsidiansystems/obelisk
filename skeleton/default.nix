@@ -6,9 +6,11 @@
     # Uncomment and set this to `true` to indicate your acceptance:
     # config.android_sdk.accept_license = false;
   }
+  , withHoogle ? false
 }:
 with obelisk;
 project ./. ({ ... }: {
+  inherit withHoogle;
   android.applicationId = "systems.obsidian.obelisk.examples.minimal";
   android.displayName = "Obelisk Minimal Example";
   ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";
