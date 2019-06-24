@@ -12,6 +12,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -66,6 +67,10 @@ module Obelisk.Route
   , obeliskRouteSegment
   , pageNameEncoder
   , handleEncoder
+  , FullRoute (..)
+  , _FullRoute_Frontend
+  , _FullRoute_Backend
+  , mkFullRouteEncoder
   , ObeliskRoute (..)
   , _ObeliskRoute_App
   , _ObeliskRoute_Resource
@@ -710,6 +715,45 @@ handleEncoder recover e = Encoder $ do
 -- Actual obelisk route info
 --------------------------------------------------------------------------------
 
+-- | The typical full route type comprising all of an Obelisk application's routes.
+-- Parameterised by the top level GADTs that define backend and frontend routes, respectively.
+data FullRoute :: (* -> *) -> (* -> *) -> * -> * where
+  FullRoute_Backend :: br a -> FullRoute br fr a
+  FullRoute_Frontend :: ObeliskRoute fr a -> FullRoute br fr a
+
+instance (GShow br, GShow fr) => GShow (FullRoute br fr) where
+  gshowsPrec p = \case
+    FullRoute_Backend x -> showParen (p > 10) (showString "FullRoute_Backend " . gshowsPrec 11 x)
+    FullRoute_Frontend x -> showParen (p > 10) (showString "FullRoute_Frontend " . gshowsPrec 11 x)
+
+instance (GEq br, GEq fr) => GEq (FullRoute br fr) where
+  geq (FullRoute_Backend x) (FullRoute_Backend y) = geq x y
+  geq (FullRoute_Frontend x) (FullRoute_Frontend y) = geq x y
+  geq _ _ = Nothing
+
+instance (GCompare br, GCompare fr) => GCompare (FullRoute br fr) where
+  gcompare (FullRoute_Backend _) (FullRoute_Frontend _) = GLT
+  gcompare (FullRoute_Frontend _) (FullRoute_Backend _) = GGT
+  gcompare (FullRoute_Backend x) (FullRoute_Backend y) = gcompare x y
+  gcompare (FullRoute_Frontend x) (FullRoute_Frontend y) = gcompare x y
+
+instance (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) where
+  universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome] 
+              ++ [Some (FullRoute_Frontend x) | Some x <- universeSome]
+
+-- | Build the typical top level application route encoder from a route for handling 404's,
+-- and segment encoders for backend and frontend routes.
+mkFullRouteEncoder
+  :: (GCompare br, GCompare fr, GShow br, GShow fr, UniverseSome br, UniverseSome fr)
+  => R (FullRoute br fr) -- ^ 404 handler
+  -> (forall a. br a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single backend route segment
+  -> (forall a. fr a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single frontend route segment
+  -> Encoder (Either Text) Identity (R (FullRoute br fr)) PageName
+mkFullRouteEncoder missing backendSegment frontendSegment = handleEncoder (const missing) $
+  pathComponentEncoder $ \case
+    FullRoute_Backend backendRoute -> backendSegment backendRoute
+    FullRoute_Frontend obeliskRoute -> obeliskRouteSegment obeliskRoute frontendSegment
+
 -- | A type which can represent Obelisk-specific resource routes, in addition to application specific routes which serve your
 -- frontend.
 data ObeliskRoute :: (* -> *) -> * -> * where
@@ -839,7 +883,7 @@ concat <$> mapM deriveRouteComponent
   ]
 
 makePrisms ''ObeliskRoute
-
+makePrisms ''FullRoute
 deriveGEq ''Void1
 deriveGCompare ''Void1
 

@@ -137,7 +137,7 @@ data FrontendMode = FrontendMode
 -- Selects FrontendMode based on platform; this doesn't work for jsaddle-warp
 runFrontend
   :: forall backendRoute route
-  .  Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
+  .  Encoder Identity Identity (R (FullRoute backendRoute route)) PageName
   -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
@@ -165,14 +165,14 @@ runFrontend validFullEncoder frontend = do
   runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
 
 runFrontendWithConfigsAndCurrentRoute
-  :: forall backendRoute route
+  :: forall backendRoute frontendRoute
   .  FrontendMode
   -> Map Text ByteString
-  -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
-  -> Frontend (R route)
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
+  -> Frontend (R frontendRoute)
   -> JSM ()
 runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = do
-  let ve = validFullEncoder . hoistParse errorLeft (prismEncoder (rPrism $ _InR . _ObeliskRoute_App))
+  let ve = validFullEncoder . hoistParse errorLeft (prismEncoder (rPrism $ _FullRoute_Frontend . _ObeliskRoute_App))
       errorLeft = \case
         Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
         Right x -> Identity x
