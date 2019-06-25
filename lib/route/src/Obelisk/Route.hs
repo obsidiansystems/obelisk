@@ -891,27 +891,27 @@ deriveGCompare ''Void1
 -- and query string). See 'checkEncoder' for how to produce a checked encoder.
 renderBackendRoute
   :: forall br a.
-     Encoder Identity Identity (R (Sum br a)) PageName
+     Encoder Identity Identity (R (FullRoute br a)) PageName
   -> R br
   -> Text
-renderBackendRoute enc = renderObeliskRoute enc . hoistR InL
+renderBackendRoute enc = renderObeliskRoute enc . hoistR FullRoute_Backend
 
 -- | Renders a frontend route with the supplied checked encoder
 renderFrontendRoute
   :: forall a fr.
-     Encoder Identity Identity (R (Sum a (ObeliskRoute fr))) PageName
+     Encoder Identity Identity (R (FullRoute a fr)) PageName
   -> R fr
   -> Text
-renderFrontendRoute enc = renderObeliskRoute enc . hoistR (InR . ObeliskRoute_App)
+renderFrontendRoute enc = renderObeliskRoute enc . hoistR (FullRoute_Frontend . ObeliskRoute_App)
 
 -- | Renders a route of the form typically found in an Obelisk project
 renderObeliskRoute
   :: forall a b.
-     Encoder Identity Identity (R (Sum a b)) PageName
-  -> R (Sum a b)
+     Encoder Identity Identity (R (FullRoute a b)) PageName
+  -> R (FullRoute a b)
   -> Text
 renderObeliskRoute e r =
-  let enc :: Encoder Identity (Either Text) (R (Sum a b)) PathQuery
+  let enc :: Encoder Identity (Either Text) (R (FullRoute a b)) PathQuery
       enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
   in (T.pack . uncurry (<>)) $ encode enc r
 
