@@ -63,6 +63,7 @@ module Obelisk.Route
   , shadowEncoder
   , prismEncoder
   , rPrism
+  , _R
   , obeliskRouteEncoder
   , obeliskRouteSegment
   , pageNameEncoder
@@ -95,6 +96,7 @@ module Obelisk.Route
   , Decoder(..)
   , dmapEncoder
   , fieldMapEncoder
+  , pathFieldEncoder
   , jsonEncoder
   ) where
 
@@ -106,8 +108,30 @@ import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
 import Control.Category.Associative
 import Control.Category.Monoidal
-import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, view, Wrapped (..))
+import Control.Category.Braided
+import Control.Lens
+  ( Identity (..)
+  , (^.)
+  , (^?)
+  , _Just
+  , _Nothing
+  , Cons(..)
+  , from
+  , imap
+  , iso
+  , Iso'
+  , itraverse
+  , makePrisms
+  , Prism'
+  , prism'
+  , re
+  , view
+  , Wrapped (..)
+  )
 import Control.Monad.Except
+import Control.Monad.Writer (execWriter, tell)
+import qualified Control.Monad.State.Strict as State
+import Control.Monad.Trans (lift)
 import qualified Data.ByteString.Lazy as BSL
 import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
@@ -257,6 +281,10 @@ instance Monad parse => Bifunctor (,) (EncoderImpl parse) (EncoderImpl parse) (E
     , _encoderImpl_decode = \(a, b) -> liftA2 (,) (_encoderImpl_decode f a) (_encoderImpl_decode g b)
     }
 
+instance (Monad parse, Applicative check) => Braided (Encoder check parse) (,) where
+  braid = isoEncoder (iso swap swap)
+
+
 instance (Applicative check, Monad parse) => PFunctor (,) (Encoder check parse) (Encoder check parse) where
   first f = bimap f id
 instance (Applicative check, Monad parse) => QFunctor (,) (Encoder check parse) (Encoder check parse) where
@@ -269,6 +297,34 @@ instance (Traversable f, Monad parse) => Cat.Functor f (EncoderImpl parse) (Enco
     { _encoderImpl_encode = fmap $ _encoderImpl_encode ve
     , _encoderImpl_decode = traverse $ _encoderImpl_decode ve
     }
+
+instance Monad parse => PFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
+  first f = bimap f id
+instance Monad parse => QFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
+  second g = bimap id g
+instance Monad parse => Bifunctor Either (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
+  bimap f g = EncoderImpl
+    { _encoderImpl_encode = bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
+    , _encoderImpl_decode = \case
+      Left a -> Left <$> _encoderImpl_decode f a
+      Right b -> Right <$> _encoderImpl_decode g b
+    }
+
+instance (Monad parse, Applicative check) => QFunctor Either (Encoder check parse) (Encoder check parse) where
+  second g = bimap id g
+instance (Monad parse, Applicative check) => PFunctor Either (Encoder check parse) (Encoder check parse) where
+  first f = bimap f id
+instance (Monad parse, Applicative check) => Bifunctor Either (Encoder check parse) (Encoder check parse) (Encoder check parse) where
+  bimap f g = Encoder $ liftA2 bimap (unEncoder f) (unEncoder g)
+
+instance (Applicative check, Monad parse) => Associative (Encoder check parse) Either where
+  associate = isoEncoder (iso (associate @(->) @Either) disassociate)
+  disassociate = isoEncoder (iso disassociate associate)
+
+instance (Monad parse, Applicative check) => Braided (Encoder check parse) Either where
+  braid = isoEncoder (iso swap swap)
+
+
 
 instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder check parse) (Encoder check parse) where
   fmap e = Encoder $ do
@@ -668,10 +724,47 @@ joinPairTextEncoder = Encoder . \case
           _ -> return (kt, T.drop (T.length separator) vt)
     }
 
---TODO: Rewrite this by composing the given prism with a lens on the first element of the DSum
--- Or, more likely, the user can compose it themselves
-rPrism :: forall f g. (forall a. Prism' (f a) (g a)) -> Prism' (R f) (R g)
-rPrism p = prism (\(g :/ x) -> g ^. re p :/ x) (\(f :/ x) -> bimap (:/ x) (:/ x) $ matching p f)
+-- This slight generalization of 'rPrism' happens to be enough to write all our
+-- prism combinators so far.
+dSumPrism
+  :: forall f f' g
+  .  (forall a. Prism' (f a) (f' a))
+  -> Prism' (DSum f g) (DSum f' g)
+dSumPrism p = prism'
+  (\(f' :=> x) -> f' ^. re p :=> x)
+  (\(f :=> x) -> (:=> x) <$> (f ^? p))
+
+-- already in obelisk
+rPrism
+  :: forall f f'
+  .  (forall a. Prism' (f a) (f' a))
+  -> Prism' (R f) (R f')
+rPrism p = dSumPrism p
+
+dSumPrism'
+  :: forall f g a
+  .  (forall b. Prism' (f b) (a :~: b))
+  -> Prism' (DSum f g) (g a)
+dSumPrism' p = dSumPrism p . iso (\(Refl :=> b) -> b) (Refl :=>)
+
+dSumGEqPrism
+  :: GEq f
+  => f a
+  -> Prism' (DSum f g) (g a)
+dSumGEqPrism variant = dSumPrism' $ prism' (\Refl -> variant) (\x -> geq variant x)
+
+-- | Given a 'tag :: f a', make a prism for 'R f'. This generalizes the usual
+-- prisms for a sum type (the ones that 'mkPrisms' would make), just as 'R'
+-- generalized a usual sum type.
+--
+-- [This is given the '_R' name of the "cannonical" prism not because it is the
+-- most general, but because it seems the most useful for routes, and 'R' itself
+-- trades generality for route-specificity.]
+_R
+  :: GEq f
+  => f a
+  -> Prism' (R f) a
+_R variant = dSumGEqPrism variant . iso runIdentity Identity
 
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
@@ -921,14 +1014,9 @@ readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
 integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
 integralEncoder = prismEncoder (Numeric.Lens.integral)
 
-pathSegmentEncoder :: (MonadError Text parse, Applicative check) =>
-  Encoder check parse (Text, PageName) PageName
-pathSegmentEncoder = unsafeMkEncoder EncoderImpl
-  { _encoderImpl_encode = \(x, (y, z)) -> (x:y, z)
-  , _encoderImpl_decode = \(xss, y) -> case xss of
-    [] -> throwError "not enough path segments"
-    (x:xs) -> pure (x, (xs, y))
-  }
+pathSegmentEncoder :: (MonadError Text parse, Applicative check, Cons as as a a) =>
+  Encoder check parse (a, (as, b)) (as, b)
+pathSegmentEncoder = first (prismEncoder _Cons) . disassociate
 
 newtype Decoder check parse b a = Decoder { toEncoder :: Encoder check parse a b }
 
@@ -980,6 +1068,32 @@ fieldMapEncoder = unsafeEncoder $ do
       case DMap.lookup f dm of
         Nothing -> throwError $ "fieldMapEncoder: Couldn't find key for `" <> T.pack (gshow f) <> "' in DMap."
         Just (Identity v) -> return v
+    }
+
+-- this is in base 4.12 (GHC 8.6);
+newtype Ap f a = Ap {getAp :: f a}
+
+instance (Applicative f, Semigroup a) => Semigroup (Ap f a) where
+  Ap x <> Ap y = Ap (liftA2 (<>) x y)
+
+instance (Applicative f, Monoid a) => Monoid (Ap f a) where
+  mappend = (<>)
+  mempty = Ap (pure mempty)
+
+pathFieldEncoder :: forall a p check parse . (HasFields a, Monad check, MonadError Text parse, GCompare (Field a)) => (forall x. Field a x -> Encoder check parse x p) -> Encoder check parse (a, [p]) [p]
+pathFieldEncoder fieldEncoder = unsafeEncoder $ do
+  fieldEncoderPureMap :: DMap.DMap (Field a) (Decoder Identity parse p) <- getAp $ getConst $ tabulateFieldsA @a $ \f -> Const (Ap $ fmap (DMap.singleton f . Decoder) $ (checkEncoder @Identity) $ fieldEncoder f)
+  let fieldEncoderPure :: forall x. Field a x -> Encoder Identity parse x p
+      fieldEncoderPure f = toEncoder (DMap.findWithDefault (error "bad") f fieldEncoderPureMap)
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \(x, rest) -> execWriter $ do
+      _ <- traverseWithField (\f x_i -> tell (pure $ encode (fieldEncoderPure f) x_i) *> pure x_i) x
+      tell rest
+    , _encoderImpl_decode = State.runStateT $ tabulateFieldsA $ \f -> State.get >>= \case
+      [] -> throwError $ T.pack "not enough path components"
+      p:ps -> do
+        State.put ps
+        lift $ tryDecode (fieldEncoderPure f) p
     }
 
 -- | Use ToJSON/FromJSON to encode to Text. The correctness of this encoder is dependent on the encoding being injective and round-tripping correctly.
