@@ -191,46 +191,64 @@ in rec {
       , internalPort ? 8000
       , backendArgs ? "--port=${toString internalPort}"
       , ...
-      }: {...}: {
-      services.nginx = {
-        enable = true;
-        virtualHosts."${routeHost}" = {
-          enableACME = enableHttps;
-          forceSSL = enableHttps;
-          locations.${baseUrl} = {
-            proxyPass = "http://localhost:" + toString internalPort;
-            proxyWebsockets = true;
+      }: {...}: 
+      let
+        serviceHome = "/var/lib/${user}";
+      in
+      {
+        services.nginx = {
+          enable = true;
+          virtualHosts."${routeHost}" = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
+            locations.${baseUrl} = {
+              proxyPass = "http://localhost:" + toString internalPort;
+              proxyWebsockets = true;
+            };
           };
         };
-      };
-      systemd.services.${name} = {
-        wantedBy = [ "multi-user.target" ];
-        after = [ "network.target" ];
-        restartIfChanged = true;
-        script = ''
-          ln -sft . '${exe}'/*
-          mkdir -p log
-          exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
-        '';
-        serviceConfig = {
-          User = user;
-          KillMode = "process";
-          WorkingDirectory = "~";
-          Restart = "always";
-          RestartSec = 5;
+        systemd.services.${name} = {
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network.target" ];
+          restartIfChanged = true;
+          script = ''
+            ln -sft . '${exe}'/*
+            mkdir -p log
+            exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
+          '';
+          serviceConfig = {
+            User = user;
+            KillMode = "process";
+            WorkingDirectory = "~";
+            Restart = "always";
+            RestartSec = 5;
+          };
+        };
+        # Restart backend on configuration changes:
+        systemd.services.restart-${name} = {
+          serviceConfig = {
+            type = "oneshot";
+            ExecStart="${nixpkgs.systemd.out}/bin/systemctl restart ${name}.service";
+          };
+        };
+        systemd.paths.restart-${name} = {
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network.target" ];
+          pathConfig = {
+            PathChanged = "${serviceHome}/config";
+          };
+        };
+        users = {
+          users.${user} = {
+            description = "${user} service";
+            home = serviceHome;
+            createHome = true;
+            isSystemUser = true;
+            group = group;
+          };
+          groups.${group} = {};
         };
       };
-      users = {
-        users.${user} = {
-          description = "${user} service";
-          home = "/var/lib/${user}";
-          createHome = true;
-          isSystemUser = true;
-          group = group;
-        };
-        groups.${group} = {};
-      };
-    };
   };
 
   serverExe = backend: frontend: assets: optimizationLevel: version:
