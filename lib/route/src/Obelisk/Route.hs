@@ -98,6 +98,7 @@ module Obelisk.Route
   , fieldMapEncoder
   , pathFieldEncoder
   , jsonEncoder
+  , byteStringsToPageName
   ) where
 
 import Prelude hiding ((.), id)
@@ -132,6 +133,7 @@ import Control.Monad.Except
 import Control.Monad.Writer (execWriter, tell)
 import qualified Control.Monad.State.Strict as State
 import Control.Monad.Trans (lift)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
@@ -1111,5 +1113,15 @@ jsonEncoder = unsafeEncoder $ do
         Left err -> throwError ("jsonEncoder: " <> T.pack err)
         Right x -> return x
     }
+
+-- Useful for app server integration.
+-- p must not start with slashes
+byteStringsToPageName :: BS.ByteString -> BS.ByteString -> PageName
+byteStringsToPageName p q =
+  let pageNameEncoder' :: Encoder Identity Identity PageName (String, String)
+      pageNameEncoder' = bimap
+        (unpackTextEncoder . pathSegmentsTextEncoder . listToNonEmptyEncoder)
+        (unpackTextEncoder . queryParametersTextEncoder . toListMapEncoder)
+  in decode pageNameEncoder' (T.unpack (T.decodeUtf8 p), T.unpack (T.decodeUtf8 q))
 
 --TODO: decodeURIComponent as appropriate

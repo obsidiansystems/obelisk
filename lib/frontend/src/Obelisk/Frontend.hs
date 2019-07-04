@@ -83,6 +83,7 @@ type ObeliskWidget js t route m =
   , PrebuildAgnostic t route (Client m)
   , HasConfigs m
   , HasCookies m
+  , MonadIO (Performable m)
   )
 
 type PrebuildAgnostic t route m =
