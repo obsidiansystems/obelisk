@@ -69,7 +69,10 @@ run = do
       -- Check whether the impure static files are a derivation (and so must be built)
       if isDerivation == "1"
         then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc "nix-build" ["-E", "(import " <> importablePath root <> "{}).passthru.staticFilesImpure"]
+          proc "nix-build"
+            [ "--no-out-link"
+            , "-E", "(import " <> importablePath root <> "{}).passthru.staticFilesImpure"
+            ]
         else readProcessAndLogStderr Debug $
           proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
