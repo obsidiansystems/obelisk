@@ -20,6 +20,8 @@ module Obelisk.CliApp.Process
   , callProcess
   , callCommand
   , reconstructCommand
+  , shellQuoteAndEscapeDouble
+  , shellQuoteAndEscapeSingle
   ) where
 
 import Control.Monad ((<=<), join, void)
@@ -182,5 +184,10 @@ reconstructCommand :: Process.CmdSpec -> Text
 reconstructCommand (Process.ShellCommand str) = T.pack str
 reconstructCommand (Process.RawCommand c as) = processToShellString c as
   where
-    processToShellString cmd args = T.unwords $ map quoteAndEscape (cmd : args)
-    quoteAndEscape x = "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
+    processToShellString cmd args = T.unwords $ map (shellQuoteAndEscapeSingle . T.pack) (cmd : args)
+
+shellQuoteAndEscapeSingle :: Text -> Text
+shellQuoteAndEscapeSingle x = "'" <> T.replace "'" "'\''" x <> "'"
+
+shellQuoteAndEscapeDouble :: Text -> Text
+shellQuoteAndEscapeDouble x = "\"" <> T.replace "\"" "\\\"" x <> "\""

@@ -83,8 +83,7 @@ readGitProcessNoRepo :: MonadObelisk m => [String] -> m Text
 readGitProcessNoRepo = readProcessAndLogOutput (Debug, Notice) . gitProcNoRepo
 
 processToShellString :: FilePath -> [String] -> String
-processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
-  where quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
+processToShellString cmd args = T.unpack $ T.unwords $ map (shellQuoteAndEscapeSingle . T.pack) (cmd : args)
 
 -- | A simpler wrapper for CliApp's most used process function with sensible defaults.
 runProc :: MonadObelisk m => P.CreateProcess -> m ()

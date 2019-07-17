@@ -43,6 +43,8 @@ module Obelisk.CliApp
   , callProcess
   , callCommand
   , reconstructCommand
+  , shellQuoteAndEscapeDouble
+  , shellQuoteAndEscapeSingle
   ) where
 
 import Control.Monad.Log (Severity (..))
