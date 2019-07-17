@@ -31,13 +31,14 @@ import System.Directory
 import System.FilePath
 import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
+import Text.Read (readMaybe)
 import Data.ByteString (ByteString)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp
   ( CliT (..), HasCliConfig, Severity (..)
   , callCommand, failWith, getCliConfig, putLog
-  , readProcessAndLogStderr, runCli)
+  , readProcessAndLogStderr, runCli, shellQuoteAndEscapeDouble)
 import Obelisk.Command.Project (inProjectShell, withProjectRoot)
 
 data CabalPackageInfo = CabalPackageInfo
@@ -55,15 +56,12 @@ run = do
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
     assets <- withProjectRoot "." $ \root -> do
-      let importableRoot = if "/" `isInfixOf` root
-            then root
-            else "./" <> root
       isDerivation <- readProcessAndLogStderr Debug $
         proc "nix"
           [ "eval"
           , "-f"
           , root
-          , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+          , "(let a = import " <> importablePath root <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
           , "--raw"
           -- `--raw` is not available with old nix-instantiate. It drops quotation
           -- marks and trailing newline, so is very convenient for shelling out.
@@ -71,11 +69,12 @@ run = do
       -- Check whether the impure static files are a derivation (and so must be built)
       if isDerivation == "1"
         then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc "nix-build" ["-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"]
+          proc "nix-build" ["-E", "(import " <> importablePath root <> "{}).passthru.staticFilesImpure"]
         else readProcessAndLogStderr Debug $
           proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
-    runGhcid dotGhciPath $ Just $ unwords
+    extraGhciArgs <- getExtraGhciArgs
+    runGhcid dotGhciPath extraGhciArgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
       , "(runServeAsset " ++ show assets ++ ")"
@@ -87,12 +86,14 @@ runRepl :: MonadObelisk m => m ()
 runRepl = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
-    runGhciRepl dotGhciPath
+    runGhciRepl dotGhciPath =<< getExtraGhciArgs
 
 runWatch :: MonadObelisk m => m ()
 runWatch = do
   pkgs <- getLocalPkgs
-  withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath Nothing
+  withGhciScript pkgs $ \dotGhciPath -> do
+    ghciArgs <- getExtraGhciArgs
+    runGhcid dotGhciPath ghciArgs Nothing
 
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
@@ -189,21 +190,24 @@ withGhciScript pkgs f = do
 runGhciRepl
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
+  -> [String] -- ^ Extra ghci arguments
   -> m ()
-runGhciRepl dotGhci = inProjectShell "ghc" $ unwords $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci]
+runGhciRepl dotGhci ghciArgs = inProjectShell "ghc" $ unwords $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci] ++ ghciArgs
 
 -- | Run ghcid
 runGhcid
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
+  -> [String] -- ^ Extra ghci arguments
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
+runGhcid dotGhci ghciArgs mcmd = callCommand $ unwords $ "ghcid" : opts
   where
     opts =
       [ "-W"
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -no-user-package-db -ghci-script " <> dotGhci <> "' "
+      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -no-user-package-db -ghci-script " <> dotGhci
+        <> " " <> T.unpack (T.unwords $ map (shellQuoteAndEscapeDouble . T.pack) ghciArgs) <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd
@@ -218,3 +222,19 @@ getFreePort = liftIO $ withSocketsDo $ do
       sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
       bind sock (addrAddress addr)
       return sock
+
+getExtraGhciArgs :: MonadObelisk m => m [String]
+getExtraGhciArgs = withProjectRoot "." $ \root -> do
+  let attr = "dev.extraGhciArgs"
+  value <- readProcessAndLogStderr Error (
+    proc "nix"
+      [ "eval"
+      , "--json"
+      , "(import " <> importablePath root <> " {})." <> attr <> " or []"
+      ])
+  case readMaybe (T.unpack value) of
+    Nothing -> [] <$ putLog Error ("Unable to parse " <> T.pack attr <> ": " <> value)
+    Just v -> return v
+
+importablePath :: String -> String
+importablePath x = if "/" `isInfixOf` x then x else "./" <> x
