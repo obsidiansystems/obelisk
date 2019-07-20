@@ -95,7 +95,7 @@ To enter a nix-shell from which you can run the hoogle command-line client or a 
 
 ### Adding packages
 
-In order to add packages declare them under build-depends field in cabal file manually, and then nix will install them once building.
+In order to add package dependencies, declare them under the build-depends field in the appropriate cabal files (backend, common, and frontend each have their own). The appropriate Nix packages will automatically be selected when building.
 
 ### Adding package overrides
 
