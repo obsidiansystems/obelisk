@@ -5,6 +5,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
   - [Hoogle](#hoogle)
+  - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
 - [Deploying](#deploying)
   - [Locally](#locally)
@@ -91,6 +92,10 @@ Every time you change the Haskell source files in frontend, common or backend, `
 To enter a nix-shell from which you can run the hoogle command-line client or a hoogle server for your project:
 
 `nix-shell -A shells.ghc --arg withHoogle true`
+
+### Adding packages
+
+In order to add packages declare them under build-depends field in cabal file manually, and then nix will install them.
 
 ### Adding package overrides
 
