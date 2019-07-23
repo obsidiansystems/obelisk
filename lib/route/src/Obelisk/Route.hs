@@ -32,6 +32,7 @@ module Obelisk.Route
   , unsafeMkEncoder
   , encode
   , decode
+  , encodeToText
   , tryDecode
   , hoistCheck
   , hoistParse
@@ -104,7 +105,7 @@ module Obelisk.Route
 import Prelude hiding ((.), id)
 
 import Control.Applicative
-import Control.Category (Category (..))
+import Control.Category (Category (..), (<<<))
 import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
 import Control.Category.Associative
@@ -238,6 +239,17 @@ tryDecode (Encoder (Identity impl)) x = _encoderImpl_decode impl x
 -- one should usually be applying decode and encode to the same 'Encoder'
 encode :: Encoder Identity parse decoded encoded -> decoded -> encoded
 encode (Encoder (Identity impl)) x = _encoderImpl_encode impl x
+
+-- | Similar to 'encode' above, this is a convenience function to get directly
+-- the textual encoding of a route (which can be used, for example, in a href),
+-- given that one has an 'Encoder' to a 'PageName'.
+encodeToText :: forall a. Encoder Identity Identity a PageName -> a -> Text
+encodeToText e a =
+  let
+    e' :: Encoder Identity (Either Text) a PathQuery
+    e' = pageNameEncoder <<< hoistParse (pure . runIdentity) e
+    (path, query) = encode e' a
+  in T.pack (path <> query)
 
 -- | This is a primitive used to build encoders which can't fail to check. It should not be used unless one is
 -- reasonably certain that the law given for 'EncoderImpl' above holds.
