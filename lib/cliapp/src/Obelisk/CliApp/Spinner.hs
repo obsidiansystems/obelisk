@@ -24,6 +24,7 @@ import System.Console.ANSI (Color (Blue, Cyan, Green, Red))
 
 import Obelisk.CliApp.Logging (allowUserToMakeLoggingVerbose, fork, putLog)
 import Obelisk.CliApp.TerminalString (TerminalString (..), enquiryCode)
+import Obelisk.CliApp.Theme
 import Obelisk.CliApp.Types (CliLog, CliConfig (..), HasCliConfig, Output (..), getCliConfig)
 
 -- | Run an action with a CLI spinner.
@@ -51,7 +52,8 @@ withSpinner'
   -> m a
   -> m a
 withSpinner' msg mkTrail action = do
-  noSpinner <- _cliConfig_noSpinner <$> getCliConfig
+  cliConf <- getCliConfig
+  let noSpinner = _cliConfig_noSpinner cliConf
   if noSpinner
     then putLog Notice msg >> action
     else bracket' run cleanup $ const action
@@ -61,8 +63,11 @@ withSpinner' msg mkTrail action = do
       modifyStack pushSpinner >>= \case
         True -> do -- Top-level spinner; fork a thread to manage output of anything on the stack
           ctrleThread <- fork $ allowUserToMakeLoggingVerbose enquiryCode
+          cliConf <- getCliConfig
+          let theme = _cliConfig_theme cliConf
+              spinner = coloredSpinner $ _cliTheme_spinner theme
           spinnerThread <- fork $ runSpinner spinner $ \c -> do
-            logs <- renderSpinnerStack c . snd <$> readStack
+            logs <- renderSpinnerStack theme c . snd <$> readStack
             logMessage $ Output_Overwrite logs
           pure [ctrleThread, spinnerThread]
         False -> -- Sub-spinner; nothing to do.
@@ -70,13 +75,15 @@ withSpinner' msg mkTrail action = do
     cleanup tids resultM = do
       liftIO $ mapM_ killThread tids
       logMessage Output_ClearLine
-      logsM <- modifyStack $ popSpinner $ case resultM of
+      cliConf <- getCliConfig
+      let theme = _cliConfig_theme cliConf
+      logsM <- modifyStack $ (popSpinner theme) $ case resultM of
         Nothing ->
-          ( TerminalString_Colorized Red "✖"
+          ( TerminalString_Colorized Red $ _cliTheme_failed $ _cliConfig_theme cliConf
           , Just msg  -- Always display final message if there was an exception.
           )
         Just result ->
-          ( TerminalString_Colorized Green "✔"
+          ( TerminalString_Colorized Green $ _cliTheme_done $ _cliConfig_theme cliConf
           , mkTrail <*> pure result
           )
       -- Last message, finish off with newline.
@@ -87,10 +94,10 @@ withSpinner' msg mkTrail action = do
       )
       where
         isTemporary = isNothing mkTrail
-    popSpinner (mark, trailMsgM) (flag, old) =
+    popSpinner theme (mark, trailMsgM) (flag, old) =
       ( (newFlag, new)
       -- With final trail spinner message to render
-      , renderSpinnerStack mark . (: new) . TerminalString_Normal <$> (
+      , renderSpinnerStack theme mark . (: new) . TerminalString_Normal <$> (
           if inTemporarySpinner then Nothing else trailMsgM
           )
       )
@@ -102,19 +109,19 @@ withSpinner' msg mkTrail action = do
       =<< fmap _cliConfig_spinnerStack getCliConfig
     modifyStack f = liftIO . flip atomicModifyIORef' f
       =<< fmap _cliConfig_spinnerStack getCliConfig
-    spinner = coloredSpinner defaultSpinnerTheme
 
 -- | How nested spinner logs should be displayed
 renderSpinnerStack
-  :: TerminalString  -- ^ That which comes before the final element in stack
+  :: CliTheme
+  -> TerminalString  -- ^ That which comes before the final element in stack
   -> [TerminalString]  -- ^ Spinner elements in reverse order
   -> [TerminalString]
-renderSpinnerStack mark = L.intersperse space . go . L.reverse
+renderSpinnerStack theme mark = L.intersperse space . go . L.reverse
   where
     go [] = []
     go (x:[]) = mark : [x]
     go (x:xs) = arrow : x : go xs
-    arrow = TerminalString_Colorized Blue "⇾"
+    arrow = TerminalString_Colorized Blue $ _cliTheme_arrow theme
     space = TerminalString_Normal " "
 
 -- | A spinner is simply an infinite list of strings that supplant each other in a delayed loop, creating the
@@ -129,18 +136,6 @@ runSpinner :: MonadIO m => Spinner -> (TerminalString -> m ()) -> m ()
 runSpinner spinner f = forM_ spinner $ f >=> const delay
   where
     delay = liftIO $ threadDelay 100000  -- A shorter delay ensures that we update promptly.
-
-type SpinnerTheme = [Text]
-
--- Find more spinners at https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
-_spinnerCircleHalves :: SpinnerTheme
-_spinnerCircleHalves = ["◐", "◓", "◑", "◒"]
-
-spinnerMoon :: SpinnerTheme
-spinnerMoon = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
-
-defaultSpinnerTheme :: SpinnerTheme
-defaultSpinnerTheme = spinnerMoon
 
 -- | Like `bracket` but the `release` function can know whether an exception was raised
 bracket' :: MonadMask m => m a -> (a -> Maybe c -> m b) -> (a -> m c) -> m c

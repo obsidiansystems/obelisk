@@ -47,33 +47,38 @@ deployInit
   => ThunkPtr
   -> FilePath
   -> FilePath
-  -> FilePath
   -> [String] -- ^ hostnames
   -> String -- ^ route
   -> String -- ^ admin email
   -> Bool -- ^ enable https
   -> m ()
-deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail enableHttps = do
-  (hasConfigDir, localKey) <- withSpinner ("Preparing " <> T.pack deployDir) $ do
-    hasConfigDir <- liftIO $ do
-      createDirectoryIfMissing True deployDir
-      doesDirectoryExist configDir
+deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps = do
+  localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
       False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
       True -> pure $ deployDir </> "ssh_key"
     callProcessAndLogOutput (Notice, Error) $
       proc "cp" [sshKeyPath, localKey]
     liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
-    return $ (hasConfigDir, localKey)
+    return localKey
   withSpinner "Validating configuration" $ do
     void $ getHostFromRoute enableHttps route -- make sure that hostname is present
   forM_ hostnames $ \hostname -> do
     putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
     -- Note: we can't use a spinner here as this function will prompt the user.
     verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
-  when hasConfigDir $ withSpinner "Importing project configuration" $ do
+  --IMPORTANT: We cannot copy config directory from the development project to
+  --the deployment directory.  If we do, it's very likely someone will
+  --accidentally create a production deployment that uses development
+  --credentials to connect to some resources.  This could result in, e.g.,
+  --production data backed up to a dev environment.
+  withSpinner "Creating project configuration directories" $ do
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp" [ "-r" , "-T" , configDir , deployDir </> "config"]
+      proc "mkdir" [ "-p"
+                   , deployDir </> "config" </> "backend"
+                   , deployDir </> "config" </> "common"
+                   , deployDir </> "config" </> "frontend"
+                   ]
   withSpinner "Writing deployment configuration" $ do
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
     writeDeployConfig deployDir "enable_https" $ show enableHttps
@@ -103,7 +108,7 @@ deployPush deployPath getNixBuilders = do
     Right (ThunkData_Packed ptr) -> return ptr
     Right (ThunkData_Checkout _) -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> packThunk srcPath
+        True -> packThunk False srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
@@ -131,7 +136,7 @@ deployPush deployPath getNixBuilders = do
   withSpinner "Uploading closures" $ ifor_ buildOutputByHost $ \host outputPath -> do
     callProcess'
       (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
-      "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+      "nix-copy-closure" ["-v", "--to", "--use-substitutes", "root@" <> host, "--gzip", outputPath]
   withSpinner "Uploading config" $ ifor_ buildOutputByHost $ \host _ -> do
     callProcessAndLogOutput (Notice, Warning) $
       proc "rsync"
@@ -229,7 +234,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
             [ "with (import ", srcDir, " {});"
             , "android.frontend.override (drv: { "
             , "releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; "
-            , "staticSrc = (passthru.__android ", configDir, ").frontend.staticSrc;"
+            , "staticSrc = (passthru.__androidWithConfig ", configDir, ").frontend.staticSrc;"
             , "})"
             ]
       return $ Target
@@ -240,7 +245,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     IOS -> do
       let expr = mconcat
             [ "with (import ", srcDir, " {});"
-            , "ios.frontend.override (_: { staticSrc = (passthru.__ios ", configDir, ").frontend.staticSrc; })"
+            , "ios.frontend.override (_: { staticSrc = (passthru.__iosWithConfig ", configDir, ").frontend.staticSrc; })"
             ]
       return $ Target
         { _target_path = Nothing
