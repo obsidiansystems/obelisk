@@ -2,7 +2,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -70,10 +69,10 @@ deriving instance Eq (Columnar f k) => Eq (Id k f)
 deriving instance Ord (Columnar f k) => Ord (Id k f)
 deriving instance Show (Columnar f k) => Show (Id k f)
 deriving instance Read (Columnar f k) => Read (Id k f)
-deriving newtype instance ToJSON (Columnar f k) => ToJSON (Id k f)
-deriving newtype instance ToJSONKey (Columnar f k) => ToJSONKey (Id k f)
-deriving newtype instance FromJSON (Columnar f k) => FromJSON (Id k f)
-deriving newtype instance FromJSONKey (Columnar f k) => FromJSONKey (Id k f)
+instance ToJSON (Columnar f k) => ToJSON (Id k f)
+instance ToJSON (Columnar f k) => ToJSONKey (Id k f)
+instance FromJSON (Columnar f k) => FromJSON (Id k f)
+instance FromJSON (Columnar f k) => FromJSONKey (Id k f)
 
 checkedEntity
   :: Text -- ^ The table name in the schema.
