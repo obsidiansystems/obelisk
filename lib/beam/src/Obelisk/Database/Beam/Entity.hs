@@ -59,6 +59,25 @@ deriving instance Ord (Columnar f k) => Ord (Id k f)
 deriving instance Show (Columnar f k) => Show (Id k f)
 deriving instance Read (Columnar f k) => Read (Id k f)
 
+fromEK
+  :: KeyT value ~ Id k
+  => EntityKeyT f value -> Columnar f k
+fromEK (EntityKey (Id x)) = x
+
+toEK
+  :: KeyT value ~ Id k
+  => Columnar f k -> EntityKeyT f value
+toEK = EntityKey . Id
+
+isoEK
+  :: KeyT value ~ Id k
+  => Iso
+       (EntityKeyT f1 value)
+       (EntityKeyT f2 value)
+       (Columnar f1 k)
+       (Columnar f2 k)
+isoEK = iso fromEK toEK
+
 checkedEntity
   :: Text -- ^ The table name in the schema.
   -> KeyT e (CheckedFieldModification (EntityT e))
