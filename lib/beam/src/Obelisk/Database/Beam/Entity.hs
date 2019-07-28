@@ -88,8 +88,8 @@ unsafeUnaryEKEncoder
   :: KeyT v ~ Id k
   => (Show k, Read k)
   => (Applicative check, MonadError Text parse)
-  => Encoder check parse (EntityKey v) PageName
-unsafeUnaryEKEncoder = singlePathSegmentEncoder . unsafeTshowEncoder . isoEncoder isoEK
+  => Encoder check parse (EntityKey v) Text
+unsafeUnaryEKEncoder = unsafeTshowEncoder . isoEncoder isoEK
 
 checkedEntity
   :: Text -- ^ The table name in the schema.
