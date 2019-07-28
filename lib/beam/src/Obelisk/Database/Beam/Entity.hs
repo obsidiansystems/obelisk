@@ -11,6 +11,7 @@ module Obelisk.Database.Beam.Entity where
 import Control.Lens
 import Data.Text
 import Database.Beam
+import Database.Beam.Backend.SQL (BeamSqlBackend)
 import Database.Beam.Migrate
 
 -- | Associates a database table's value (non-key) component with its key type.
@@ -58,6 +59,16 @@ deriving instance Eq (Columnar f k) => Eq (Id k f)
 deriving instance Ord (Columnar f k) => Ord (Id k f)
 deriving instance Show (Columnar f k) => Show (Id k f)
 deriving instance Read (Columnar f k) => Read (Id k f)
+
+entity_ ::
+         ( BeamSqlBackend be
+         , KeyT value ~ Id k
+         , SqlValable (value f)
+         , Columnar f k ~ QGenExpr ctxt be s a
+         )
+         => HaskellLiteralForQExpr (value f)
+         -> EntityT value f
+entity_ = Entity (Id default_) . val_
 
 checkedEntity
   :: Text -- ^ The table name in the schema.
