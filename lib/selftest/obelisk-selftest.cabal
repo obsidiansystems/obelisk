@@ -16,6 +16,7 @@ library
     , http-types
     , HUnit
     , obelisk-cliapp
+    , obelisk-executable-config-lookup
     , obelisk-run
     , process
     , network

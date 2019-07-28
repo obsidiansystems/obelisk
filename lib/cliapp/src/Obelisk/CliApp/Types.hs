@@ -23,6 +23,7 @@ import Data.Text (Text)
 import System.Exit (ExitCode (..), exitWith)
 
 import Obelisk.CliApp.TerminalString (TerminalString)
+import Obelisk.CliApp.Theme (CliTheme)
 
 --------------------------------------------------------------------------------
 
@@ -88,6 +89,8 @@ data CliConfig e = CliConfig
     _cliConfig_spinnerStack :: IORef ([Bool], [TerminalString])
   , -- | Failure handler. How to log error and what exit status to use.
     _cliConfig_errorLogExitCode :: e -> (Text, Int)
+  , -- | Theme strings for spinners
+    _cliConfig_theme :: CliTheme
   }
 
 class Monad m => HasCliConfig e m | m -> e where

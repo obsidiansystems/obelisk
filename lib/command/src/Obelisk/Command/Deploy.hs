@@ -108,7 +108,7 @@ deployPush deployPath getNixBuilders = do
     Right (ThunkData_Packed ptr) -> return ptr
     Right (ThunkData_Checkout _) -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> packThunk srcPath
+        True -> packThunk False srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
@@ -234,7 +234,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
             [ "with (import ", srcDir, " {});"
             , "android.frontend.override (drv: { "
             , "releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; "
-            , "staticSrc = (passthru.__android ", configDir, ").frontend.staticSrc;"
+            , "staticSrc = (passthru.__androidWithConfig ", configDir, ").frontend.staticSrc;"
             , "})"
             ]
       return $ Target
@@ -245,7 +245,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     IOS -> do
       let expr = mconcat
             [ "with (import ", srcDir, " {});"
-            , "ios.frontend.override (_: { staticSrc = (passthru.__ios ", configDir, ").frontend.staticSrc; })"
+            , "ios.frontend.override (_: { staticSrc = (passthru.__iosWithConfig ", configDir, ").frontend.staticSrc; })"
             ]
       return $ Target
         { _target_path = Nothing
