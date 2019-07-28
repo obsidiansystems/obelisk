@@ -5,7 +5,8 @@ build-type: Simple
 
 library
   hs-source-dirs: src
-  build-depends: base,
+  build-depends: aeson,
+                 base,
                  beam-core,
                  beam-migrate,
                  lens,
