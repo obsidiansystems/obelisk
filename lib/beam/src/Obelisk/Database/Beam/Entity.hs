@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -62,8 +61,7 @@ type EntityKey value = EntityKeyT Identity value
 
 -- | A single-column primary key.
 newtype Id k f = Id { getId :: Columnar f k }
-  deriving stock Generic
-  deriving anyclass Beamable
+  deriving (Generic, Beamable)
 
 deriving instance Eq (Columnar f k) => Eq (Id k f)
 deriving instance Ord (Columnar f k) => Ord (Id k f)
