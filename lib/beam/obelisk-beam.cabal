@@ -9,6 +9,8 @@ library
                  beam-core,
                  beam-migrate,
                  lens,
+                 mtl,
+                 obelisk-route,
                  text
   exposed-modules: Obelisk.Database.Beam.Entity
 

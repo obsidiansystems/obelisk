@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -8,10 +9,15 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Obelisk.Database.Beam.Entity where
 
+import Control.Category (Category(..))
 import Control.Lens
+import Control.Monad.Except (MonadError)
 import Data.Text
 import Database.Beam
 import Database.Beam.Migrate
+import Prelude hiding (id, (.))
+
+import Obelisk.Route
 
 -- | Associates a database table's value (non-key) component with its key type.
 type family KeyT (value :: (* -> *) -> *) :: ((* -> *) -> *)
@@ -77,6 +83,13 @@ isoEK
        (Columnar f1 k)
        (Columnar f2 k)
 isoEK = iso fromEK toEK
+
+unsafeUnaryEKEncoder
+  :: KeyT v ~ Id k
+  => (Show k, Read k)
+  => (Applicative check, MonadError Text parse)
+  => Encoder check parse (EntityKey v) PageName
+unsafeUnaryEKEncoder = singlePathSegmentEncoder . unsafeTshowEncoder . isoEncoder isoEK
 
 checkedEntity
   :: Text -- ^ The table name in the schema.
