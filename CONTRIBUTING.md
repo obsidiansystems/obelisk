@@ -34,6 +34,10 @@ Commits that update a dependency should include some information about why the d
 #### Body
 For breaking changes, new features, refactors, or other major changes, the body of the commit message should describe the motivation behind the change in greater detail and may include references to the issue tracker. The body shouldn't repeat code/comments from the diff.
 
+### Guidelines for Pull Requests
+
+Wherever possible, pull requests should add a single feature or fix a single bug. Pull requests should not bundle several unrelated changes.
+
 ### Code Quality
 
 #### Warnings
