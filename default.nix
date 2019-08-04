@@ -329,11 +329,11 @@ in rec {
                     backendName
                     commonName
                     frontendName
-                  ]);
-                  ghcjs = lib.filter (x: lib.hasAttr x combinedPackages) [
+                  ]) ++ lib.attrNames packages;
+                  ghcjs = (lib.filter (x: lib.hasAttr x combinedPackages) [
                     frontendName
                     commonName
-                  ];
+                  ]) ++ lib.attrNames packages;
                 };
                 android = __androidWithConfig (base + "/config");
                 ios = __iosWithConfig (base + "/config");

@@ -121,6 +121,23 @@ project ./. ({ pkgs, ... }: {
 
 For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
 
+### Adding extra local packages
+
+If the standard packages (`frontend`, `backend`, and `common`) are not
+enough, to add more local Haskell packages, define them with the
+`packages` parameter. The sources of these packages will be
+automatically reloaded by `ob run`.
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  packages = {
+    another = ./another;
+  };
+# ...
+```
+
 ## Deploying
 
 ### Locally

@@ -37,7 +37,7 @@ import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp
   ( CliT (..), HasCliConfig, Severity (..)
   , callCommand, failWith, getCliConfig, putLog
-  , readProcessAndLogStderr, runCli)
+  , readProcessAndLogStderr, readProcessJSONAndLogStderr, runCli)
 import Obelisk.Command.Project (inProjectShell, withProjectRoot)
 
 data CabalPackageInfo = CabalPackageInfo
@@ -52,14 +52,12 @@ data CabalPackageInfo = CabalPackageInfo
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
 run :: ObeliskT IO ()
-run = do
-  pkgs <- getLocalPkgs
+run = withProjectRoot "." $ \root -> do
+  pkgs <- getLocalPkgs root
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
-    assets <- withProjectRoot "." $ \root -> do
-      let importableRoot = if "/" `isInfixOf` root
-            then root
-            else "./" <> root
+    assets <- do
+      let importableRoot = toNixPath root
       isDerivation <- readProcessAndLogStderr Debug $
         proc "nix"
           [ "eval"
@@ -88,21 +86,45 @@ run = do
       , "Frontend.frontend"
       ]
 
+-- | Nix syntax requires relative paths to be prefixed by @./@ or
+-- @../@. This will make a 'FilePath' that can be embedded in a Nix
+-- expression.
+toNixPath :: FilePath -> FilePath
+toNixPath root | "/" `isInfixOf` root = root
+               | otherwise = "./" <> root
+
 runRepl :: MonadObelisk m => m ()
 runRepl = do
-  pkgs <- getLocalPkgs
+  pkgs <- withProjectRoot "." getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     runGhciRepl dotGhciPath
 
 runWatch :: MonadObelisk m => m ()
 runWatch = do
-  pkgs <- getLocalPkgs
+  pkgs <- withProjectRoot "." getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath Nothing
 
--- | Relative paths to local packages of an obelisk project
--- TODO a way to query this
-getLocalPkgs :: Applicative f => f [FilePath]
-getLocalPkgs = pure ["backend", "common", "frontend"]
+-- | Relative paths to local packages of an obelisk project.
+--
+-- These are a combination of the obelisk predefined local packages,
+-- and any packages that the user has set with the @packages@ argument
+-- to the Nix @project@ function.
+getLocalPkgs :: (MonadObelisk m, MonadIO m) => FilePath -> m [FilePath]
+getLocalPkgs root = do
+  root' <- liftIO $ makeAbsolute root
+  -- package paths from nix project will be absolute paths
+  projectPackages <- readProcessJSONAndLogStderr Debug $
+    proc "nix"
+      [ "eval"
+      , "(let proj = import " <> root <> " {}; in (map toString (proj.obelisk.reflex-platform.nixpkgs.lib.attrValues (proj.passthru.packages or {}))))"
+      , "--json"
+      ]
+  pure $ predefinedLocalPkgs ++ map (makeRelative root') projectPackages
+
+-- | Relative paths to the predefined obelisk project packages.
+-- (See @predefinedPackages@ in @default.nix@)
+predefinedLocalPkgs :: [FilePath]
+predefinedLocalPkgs = ["backend", "common", "frontend"]
 
 parseCabalPackage
   :: (MonadObelisk m)
