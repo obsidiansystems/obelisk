@@ -60,6 +60,11 @@ Or to launch ghcid for `lib/command` project:
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
+To re-install `ob` from source do
+```
+nix-env -f . -iA command
+```
+
 ### Accessing private repositories
 
 To allow the Nix builder to access private git repositories, you must be set up
