@@ -65,6 +65,25 @@ To re-install `ob` from source do
 nix-env -f . -iA command
 ```
 
+Note that `ob` will defer to the version found in your `.obelisk/impl` directory. To update your project's obelisk instead:
+
+```shell
+ob thunk unpack ./obelisk/impl
+cd ./obelisk/impl
+# apply your changes
+```
+
+If you want to commit your changes, first push them to your fork of obelisk and then
+
+```shell
+cd ../../
+ob thunk pack .obelisk/impl
+git add .obelisk/impl
+git commit -m "Bump obelisk"
+```
+
+push them to your obelisk repo,
+
 ### Accessing private repositories
 
 To allow the Nix builder to access private git repositories, you must be set up
