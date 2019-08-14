@@ -43,11 +43,11 @@ import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.History as DOM
 import qualified GHCJS.DOM.Window as DOM
-import Language.Javascript.JSaddle (JSM, jsNull)
+import Language.Javascript.JSaddle (MonadJSM, JSM, jsNull)
 import GHCJS.DOM (currentDocument)
 import GHCJS.DOM.Document (getHead)
-import GHCJS.DOM.Node (removeChild_)
-import GHCJS.DOM.NodeList (item, getLength)
+import GHCJS.DOM.Node (Node, removeChild_)
+import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
 import GHCJS.DOM.ParentNode (querySelectorAll)
 import Obelisk.Frontend.Cookie
 import Obelisk.Route.Frontend
@@ -105,13 +105,20 @@ removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
   doc <- MaybeT currentDocument
   hd <- MaybeT $ getHead doc
-  es <- collToList =<< querySelectorAll hd ("[data-obelisk-executable-config-inject-key]" :: Text)
+  es <- nodeListNodes =<< querySelectorAll hd ("[data-obelisk-executable-config-inject-key]" :: Text)
   for_ es $ removeChild_ hd
-  where
-    collToList es = do
-      len <- getLength es
-      lst <- traverse (item es) $ take (fromIntegral len) $ [0..] -- fun with unsigned types ...
-      pure $ catMaybes lst
+
+-- | Collect all nodes in the node list.
+--
+-- TODO: this and the version in exe-config/ghcjs/lookup should be
+-- upstreamed to jsaddle.
+nodeListNodes :: (IsNodeList l, MonadJSM m) => l -> m [Node]
+nodeListNodes es = do
+  len <- getLength es
+  -- Warning! len is unsigned. If the NodeList is empty, we must avoid
+  -- accidentally traversing over [0..maxBound::Word]
+  nodes <- traverse (item es) $ if len == 0 then [] else [0..len-1]
+  pure $ catMaybes nodes
 
 setInitialRoute :: Bool -> JSM ()
 setInitialRoute useHash = do
