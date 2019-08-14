@@ -207,6 +207,7 @@ in rec {
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
         restartIfChanged = true;
+        path = [ pkgs.gnutar ];
         script = ''
           ln -sft . '${exe}'/*
           mkdir -p log
