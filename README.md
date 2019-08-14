@@ -82,8 +82,6 @@ git add .obelisk/impl
 git commit -m "Bump obelisk"
 ```
 
-push them to your obelisk repo,
-
 ### Accessing private repositories
 
 To allow the Nix builder to access private git repositories, you must be set up
