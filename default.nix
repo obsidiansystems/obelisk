@@ -198,7 +198,7 @@ in rec {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
-            proxyPass = "http://localhost:" + toString internalPort;
+            proxyPass = "http://127.0.0.1:" + toString internalPort;
             proxyWebsockets = true;
           };
         };
@@ -207,10 +207,11 @@ in rec {
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
         restartIfChanged = true;
+        path = [ pkgs.gnutar ];
         script = ''
           ln -sft . '${exe}'/*
           mkdir -p log
-          exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
+          exec ./backend ${backendArgs} </dev/null
         '';
         serviceConfig = {
           User = user;
