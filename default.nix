@@ -198,7 +198,7 @@ in rec {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
-            proxyPass = "http://localhost:" + toString internalPort;
+            proxyPass = "http://127.0.0.1:" + toString internalPort;
             proxyWebsockets = true;
           };
         };
