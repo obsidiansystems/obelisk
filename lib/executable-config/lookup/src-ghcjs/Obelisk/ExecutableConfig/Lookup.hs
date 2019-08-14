@@ -30,7 +30,8 @@ getConfigs = do
       Just htmlE -> return htmlE
     dataset <- getDataset e
     (,)
-      <$> get dataset ("obelisk-executable-config-inject-key" :: Text)
+      -- the key is camelCased: https://html.spec.whatwg.org/multipage/dom.html#dom-dataset
+      <$> get dataset ("obeliskExecutableConfigInjectKey" :: Text)
       <*> (fmap decodeOrFail (getInnerHTML e))
   where
     decodeOrFail x = case B64.decode (T.encodeUtf8 x) of
