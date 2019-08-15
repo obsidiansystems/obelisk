@@ -3,6 +3,7 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -14,6 +15,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -36,6 +38,9 @@ module Obelisk.Route.Frontend
   , maybeRoute
   , maybeRoute_
   , maybeRouted
+  , eitherRoute
+  , eitherRoute_
+  , eitherRouted
   , runRouteViewT
   , SetRouteT(..)
   , SetRoute(..)
@@ -46,6 +51,9 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , dynRouteLink
+  , adaptedUriPath
+  , setAdaptedUriPath
   ) where
 
 import Prelude hiding ((.), id)
@@ -55,14 +63,13 @@ import Obelisk.Route
 import Control.Category (Category (..), (.))
 import Control.Category.Cartesian
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
+import Control.Monad ((<=<))
 import Control.Monad.Fix
 import Control.Monad.Primitive
+import Control.Monad.Reader
 import Control.Monad.Ref
-import Control.Monad.Trans
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Reader
 import Data.Coerce
-import Data.Constraint (Dict (..))
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
@@ -84,12 +91,12 @@ import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can
 import Reflex.Dom.Core
 import qualified GHCJS.DOM.Types as DOM
 import Network.URI
-#if defined(ios_HOST_OS)
 import Data.Maybe (fromMaybe)
 import qualified Data.List as L
-#endif
 
 import Unsafe.Coerce
+
+import Obelisk.Configs
 
 infixr 5 :~
 pattern (:~) :: Reflex t => f a -> Dynamic t a -> DSum f (Compose (Dynamic t) Identity)
@@ -97,19 +104,30 @@ pattern a :~ b <- a :=> (coerceDynamic . getCompose -> b)
 
 class Routed t r m | m -> t r where
   askRoute :: m (Dynamic t r)
+  default askRoute :: (Monad m', MonadTrans f, Routed t r m', m ~ f m') => m (Dynamic t r)
+  askRoute = lift askRoute
 
 instance Monad m => Routed t r (RoutedT t r m) where
   askRoute = RoutedT ask
 
+instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m)
+
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
+
+instance MonadReader r' m => MonadReader r' (RoutedT t r m) where
+  ask = lift ask
+  local = mapRoutedT . local
 
 instance HasJSContext m => HasJSContext (RoutedT t r m) where
   type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
   askJSContext = lift askJSContext
 
-instance Prerender js m => Prerender js (RoutedT t r m) where
-  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+instance (Prerender js t m, Monad m) => Prerender js t (RoutedT t r m) where
+  type Client (RoutedT t r m) = RoutedT t r (Client m)
+  prerender server client = RoutedT $ do
+    r <- ask
+    lift $ prerender (runRoutedT server r) (runRoutedT client r)
 
 instance Requester t m => Requester t (RoutedT t r m) where
   type Request (RoutedT t r m) = Request m
@@ -161,17 +179,20 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
-instance (Monad m, RouteToUrl r m) => RouteToUrl r (QueryT t q m) where
-  askRouteToUrl = lift askRouteToUrl
+instance HasConfigs m => HasConfigs (RoutedT t r m)
 
-instance (Monad m, SetRoute t r m) => SetRoute t r (QueryT t q m) where
-  setRoute = lift . setRoute
-  modifyRoute = lift . modifyRoute
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (QueryT t q m)
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (QueryT t q m)
+
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (EventWriterT t w m)
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (EventWriterT t w m)
 
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
 
-mapRoutedT :: (m a -> n a) -> RoutedT t r m a -> RoutedT t r n a
+mapRoutedT :: (m a -> n b) -> RoutedT t r m a -> RoutedT t r n b
 mapRoutedT f = RoutedT . mapReaderT f . unRoutedT
 
 withRoutedT :: (Dynamic t r -> Dynamic t r') -> RoutedT t r' m a -> RoutedT t r m a
@@ -201,6 +222,20 @@ maybeRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
 -}
 
+eitherRoute_
+  :: (MonadFix m, MonadHold t m, Adjustable t m)
+  => RoutedT t l m ()
+  -> RoutedT t r m ()
+  -> RoutedT t (Either l r) m ()
+eitherRoute_ l r = eitherRouted $ strictDynWidget_ $ either (runRoutedT l) (runRoutedT r)
+
+eitherRoute
+  :: (MonadFix m, MonadHold t m, Adjustable t m)
+  => RoutedT t l m a
+  -> RoutedT t r m a
+  -> RoutedT t (Either l r) m (Dynamic t a)
+eitherRoute l r = eitherRouted $ strictDynWidget $ either (runRoutedT l) (runRoutedT r)
+
 dsumValueCoercion :: Coercion f g -> Coercion (DSum k f) (DSum k g)
 dsumValueCoercion Coercion = Coercion
 
@@ -217,6 +252,9 @@ maybeRouted r = RoutedT $ ReaderT $ \d -> do
   d' <- maybeDyn d
   runRoutedT r d'
 
+eitherRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Either (Dynamic t a) (Dynamic t b)) m c -> RoutedT t (Either a b) m c
+eitherRouted r = RoutedT $ ReaderT $ runRoutedT r <=< eitherDyn
+
 -- | WARNING: The input 'Dynamic' must be fully constructed when this is run
 strictDynWidget :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
 strictDynWidget f = RoutedT $ ReaderT $ \r -> do
@@ -231,7 +269,7 @@ strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   pure ()
 
 newtype SetRouteT t r m a = SetRouteT { unSetRouteT :: EventWriterT t (Endo r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, MonadIO, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, MonadIO, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
 
 instance (MonadFix m, MonadHold t m, DomBuilder t m) => DomBuilder t (SetRouteT t r m) where
   type DomBuilderSpace (SetRouteT t r m) = DomBuilderSpace m
@@ -253,22 +291,34 @@ runSetRouteT = runEventWriterT . unSetRouteT
 class Reflex t => SetRoute t r m | m -> t r where
   setRoute :: Event t r -> m ()
   modifyRoute :: Event t (r -> r) -> m ()
+  default modifyRoute :: (Monad m', MonadTrans f, SetRoute t r m', m ~ f m') => Event t (r -> r) -> m ()
+  modifyRoute = lift . modifyRoute
+
   setRoute = modifyRoute . fmap const
 
 instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
   modifyRoute = SetRouteT . tellEvent . fmap Endo
 
-instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m) where
-  modifyRoute = lift . modifyRoute
+instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m)
 
-instance Prerender js m => Prerender js (SetRouteT t r m) where
-  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+instance (Monad m, SetRoute t r m) => SetRoute t r (ReaderT r' m)
+
+instance (PerformEvent t m, Prerender js t m, Monad m, Reflex t) => Prerender js t (SetRouteT t r m) where
+  type Client (SetRouteT t r m) = SetRouteT t r (Client m)
+  prerender server client = do
+    d <- lift $ prerender (runSetRouteT server) (runSetRouteT client)
+    let (a, r) = splitDynPure d
+    -- Must be prompt here
+    SetRouteT . tellEvent $ switchPromptlyDyn r
+    pure a
 
 instance Requester t m => Requester t (SetRouteT t r m) where
   type Request (SetRouteT t r m) = Request m
   type Response (SetRouteT t r m) = Response m
   requesting = SetRouteT . requesting
   requesting_ = SetRouteT . requesting_
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (RequesterT t req rsp m)
 
 #ifndef ghcjs_HOST_OS
 deriving instance MonadJSM m => MonadJSM (SetRouteT t r m)
@@ -293,6 +343,8 @@ instance PrimMonad m => PrimMonad (SetRouteT t r m ) where
   type PrimState (SetRouteT t r m) = PrimState m
   primitive = lift . primitive
 
+instance HasConfigs m => HasConfigs (SetRouteT t r m)
+
 instance (MonadHold t m, Adjustable t m) => Adjustable t (SetRouteT t r m) where
   runWithReplace a0 a' = SetRouteT $ runWithReplace (coerce a0) $ coerceEvent a'
   traverseIntMapWithKeyWithAdjust f a0 a' = SetRouteT $ traverseIntMapWithKeyWithAdjust (coerce f) (coerce a0) $ coerce a'
@@ -306,9 +358,11 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (SetRouteT t r m) where
 
 class RouteToUrl r m | m -> r where
   askRouteToUrl :: m (r -> Text)
+  default askRouteToUrl :: (Monad m', MonadTrans f, RouteToUrl r m', m ~ f m') => m (r -> Text)
+  askRouteToUrl = lift askRouteToUrl
 
 newtype RouteToUrlT r m a = RouteToUrlT { unRouteToUrlT :: ReaderT (r -> Text) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
 
 runRouteToUrlT
   :: RouteToUrlT r m a
@@ -323,17 +377,22 @@ instance Monad m => RouteToUrl r (RouteToUrlT r m) where
   askRouteToUrl = RouteToUrlT ask
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (SetRouteT t r' m) where
-  askRouteToUrl = lift askRouteToUrl
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RoutedT t r' m) where
-  askRouteToUrl = lift askRouteToUrl
+
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (ReaderT r' m) where
+
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m)
 
 instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
   type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
   askJSContext = lift askJSContext
 
-instance Prerender js m => Prerender js (RouteToUrlT r m) where
-  prerenderClientDict = fmap (\Dict -> Dict) (prerenderClientDict :: Maybe (Dict (PrerenderClientConstraint js m)))
+instance (Prerender js t m, Monad m) => Prerender js t (RouteToUrlT r m) where
+  type Client (RouteToUrlT r m) = RouteToUrlT r (Client m)
+  prerender server client = do
+    r <- RouteToUrlT ask
+    lift $ prerender (runRouteToUrlT server r) (runRouteToUrlT client r)
 
 instance Requester t m => Requester t (RouteToUrlT r m) where
   type Request (RouteToUrlT r m) = Request m
@@ -383,6 +442,8 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RouteToUrlT r m) where
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
+instance HasConfigs m => HasConfigs (RouteToUrlT t m)
+
 runRouteViewT
   :: forall t m r a.
      ( TriggerEvent t m
@@ -393,16 +454,20 @@ runRouteViewT
      , MonadFix m
      )
   => (Encoder Identity Identity r PageName)
+  --TODO: Get rid of the switchover and useHash arguments
+  -- useHash can probably be baked into the encoder
+  -> Event t () -- ^ Switchover event, nothing is done until this event fires. Used to prevent incorrect DOM expectations at hydration switchover time
+  -> Bool
   -> RoutedT t r (SetRouteT t r (RouteToUrlT r m)) a
   -> m a
-runRouteViewT routeEncoder a = do
-  rec historyState <- manageHistory $ HistoryCommand_PushState <$> setState
+runRouteViewT routeEncoder switchover useHash a = do
+  rec historyState <- manageHistory' switchover $ HistoryCommand_PushState <$> setState
       let theEncoder = pageNameEncoder . hoistParse (pure . runIdentity) routeEncoder
           -- NB: The can only fail if the uriPath doesn't begin with a '/' or if the uriQuery
           -- is nonempty, but begins with a character that isn't '?'. Since we don't expect
           -- this ever to happen, we'll just handle it by failing completely with 'error'.
           route :: Dynamic t r
-          route = fmap (errorLeft . tryDecode theEncoder . (adaptedUriPath &&& uriQuery) . _historyItem_uri) historyState
+          route = fmap (errorLeft . tryDecode theEncoder . (adaptedUriPath useHash &&& uriQuery) . _historyItem_uri) historyState
             where
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
@@ -423,7 +488,7 @@ runRouteViewT routeEncoder a = do
                  -- we can change this function later to accommodate.
                  -- See: https://github.com/whatwg/html/issues/2174
                , _historyStateUpdate_title = ""
-               , _historyStateUpdate_uri = Just $ setAdaptedUriPath newPath $ (_historyItem_uri currentHistoryState)
+               , _historyStateUpdate_uri = Just $ setAdaptedUriPath useHash newPath $ (_historyItem_uri currentHistoryState)
                  { uriQuery = newQuery
                  }
                }
@@ -450,25 +515,44 @@ routeLink r w = do
   setRoute $ r <$ domEvent Click e
   return a
 
+-- | A link widget that, when clicked, sets the route to current value of the
+-- provided dynamic route. In non-javascript contexts the value of the dynamic post
+-- build is used so the link still works like 'routeLink'.
+dynRouteLink
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+dynRouteLink dr w = do
+  enc <- askRouteToUrl
+  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_modifyAttributes .~ er
+  (e, a) <- element "a" cfg w
+  setRoute $ tag (current dr) $ domEvent Click e
+  return a
+
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
 
-adaptedUriPath :: URI -> String
-#if defined(ios_HOST_OS)
-adaptedUriPath = hashToPath . uriFragment
+adaptedUriPath :: Bool -> URI -> String
+adaptedUriPath = \case
+  True -> hashToPath . uriFragment
+  False -> uriPath
 
-hashToPath :: String -> String
-hashToPath = ('/' :) . fromMaybe "" . L.stripPrefix "#"
-#else
-adaptedUriPath = uriPath
-#endif
-
-setAdaptedUriPath :: String -> URI -> URI
-#if defined(ios_HOST_OS)
-setAdaptedUriPath s u = u { uriFragment = pathToHash s }
+setAdaptedUriPath :: Bool -> String -> URI -> URI
+setAdaptedUriPath useHash s u = case useHash of
+  True -> u { uriFragment = pathToHash s }
+  False -> u { uriPath = s }
 
 pathToHash :: String -> String
 pathToHash = ('#' :) . fromMaybe "" . L.stripPrefix "/"
-#else
-setAdaptedUriPath s u = u { uriPath = s }
-#endif
+
+hashToPath :: String -> String
+hashToPath = ('/' :) . fromMaybe "" . L.stripPrefix "#"
