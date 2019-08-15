@@ -233,7 +233,7 @@ decode e x = runIdentity (tryDecode e x)
 tryDecode :: Encoder Identity parse decoded encoded -> encoded -> parse decoded
 tryDecode (Encoder (Identity impl)) x = _encoderImpl_decode impl x
 
--- | Similar to 'decode' above, once an encoder has been checked so that its check monad is Identity, it
+-- | Similar to 'decode', once an encoder has been checked so that its check monad is Identity, it
 -- can be used to actually encode by using this. Note that while there's no constraint on the parse monad here,
 -- one should usually be applying decode and encode to the same 'Encoder'
 encode :: Encoder Identity parse decoded encoded -> decoded -> encoded
