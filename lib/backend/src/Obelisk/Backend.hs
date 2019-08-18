@@ -11,7 +11,6 @@ module Obelisk.Backend
   ( Backend (..)
   -- * Re-exports
   , Default (def)
-  , ComponentConfigs(..)
   , getPageName
   , getRouteWith
   , runSnapWithCommandLineArgs
@@ -20,7 +19,7 @@ module Obelisk.Backend
   , runBackend
   , staticRenderContentType
   , mkRouteToUrl
-  , getComponentConfigs
+  , getPublicConfigs
   ) where
 
 import Prelude hiding (id, (.))
@@ -41,8 +40,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Obelisk.Asset.Serve.Snap (serveAsset)
-import Obelisk.ExecutableConfig.Backend
-import Obelisk.ExecutableConfig.Lookup
+import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
 import Obelisk.Route
 import Obelisk.Snap.Extras (doNotCache, serveFileIfExistsAs)
@@ -55,14 +53,7 @@ import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 data Backend backendRoute frontendRoute = Backend
   { _backend_routeEncoder :: Encoder (Either Text) Identity (R (Sum backendRoute (ObeliskRoute frontendRoute))) PageName
-  , _backend_run :: ((R backendRoute -> BackendConfigsT Snap ()) -> BackendConfigsT IO ()) -> BackendConfigsT IO ()
-  }
-
--- | All the configs separated by which context they are accessible in. (Common
--- configs are present in both.)
-data ComponentConfigs = ComponentConfigs
-  { _componentConfigs_backend :: Map Text Text
-  , _componentConfigs_frontend :: Map Text Text
+  , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
   }
 
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
@@ -80,7 +71,7 @@ serveDefaultObeliskApp
   -> ([Text]
   -> m ())
   -> Frontend (R appRoute)
-  -> Map Text Text
+  -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
 serveDefaultObeliskApp urlEnc serveStaticAsset frontend configs = serveObeliskApp urlEnc serveStaticAsset frontendApp configs
@@ -139,7 +130,7 @@ serveObeliskApp
   => (R appRoute -> Text)
   -> ([Text] -> m ())
   -> GhcjsApp (R appRoute)
-  -> Map Text Text
+  -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
 serveObeliskApp urlEnc serveStaticAsset frontendApp config = \case
@@ -174,7 +165,7 @@ serveGhcjsApp
   :: (MonadSnap m, HasCookies m)
   => (R appRouteComponent -> Text)
   -> GhcjsApp (R appRouteComponent)
-  -> Map Text Text
+  -> Map Text ByteString
   -> R (GhcjsAppRoute appRouteComponent)
   -> m ()
 serveGhcjsApp urlEnc app config = \case
@@ -187,17 +178,15 @@ runBackend :: Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> I
 runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
-    configs <- getComponentConfigs
-    runBackendConfigsT (_componentConfigs_backend configs) $
-      _backend_run backend $ \serveRoute -> do
-        runSnapWithCommandLineArgs $ do
-          getRouteWith validFullEncoder >>= \case
-            Identity r -> case r of
-              InL backendRoute :=> Identity a ->
-                runBackendConfigsT (_componentConfigs_backend configs) $
-                  serveRoute $ backendRoute :/ a
-              InR obeliskRoute :=> Identity a ->
-                serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) (serveStaticAssets defaultStaticAssets) frontend (_componentConfigs_frontend configs) $ obeliskRoute :/ a
+    publicConfigs <- getPublicConfigs
+    _backend_run backend $ \serveRoute -> do
+      runSnapWithCommandLineArgs $ do
+        getRouteWith validFullEncoder >>= \case
+          Identity r -> case r of
+            InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
+            InR obeliskRoute :=> Identity a ->
+              serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) (serveStaticAssets defaultStaticAssets) frontend publicConfigs $
+                obeliskRoute :/ a
 
 mkRouteToUrl :: Encoder Identity parse (R (Sum f (ObeliskRoute r))) PageName -> R r -> Text
 mkRouteToUrl validFullEncoder =
@@ -208,7 +197,7 @@ renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
   => (route -> Text)
   -> route
-  -> Map Text Text
+  -> Map Text ByteString
   -> Frontend route
   -> m ByteString
 renderGhcjsFrontend urlEnc route configs f = do
@@ -220,13 +209,9 @@ renderGhcjsFrontend urlEnc route configs f = do
 instance HasCookies Snap where
   askCookies = map (\c -> (cookieName c, cookieValue c)) <$> getsRequest rqCookies
 
-getComponentConfigs :: IO ComponentConfigs
-getComponentConfigs = do
-  allConfigs <- getConfigs
-  return $ ComponentConfigs
-    { _componentConfigs_backend =
-        Map.filterWithKey (\k _ -> isMemberOf k ["common", "backend"]) allConfigs
-    , _componentConfigs_frontend =
-        Map.filterWithKey (\k _ -> isMemberOf k ["common", "frontend"]) allConfigs
-    }
-  where isMemberOf k dirs = or $ map (\dir -> ("config/" <> dir) `T.isPrefixOf` k) dirs
+-- | Get configs from the canonical "public" locations (i.e., locations that obelisk expects to make available
+-- to frontend applications, and hence visible to end users).
+getPublicConfigs :: IO (Map Text ByteString)
+getPublicConfigs = Map.filterWithKey (\k _ -> isMemberOf k ["common", "frontend"]) <$> Lookup.getConfigs
+  where
+    isMemberOf k = any (`T.isPrefixOf` k)

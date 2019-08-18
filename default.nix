@@ -39,14 +39,6 @@ let
           rev = "42afdc21da5d9e076eab57eaa42bfdde938192b8";
           sha256 = "0psw384dx9bw2dp93xrzw8rd9amvcwgzn64jzzwby7sfspj6k349";
         }) {});
-        # Need 8.0.2 build support
-        # PR: https://github.com/dmwit/universe/pull/33
-        universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
-          owner = "obsidiansystems";
-          repo = "universe";
-          rev = "6a71119bfa5db2b9990a2491c941469ff8ef5d13";
-          sha256 = "0z8smyainnlzcglv3dlx6x1n9j6d2jv48aa8f2421iayfkxg3js5";
-        } + /template) {};
       })
 
       pkgs.obeliskExecutableConfig.haskellOverlay
@@ -67,6 +59,7 @@ let
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
         obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
+        tabulation = self.callCabal2nix "tabulation" (cleanSource ./lib/tabulation) {};
       })
 
       (self: super: let
@@ -205,7 +198,7 @@ in rec {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
-            proxyPass = "http://localhost:" + toString internalPort;
+            proxyPass = "http://127.0.0.1:" + toString internalPort;
             proxyWebsockets = true;
           };
         };
@@ -214,10 +207,11 @@ in rec {
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
         restartIfChanged = true;
+        path = [ pkgs.gnutar ];
         script = ''
           ln -sft . '${exe}'/*
           mkdir -p log
-          exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
+          exec ./backend ${backendArgs} </dev/null
         '';
         serviceConfig = {
           User = user;

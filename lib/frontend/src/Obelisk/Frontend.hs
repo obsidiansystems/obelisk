@@ -1,5 +1,5 @@
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
@@ -15,9 +15,10 @@ module Obelisk.Frontend
   ( ObeliskWidget
   , Frontend (..)
   , runFrontend
-  , runFrontendWithConfigs
+  , runFrontendWithConfigsAndCurrentRoute
   , renderFrontendHtml
   , removeHTMLConfigs
+  , FrontendMode (..)
   , module Obelisk.Frontend.Cookie
   ) where
 
@@ -38,20 +39,26 @@ import Data.Map (Map)
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
 import Data.Text (Text)
+import qualified GHCJS.DOM as DOM
+import qualified GHCJS.DOM.Types as DOM
+import qualified GHCJS.DOM.History as DOM
+import qualified GHCJS.DOM.Window as DOM
+import Language.Javascript.JSaddle (MonadJSM, JSM, jsNull)
 import GHCJS.DOM (currentDocument)
 import GHCJS.DOM.Document (getHead)
-import GHCJS.DOM.Node (removeChild_)
-import GHCJS.DOM.NodeList (item, getLength)
+import GHCJS.DOM.Node (Node, removeChild_)
+import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
 import GHCJS.DOM.ParentNode (querySelectorAll)
-import Language.Javascript.JSaddle (JSM)
 import Obelisk.Frontend.Cookie
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
-import Obelisk.ExecutableConfig.Frontend
+import Obelisk.Configs
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
-import Obelisk.ExecutableConfig.Lookup (getConfigs)
+import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Web.Cookie
+
+import Debug.Trace
 
 makePrisms ''Sum
 
@@ -74,7 +81,7 @@ type ObeliskWidget js t route m =
   , Prerender js t m
   , PrebuildAgnostic t route m
   , PrebuildAgnostic t route (Client m)
-  , HasFrontendConfigs m
+  , HasConfigs m
   , HasCookies m
   )
 
@@ -82,8 +89,8 @@ type PrebuildAgnostic t route m =
   ( SetRoute t route m
   , RouteToUrl route m
   , MonadFix m
-  , HasFrontendConfigs m
-  , HasFrontendConfigs (Performable m)
+  , HasConfigs m
+  , HasConfigs (Performable m)
   )
 
 data Frontend route = Frontend
@@ -98,57 +105,132 @@ removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
   doc <- MaybeT currentDocument
   hd <- MaybeT $ getHead doc
-  es <- collToList =<< querySelectorAll hd ("[data-obelisk-executable-config-inject-key]" :: Text)
+  es <- nodeListNodes =<< querySelectorAll hd ("[data-obelisk-executable-config-inject-key]" :: Text)
   for_ es $ removeChild_ hd
-  where
-    collToList es = do
-      len <- getLength es
-      lst <- traverse (item es) $ take (fromIntegral len) $ [0..] -- fun with unsigned types ...
-      pure $ catMaybes lst
 
+-- | Collect all nodes in the node list.
+--
+-- TODO: this and the version in exe-config/ghcjs/lookup should be
+-- upstreamed to jsaddle.
+nodeListNodes :: (IsNodeList l, MonadJSM m) => l -> m [Node]
+nodeListNodes es = do
+  len <- getLength es
+  -- Warning! len is unsigned. If the NodeList is empty, we must avoid
+  -- accidentally traversing over [0..maxBound::Word]
+  nodes <- traverse (item es) $ if len == 0 then [] else [0..len-1]
+  pure $ catMaybes nodes
+
+setInitialRoute :: Bool -> JSM ()
+setInitialRoute useHash = do
+  traceM "setInitialRoute"
+  window <- DOM.currentWindowUnchecked
+  initialLocation <- DOM.getLocation window
+  initialUri <- getLocationUri initialLocation
+  history <- DOM.getHistory window
+  DOM.replaceState history jsNull ("" :: Text) $ Just $
+    show $ setAdaptedUriPath useHash "/" initialUri
+
+data FrontendMode = FrontendMode
+  { _frontendMode_hydrate :: Bool
+    -- ^ There is already a rendering of the DOM in place; hydrate it rather
+    -- than building new DOM
+  , _frontendMode_adjustRoute :: Bool
+    -- ^ The page can't use regular routes, so encode routes into the hash
+    -- instead
+  }
+
+-- | Run the frontend, setting the initial route to "/" on platforms where no
+-- route exists ambiently in the context (e.g. anything but web).
+-- Selects FrontendMode based on platform; this doesn't work for jsaddle-warp
 runFrontend
   :: forall backendRoute route
   .  Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
   -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
-  configs <- liftIO getConfigs
+  let mode = FrontendMode
+        { _frontendMode_hydrate =
 #ifdef ghcjs_HOST_OS
-  removeHTMLConfigs
+          True
+#else
+          False
 #endif
-  runFrontendWithConfigs configs validFullEncoder frontend
+        , _frontendMode_adjustRoute =
+#ifdef ghcjs_HOST_OS
+          False
+#else
+          True
+#endif
+        }
+  configs <- liftIO Lookup.getConfigs
+  when (_frontendMode_hydrate mode) removeHTMLConfigs
+  -- There's no fundamental reason that adjustRoute needs to control setting the
+  -- initial route and *also* the useHash parameter; that's why these are
+  -- separate here.  However, currently, they are always the same.
+  when (_frontendMode_adjustRoute mode) $ do
+    setInitialRoute $ _frontendMode_adjustRoute mode
+  runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
 
-runFrontendWithConfigs
+runFrontendWithConfigsAndCurrentRoute
   :: forall backendRoute route
-  .  Map Text Text
+  .  FrontendMode
+  -> Map Text ByteString
   -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
   -> Frontend (R route)
   -> JSM ()
-runFrontendWithConfigs configs validFullEncoder frontend = do
+runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = do
   let ve = validFullEncoder . hoistParse errorLeft (prismEncoder (rPrism $ _InR . _ObeliskRoute_App))
       errorLeft = \case
         Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
         Right x -> Identity x
-  runHydrationWidgetWithHeadAndBody (pure ()) $ \appendHead appendBody -> do
-    rec switchover <- runRouteViewT ve switchover $ do
-          (switchover'', fire) <- newTriggerEvent
-          mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runFrontendConfigsT configs))) $ do
-            -- The order here is important - baseTag has to be before headWidget!
-            baseTag
-            _frontend_head frontend
-          mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runFrontendConfigsT configs))) $ do
-            _frontend_body frontend
-            switchover' <- lift $ lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
-            performEvent_ $ liftIO (fire ()) <$ switchover'
-          pure switchover''
-    pure ()
+      w :: ( RawDocument (DomBuilderSpace (HydrationDomBuilderT s DomTimeline m)) ~ DOM.Document
+           , Ref (Performable m) ~ Ref IO
+           , Ref m ~ Ref IO
+           , DomBuilder DomTimeline (HydrationDomBuilderT s DomTimeline m)
+           , MonadHold DomTimeline m
+           , MonadRef m
+           , MonadRef (Performable m)
+           , MonadReflexCreateTrigger DomTimeline m
+           , PerformEvent DomTimeline m
+           , PostBuild DomTimeline m
+           , PrimMonad m
+           , MonadSample DomTimeline (Performable m)
+           , DOM.MonadJSM m
+           , Monad (Performable (Client (HydrationDomBuilderT s DomTimeline m)))
+           , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
+           , MonadFix (Performable m)
+           , MonadFix m
+           , Prerender js DomTimeline (HydrationDomBuilderT s DomTimeline m)
+           , MonadIO (Performable m)
+           )
+        => (forall c. HydrationDomBuilderT s DomTimeline m c -> FloatingWidget () c)
+        -> (forall c. HydrationDomBuilderT s DomTimeline m c -> FloatingWidget () c)
+        -> FloatingWidget () ()
+      w appendHead appendBody = do
+        rec switchover <- runRouteViewT ve switchover (_frontendMode_adjustRoute mode) $ do
+              (switchover'', fire) <- newTriggerEvent
+              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
+                -- The order here is important - baseTag has to be before headWidget!
+                baseTag
+                _frontend_head frontend
+              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runConfigsT configs))) $ do
+                _frontend_body frontend
+                switchover' <- case _frontendMode_hydrate mode of
+                  True -> lift $ lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
+                  False -> getPostBuild
+                performEvent_ $ liftIO (fire ()) <$ switchover'
+              pure switchover''
+        pure ()
+  if _frontendMode_hydrate mode
+    then runHydrationWidgetWithHeadAndBody (pure ()) w
+    else runImmediateWidgetWithHeadAndBody w
 
 renderFrontendHtml
   :: ( t ~ DomTimeline
      , MonadIO m
-     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (FrontendConfigsT (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost)))))))
+     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost)))))))
      )
-  => Map Text Text
+  => Map Text ByteString
   -> Cookies
   -> (r -> Text)
   -> r
@@ -158,7 +240,7 @@ renderFrontendHtml
   -> m ByteString
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runFrontendConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
+  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
       el "head" $ do
         baseTag
