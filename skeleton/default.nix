@@ -6,6 +6,7 @@
     # Uncomment and set this to `true` to indicate your acceptance:
     # config.android_sdk.accept_license = false;
   }
+, projectOverrides ? {}
 }:
 with obelisk;
 project ./. ({ ... }: {
@@ -13,4 +14,4 @@ project ./. ({ ... }: {
   android.displayName = "Obelisk Minimal Example";
   ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";
   ios.bundleName = "Obelisk Minimal Example";
-})
+} // projectOverrides)
