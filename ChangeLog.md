@@ -15,6 +15,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Generalised pathSegmentEncoder, added pathFieldEncoder.
 * Added some Prisms to the encoder library for manipulating DSums (perhaps they should get moved to dependent-sum before release?)
 * Use IP address for nginx proxy pass instead of localhost
+* Add "ob doc" command, which lists paths to haddock documentation for specified packages
 
 ## v0.1.1.0 - 2019-05-17
 
