@@ -33,12 +33,7 @@ let
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
       in {
-        hnix = pkgs.haskell.lib.dontCheck (self.callCabal2nix "hnix" (pkgs.fetchFromGitHub {
-          owner = "haskell-nix";
-          repo = "hnix";
-          rev = "42afdc21da5d9e076eab57eaa42bfdde938192b8";
-          sha256 = "0psw384dx9bw2dp93xrzw8rd9amvcwgzn64jzzwby7sfspj6k349";
-        }) {});
+        hnix = pkgs.haskell.lib.dontCheck (self.callPackage (pkgs.hackGet ./dep/hnix) {});
       })
 
       pkgs.obeliskExecutableConfig.haskellOverlay
