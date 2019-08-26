@@ -12,6 +12,7 @@ module Obelisk.App where
 
 import Control.Lens
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Writer (WriterT)
 import Control.Monad.State (StateT)
@@ -104,6 +105,7 @@ type MonadInfallibleObelisk m =
 type MonadObelisk m =
   ( MonadInfallibleObelisk m
   , CliThrow ObeliskError m
+  , MonadFail m
   )
 
 getObeliskUserStateDir :: IO FilePath

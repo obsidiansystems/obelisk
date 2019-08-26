@@ -66,7 +66,7 @@ data GhcjsApp route = GhcjsApp
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
 serveDefaultObeliskApp
-  :: (MonadSnap m, HasCookies m)
+  :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute
   -> Text)
   -> ([Text]
@@ -127,7 +127,7 @@ getRouteWith e = do
   return $ tryDecode e pageName
 
 serveObeliskApp
-  :: (MonadSnap m, HasCookies m)
+  :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute -> Text)
   -> ([Text] -> m ())
   -> GhcjsApp (R appRoute)
