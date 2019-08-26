@@ -26,6 +26,7 @@ import Prelude hiding (id, (.))
 import Control.Category
 import Control.Monad
 import Control.Monad.Except
+import Control.Monad.Fail (MonadFail)
 import Control.Categorical.Bifunctor
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
@@ -144,7 +145,7 @@ serveObeliskApp urlEnc serveStaticAsset frontendApp config = \case
       writeText msg
     ResourceRoute_Version :=> Identity () -> doNotCache >> serveFileIfExistsAs "text/plain" "version"
 
-serveStaticAssets :: MonadSnap m => StaticAssets -> [Text] -> m ()
+serveStaticAssets :: (MonadSnap m, MonadFail m) => StaticAssets -> [Text] -> m ()
 serveStaticAssets assets pathSegments = serveAsset (_staticAssets_processed assets) (_staticAssets_unprocessed assets) $ T.unpack $ T.intercalate "/" pathSegments
 
 data StaticAssets = StaticAssets
@@ -162,7 +163,7 @@ staticRenderContentType = "text/html; charset=utf-8"
 
 --TODO: Don't assume we're being served at "/"
 serveGhcjsApp
-  :: (MonadSnap m, HasCookies m)
+  :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRouteComponent -> Text)
   -> GhcjsApp (R appRouteComponent)
   -> Map Text ByteString
