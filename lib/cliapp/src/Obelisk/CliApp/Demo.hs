@@ -4,7 +4,7 @@
 module Obelisk.CliApp.Demo where
 
 import Control.Concurrent (threadDelay)
-import Control.Monad.Fail (MonadFail)
+import Control.Monad.Fail
 import Control.Monad.IO.Class
 import Data.Semigroup ((<>))
 import qualified Data.Text as T

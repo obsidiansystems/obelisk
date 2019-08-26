@@ -24,7 +24,7 @@ module Obelisk.CliApp.Process
 
 import Control.Monad ((<=<), join, void)
 import Control.Monad.Except (throwError)
-import Control.Monad.Fail (MonadFail)
+import Control.Monad.Fail
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Lens (Prism', review)
 import qualified Data.ByteString as BS
