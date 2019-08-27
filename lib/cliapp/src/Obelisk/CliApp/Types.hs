@@ -47,7 +47,6 @@ type CliThrow e m = MonadError e m
 putLog :: CliLog m => Severity -> Text -> m ()
 putLog sev = logMessage . Output_Log . WithSeverity sev
 
--- TODO (Re)move this instance
 deriving instance MonadFail m => MonadFail (LoggingT Output m)
 
 newtype DieT e m a = DieT { unDieT :: ReaderT (e -> (Text, Int)) (LoggingT Output m) a }
