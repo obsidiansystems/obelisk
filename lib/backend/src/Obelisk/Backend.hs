@@ -15,10 +15,11 @@ module Obelisk.Backend
   , getPageName
   , getRouteWith
   , runSnapWithCommandLineArgs
+  , runSnapWithConfig
   , serveDefaultObeliskApp
   , prettifyOutput
   , runBackend
-  , runBackend'
+  , runBackendWith
   , staticRenderContentType
   , mkRouteToUrl
   , getPublicConfigs
@@ -49,7 +50,7 @@ import Obelisk.Snap.Extras (doNotCache, serveFileIfExistsAs)
 import Reflex.Dom
 import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, modifyResponse
             , rqPathInfo, rqQueryString, setContentType, writeBS, writeText
-            , rqCookies, Cookie(..), setPort)
+            , rqCookies, Cookie(..))
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
@@ -101,16 +102,19 @@ defaultFrontendGhcjsAssets = StaticAssets
   , _staticAssets_unprocessed = "frontend.jsexe"
   }
 
-runSnapWithCommandLineArgs :: MonadIO m => Maybe Int -> Snap () -> m ()
-runSnapWithCommandLineArgs mPort a = do
-  -- Get the web server configuration from the command line
-  cmdLineConf <- liftIO $ commandLineConfig $ maybe id setPort mPort defaultConfig
-  let httpConf = cmdLineConf
+runSnapWithConfig :: MonadIO m => Config Snap a -> Snap () -> m ()
+runSnapWithConfig conf a = do
+  let httpConf = conf
         { accessLog = Just $ ConfigIoLog BSC8.putStrLn
         , errorLog = Just $ ConfigIoLog BSC8.putStrLn
         }
   -- Start the web server
   liftIO $ httpServe httpConf a
+
+-- Get the web server configuration from the command line
+runSnapWithCommandLineArgs :: MonadIO m => Snap () -> m ()
+runSnapWithCommandLineArgs s = liftIO (commandLineConfig defaultConfig) >>= \c ->
+  runSnapWithConfig c s
 
 getPageName :: (MonadSnap m) => m PageName
 getPageName = do
@@ -176,21 +180,28 @@ serveGhcjsApp urlEnc app config = \case
     writeBS <=< renderGhcjsFrontend urlEnc (appRouteComponent :/ appRouteRest) config $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
+-- | Run an obelisk backend
 runBackend :: Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
-runBackend = runBackend' Nothing defaultStaticAssets
+runBackend = runBackendWith runSnapWithCommandLineArgs defaultStaticAssets
 
-runBackend'
-  :: Maybe Int
+-- | Run an obelisk backend using the given function to run the snap monad and
+-- custom static assets
+runBackendWith
+  :: (Snap () -> IO ())
+  -- ^ Run the snap server
   -> StaticAssets
+  -- ^ Use these assets
   -> Backend fullRoute frontendRoute
+  -- ^ Backend to run
   -> Frontend (R frontendRoute)
+  -- ^ Corresponding frontend (for static rendering)
   -> IO ()
-runBackend' mPort staticAssets backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackendWith runSnap staticAssets backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
     _backend_run backend $ \serveRoute -> do
-      runSnapWithCommandLineArgs mPort $ do
+      runSnap $ do
         getRouteWith validFullEncoder >>= \case
           Identity r -> case r of
             InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
