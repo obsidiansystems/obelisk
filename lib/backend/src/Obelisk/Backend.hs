@@ -29,12 +29,12 @@ import Prelude hiding (id, (.))
 import Control.Category
 import Control.Monad
 import Control.Monad.Except
+import Control.Monad.Fail (MonadFail)
 import Control.Categorical.Bifunctor
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
 import Data.Dependent.Sum
-import Data.Functor.Sum
 import Data.Functor.Identity
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -55,7 +55,7 @@ import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 data Backend backendRoute frontendRoute = Backend
-  { _backend_routeEncoder :: Encoder (Either Text) Identity (R (Sum backendRoute (ObeliskRoute frontendRoute))) PageName
+  { _backend_routeEncoder :: Encoder (Either Text) Identity (R (FullRoute backendRoute frontendRoute)) PageName
   , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
   }
 
@@ -68,7 +68,7 @@ data GhcjsApp route = GhcjsApp
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
 serveDefaultObeliskApp
-  :: (MonadSnap m, HasCookies m)
+  :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute
   -> Text)
   -> ([Text]
@@ -120,11 +120,7 @@ getPageName :: (MonadSnap m) => m PageName
 getPageName = do
   p <- getsRequest rqPathInfo
   q <- getsRequest rqQueryString
-  let pageNameEncoder' :: Encoder Identity Identity PageName (String, String)
-      pageNameEncoder' = bimap
-        (unpackTextEncoder . pathSegmentsTextEncoder . listToNonEmptyEncoder)
-        (unpackTextEncoder . queryParametersTextEncoder . toListMapEncoder)
-  return $ decode pageNameEncoder' (T.unpack (decodeUtf8 p), T.unpack (decodeUtf8 q))
+  return $ byteStringsToPageName p q
 
 getRouteWith :: (MonadSnap m) => Encoder Identity parse route PageName -> m (parse route)
 getRouteWith e = do
@@ -132,7 +128,7 @@ getRouteWith e = do
   return $ tryDecode e pageName
 
 serveObeliskApp
-  :: (MonadSnap m, HasCookies m)
+  :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute -> Text)
   -> ([Text] -> m ())
   -> GhcjsApp (R appRoute)
@@ -150,7 +146,7 @@ serveObeliskApp urlEnc serveStaticAsset frontendApp config = \case
       writeText msg
     ResourceRoute_Version :=> Identity () -> doNotCache >> serveFileIfExistsAs "text/plain" "version"
 
-serveStaticAssets :: MonadSnap m => StaticAssets -> [Text] -> m ()
+serveStaticAssets :: (MonadSnap m, MonadFail m) => StaticAssets -> [Text] -> m ()
 serveStaticAssets assets pathSegments = serveAsset (_staticAssets_processed assets) (_staticAssets_unprocessed assets) $ T.unpack $ T.intercalate "/" pathSegments
 
 data StaticAssets = StaticAssets
@@ -168,7 +164,7 @@ staticRenderContentType = "text/html; charset=utf-8"
 
 --TODO: Don't assume we're being served at "/"
 serveGhcjsApp
-  :: (MonadSnap m, HasCookies m)
+  :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRouteComponent -> Text)
   -> GhcjsApp (R appRouteComponent)
   -> Map Text ByteString
@@ -181,7 +177,7 @@ serveGhcjsApp urlEnc app config = \case
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
 -- | Run an obelisk backend
-runBackend :: Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
+runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
 runBackend = runBackendWith runSnapWithCommandLineArgs defaultStaticAssets
 
 -- | Run an obelisk backend using the given function to run the snap monad and
@@ -191,7 +187,7 @@ runBackendWith
   -- ^ Run the snap server
   -> StaticAssets
   -- ^ Use these assets
-  -> Backend fullRoute frontendRoute
+  -> Backend backendRoute frontendRoute
   -- ^ Backend to run
   -> Frontend (R frontendRoute)
   -- ^ Corresponding frontend (for static rendering)
@@ -204,15 +200,15 @@ runBackendWith runSnap staticAssets backend frontend = case checkEncoder $ _back
       runSnap $ do
         getRouteWith validFullEncoder >>= \case
           Identity r -> case r of
-            InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-            InR obeliskRoute :=> Identity a ->
+            FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
+            FullRoute_Frontend obeliskRoute :/ a ->
               serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) (serveStaticAssets staticAssets) frontend publicConfigs $
                 obeliskRoute :/ a
 
-mkRouteToUrl :: Encoder Identity parse (R (Sum f (ObeliskRoute r))) PageName -> R r -> Text
+mkRouteToUrl :: Encoder Identity parse (R (FullRoute br fr)) PageName -> R fr -> Text
 mkRouteToUrl validFullEncoder =
   let pageNameEncoder' :: Encoder Identity (Either Text) PageName PathQuery = pageNameEncoder
-  in \(k :/ v) -> T.pack . uncurry (<>) . encode pageNameEncoder' . encode validFullEncoder $ (InR $ ObeliskRoute_App k) :/ v
+  in \(k :/ v) -> T.pack . uncurry (<>) . encode pageNameEncoder' . encode validFullEncoder $ (FullRoute_Frontend $ ObeliskRoute_App k) :/ v
 
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
