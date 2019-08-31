@@ -505,8 +505,9 @@ chainEncoder cons this rest = Encoder $ do
   pure $ EncoderImpl
     { _encoderImpl_decode = \v -> do
         (here, following) <- _encoderImpl_decode consValid v
-        Some r <- _encoderImpl_decode thisValid here
-        (r :/) <$> _encoderImpl_decode (runIdentity . unEncoder $ rest r) following
+        _encoderImpl_decode thisValid here >>= \case
+          Some r ->
+            (r :/) <$> _encoderImpl_decode (runIdentity . unEncoder $ rest r) following
     , _encoderImpl_encode = \(r :/ s) ->
         _encoderImpl_encode consValid
           ( _encoderImpl_encode thisValid $ Some r
@@ -1046,12 +1047,12 @@ dmapEncoder keyEncoder' valueEncoderFor = unsafeEncoder $ do
                , encode (toEncoder (DMap.findWithDefault (error . keyError $ gshow k') k' valueDecoders)) v'
                )
     , _encoderImpl_decode = \m -> fmap DMap.fromList . forM (Map.toList m) $ \(k,v) -> do
-          Some (k' :: k' t) <- tryDecode keyEncoder k
-          case DMap.lookup k' valueDecoders of
-            Nothing -> throwError . T.pack . keyError $ gshow k'
-            Just (Decoder e) -> do
-              v' <- tryDecode e v
-              return (k' :=> Identity v')
+          tryDecode keyEncoder k >>= \case
+            Some (k' :: k' t) -> case DMap.lookup k' valueDecoders of
+              Nothing -> throwError . T.pack . keyError $ gshow k'
+              Just (Decoder e) -> do
+                v' <- tryDecode e v
+                return (k' :=> Identity v')
     }
 
 fieldMapEncoder :: forall check parse r.

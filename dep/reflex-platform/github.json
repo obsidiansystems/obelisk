@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "cg-bump-reflex-dom",
-  "rev": "b220ba089e2de2110eb22c5388e09d99e4321148",
-  "sha256": "0ds6bcw4p9q5x8h39djyqp5sp7wdzr9mmknsyjafn5l199hscppw"
+  "branch": "aa-split-these",
+  "rev": "4b4a2c8679d6f3042180d2974b31c43bfc506b91",
+  "sha256": "185i8ccqk0xc05ckd921fs7nnaj88gihmlazny1dk004hxq78cj2"
 }
