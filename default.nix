@@ -32,13 +32,13 @@ let
       # Fix misc upstream packages
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
+        haskellLib = pkgs.haskell.lib;
       in {
-        hnix = pkgs.haskell.lib.dontCheck (self.callCabal2nix "hnix" (pkgs.fetchFromGitHub {
-          owner = "haskell-nix";
-          repo = "hnix";
-          rev = "42afdc21da5d9e076eab57eaa42bfdde938192b8";
-          sha256 = "0psw384dx9bw2dp93xrzw8rd9amvcwgzn64jzzwby7sfspj6k349";
-        }) {});
+        hnix = haskellLib.overrideCabal (self.callHackage "hnix" "0.6.1" { these = self.these_0_8; }) (_: {
+          jailbreak = true;
+          doCheck = false;
+        });
+        hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
       })
 
       pkgs.obeliskExecutableConfig.haskellOverlay
@@ -202,7 +202,7 @@ in rec {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
-            proxyPass = "http://localhost:" + toString internalPort;
+            proxyPass = "http://127.0.0.1:" + toString internalPort;
             proxyWebsockets = true;
           };
         };
@@ -211,10 +211,11 @@ in rec {
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
         restartIfChanged = true;
+        path = [ pkgs.gnutar ];
         script = ''
           ln -sft . '${exe}'/*
           mkdir -p log
-          exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
+          exec ./backend ${backendArgs} </dev/null
         '';
         serviceConfig = {
           User = user;
