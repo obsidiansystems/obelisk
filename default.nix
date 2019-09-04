@@ -238,15 +238,21 @@ in rec {
     };
   };
 
-  serverExe = backend: frontend: assets: optimizationLevel: version:
-    pkgs.runCommand "serverExe" {} ''
+  serverExe = backend': frontend': assets': optimizationLevel: version:
+    let
+      backend = haskellLib.justStaticExecutables backend';
+      frontend = compressedJs frontend' optimizationLevel;
+      assets = mkAssets assets';
+    in pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
-      ln -s "${mkAssets assets}" $out/static.assets
-      ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      ln -s "${assets}" $out/static.assets
+      ln -s ${mkAssets frontend} $out/frontend.jsexe.assets
       echo ${version} > $out/version
-    '';
+    '' // {
+      inherit backend frontend assets;
+    };
 
   server = { exe, hostName, adminEmail, routeHost, enableHttps, version }@args:
     let
@@ -340,12 +346,13 @@ in rec {
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __iosWithConfig __androidWithConfig; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: version: serverExe
-        (projectOut sys).ghc.backend
-        (projectOut system).ghcjs.frontend
-        (projectOut sys).passthru.staticFiles
-        (projectOut sys).passthru.__closureCompilerOptimizationLevel
-        version;
+      serverOn = sys: version:
+        let
+          backend = (projectOut sys).ghc.backend;
+          frontend = (projectOut system).ghcjs.frontend;
+          staticFiles = (projectOut sys).passthru.staticFiles;
+          ccOptLevel = (projectOut sys).passthru.__closureCompilerOptimizationLevel;
+        in serverExe backend frontend staticFiles ccOptLevel version;
       linuxExe = serverOn "x86_64-linux";
       dummyVersion = "Version number is only available for deployments";
     in projectOut system // {
