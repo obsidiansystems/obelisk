@@ -119,6 +119,9 @@ let
 
   haskellLib = pkgs.haskell.lib;
 
+  helpNix = pkgs.callPackage dep/help.nix {};
+  inherit (helpNix) withHelp;
+
 in rec {
   inherit reflex-platform;
   inherit (reflex-platform) nixpkgs pinBuildInputs;
@@ -340,22 +343,34 @@ in rec {
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __iosWithConfig __androidWithConfig; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: version: serverExe
-        (projectOut sys).ghc.backend
-        (projectOut system).ghcjs.frontend
-        (projectOut sys).passthru.staticFiles
-        (projectOut sys).passthru.__closureCompilerOptimizationLevel
-        version;
-      linuxExe = serverOn "x86_64-linux";
-      dummyVersion = "Version number is only available for deployments";
-    in projectOut system // {
-      linuxExeConfigurable = linuxExe;
-      linuxExe = linuxExe dummyVersion;
-      exe = serverOn system dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
-        server (args // { exe = linuxExe version; });
-      obelisk = import (base + "/.obelisk/impl") {};
-    };
+        serverOn = sys: version: serverExe
+          (projectOut sys).ghc.backend
+          (projectOut system).ghcjs.frontend
+          (projectOut sys).passthru.staticFiles
+          (projectOut sys).passthru.__closureCompilerOptimizationLevel
+          version;
+        linuxExe = serverOn "x86_64-linux";
+        dummyVersion = "Version number is only available for deployments";
+        parent = projectOut system;
+    in withHelp (help: _:
+      let
+        help' = helpNix.internal.shallowAnnotate; # Don't recurse into these because they have errors
+      in parent // {
+        linuxExeConfigurable = help "Function taking a version to create a deploy-ready application build for a Linux system" linuxExe;
+        linuxExe = help "Deploy-ready application build for a Linux system (a dummy is supplied for the version)" (linuxExe dummyVersion);
+        exe = help "Deploy-ready application build for the native system (a dummy is supplied for the version)" (serverOn system dummyVersion);
+        server = help "Function used by 'ob deploy' to create a NixOS server with this application installed" (args@{ hostName, adminEmail, routeHost, enableHttps, version }:
+          server (args // { exe = linuxExe version; }));
+        obelisk = import (base + "/.obelisk/impl") {};
+        shells = help "Shells for development (meant to be used with nix-shell)" (helpNix.wrapHelp help parent.shells {
+          ghc = "Shell with access to all application dependencies built by GHC";
+          ghcjs = "Shell with access to all application dependencies built by GHCJS";
+          android = "Shell with access to all application dependencies built for Android";
+          ios = "Shell with access to all application dependencies built for iOS";
+        });
+        ghc = help' "GHC builds of any package in the application's dependency tree" parent.ghc;
+        ghcjs = help' "GHCJS builds of any package in the application's dependency tree" parent.ghcjs;
+    });
   haskellPackageSets = {
     inherit (reflex-platform) ghc ghcjs;
   };
