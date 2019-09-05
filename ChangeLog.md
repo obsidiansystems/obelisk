@@ -11,6 +11,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Add encoders for `DMap`, `HasFields` (cf. Data.Tabulation), and JSON.
 * Generalised pathSegmentEncoder, added pathFieldEncoder.
 * Added some Prisms to the encoder library for manipulating DSums (perhaps they should get moved to dependent-sum before release?)
+* Use IP address for nginx proxy pass instead of localhost
 
 ## v0.1.1.0 - 2019-05-17
 
