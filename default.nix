@@ -237,7 +237,7 @@ in rec {
     };
   };
 
-  dockerImage = args@{exe, name}: let
+  dockerImage = args@{exe, name, version}: let
     dockerImageSetupScript = nixpkgs.dockerTools.shellScript "dockersetup.sh" ''
       set -ex
 
@@ -256,6 +256,7 @@ in rec {
 
   in nixpkgs.dockerTools.buildImage {
     name = name;
+    tag = version;
     contents = [ nixpkgs.iana-etc nixpkgs.cacert ];
     runAsRoot = dockerImageSetupScript;
     keepContentsDirlinks = true;
@@ -263,8 +264,6 @@ in rec {
 
       Env = [
          ("PATH=" + builtins.concatStringsSep(":")([
-           "${nixpkgs.stdenv.shellPackage}/bin"
-           "${nixpkgs.coreutils}/bin"
            "/var/run/backend"
          ]))
        ];
@@ -392,7 +391,7 @@ in rec {
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
         server (args // { exe = linuxExe version; });
       dockerImage = args@{ name, version }:
-        dockerImage { name = name; exe = linuxExe version; };
+        dockerImage (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
