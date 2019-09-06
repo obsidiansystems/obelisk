@@ -17,6 +17,7 @@ Functional reactive web and mobile applications, with batteries included. Obelis
   - [Custom Non-EC2 Deployment](#custom-non-ec2-deployment)
     - [VirtualBox Deployment](#virtualbox-deployment)
   - [Locally](#locally)
+  - [Docker](#docker)
   - [From macOS](#from-macos)
   - [Deploying an updated version](#deploying-an-updated-version)
 - [Mobile](#mobile)
@@ -185,6 +186,60 @@ cp -r config test-app
 (cd test-app && ./backend)
 ```
 
+### Docker
+
+#### Variables
+
+Setting the following environment variables will be helpful for keeping build and run parameters consistent:
+
+```bash
+export NAME=app
+export VERSION=$(git rev-parse HEAD)
+export CONFIGDIR=/path/to/obelisk/config
+```
+
+#### Building
+
+To build a Docker image using a default configuration, run:
+
+```bash
+docker load < $(nix-build -A dockerImage --no-out-link --argstr name $NAME --argstr version $VERSION)
+```
+
+To build with a custom configuration, Obelisk's default configuration can be imported and overriden in a `release.nix` file added to your top-level directory:
+
+```nix
+{ }:
+let
+  project = import ./. {};
+  obelisk = import ./.obelisk/impl {
+    system = builtins.currentSystem;
+  };
+  mkBaseDockerImageConfig = { version }: obelisk.dockerImageConfig {
+    name = "app";
+    exe = project.linuxExe;
+    version = version;
+  };
+in {
+  customDockerImage = args@{ version ? "latest" }:
+    obelisk.nixpkgs.dockerTools.buildImage (mkBaseDockerImageConfig args // {
+      config.expose = 3000; # overriding default port 8000
+    });
+}
+```
+
+The custom image can then be built with: `nix-build release.nix -A customDockerImage --no-out-link --argstr version $VERSION`
+
+#### Running
+
+Using the default configuration, the image can then be run with:
+
+```bash
+docker run -p 127.0.0.1:8000:8000/tcp --volume "$CONFIGDIR:/var/run/backend/config" "${NAME}:${VERSION}"
+```
+
+And the application should be accessible at `http://localhost:8000`.
+
 ### From macOS
 
 Deploying from macOS requires some extra setup:
@@ -312,12 +367,11 @@ This should copy over and install the application on your device (if you see a  
 
 After having configured signing for your app, you may proceed to build a release version of the app. This is no different to how you build the non-release version, so consult the section [Android](#android) further above for exact instructions on building and deploying to your device.
 
-
 ## Frequently Asked Questions (FAQ)
 
 Refer to [FAQ](FAQ.md).
 
-
 ## Contributing
 
 Contributions and issue reports are encouraged and appreciated! Refer to the [Contributing](CONTRIBUTING.md) guide for information about getting started.
+

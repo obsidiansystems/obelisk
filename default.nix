@@ -173,6 +173,42 @@ in rec {
 
   inherit mkAssets;
 
+  dockerImageConfig =
+    { exe
+    , name
+    , internalPort ? 8000
+    , version ? "latest"
+    , created ? "now"
+    ,extraContents ? []
+    , extraPaths ? []
+    }@args:
+    let
+      appDirSetupScript = nixpkgs.runCommand "appDirSetupScript.sh" {} ''
+        mkdir -p    $out/var/lib/backend
+        ln -sft $out/var/lib/backend '${exe}'/*
+        ${nixpkgs.findutils}/bin/find $out/var/lib/backend
+        '';
+    in {
+      inherit name created;
+      tag = version;
+      contents = [ nixpkgs.iana-etc nixpkgs.cacert appDirSetupScript ] ++ extraContents;
+      config = {
+        Env = [
+          ("PATH=" + builtins.concatStringsSep(":")(extraPaths ++ [
+            "/var/lib/backend" # put the obelisk project on the path.
+            "/bin" # put contents on path
+          ] ++ map (pkg: "${pkg}/bin") pkgs.stdenv.initialPath # put common tools in path so docker exec is useful
+          ))
+        ];
+        Expose = internalPort;
+        Entrypoint = ["/var/lib/backend/backend"];
+        WorkingDir = "/var/lib/backend";
+        User = "99:99";
+      };
+    };
+
+  dockerImage = args: nixpkgs.dockerTools.buildLayeredImage (dockerImageConfig args);
+
   serverExe = backend: frontend: assets: optimizationLevel: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
@@ -375,6 +411,8 @@ in rec {
       exe = serverOn mainProjectOut dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
         server (args // { exe = linuxExe version; });
+      dockerImage = args@{ name, version ? "latest", created ? "now" }:
+        dockerImage (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
     };
   haskellPackageSets = {

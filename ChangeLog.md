@@ -13,6 +13,7 @@ This project's release branch is `master`. This log is written from the perspect
   * **Migration:** New Obelisk projects will automatically benefit from this change, but existing projects need to apply a change similar to [this one](https://github.com/obsidiansystems/obelisk/blob/371cb3302085601c5ec73e9574d51c8b95e3e493/skeleton/frontend/frontend.cabal#L32-L34).
 * ([#742](https://github.com/obsidiansystems/obelisk/pull/742)) Update `reflex-platform` which includes:
     * A new version of GHCJS where `-dedupe` is fixed.
+* ([#697](https://github.com/obsidiansystems/obelisk/pull/697)) Add Docker support using nix's [`dockerTools.buildImage`](https://nixos.org/nixpkgs/manual/#ssec-pkgs-dockerTools-buildImage)
 
 ## v0.8.0.0
 
