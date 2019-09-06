@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "aa-fix-ghcjs-maybe-tycon",
-  "rev": "a7e09bf3be09fa7942f2ae3289c5c9670a3cc2db",
+  "branch": "develop",
+  "rev": "83dda45e2a91e6c657fe82bc63415e6dc283dc1a",
   "sha256": "1j7mhs1pn1c81zzx67fja1iirc683nw9ryi63p0wspr2cv5hs5p9"
 }
