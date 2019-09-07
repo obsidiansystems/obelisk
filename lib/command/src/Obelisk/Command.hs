@@ -13,8 +13,9 @@ import qualified Data.Binary as Binary
 import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Char as C
 import Data.List
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, listToMaybe)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Text.Encoding.Error (lenientDecode)
@@ -27,6 +28,7 @@ import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
 import System.Posix.Process (executeFile)
+import qualified Text.ParserCombinators.ReadP as P
 
 import Obelisk.App
 import Obelisk.CliApp
@@ -89,22 +91,60 @@ initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run
+   | ObCommand_Run RunOpts
    | ObCommand_Thunk ThunkCommand
-   | ObCommand_Repl
-   | ObCommand_Watch
+   | ObCommand_Repl ReplOpts
+   | ObCommand_Watch ReplOpts
    | ObCommand_Shell ShellOpts
    | ObCommand_Doc String [String] -- shell and list of packages
    | ObCommand_Internal ObInternal
    deriving Show
 
 data ObInternal
-   = ObInternal_RunStaticIO StaticKey
+   = ObInternal_RunStaticIO StaticKey RunOpts
    | ObInternal_CLIDemo
    deriving Show
 
-inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
-inNixShell' p = withProjectRoot "." $ \root -> do
+parseReplOpts :: Parser ReplOpts
+parseReplOpts = ReplOpts
+  <$> many (option (readP parseLibPkg) $ long "import" <> metavar "local-package:Some.Module" <> help "Import a module from an extra package")
+  where
+    parseLibPkg = do
+      l <- P.munch1 $ \c -> C.isAlphaNum c || c == '-'
+      _ <- P.char ':'
+      m <- parseModule
+      P.eof
+      pure (l, m)
+
+readP :: Show a => P.ReadP a -> ReadM a
+readP p = maybeReader $ fmap fst . listToMaybe . P.readP_to_S p
+
+parseModule :: P.ReadP String
+parseModule = fmap (intercalate ".") $ flip P.sepBy1 (P.char '.') $ do
+  m <- P.satisfy C.isUpper
+  od <- P.munch C.isAlphaNum
+  pure $ m : od
+
+parseFunction :: P.ReadP String
+parseFunction = do
+  f <- P.satisfy C.isLower
+  un <- P.munch $ \c -> C.isAlphaNum c || c == '_'
+  pure $ f : un
+
+parseRunOpts :: Parser RunOpts
+parseRunOpts = RunOpts
+  <$> parseReplOpts
+  <*> optional (option (readP parseModuleFn) $ long "frontend" <> metavar "Some.Module.myFrontend" <> help "Use this alternative frontend. The module must be Frontend, Backend, or an extra module imported by --import.")
+  <*> optional (option (readP parseModuleFn) $ long "backend" <> metavar "Some.Module.myBackend" <> help "Use this alternative backend. The module must be Frontend, Backend, or an extra module imported by --import.")
+  where
+    parseModuleFn = do
+      m <- parseModule
+      _ <- P.char '.'
+      f <- parseFunction
+      pure (m, f)
+
+inNixShell' :: MonadObelisk m => RunOpts -> StaticPtr (a -> ObeliskT IO ()) -> m ()
+inNixShell' opts p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
   projectShell root False "ghc" (Just cmd)
   where
@@ -119,6 +159,7 @@ inNixShell' p = withProjectRoot "." $ \root -> do
         , Just "internal"
         , Just "run-static-io"
         , Just $ encodeStaticKey $ staticKey p
+        , Just $ encodeRunOpts opts
         ]
 
 obCommand :: ArgsConfig -> Parser ObCommand
@@ -126,10 +167,10 @@ obCommand cfg = hsubparser
     (mconcat
       [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
       , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-      , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+      , command "run" $ info (ObCommand_Run <$> parseRunOpts) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-      , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-      , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+      , command "repl" $ info (ObCommand_Repl <$> parseReplOpts) $ progDesc "Open an interactive interpreter"
+      , command "watch" $ info (ObCommand_Watch <$> parseReplOpts) $ progDesc "Watch current project for errors and warnings"
       , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
       , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
           progDesc "List paths to haddock documentation for specified packages"
@@ -208,7 +249,9 @@ data DeployInitOpts = DeployInitOpts
 
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
-  [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
+  [ command "run-static-io" $ flip info mempty $ ObInternal_RunStaticIO
+  <$> argument (eitherReader decodeStaticKey) (action "static-key")
+  <*> argument (eitherReader decodeRunOpts) internal
   , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
 
@@ -372,24 +415,24 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> inNixShell' $ static run
+  ObCommand_Run opts -> inNixShell' opts $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks force -> forM_ thunks (packThunk force)
-  ObCommand_Repl -> runRepl
-  ObCommand_Watch -> inNixShell' $ static runWatch
+  ObCommand_Repl opts -> runRepl $ RunOpts opts Nothing Nothing
+  ObCommand_Watch opts -> inNixShell' (RunOpts opts Nothing Nothing) $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
   ObCommand_Doc shell pkgs -> withProjectRoot "." $ \root ->
     projectShell root False shell (Just $ haddockCommand pkgs)
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
+    ObInternal_RunStaticIO k o -> liftIO (unsafeLookupStaticPtr @(RunOpts -> ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> do
         c <- getObelisk
-        liftIO $ runObelisk c $ deRefStaticPtr p
+        liftIO $ runObelisk c $ deRefStaticPtr p o
     ObInternal_CLIDemo -> cliDemo
 
 haddockCommand :: [String] -> String
