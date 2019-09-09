@@ -1,6 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Obelisk.ExecutableConfig.Lookup where
+module Obelisk.ExecutableConfig.Lookup
+  ( getConfigs
+  , escapeVarName
+  , EnvCodec(..)
+  , unescapeVarName
+  )
+where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
