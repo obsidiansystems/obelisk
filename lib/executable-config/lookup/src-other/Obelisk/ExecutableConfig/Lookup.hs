@@ -14,5 +14,7 @@ import Control.Monad
 
 import Obelisk.Configs.Internal.Directory
 
+import Obelisk.Configs.Internal.Environment
+
 getConfigs :: IO (Map Text ByteString)
-getConfigs = getConfigsFromDirectory "config"
+getConfigs = getConfigsFromDirectory "config" >>= getConfigsFromEnvironment "OBELISK_CONFIG_"
