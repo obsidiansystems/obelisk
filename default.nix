@@ -237,6 +237,43 @@ in rec {
     };
   };
 
+  dockerImage = args@{exe, name, version}: let
+    dockerImageSetupScript = nixpkgs.dockerTools.shellScript "dockersetup.sh" ''
+      set -ex
+
+      ${nixpkgs.dockerTools.shadowSetup}
+      echo 'nobody:x:99:99:Nobody:/:/sbin/nologin' >> /etc/passwd
+      echo 'nobody:*:17416:0:99999:7:::'           >> /etc/shadow
+      echo 'nobody:x:99:'                          >> /etc/group
+      echo 'nobody:::'                             >> /etc/gshadow
+
+      mkdir -p    /var/run/backend
+      ln -sft /var/run/backend '${exe}'/*
+      ${nixpkgs.findutils}/bin/find /var/run/backend
+
+      chown 99:99 /var/run/backend
+    '';
+
+  in nixpkgs.dockerTools.buildImage {
+    name = name;
+    tag = version;
+    contents = [ nixpkgs.iana-etc nixpkgs.cacert ];
+    runAsRoot = dockerImageSetupScript;
+    keepContentsDirlinks = true;
+    config = {
+
+      Env = [
+         ("PATH=" + builtins.concatStringsSep(":")([
+           "/var/run/backend"
+         ]))
+       ];
+       Expose = 8000;
+       Entrypoint = ["/var/run/backend/backend"];
+       WorkingDir = "/var/run/backend";
+       User = "99:99";
+    };
+  };
+
   serverExe = backend: frontend: assets: optimizationLevel: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
@@ -353,6 +390,8 @@ in rec {
       exe = serverOn system dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
         server (args // { exe = linuxExe version; });
+      dockerImage = args@{ name, version }:
+        dockerImage (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
