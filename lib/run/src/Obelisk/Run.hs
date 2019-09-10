@@ -44,6 +44,7 @@ import Network.Socket
 import Network.Wai (Application)
 import qualified Network.Wai as W
 import Network.Wai.Handler.Warp
+import Network.Wai.Handler.WarpTLS
 import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
@@ -53,6 +54,7 @@ import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Snap.Core (Snap)
+import System.Directory (getXdgDirectory, XdgDirectory(..))
 import System.Environment
 import System.IO
 import System.Process
@@ -108,19 +110,24 @@ runWidget
   -> IO ()
 runWidget conf configs frontend validFullEncoder = do
   uri <- either (fail . T.unpack) pure $ getConfigRoute configs
+  userCfg <- getXdgDirectory XdgConfig "obelisk"
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
       beforeMainLoop = do
         putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
+      -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
+      runner = case (uri ^? uriScheme . _Just . unRText) of
+        Just "https" -> runTLSSocket $ tlsSettings (userCfg <> "/certificate.pem") (userCfg <> "/key.pem")
+        _ -> runSettingsSocket
   bracket
     (bindPortTCPRetry settings (logPortBindErr port) (_runConfig_retryTimeout conf))
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
         app <- obeliskApp configs defaultConnectionOptions frontend validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
-        runSettingsSocket settings skt app)
+        runner settings skt app)
 
 obeliskApp
   :: forall route backendRoute
