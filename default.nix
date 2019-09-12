@@ -238,30 +238,18 @@ in rec {
   };
 
   dockerImage = args@{exe, name, version}: let
-    dockerImageSetupScript = nixpkgs.dockerTools.shellScript "dockersetup.sh" ''
-      set -ex
-
-      ${nixpkgs.dockerTools.shadowSetup}
-      echo 'nobody:x:99:99:Nobody:/:/sbin/nologin' >> /etc/passwd
-      echo 'nobody:*:17416:0:99999:7:::'           >> /etc/shadow
-      echo 'nobody:x:99:'                          >> /etc/group
-      echo 'nobody:::'                             >> /etc/gshadow
-
-      mkdir -p    /var/run/backend
-      ln -sft /var/run/backend '${exe}'/*
-      ${nixpkgs.findutils}/bin/find /var/run/backend
-
-      chown 99:99 /var/run/backend
-    '';
+    appDirSetupScript = nixpkgs.runCommand "appDirSetupScript.sh" {} ''
+      mkdir -p    $out/var/run/backend
+      ln -sft $out/var/run/backend '${exe}'/*
+      ${nixpkgs.findutils}/bin/find $out/var/run/backend
+      '';
 
   in nixpkgs.dockerTools.buildImage {
     name = name;
     tag = version;
-    contents = [ nixpkgs.iana-etc nixpkgs.cacert ];
-    runAsRoot = dockerImageSetupScript;
+    contents = [ nixpkgs.iana-etc nixpkgs.cacert appDirSetupScript ];
     keepContentsDirlinks = true;
     config = {
-
       Env = [
          ("PATH=" + builtins.concatStringsSep(":")([
            "/var/run/backend"
