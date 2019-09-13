@@ -238,27 +238,29 @@ in rec {
     };
   };
 
-  dockerImage = args@{exe, name, version}: let
+  dockerImage = args@{exe, name, version, extraContents ? [], extraPaths ? []}: let
     appDirSetupScript = nixpkgs.runCommand "appDirSetupScript.sh" {} ''
-      mkdir -p    $out/var/run/backend
-      ln -sft $out/var/run/backend '${exe}'/*
-      ${nixpkgs.findutils}/bin/find $out/var/run/backend
+      mkdir -p    $out/var/lib/backend
+      ln -sft $out/var/lib/backend '${exe}'/*
+      ${nixpkgs.findutils}/bin/find $out/var/lib/backend
       '';
 
   in nixpkgs.dockerTools.buildImage {
     name = name;
     tag = version;
-    contents = [ nixpkgs.iana-etc nixpkgs.cacert appDirSetupScript ];
+    contents = [ nixpkgs.iana-etc nixpkgs.cacert appDirSetupScript ] ++ extraContents;
     keepContentsDirlinks = true;
     config = {
       Env = [
-         ("PATH=" + builtins.concatStringsSep(":")([
-           "/var/run/backend"
-         ]))
+         ("PATH=" + builtins.concatStringsSep(":")(extraPaths ++ [
+           "/var/lib/backend" # put the obelisk project on the path.
+           "/bin" # put contents on path
+         ] ++ map (pkg: "${pkg}/bin") pkgs.stdenv.initialPath # put common tools in path so docker exec is useful
+         ))
        ];
        Expose = 8000;
-       Entrypoint = ["/var/run/backend/backend"];
-       WorkingDir = "/var/run/backend";
+       Entrypoint = ["/var/lib/backend/backend"];
+       WorkingDir = "/var/lib/backend";
        User = "99:99";
     };
   };
