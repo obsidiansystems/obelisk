@@ -29,6 +29,11 @@ let
         emailresponsible = false;
       };
     };
+    self-args = {
+      type = "nix";
+      value = "{ config.android_sdk.accept_license = true; }";
+      emailresponsible = false;
+    };
   };
   branchJobset = branch: defaults {
     description = "obelisk-${branch}";

@@ -1,4 +1,5 @@
-{ local-self ? import ./. {}
+{ self-args ? {}
+, local-self ? import ./. self-args
 }:
 
 let
@@ -9,7 +10,7 @@ let
   obeliskPackagesCommon = [
     "obelisk-frontend"
     "obelisk-route"
-    "obelisk-executable-config"
+    "obelisk-executable-config-lookup"
   ];
 
   obeliskPackagesBackend = obeliskPackagesCommon ++ [
@@ -57,24 +58,31 @@ let
       (builtins.attrValues ghcjs)
       (concatDepends ghc)
       (concatDepends ghcjs)
+      [command serverExeSkeleton iosSkeleton androidSkeleton]
     ];
     command = local-self.command;
-    serverExeSkeleton = (import ./skeleton {}).exe;
-    builtSkeleton = (import ./skeleton {}).all;
+    serverExeSkeleton = (import ./skeleton { obelisk = local-self; }).exe;
+    androidObelisk = import ./. (self-args // {
+      config.android_sdk.accept_license = true;
+    });
+    androidSkeleton = (import ./skeleton { obelisk = androidObelisk; }).android.frontend;
+    iosObelisk = import ./. (self-args // {
+      system = "x86_64-darwin";
+      iosSdkVersion = "10.2";
+    });
+    iosSkeleton = (import ./skeleton { obelisk = iosObelisk; }).ios.frontend;
   in {
     inherit
       command
       ghc ghcjs
-      serverExeSkeleton builtSkeleton;
-    cache = reflex-platform.pinBuildInputs
-      "obelisk-${system}"
-      cachePackages
-      [command serverExeSkeleton builtSkeleton];
+      serverExeSkeleton
+      iosSkeleton
+      androidSkeleton;
+    cache = reflex-platform.pinBuildInputs "obelisk-${system}" cachePackages;
   });
 
   metaCache = local-self.pinBuildInputs
     "obelisk-everywhere"
-    (map (a: a.cache) (builtins.attrValues perPlatform))
-    [];
+    (map (a: a.cache) (builtins.attrValues perPlatform));
 
 in perPlatform // { inherit metaCache; }

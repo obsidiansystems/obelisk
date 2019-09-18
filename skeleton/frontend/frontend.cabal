@@ -10,6 +10,7 @@ library
                , obelisk-frontend
                , obelisk-route
                , reflex-dom
+               , obelisk-executable-config-lookup
                , obelisk-generated-static
                , text
   exposed-modules:

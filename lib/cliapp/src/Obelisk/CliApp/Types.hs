@@ -6,12 +6,14 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Obelisk.CliApp.Types where
 
 import Control.Concurrent.MVar (MVar)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
-import Control.Monad.Log (LoggingT, MonadLog, Severity (..), WithSeverity (..), logMessage)
+import Control.Monad.Fail (MonadFail)
+import Control.Monad.Log (LoggingT(..), MonadLog, Severity (..), WithSeverity (..), logMessage)
 import Control.Monad.Reader (MonadIO, ReaderT (..), MonadReader (..), ask, mapReaderT)
 import Control.Monad.Writer (WriterT)
 import Control.Monad.State (StateT)
@@ -23,6 +25,7 @@ import Data.Text (Text)
 import System.Exit (ExitCode (..), exitWith)
 
 import Obelisk.CliApp.TerminalString (TerminalString)
+import Obelisk.CliApp.Theme (CliTheme)
 
 --------------------------------------------------------------------------------
 
@@ -44,9 +47,11 @@ type CliThrow e m = MonadError e m
 putLog :: CliLog m => Severity -> Text -> m ()
 putLog sev = logMessage . Output_Log . WithSeverity sev
 
+deriving instance MonadFail m => MonadFail (LoggingT Output m)
+
 newtype DieT e m a = DieT { unDieT :: ReaderT (e -> (Text, Int)) (LoggingT Output m) a }
   deriving
-    ( Functor, Applicative, Monad, MonadIO
+    ( Functor, Applicative, Monad, MonadIO, MonadFail
     , MonadThrow, MonadCatch, MonadMask
     , MonadLog Output
     )
@@ -88,6 +93,8 @@ data CliConfig e = CliConfig
     _cliConfig_spinnerStack :: IORef ([Bool], [TerminalString])
   , -- | Failure handler. How to log error and what exit status to use.
     _cliConfig_errorLogExitCode :: e -> (Text, Int)
+  , -- | Theme strings for spinners
+    _cliConfig_theme :: CliTheme
   }
 
 class Monad m => HasCliConfig e m | m -> e where
@@ -111,7 +118,7 @@ newtype CliT e m a = CliT
   { unCliT :: ReaderT (CliConfig e) (DieT e m) a
   }
   deriving
-    ( Functor, Applicative, Monad, MonadIO
+    ( Functor, Applicative, Monad, MonadIO, MonadFail
     , MonadThrow, MonadCatch, MonadMask
     , MonadLog Output -- CliLog
     , MonadError e -- CliThrow

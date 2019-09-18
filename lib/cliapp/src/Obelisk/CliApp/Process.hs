@@ -26,6 +26,7 @@ module Obelisk.CliApp.Process
 
 import Control.Monad ((<=<), join, void)
 import Control.Monad.Except (throwError)
+import Control.Monad.Fail
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Lens (Prism', review)
 import qualified Data.ByteString as BS
@@ -62,7 +63,7 @@ instance AsProcessFailure ProcessFailure where
   asProcessFailure = id
 
 readProcessAndLogStderr
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
   => Severity -> CreateProcess -> m Text
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
@@ -84,7 +85,7 @@ readCreateProcessWithExitCode process = do
 -- which case it is advisable to call it with a non-Error severity for stderr, like
 -- `callProcessAndLogOutput (Debug, Debug)`.
 readProcessAndLogOutput
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
   => (Severity, Severity) -> CreateProcess -> m Text
 readProcessAndLogOutput (sev_out, sev_err) process = do
   (_, Just out, Just err, p) <- createProcess $ process
@@ -108,7 +109,7 @@ readProcessAndLogOutput (sev_out, sev_err) process = do
 -- `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
 
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
   => (Severity, Severity) -> CreateProcess -> m ()
 callProcessAndLogOutput (sev_out, sev_err) process =
   void $ withProcess process $ \out err -> do
@@ -152,7 +153,7 @@ callCommand cmd = do
   liftIO $ Process.callCommand cmd
 
 withProcess
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
   => CreateProcess -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
 withProcess process f = do -- TODO: Use bracket.
   -- FIXME: Using `withCreateProcess` here leads to something operating illegally on closed handles.

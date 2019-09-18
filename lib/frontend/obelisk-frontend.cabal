@@ -7,6 +7,7 @@ library
   hs-source-dirs: src
   build-depends: base,
                  bytestring,
+                 containers,
                  cookie,
                  dependent-sum,
                  ghcjs-dom,
@@ -14,6 +15,7 @@ library
                  lens,
                  mtl,
                  obelisk-executable-config-inject,
+                 obelisk-executable-config-lookup,
                  obelisk-route,
                  primitive,
                  ref-tf,

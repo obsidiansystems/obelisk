@@ -20,18 +20,20 @@ import Control.Exception
 import Control.Lens ((%~), (^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy.Char8 as BSLC
-import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Identity
-import Data.Functor.Sum
 import Data.List (uncons)
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -46,7 +48,6 @@ import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.Backend
-import Obelisk.ExecutableConfig (get)
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
@@ -73,36 +74,39 @@ run port serveStaticAsset backend frontend = do
   case checkEncoder $ _backend_routeEncoder backend of
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
     Right validFullEncoder -> do
+      publicConfigs <- getPublicConfigs
       backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
         _backend_run backend $ \serveRoute -> do
           runSnapWithCommandLineArgs $ do
             getRouteWith validFullEncoder >>= \case
               Identity r -> case r of
-                InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-                InR obeliskRoute :=> Identity a ->
-                  serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend $ obeliskRoute :/ a
+                FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
+                FullRoute_Frontend obeliskRoute :/ a ->
+                  serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
       let conf = defRunConfig { _runConfig_redirectPort = port }
-      runWidget conf frontend validFullEncoder `finally` killThread backendTid
+      runWidget conf publicConfigs frontend validFullEncoder `finally` killThread backendTid
 
 -- Convenience wrapper to handle path segments for 'Snap.serveAsset'
 runServeAsset :: FilePath -> [Text] -> Snap ()
 runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
 
-getConfigRoute :: IO (Maybe URI)
-getConfigRoute = get "config/common/route" >>= \case
-  Just r -> case URI.mkURI $ T.strip r of
-    Just route -> pure $ Just route
-    Nothing -> do
-      putStrLn $ "Route is invalid: " <> show r
-      pure Nothing
-  Nothing -> pure Nothing
+getConfigRoute :: Map Text ByteString -> Either Text URI
+getConfigRoute configs = case Map.lookup "common/route" configs of
+    Just r -> 
+      let stripped = T.strip (T.decodeUtf8 r)
+      in case URI.mkURI stripped of
+          Just route -> Right route
+          Nothing -> Left $ "Couldn't parse route as URI; value read was: " <> T.pack (show stripped)
+    Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
 
-defAppUri :: URI
-defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
-
-runWidget :: RunConfig -> Frontend (R route) -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> IO ()
-runWidget conf frontend validFullEncoder = do
-  uri <- fromMaybe defAppUri <$> getConfigRoute
+runWidget
+  :: RunConfig
+  -> Map Text ByteString
+  -> Frontend (R frontendRoute)
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
+  -> IO ()
+runWidget conf configs frontend validFullEncoder = do
+  uri <- either (fail . T.unpack) pure $ getConfigRoute configs
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
@@ -114,42 +118,54 @@ runWidget conf frontend validFullEncoder = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp defaultConnectionOptions frontend validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
+        app <- obeliskApp configs defaultConnectionOptions frontend validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
         runSettingsSocket settings skt app)
 
 obeliskApp
-  :: forall route backendRoute. ConnectionOptions
-  -> Frontend (R route)
-  -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
+  :: forall frontendRoute backendRoute
+  .  Map Text ByteString
+  -> ConnectionOptions
+  -> Frontend (R frontendRoute)
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> URI
   -> Application
   -> IO Application
-obeliskApp opts frontend validFullEncoder uri backend = do
-  let entryPoint = do
-        runFrontend validFullEncoder frontend
+obeliskApp configs opts frontend validFullEncoder uri backend = do
+  let mode = FrontendMode
+        { _frontendMode_hydrate = True
+        , _frontendMode_adjustRoute = False
+        }
+      entryPoint = do
+        runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
         syncPoint
   jsaddlePath <- URI.mkPathPiece "jsaddle"
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
   Right (jsaddleWarpRouteValidEncoder :: Encoder Identity (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
   jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
-  return $ \req sendResponse -> case tryDecode validFullEncoder (W.pathInfo req, mempty) of --TODO: Query strings
+  return $ \req sendResponse -> case tryDecode validFullEncoder $ byteStringsToPageName (BS.dropWhile (== (fromIntegral $ fromEnum '/')) $ W.rawPathInfo req) (BS.drop 1 $ W.rawQueryString req) of
     Identity r -> case r of
-      InR (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :=> Identity jsaddleRoute -> case jsaddleRoute of
+      FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :/ jsaddleRoute -> case jsaddleRoute of
         JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just jsaddleUri) False
         _ -> flip jsaddle sendResponse $ req
           { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
-      InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
+      FullRoute_Frontend (ObeliskRoute_App appRouteComponent) :/ appRouteRest -> do
         let cookies = maybe [] parseCookies $ lookup (fromString "Cookie") (W.requestHeaders req)
-        html <- renderJsaddleFrontend cookies (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
+        html <- renderJsaddleFrontend configs cookies (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
       _ -> backend req sendResponse
 
-renderJsaddleFrontend :: Cookies -> (route -> Text) -> route -> Frontend route -> IO ByteString
-renderJsaddleFrontend cookies urlEnc r f =
+renderJsaddleFrontend
+  :: Map Text ByteString
+  -> Cookies
+  -> (route -> Text)
+  -> route
+  -> Frontend route
+  -> IO ByteString
+renderJsaddleFrontend configs cookies urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
       jsaddlePreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "/jsaddle/jsaddle.js") blank
-  in renderFrontendHtml cookies urlEnc r (_frontend_head f >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
+  in renderFrontendHtml configs cookies urlEnc r f jsaddlePreload jsaddleScript
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
