@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "hydration",
-  "rev": "d4b1dcfa6d2795e612b9a4d89c40467afb9fad9d",
-  "sha256": "0wqcvmsivhk9h30p8fmwwp10qn8l8mwfxishpxpxwprc1kh4dbc4"
+  "branch": "mh-bump-jsaddle",
+  "rev": "4c58b27d5de49b8ac958bf2c9522ac84276db94f",
+  "sha256": "1rha1d1c6lvdnv9qslkbvk4jzsrh3dwfl99dsv571i3ac8myvpnw"
 }
