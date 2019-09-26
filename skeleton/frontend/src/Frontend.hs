@@ -3,28 +3,21 @@
 {-# LANGUAGE TypeApplications #-}
 module Frontend where
 
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
+import Control.Monad.IO.Class
 import Obelisk.Frontend
-import Obelisk.Configs
 import Obelisk.Route
 import Reflex.Dom.Core
 
-import Common.Api
 import Common.Route
-import Obelisk.Generated.Static
 
 frontend :: Frontend (R FrontendRoute)
 frontend = Frontend
   { _frontend_head = el "title" $ text "Obelisk Minimal Example"
   , _frontend_body = do
-      text "Welcome to Obelisk!"
-      el "p" $ text $ T.pack commonStuff
-      elAttr "img" ("src" =: static @"obelisk.jpg") blank
-      el "div" $ do
-        exampleConfig <- getConfig "common/example"        
-        case exampleConfig of
-          Nothing -> text "No config file found in config/common/example"
-          Just s -> text (T.decodeUtf8 s)
-      return ()
+      ev <- button "Start the timer"
+      widgetHold_ blank $ ffor ev $ \_ -> do
+        performEvent_ . fmap (liftIO . print) =<< tickLossyFromPostBuildTime 5
+        -- in 'ob run', if I change this to 1 and save
+        -- the old timer will keep ticking and printing after reload
+        -- and clicking the button triggers an error
   }
