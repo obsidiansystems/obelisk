@@ -8,9 +8,13 @@
   }
 }:
 with obelisk;
-project ./. ({ ... }: {
+project ./. ({ hackGet, ... }: {
   android.applicationId = "systems.obsidian.obelisk.examples.minimal";
   android.displayName = "Obelisk Minimal Example";
   ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";
   ios.bundleName = "Obelisk Minimal Example";
+
+  overrides = self: super: {
+    jsaddle = self.callCabal2nix "jsaddle" (hackGet ./dep/jsaddle + /jsaddle) {};
+  };
 })
