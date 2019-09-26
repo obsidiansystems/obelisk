@@ -19,5 +19,5 @@ frontend = Frontend
         performEvent_ . fmap (liftIO . print) =<< tickLossyFromPostBuildTime 5
         -- in 'ob run', if I change this to 1 and save
         -- the old timer will keep ticking and printing after reload
-        -- and clicking the button triggers an error
+        -- and (this part was fixed by jsaddle bump) clicking the button triggers an error
   }
