@@ -121,12 +121,12 @@ parseCabalPackage dir = do
     then Just <$> liftIO (readUTF8File cabalFp)
     else if hasHpack
       then do
-        let decodeOptions = DecodeOptions hpackFp Nothing decodeYaml
+        let decodeOptions = DecodeOptions (ProgramName "ob") hpackFp Nothing decodeYaml
         liftIO (readPackageConfig decodeOptions) >>= \case
           Left err -> do
             putLog Error $ T.pack $ "Failed to parse " <> hpackFp <> ": " <> err
             return Nothing
-          Right (DecodeResult hpackPackage _ _) -> do
+          Right (DecodeResult hpackPackage _ _ _) -> do
             return $ Just $ renderPackage [] hpackPackage
       else return Nothing
 
@@ -182,12 +182,13 @@ withGhciScript pkgs f = do
       extensionsLine = if extensions == mempty
         then ""
         else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
-      ghcOptions = (":set " <>) $ intercalate " " $ concat $
-        mapMaybe (\case (GHC, xs) -> Just xs; _ -> Nothing) $
-          packageInfos >>= _cabalPackageInfo_compilerOptions
+      ghcOptions = concat $ mapMaybe (\case (GHC, xs) -> Just xs; _ -> Nothing) $
+        packageInfos >>= _cabalPackageInfo_compilerOptions
       dotGhci = unlines $
         [ ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
-        , ghcOptions
+        , case ghcOptions of
+            [] -> ""
+            xs -> ":set " <> intercalate " " xs
         , extensionsLine
         , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
         , ":load Backend Frontend"
