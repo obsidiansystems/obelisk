@@ -128,14 +128,16 @@ For further information see [the Haskell section](https://nixos.org/nixpkgs/manu
 Build everything:
 
 ```
-nix-build -A exe -o result-exe
+nix-build -A exe --no-out-link
 ```
 
-Run the server:
+Copy the result to a new directory, add configuration, and run!
 
 ```
-cd result-exe
-./backend
+mkdir test-app
+ln -s $(nix-build -A exe --no-out-link)/* test-app/
+cp -r config test-app
+(cd test-app && ./backend)
 ```
 
 ### EC2
