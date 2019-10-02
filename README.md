@@ -99,14 +99,14 @@ In order to add package dependencies, declare them under the build-depends field
 
 ### Adding package overrides
 
-To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package, your `default.nix` will look like:
+To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package fetched from GitHub and a specific version of the `waargonaut` package fetched from Hackage, your `default.nix` will look like:
 
 ```nix
 # ...
 project ./. ({ pkgs, ... }: {
 # ...
   overrides = self: super: let
-    aeson = pkgs.fetchFromGitHub {
+    aesonSrc = pkgs.fetchFromGitHub {
       owner = "obsidiansystems";
       repo = "aeson-gadt-th";
       rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
@@ -114,7 +114,12 @@ project ./. ({ pkgs, ... }: {
     };
   in
   {
-    aeson = self.callCabal2nix "aeson" aeson {};
+    aeson = self.callCabal2nix "aeson" aesonSrc {};
+    waargonaut = self.callHackageDirect {
+      pkg = "waargonaut";
+      ver = "0.8.0.1";
+      sha256 = "1zv28np3k3hg378vqm89v802xr0g8cwk7gy3mr77xrzy5jbgpa39";
+    } {};
   };
 # ...
 ```
