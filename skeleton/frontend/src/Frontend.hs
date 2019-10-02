@@ -22,7 +22,7 @@ frontend = Frontend
       el "p" $ text $ T.pack commonStuff
       elAttr "img" ("src" =: static @"obelisk.jpg") blank
       el "div" $ do
-        exampleConfig <- getConfig "common/example"        
+        exampleConfig <- getConfig "common/example"
         case exampleConfig of
           Nothing -> text "No config file found in config/common/example"
           Just s -> text (T.decodeUtf8 s)
