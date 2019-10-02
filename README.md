@@ -169,9 +169,11 @@ ob deploy init \
   ~/code/myapp-deploy
 ```
 
-NOTE: HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
+HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
 
-Then go to that created deployment configuration directory, and initiate the deployment:
+This step will also require that you manually verify the authenticity of the host `$SERVER`. Obelisk will save the fingerprint in a deployment-specific configuration. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
+
+Next, go to the deployment directory that you just initialized and deploy!
 
 ```
 cd ~/code/myapp-deploy
