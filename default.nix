@@ -128,7 +128,7 @@ in rec {
   obelisk = ghcObelisk;
   obeliskEnvs = ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
-  shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
+  shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs);
 
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
