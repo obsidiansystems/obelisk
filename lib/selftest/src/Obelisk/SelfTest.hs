@@ -162,7 +162,7 @@ main = do
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
             shell = "shells." <> compiler
-            inShell cmd' = run "nix-shell" ["-A", fromString shell, "--run", cmd']
+            inShell cmd' = run "nix-shell" ["default.nix", "-A", fromString shell, "--run", cmd']
           it ("can enter "    <> shell) $ inTmpObInit $ \_ -> inShell "exit"
           it ("can build in " <> shell) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
 

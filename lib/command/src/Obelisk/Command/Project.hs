@@ -205,6 +205,7 @@ inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
+     [ "default.nix"] <>
      [ "--pure" | isPure ] <>
      [ "-A"
      , "shells." <> shellName
