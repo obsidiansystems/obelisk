@@ -5,6 +5,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
   - [Hoogle](#hoogle)
+  - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
 - [Deploying](#deploying)
   - [Locally](#locally)
@@ -59,6 +60,28 @@ Or to launch ghcid for `lib/command` project:
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
+To re-install `ob` from source do
+```
+nix-env -f /path/to/obelisk -iA command
+```
+
+Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
+
+```shell
+ob thunk unpack ./obelisk/impl
+cd ./obelisk/impl
+# apply your changes
+```
+
+If you want to commit your changes, first push them to your fork of obelisk and then
+
+```shell
+cd /your/project/root
+ob thunk pack .obelisk/impl
+git add .obelisk/impl
+git commit -m "Bump obelisk"
+```
+
 ### Accessing private repositories
 
 To allow the Nix builder to access private git repositories, you must be set up
@@ -92,16 +115,20 @@ To enter a nix-shell from which you can run the hoogle command-line client or a 
 
 `nix-shell -A shells.ghc --arg withHoogle true`
 
+### Adding packages
+
+In order to add package dependencies, declare them under the build-depends field in the appropriate cabal files (backend, common, and frontend each have their own). The corresponding Nix packages will automatically be selected when building.
+
 ### Adding package overrides
 
-To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package, your `default.nix` will look like:
+To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package fetched from GitHub and a specific version of the `waargonaut` package fetched from Hackage, your `default.nix` will look like:
 
 ```nix
 # ...
 project ./. ({ pkgs, ... }: {
 # ...
   overrides = self: super: let
-    aeson = pkgs.fetchFromGitHub {
+    aesonSrc = pkgs.fetchFromGitHub {
       owner = "obsidiansystems";
       repo = "aeson-gadt-th";
       rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
@@ -109,7 +136,12 @@ project ./. ({ pkgs, ... }: {
     };
   in
   {
-    aeson = self.callCabal2nix "aeson" aeson {};
+    aeson = self.callCabal2nix "aeson" aesonSrc {};
+    waargonaut = self.callHackageDirect {
+      pkg = "waargonaut";
+      ver = "0.8.0.1";
+      sha256 = "1zv28np3k3hg378vqm89v802xr0g8cwk7gy3mr77xrzy5jbgpa39";
+    } {};
   };
 # ...
 ```
@@ -123,14 +155,16 @@ For further information see [the Haskell section](https://nixos.org/nixpkgs/manu
 Build everything:
 
 ```
-nix-build -A exe -o result-exe
+nix-build -A exe --no-out-link
 ```
 
-Run the server:
+Copy the result to a new directory, add configuration, and run!
 
 ```
-cd result-exe
-./backend
+mkdir test-app
+ln -s $(nix-build -A exe --no-out-link)/* test-app/
+cp -r config test-app
+(cd test-app && ./backend)
 ```
 
 ### EC2
@@ -162,9 +196,11 @@ ob deploy init \
   ~/code/myapp-deploy
 ```
 
-NOTE: HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
+HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
 
-Then go to that created deployment configuration directory, and initiate the deployment:
+This step will also require that you manually verify the authenticity of the host `$SERVER`. Obelisk will save the fingerprint in a deployment-specific configuration. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
+
+Next, go to the deployment directory that you just initialized and deploy!
 
 ```
 cd ~/code/myapp-deploy

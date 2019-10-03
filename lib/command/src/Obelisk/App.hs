@@ -12,6 +12,7 @@ module Obelisk.App where
 
 import Control.Lens
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Writer (WriterT)
 import Control.Monad.State (StateT)
@@ -61,10 +62,11 @@ newtype ObeliskT m a = ObeliskT
   { unObeliskT :: ReaderT Obelisk (CliT ObeliskError m) a
   }
   deriving
-    ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask
+    ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadFail
     , MonadLog Output -- CliLog
     , MonadError ObeliskError -- CliThrow ObeliskError
-    , HasCliConfig ObeliskError)
+    , HasCliConfig ObeliskError
+    )
 
 instance MonadTrans ObeliskT where
   lift = ObeliskT . lift . lift
@@ -104,6 +106,7 @@ type MonadInfallibleObelisk m =
 type MonadObelisk m =
   ( MonadInfallibleObelisk m
   , CliThrow ObeliskError m
+  , MonadFail m
   )
 
 getObeliskUserStateDir :: IO FilePath
