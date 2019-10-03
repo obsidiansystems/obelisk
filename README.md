@@ -62,10 +62,10 @@ nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'caba
 
 To re-install `ob` from source do
 ```
-nix-env -f . -iA command
+nix-env -f /path/to/obelisk -iA command
 ```
 
-Note that `ob` will defer to the version found in your `.obelisk/impl` directory. To update your project's obelisk instead:
+Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
 
 ```shell
 ob thunk unpack ./obelisk/impl
@@ -76,7 +76,7 @@ cd ./obelisk/impl
 If you want to commit your changes, first push them to your fork of obelisk and then
 
 ```shell
-cd ../../
+cd /your/project/root
 ob thunk pack .obelisk/impl
 git add .obelisk/impl
 git commit -m "Bump obelisk"
