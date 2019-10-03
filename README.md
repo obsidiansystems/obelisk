@@ -60,6 +60,28 @@ Or to launch ghcid for `lib/command` project:
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
+To re-install `ob` from source do
+```
+nix-env -f /path/to/obelisk -iA command
+```
+
+Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
+
+```shell
+ob thunk unpack ./obelisk/impl
+cd ./obelisk/impl
+# apply your changes
+```
+
+If you want to commit your changes, first push them to your fork of obelisk and then
+
+```shell
+cd /your/project/root
+ob thunk pack .obelisk/impl
+git add .obelisk/impl
+git commit -m "Bump obelisk"
+```
+
 ### Accessing private repositories
 
 To allow the Nix builder to access private git repositories, you must be set up
