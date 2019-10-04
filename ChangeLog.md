@@ -3,12 +3,21 @@
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
 
 ## Unreleased
+
+* Generalised pathSegmentEncoder, added pathFieldEncoder.
+* Added some Prisms to the encoder library for manipulating DSums (perhaps they should get moved to dependent-sum before release?)
+* Add "ob doc" command, which lists paths to haddock documentation for specified packages
+* Bump reflex-platform so that obelisk now uses GHC 8.6.5 and the nixos-19.03 nixpkgs set
+
+## v0.2.0.0 - 2019-8-17
+
 * Configs become ByteStrings.
 * FrontendConfigsT has been changed into ConfigsT and configs are made available via getConfig/getConfigs
   * The frontend will still only have access to configs that are placed in config/frontend and config/common, while the backend has access to the entire contents of the config directory via `Obelisk.ExecutableConfig.Lookup.getConfigs`.
 * The backend no longer runs in BackendConfigsT.
 * Add tabulation package. See Data.Tabulation for details.
 * Add encoders for `DMap`, `HasFields` (cf. Data.Tabulation), and JSON.
+* Use IP address for nginx proxy pass instead of localhost
 
 ## v0.1.1.0 - 2019-05-17
 

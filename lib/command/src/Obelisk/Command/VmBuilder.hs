@@ -156,7 +156,8 @@ testLinuxBuild stateDir
   | System.Info.os == "linux" = failWith "Using the docker builder is not necessary on linux."
   | otherwise = do
     (exitCode, _stdout, stderr) <- readCreateProcessWithExitCode $ proc "nix-build"
-      [ "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
+      [ "--no-out-link"
+      , "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
       , "--builders", nixBuildersArgString stateDir
       ]
     unless (exitCode == ExitSuccess) $ do
