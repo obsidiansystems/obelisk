@@ -58,6 +58,7 @@ let
       (builtins.attrValues ghcjs)
       (concatDepends ghc)
       (concatDepends ghcjs)
+      [command serverExeSkeleton iosSkeleton androidSkeleton]
     ];
     command = local-self.command;
     serverExeSkeleton = (import ./skeleton { obelisk = local-self; }).exe;
@@ -77,15 +78,11 @@ let
       serverExeSkeleton
       iosSkeleton
       androidSkeleton;
-    cache = reflex-platform.pinBuildInputs
-      "obelisk-${system}"
-      cachePackages
-      [command serverExeSkeleton iosSkeleton androidSkeleton];
+    cache = reflex-platform.pinBuildInputs "obelisk-${system}" cachePackages;
   });
 
   metaCache = local-self.pinBuildInputs
     "obelisk-everywhere"
-    (map (a: a.cache) (builtins.attrValues perPlatform))
-    [];
+    (map (a: a.cache) (builtins.attrValues perPlatform));
 
 in perPlatform // { inherit metaCache; }
