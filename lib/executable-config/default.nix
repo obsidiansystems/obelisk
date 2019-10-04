@@ -20,7 +20,7 @@ let injectConfig = config: assets: nixpkgs.runCommand "inject-config" {} (''
     '');
 in with nixpkgs.haskell.lib; {
   haskellOverlay = self: super: {
-    obelisk-executable-config-lookup = self.callPackage (filterGitSource ./lookup) {};
+    obelisk-executable-config-lookup = self.callCabal2nix "obelisk-executable-config-lookup" (filterGitSource ./lookup) {};
   };
   platforms = {
     android = {
