@@ -34,6 +34,7 @@ import Test.HUnit.Base
 
 import Obelisk.CliApp hiding (runCli, readCreateProcessWithExitCode)
 import qualified Obelisk.CliApp as CliApp
+import Obelisk.ExecutableConfig.Lookup (getConfigs)
 import Obelisk.Run (getConfigRoute)
 
 data ObRunState
@@ -127,8 +128,10 @@ main = do
           void $ errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
-        it "produces a valid route config" $ inTmpObInit $ \tmp -> do
-          liftIO $ withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ getConfigRoute `shouldNotReturn` Nothing
+        it "produces a valid route config" $ inTmpObInit $ \tmp -> liftIO $ do
+          configs <- getConfigs
+          withCurrentDirectory (T.unpack $ toTextIgnore tmp) $
+            return (either (const Nothing) Just $ getConfigRoute configs) `shouldNotReturn` Nothing
 
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'

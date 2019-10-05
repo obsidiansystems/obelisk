@@ -6,12 +6,14 @@ build-type: Simple
 library
   hs-source-dirs: src
   build-depends: base,
+                 aeson,
+                 bytestring,
                  categories,
                  constraints,
+                 constraints-extras,
                  containers,
                  dependent-map,
                  dependent-sum,
-                 dependent-sum-universe-orphans,
                  dependent-sum-template,
                  either,
                  ghcjs-dom,
@@ -21,15 +23,18 @@ library
                  monad-control,
                  mtl,
                  network-uri,
+                 obelisk-executable-config-lookup,
                  primitive,
                  ref-tf,
                  reflex,
                  reflex-dom-core,
                  template-haskell,
+                 tabulation,
                  text,
+                 th-extras,
                  transformers,
                  universe,
-                 universe-template
+                 universe-dependent-sum
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend

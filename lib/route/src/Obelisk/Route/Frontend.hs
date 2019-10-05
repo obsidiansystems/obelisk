@@ -51,6 +51,9 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , dynRouteLink
+  , adaptedUriPath
+  , setAdaptedUriPath
   ) where
 
 import Prelude hiding ((.), id)
@@ -88,12 +91,12 @@ import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can
 import Reflex.Dom.Core
 import qualified GHCJS.DOM.Types as DOM
 import Network.URI
-#if defined(ios_HOST_OS)
 import Data.Maybe (fromMaybe)
 import qualified Data.List as L
-#endif
 
 import Unsafe.Coerce
+
+import Obelisk.Configs
 
 infixr 5 :~
 pattern (:~) :: Reflex t => f a -> Dynamic t a -> DSum f (Compose (Dynamic t) Identity)
@@ -175,6 +178,8 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
+
+instance HasConfigs m => HasConfigs (RoutedT t r m)
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (QueryT t q m)
 
@@ -338,6 +343,8 @@ instance PrimMonad m => PrimMonad (SetRouteT t r m ) where
   type PrimState (SetRouteT t r m) = PrimState m
   primitive = lift . primitive
 
+instance HasConfigs m => HasConfigs (SetRouteT t r m)
+
 instance (MonadHold t m, Adjustable t m) => Adjustable t (SetRouteT t r m) where
   runWithReplace a0 a' = SetRouteT $ runWithReplace (coerce a0) $ coerceEvent a'
   traverseIntMapWithKeyWithAdjust f a0 a' = SetRouteT $ traverseIntMapWithKeyWithAdjust (coerce f) (coerce a0) $ coerce a'
@@ -435,6 +442,8 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RouteToUrlT r m) where
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
+instance HasConfigs m => HasConfigs (RouteToUrlT t m)
+
 runRouteViewT
   :: forall t m r a.
      ( TriggerEvent t m
@@ -445,17 +454,20 @@ runRouteViewT
      , MonadFix m
      )
   => (Encoder Identity Identity r PageName)
+  --TODO: Get rid of the switchover and useHash arguments
+  -- useHash can probably be baked into the encoder
   -> Event t () -- ^ Switchover event, nothing is done until this event fires. Used to prevent incorrect DOM expectations at hydration switchover time
+  -> Bool
   -> RoutedT t r (SetRouteT t r (RouteToUrlT r m)) a
   -> m a
-runRouteViewT routeEncoder switchover a = do
+runRouteViewT routeEncoder switchover useHash a = do
   rec historyState <- manageHistory' switchover $ HistoryCommand_PushState <$> setState
       let theEncoder = pageNameEncoder . hoistParse (pure . runIdentity) routeEncoder
           -- NB: The can only fail if the uriPath doesn't begin with a '/' or if the uriQuery
           -- is nonempty, but begins with a character that isn't '?'. Since we don't expect
           -- this ever to happen, we'll just handle it by failing completely with 'error'.
           route :: Dynamic t r
-          route = fmap (errorLeft . tryDecode theEncoder . (adaptedUriPath &&& uriQuery) . _historyItem_uri) historyState
+          route = fmap (errorLeft . tryDecode theEncoder . (adaptedUriPath useHash &&& uriQuery) . _historyItem_uri) historyState
             where
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
@@ -476,7 +488,7 @@ runRouteViewT routeEncoder switchover a = do
                  -- we can change this function later to accommodate.
                  -- See: https://github.com/whatwg/html/issues/2174
                , _historyStateUpdate_title = ""
-               , _historyStateUpdate_uri = Just $ setAdaptedUriPath newPath $ (_historyItem_uri currentHistoryState)
+               , _historyStateUpdate_uri = Just $ setAdaptedUriPath useHash newPath $ (_historyItem_uri currentHistoryState)
                  { uriQuery = newQuery
                  }
                }
@@ -503,25 +515,44 @@ routeLink r w = do
   setRoute $ r <$ domEvent Click e
   return a
 
+-- | A link widget that, when clicked, sets the route to current value of the
+-- provided dynamic route. In non-javascript contexts the value of the dynamic post
+-- build is used so the link still works like 'routeLink'.
+dynRouteLink
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+dynRouteLink dr w = do
+  enc <- askRouteToUrl
+  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_modifyAttributes .~ er
+  (e, a) <- element "a" cfg w
+  setRoute $ tag (current dr) $ domEvent Click e
+  return a
+
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
 
-adaptedUriPath :: URI -> String
-#if defined(ios_HOST_OS)
-adaptedUriPath = hashToPath . uriFragment
+adaptedUriPath :: Bool -> URI -> String
+adaptedUriPath = \case
+  True -> hashToPath . uriFragment
+  False -> uriPath
 
-hashToPath :: String -> String
-hashToPath = ('/' :) . fromMaybe "" . L.stripPrefix "#"
-#else
-adaptedUriPath = uriPath
-#endif
-
-setAdaptedUriPath :: String -> URI -> URI
-#if defined(ios_HOST_OS)
-setAdaptedUriPath s u = u { uriFragment = pathToHash s }
+setAdaptedUriPath :: Bool -> String -> URI -> URI
+setAdaptedUriPath useHash s u = case useHash of
+  True -> u { uriFragment = pathToHash s }
+  False -> u { uriPath = s }
 
 pathToHash :: String -> String
 pathToHash = ('#' :) . fromMaybe "" . L.stripPrefix "/"
-#else
-setAdaptedUriPath s u = u { uriPath = s }
-#endif
+
+hashToPath :: String -> String
+hashToPath = ('/' :) . fromMaybe "" . L.stripPrefix "#"

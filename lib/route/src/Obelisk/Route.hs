@@ -12,7 +12,9 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -61,10 +63,15 @@ module Obelisk.Route
   , shadowEncoder
   , prismEncoder
   , rPrism
+  , _R
   , obeliskRouteEncoder
   , obeliskRouteSegment
   , pageNameEncoder
   , handleEncoder
+  , FullRoute (..)
+  , _FullRoute_Frontend
+  , _FullRoute_Backend
+  , mkFullRouteEncoder
   , ObeliskRoute (..)
   , _ObeliskRoute_App
   , _ObeliskRoute_Resource
@@ -85,6 +92,13 @@ module Obelisk.Route
   , readShowEncoder
   , integralEncoder
   , pathSegmentEncoder
+  , queryOnlyEncoder
+  , Decoder(..)
+  , dmapEncoder
+  , fieldMapEncoder
+  , pathFieldEncoder
+  , jsonEncoder
+  , byteStringsToPageName
   ) where
 
 import Prelude hiding ((.), id)
@@ -95,8 +109,32 @@ import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
 import Control.Category.Associative
 import Control.Category.Monoidal
-import Control.Lens (Identity (..), Prism', makePrisms, itraverse, imap, prism, (^.), re, matching, (^?), _Just, _Nothing, Iso', from, view, Wrapped (..))
+import Control.Category.Braided
+import Control.Lens
+  ( Identity (..)
+  , (^.)
+  , (^?)
+  , _Just
+  , _Nothing
+  , Cons(..)
+  , from
+  , imap
+  , iso
+  , Iso'
+  , itraverse
+  , makePrisms
+  , Prism'
+  , prism'
+  , re
+  , view
+  , Wrapped (..)
+  )
 import Control.Monad.Except
+import Control.Monad.Writer (execWriter, tell)
+import qualified Control.Monad.State.Strict as State
+import Control.Monad.Trans (lift)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
@@ -113,17 +151,19 @@ import Data.Maybe
 import Data.Monoid ((<>))
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Some (Some)
-import qualified Data.Some as Some
-import Data.Some.Universe.Orphans ()
+import Data.Some (Some(Some))
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding
+import qualified Data.Text.Encoding as T
 import Data.Universe
+import Data.Universe.Some
 import Network.HTTP.Types.URI
 import qualified Numeric.Lens
 import Obelisk.Route.TH
 import Text.Read (readMaybe)
+import Data.Tabulation
+import qualified Data.Aeson as Aeson
+import Data.Aeson (FromJSON, ToJSON)
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -149,13 +189,13 @@ import Text.Read (readMaybe)
 
 type R f = DSum f Identity --TODO: Better name
 
---TODO: COMPLETE pragma
+{-# COMPLETE (:/) #-}
 infixr 5 :/
 pattern (:/) :: f a -> a -> R f
 pattern a :/ b = a :=> Identity b
 
 mapSome :: (forall a. f a -> g a) -> Some f -> Some g
-mapSome f (Some.This a) = Some.This $ f a
+mapSome f (Some a) = Some $ f a
 
 hoistR :: (forall x. f x -> g x) -> R f -> R g
 hoistR f (x :=> Identity y) = f x :/ y
@@ -243,6 +283,10 @@ instance Monad parse => Bifunctor (,) (EncoderImpl parse) (EncoderImpl parse) (E
     , _encoderImpl_decode = \(a, b) -> liftA2 (,) (_encoderImpl_decode f a) (_encoderImpl_decode g b)
     }
 
+instance (Monad parse, Applicative check) => Braided (Encoder check parse) (,) where
+  braid = isoEncoder (iso swap swap)
+
+
 instance (Applicative check, Monad parse) => PFunctor (,) (Encoder check parse) (Encoder check parse) where
   first f = bimap f id
 instance (Applicative check, Monad parse) => QFunctor (,) (Encoder check parse) (Encoder check parse) where
@@ -255,6 +299,34 @@ instance (Traversable f, Monad parse) => Cat.Functor f (EncoderImpl parse) (Enco
     { _encoderImpl_encode = fmap $ _encoderImpl_encode ve
     , _encoderImpl_decode = traverse $ _encoderImpl_decode ve
     }
+
+instance Monad parse => PFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
+  first f = bimap f id
+instance Monad parse => QFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
+  second g = bimap id g
+instance Monad parse => Bifunctor Either (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
+  bimap f g = EncoderImpl
+    { _encoderImpl_encode = bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
+    , _encoderImpl_decode = \case
+      Left a -> Left <$> _encoderImpl_decode f a
+      Right b -> Right <$> _encoderImpl_decode g b
+    }
+
+instance (Monad parse, Applicative check) => QFunctor Either (Encoder check parse) (Encoder check parse) where
+  second g = bimap id g
+instance (Monad parse, Applicative check) => PFunctor Either (Encoder check parse) (Encoder check parse) where
+  first f = bimap f id
+instance (Monad parse, Applicative check) => Bifunctor Either (Encoder check parse) (Encoder check parse) (Encoder check parse) where
+  bimap f g = Encoder $ liftA2 bimap (unEncoder f) (unEncoder g)
+
+instance (Applicative check, Monad parse) => Associative (Encoder check parse) Either where
+  associate = isoEncoder (iso (associate @(->) @Either) disassociate)
+  disassociate = isoEncoder (iso disassociate associate)
+
+instance (Monad parse, Applicative check) => Braided (Encoder check parse) Either where
+  braid = isoEncoder (iso swap swap)
+
+
 
 instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder check parse) (Encoder check parse) where
   fmap e = Encoder $ do
@@ -343,14 +415,14 @@ maybeEncoder f g = shadowEncoder f g . maybeToEitherEncoder
 justEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a (Maybe a)
 justEncoder = prismEncoder _Just
 
--- |
+-- | Encode () to 'Nothing'.
 nothingEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse () (Maybe a)
 nothingEncoder = prismEncoder _Nothing
 
 someConstEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Const a)) a
 someConstEncoder = unsafeMkEncoder $ EncoderImpl
-  { _encoderImpl_encode = \(Some.This (Const a)) -> a
-  , _encoderImpl_decode = pure . Some.This . Const
+  { _encoderImpl_encode = \(Some (Const a)) -> a
+  , _encoderImpl_decode = pure . Some . Const
   }
 
 -- | WARNING: This is only safe if the Show and Read instances for 'a' are
@@ -378,7 +450,7 @@ checkEnum1EncoderFunc
   -> check (EncoderFunc check' parse p r)
 checkEnum1EncoderFunc f = do
   (encoderImpls :: DMap p (Flip (EncoderImpl parse) r)) <- DMap.fromList <$>
-    traverse (\(Some.This p) -> (p :=>) . Flip <$> unEncoder (f p)) universe
+    traverse (\(Some p) -> (p :=>) . Flip <$> unEncoder (f p)) universe
   pure $ EncoderFunc $ \p -> unsafeMkEncoder . unFlip $
     DMap.findWithDefault (error "checkEnum1EncoderFunc: EncoderImpl not found (should be impossible)") p encoderImpls
 
@@ -433,11 +505,11 @@ chainEncoder cons this rest = Encoder $ do
   pure $ EncoderImpl
     { _encoderImpl_decode = \v -> do
         (here, following) <- _encoderImpl_decode consValid v
-        Some.This r <- _encoderImpl_decode thisValid here
+        Some r <- _encoderImpl_decode thisValid here
         (r :/) <$> _encoderImpl_decode (runIdentity . unEncoder $ rest r) following
     , _encoderImpl_encode = \(r :/ s) ->
         _encoderImpl_encode consValid
-          ( _encoderImpl_encode thisValid $ Some.This r
+          ( _encoderImpl_encode thisValid $ Some r
           , _encoderImpl_encode (runIdentity . unEncoder $ rest r) s)
     }
 
@@ -504,7 +576,7 @@ enum1Encoder
      , Show r
      )
   => (forall a. p a -> r) -> Encoder check parse (Some p) r
-enum1Encoder f = enumEncoder $ \(Some.This p) -> f p
+enum1Encoder f = enumEncoder $ \(Some p) -> f p
 
 -- | Encode an enumerable, bounded type.  WARNING: Don't use this on types that
 -- have a large number of values - it will use a lot of memory.
@@ -547,13 +619,10 @@ pathOnlyEncoderIgnoringQuery = unsafeMkEncoder $ EncoderImpl
   }
 
 pathOnlyEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse [Text] PageName
-pathOnlyEncoder = unsafeMkEncoder $ EncoderImpl
-  { _encoderImpl_decode = \(path, query) ->
-      if query == mempty
-      then pure path
-      else throwError "pathOnlyEncoderImpl: query was provided"
-  , _encoderImpl_encode = \path -> (path, mempty)
-  }
+pathOnlyEncoder = second (unitEncoder mempty) . coidr
+
+queryOnlyEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Map Text (Maybe Text)) PageName
+queryOnlyEncoder = first (unitEncoder []) . coidl
 
 singletonListEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a [a]
 singletonListEncoder = unsafeMkEncoder $ EncoderImpl
@@ -596,10 +665,10 @@ queryParametersTextEncoder = Encoder $ pure $ EncoderImpl
       in (urlDecodeText True k, urlDecodeText True <$> mv)
 
 urlEncodeText :: Bool -> Text -> Text
-urlEncodeText q = decodeUtf8 . urlEncode q . encodeUtf8
+urlEncodeText q = T.decodeUtf8 . urlEncode q . T.encodeUtf8
 
 urlDecodeText :: Bool -> Text -> Text
-urlDecodeText q = decodeUtf8 . urlDecode q . encodeUtf8
+urlDecodeText q = T.decodeUtf8 . urlDecode q . T.encodeUtf8
 
 listToNonEmptyEncoder :: (Applicative check, Applicative parse, Monoid a, Eq a) => Encoder check parse [a] (NonEmpty a)
 listToNonEmptyEncoder = Encoder $ pure $ EncoderImpl
@@ -657,10 +726,47 @@ joinPairTextEncoder = Encoder . \case
           _ -> return (kt, T.drop (T.length separator) vt)
     }
 
---TODO: Rewrite this by composing the given prism with a lens on the first element of the DSum
--- Or, more likely, the user can compose it themselves
-rPrism :: forall f g. (forall a. Prism' (f a) (g a)) -> Prism' (R f) (R g)
-rPrism p = prism (\(g :/ x) -> g ^. re p :/ x) (\(f :/ x) -> bimap (:/ x) (:/ x) $ matching p f)
+-- This slight generalization of 'rPrism' happens to be enough to write all our
+-- prism combinators so far.
+dSumPrism
+  :: forall f f' g
+  .  (forall a. Prism' (f a) (f' a))
+  -> Prism' (DSum f g) (DSum f' g)
+dSumPrism p = prism'
+  (\(f' :=> x) -> f' ^. re p :=> x)
+  (\(f :=> x) -> (:=> x) <$> (f ^? p))
+
+-- already in obelisk
+rPrism
+  :: forall f f'
+  .  (forall a. Prism' (f a) (f' a))
+  -> Prism' (R f) (R f')
+rPrism p = dSumPrism p
+
+dSumPrism'
+  :: forall f g a
+  .  (forall b. Prism' (f b) (a :~: b))
+  -> Prism' (DSum f g) (g a)
+dSumPrism' p = dSumPrism p . iso (\(Refl :=> b) -> b) (Refl :=>)
+
+dSumGEqPrism
+  :: GEq f
+  => f a
+  -> Prism' (DSum f g) (g a)
+dSumGEqPrism variant = dSumPrism' $ prism' (\Refl -> variant) (\x -> geq variant x)
+
+-- | Given a 'tag :: f a', make a prism for 'R f'. This generalizes the usual
+-- prisms for a sum type (the ones that 'mkPrisms' would make), just as 'R'
+-- generalized a usual sum type.
+--
+-- [This is given the '_R' name of the "cannonical" prism not because it is the
+-- most general, but because it seems the most useful for routes, and 'R' itself
+-- trades generality for route-specificity.]
+_R
+  :: GEq f
+  => f a
+  -> Prism' (R f) a
+_R variant = dSumGEqPrism variant . iso runIdentity Identity
 
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
@@ -704,6 +810,45 @@ handleEncoder recover e = Encoder $ do
 -- Actual obelisk route info
 --------------------------------------------------------------------------------
 
+-- | The typical full route type comprising all of an Obelisk application's routes.
+-- Parameterised by the top level GADTs that define backend and frontend routes, respectively.
+data FullRoute :: (* -> *) -> (* -> *) -> * -> * where
+  FullRoute_Backend :: br a -> FullRoute br fr a
+  FullRoute_Frontend :: ObeliskRoute fr a -> FullRoute br fr a
+
+instance (GShow br, GShow fr) => GShow (FullRoute br fr) where
+  gshowsPrec p = \case
+    FullRoute_Backend x -> showParen (p > 10) (showString "FullRoute_Backend " . gshowsPrec 11 x)
+    FullRoute_Frontend x -> showParen (p > 10) (showString "FullRoute_Frontend " . gshowsPrec 11 x)
+
+instance (GEq br, GEq fr) => GEq (FullRoute br fr) where
+  geq (FullRoute_Backend x) (FullRoute_Backend y) = geq x y
+  geq (FullRoute_Frontend x) (FullRoute_Frontend y) = geq x y
+  geq _ _ = Nothing
+
+instance (GCompare br, GCompare fr) => GCompare (FullRoute br fr) where
+  gcompare (FullRoute_Backend _) (FullRoute_Frontend _) = GLT
+  gcompare (FullRoute_Frontend _) (FullRoute_Backend _) = GGT
+  gcompare (FullRoute_Backend x) (FullRoute_Backend y) = gcompare x y
+  gcompare (FullRoute_Frontend x) (FullRoute_Frontend y) = gcompare x y
+
+instance (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) where
+  universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome] 
+              ++ [Some (FullRoute_Frontend x) | Some x <- universeSome]
+
+-- | Build the typical top level application route encoder from a route for handling 404's,
+-- and segment encoders for backend and frontend routes.
+mkFullRouteEncoder
+  :: (GCompare br, GCompare fr, GShow br, GShow fr, UniverseSome br, UniverseSome fr)
+  => R (FullRoute br fr) -- ^ 404 handler
+  -> (forall a. br a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single backend route segment
+  -> (forall a. fr a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single frontend route segment
+  -> Encoder (Either Text) Identity (R (FullRoute br fr)) PageName
+mkFullRouteEncoder missing backendSegment frontendSegment = handleEncoder (const missing) $
+  pathComponentEncoder $ \case
+    FullRoute_Backend backendRoute -> backendSegment backendRoute
+    FullRoute_Frontend obeliskRoute -> obeliskRouteSegment obeliskRoute frontendSegment
+
 -- | A type which can represent Obelisk-specific resource routes, in addition to application specific routes which serve your
 -- frontend.
 data ObeliskRoute :: (* -> *) -> * -> * where
@@ -711,9 +856,11 @@ data ObeliskRoute :: (* -> *) -> * -> * where
   ObeliskRoute_App :: f a -> ObeliskRoute f a
   ObeliskRoute_Resource :: ResourceRoute a -> ObeliskRoute f a
 
-instance Universe (Some f) => Universe (Some (ObeliskRoute f)) where
-  universe = fmap (\(Some.This x) -> Some.This (ObeliskRoute_App x)) universe
-          ++ fmap (\(Some.This x) -> Some.This (ObeliskRoute_Resource x)) universe
+instance UniverseSome f => UniverseSome (ObeliskRoute f) where
+  universeSome = concat
+    [ (\(Some x) -> Some (ObeliskRoute_App x)) <$> universe
+    , (\(Some x) -> Some (ObeliskRoute_Resource x)) <$> universe
+    ]
 
 instance GEq f => GEq (ObeliskRoute f) where
   geq (ObeliskRoute_App x) (ObeliskRoute_App y) = geq x y
@@ -801,12 +948,12 @@ indexOnlyRouteEncoder = pathComponentEncoder indexOnlyRouteSegment
 
 someSumEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Sum a b)) (Either (Some a) (Some b))
 someSumEncoder = Encoder $ pure $ EncoderImpl
-  { _encoderImpl_encode = \(Some.This t) -> case t of
-      InL l -> Left $ Some.This l
-      InR r -> Right $ Some.This r
+  { _encoderImpl_encode = \(Some t) -> case t of
+      InL l -> Left $ Some l
+      InR r -> Right $ Some r
   , _encoderImpl_decode = pure . \case
-      Left (Some.This l) -> Some.This (InL l)
-      Right (Some.This r) -> Some.This (InR r)
+      Left (Some l) -> Some (InL l)
+      Right (Some r) -> Some (InR r)
   }
 
 data Void1 :: * -> * where {}
@@ -817,7 +964,7 @@ instance Universe (Some Void1) where
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder = Encoder $ pure $ EncoderImpl
   { _encoderImpl_encode = \case
-      Some.This f -> case f of {}
+      Some f -> case f of {}
   , _encoderImpl_decode = \_ -> throwError "void1Encoder: can't decode anything"
   }
 
@@ -831,7 +978,7 @@ concat <$> mapM deriveRouteComponent
   ]
 
 makePrisms ''ObeliskRoute
-
+makePrisms ''FullRoute
 deriveGEq ''Void1
 deriveGCompare ''Void1
 
@@ -839,44 +986,142 @@ deriveGCompare ''Void1
 -- and query string). See 'checkEncoder' for how to produce a checked encoder.
 renderBackendRoute
   :: forall br a.
-     Encoder Identity Identity (R (Sum br a)) PageName
+     Encoder Identity Identity (R (FullRoute br a)) PageName
   -> R br
   -> Text
-renderBackendRoute enc = renderObeliskRoute enc . hoistR InL
+renderBackendRoute enc = renderObeliskRoute enc . hoistR FullRoute_Backend
 
 -- | Renders a frontend route with the supplied checked encoder
 renderFrontendRoute
   :: forall a fr.
-     Encoder Identity Identity (R (Sum a (ObeliskRoute fr))) PageName
+     Encoder Identity Identity (R (FullRoute a fr)) PageName
   -> R fr
   -> Text
-renderFrontendRoute enc = renderObeliskRoute enc . hoistR (InR . ObeliskRoute_App)
+renderFrontendRoute enc = renderObeliskRoute enc . hoistR (FullRoute_Frontend . ObeliskRoute_App)
 
 -- | Renders a route of the form typically found in an Obelisk project
 renderObeliskRoute
   :: forall a b.
-     Encoder Identity Identity (R (Sum a b)) PageName
-  -> R (Sum a b)
+     Encoder Identity Identity (R (FullRoute a b)) PageName
+  -> R (FullRoute a b)
   -> Text
 renderObeliskRoute e r =
-  let enc :: Encoder Identity (Either Text) (R (Sum a b)) PathQuery
+  let enc :: Encoder Identity (Either Text) (R (FullRoute a b)) PathQuery
       enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
   in (T.pack . uncurry (<>)) $ encode enc r
 
 readShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) => Encoder check parse a PageName
 readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
 
-
 integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
 integralEncoder = prismEncoder (Numeric.Lens.integral)
 
-pathSegmentEncoder :: (MonadError Text parse, Applicative check) =>
-  Encoder check parse (Text, PageName) PageName
-pathSegmentEncoder = unsafeMkEncoder EncoderImpl
-  { _encoderImpl_encode = \(x, (y, z)) -> (x:y, z)
-  , _encoderImpl_decode = \(xss, y) -> case xss of
-    [] -> throwError "not enough path segments"
-    (x:xs) -> pure (x, (xs, y))
-  }
+pathSegmentEncoder :: (MonadError Text parse, Applicative check, Cons as as a a) =>
+  Encoder check parse (a, (as, b)) (as, b)
+pathSegmentEncoder = first (prismEncoder _Cons) . disassociate
+
+newtype Decoder check parse b a = Decoder { toEncoder :: Encoder check parse a b }
+
+dmapEncoder :: forall check parse k k' v.
+   ( Monad check
+   , MonadError Text parse
+   , Universe (Some k')
+   , Ord k
+   , GCompare k'
+   , GShow k'
+   )
+  => Encoder check parse (Some k') k
+  -> (forall v'. k' v' -> Encoder check parse v' v)
+  -> Encoder check parse (DMap k' Identity) (Map k v)
+dmapEncoder keyEncoder' valueEncoderFor = unsafeEncoder $ do
+  keyEncoder :: Encoder Identity parse (Some k') k <- checkEncoder keyEncoder'
+  valueDecoders :: DMap k' (Decoder Identity parse v) <- fmap DMap.fromList . forM universe $ \(Some (k' :: k' t)) -> do
+    ve :: Encoder Identity parse t v <- checkEncoder (valueEncoderFor k')
+    return $ (k' :: k' t) :=> (Decoder ve :: Decoder Identity parse v t)
+  let keyError k = "dmapEncoder: key `" <> k <> "' was missing from the Universe instance for its type."
+  return $ EncoderImpl
+    { _encoderImpl_encode = \dm -> Map.fromList $ do
+        ((k' :: k' t) :=> Identity v') <- DMap.toList dm
+        return ( encode keyEncoder (Some k')
+               , encode (toEncoder (DMap.findWithDefault (error . keyError $ gshow k') k' valueDecoders)) v'
+               )
+    , _encoderImpl_decode = \m -> fmap DMap.fromList . forM (Map.toList m) $ \(k,v) -> do
+          Some (k' :: k' t) <- tryDecode keyEncoder k
+          case DMap.lookup k' valueDecoders of
+            Nothing -> throwError . T.pack . keyError $ gshow k'
+            Just (Decoder e) -> do
+              v' <- tryDecode e v
+              return (k' :=> Identity v')
+    }
+
+fieldMapEncoder :: forall check parse r.
+   ( Applicative check
+   , MonadError Text parse
+   , HasFields r
+   , Universe (Some (Field r))
+   , GShow (Field r)
+   , GCompare (Field r)
+   )
+  => Encoder check parse r (DMap (Field r) Identity)
+fieldMapEncoder = unsafeEncoder $ do
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \r -> DMap.fromList [ f :=> Identity (indexField r f) | Some f <- universe ]
+    , _encoderImpl_decode = \dm -> tabulateFieldsA $ \f -> do
+      case DMap.lookup f dm of
+        Nothing -> throwError $ "fieldMapEncoder: Couldn't find key for `" <> T.pack (gshow f) <> "' in DMap."
+        Just (Identity v) -> return v
+    }
+
+-- this is in base 4.12 (GHC 8.6);
+newtype Ap f a = Ap {getAp :: f a}
+
+instance (Applicative f, Semigroup a) => Semigroup (Ap f a) where
+  Ap x <> Ap y = Ap (liftA2 (<>) x y)
+
+instance (Applicative f, Monoid a) => Monoid (Ap f a) where
+  mappend = (<>)
+  mempty = Ap (pure mempty)
+
+pathFieldEncoder :: forall a p check parse . (HasFields a, Monad check, MonadError Text parse, GCompare (Field a)) => (forall x. Field a x -> Encoder check parse x p) -> Encoder check parse (a, [p]) [p]
+pathFieldEncoder fieldEncoder = unsafeEncoder $ do
+  fieldEncoderPureMap :: DMap.DMap (Field a) (Decoder Identity parse p) <- getAp $ getConst $ tabulateFieldsA @a $ \f -> Const (Ap $ fmap (DMap.singleton f . Decoder) $ (checkEncoder @Identity) $ fieldEncoder f)
+  let fieldEncoderPure :: forall x. Field a x -> Encoder Identity parse x p
+      fieldEncoderPure f = toEncoder (DMap.findWithDefault (error "bad") f fieldEncoderPureMap)
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \(x, rest) -> execWriter $ do
+      _ <- traverseWithField (\f x_i -> tell (pure $ encode (fieldEncoderPure f) x_i) *> pure x_i) x
+      tell rest
+    , _encoderImpl_decode = State.runStateT $ tabulateFieldsA $ \f -> State.get >>= \case
+      [] -> throwError $ T.pack "not enough path components"
+      p:ps -> do
+        State.put ps
+        lift $ tryDecode (fieldEncoderPure f) p
+    }
+
+-- | Use ToJSON/FromJSON to encode to Text. The correctness of this encoder is dependent on the encoding being injective and round-tripping correctly.
+jsonEncoder :: forall check parse r.
+  ( ToJSON r
+  , FromJSON r
+  , Applicative check
+  , MonadError Text parse
+  )
+  => Encoder check parse r Text
+jsonEncoder = unsafeEncoder $ do
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \r -> T.decodeUtf8 . BSL.toStrict $ Aeson.encode r
+    , _encoderImpl_decode = \t -> case Aeson.eitherDecodeStrict $ T.encodeUtf8 t of
+        Left err -> throwError ("jsonEncoder: " <> T.pack err)
+        Right x -> return x
+    }
+
+-- Useful for app server integration.
+-- p must not start with slashes
+byteStringsToPageName :: BS.ByteString -> BS.ByteString -> PageName
+byteStringsToPageName p q =
+  let pageNameEncoder' :: Encoder Identity Identity PageName (String, String)
+      pageNameEncoder' = bimap
+        (unpackTextEncoder . pathSegmentsTextEncoder . listToNonEmptyEncoder)
+        (unpackTextEncoder . queryParametersTextEncoder . toListMapEncoder)
+  in decode pageNameEncoder' (T.unpack (T.decodeUtf8 p), T.unpack (T.decodeUtf8 q))
 
 --TODO: decodeURIComponent as appropriate
