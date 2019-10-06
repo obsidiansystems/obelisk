@@ -65,31 +65,23 @@ deriving instance Ord (Columnar f k) => Ord (Id k f)
 deriving instance Show (Columnar f k) => Show (Id k f)
 deriving instance Read (Columnar f k) => Read (Id k f)
 
-fromEK
-  :: KeyT value ~ Id k
-  => EntityKeyT f value -> Columnar f k
-fromEK (EntityKey (Id x)) = x
-
-toEK
-  :: KeyT value ~ Id k
-  => Columnar f k -> EntityKeyT f value
-toEK = EntityKey . Id
-
-isoEK
+entityIdKey
   :: KeyT value ~ Id k
   => Iso
        (EntityKeyT f1 value)
        (EntityKeyT f2 value)
        (Columnar f1 k)
        (Columnar f2 k)
-isoEK = iso fromEK toEK
+entityIdKey = iso
+  (\(EntityKey (Id x)) -> x)
+  (EntityKey . Id)
 
-unsafeUnaryEKEncoder
+unsafeTshowIdKeyEncoder
   :: KeyT v ~ Id k
   => (Show k, Read k)
   => (Applicative check, MonadError Text parse)
   => Encoder check parse (EntityKey v) Text
-unsafeUnaryEKEncoder = unsafeTshowEncoder . isoEncoder isoEK
+unsafeTshowIdKeyEncoder = unsafeTshowEncoder . isoEncoder entityIdKey
 
 checkedEntity
   :: Text -- ^ The table name in the schema.
