@@ -60,7 +60,7 @@ deriving instance Ord (Columnar f k) => Ord (Id k f)
 deriving instance Show (Columnar f k) => Show (Id k f)
 deriving instance Read (Columnar f k) => Read (Id k f)
 
-entity_ ::
+defaultIdEntity ::
          ( BeamSqlBackend be
          , KeyT value ~ Id k
          , SqlValable (value f)
@@ -68,7 +68,7 @@ entity_ ::
          )
          => HaskellLiteralForQExpr (value f)
          -> EntityT value f
-entity_ = Entity (Id default_) . val_
+defaultIdEntity = Entity (Id default_) . val_
 
 checkedEntity
   :: Text -- ^ The table name in the schema.
