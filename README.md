@@ -4,6 +4,9 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
+  - [Hoogle](#hoogle)
+  - [Adding Packages](#adding-packages)
+  - [Adding Package Overrides](#adding-package-overrides)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
@@ -22,12 +25,13 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
         nix.binaryCaches = [ "https://cache.nixos.org/" "https://nixcache.reflex-frp.org" ];
         nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
-    1. If you are using another operating system or linux distribution, ensure that these lines are present in `/etc/nix/nix.conf`:
+        and rebuild your NixOS configuration (e.g. `sudo nixos-rebuild switch`).
+    1. If you are using another operating system or linux distribution, ensure that these lines are present in your Nix configuration file (`/etc/nix/nix.conf` on most systems; [see full list](https://nixos.org/nix/manual/#sec-conf-file)):
         ```
         substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
         trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
         ```
-        * other Linux: enable sandboxing (see https://github.com/obsidiansystems/obelisk/issues/6)
+        * other Linux: enable sandboxing (see these [issue172](https://github.com/obsidiansystems/obelisk/issues/172#issuecomment-411507818) or [issue6](https://github.com/obsidiansystems/obelisk/issues/6) if you run into build problems)
           ```
           sandbox = true
           ```
@@ -79,9 +83,43 @@ Obelisk leverages ghcid to provide a live-reloading server that handles both fro
 ob run
 ```
 
-Now go to http://localhost:8000 (or the port specified in `config/common/route`) to access your app.
+Now go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
+
+### Hoogle
+
+To enter a nix-shell from which you can run the hoogle command-line client or a hoogle server for your project:
+
+`nix-shell -A shells.ghc --arg withHoogle true`
+
+### Adding packages
+
+In order to add package dependencies, declare them under the build-depends field in the appropriate cabal files (backend, common, and frontend each have their own). The corresponding Nix packages will automatically be selected when building.
+
+### Adding package overrides
+
+To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package, your `default.nix` will look like:
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  overrides = self: super: let
+    aeson = pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "aeson-gadt-th";
+      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
+      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
+    };
+  in
+  {
+    aeson = self.callCabal2nix "aeson" aeson {};
+  };
+# ...
+```
+
+For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
 
 ## Deploying
 
@@ -106,7 +144,7 @@ In this section we will demonstrate how to deploy your Obelisk app to an Amazon 
 
 First create a new EC2 instance:
 
-1. Launch a NixOS 17.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-40bee63a))
+1. Launch a NixOS 18.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-009c9c3f1af480ff3))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
 1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and 443.
@@ -237,7 +275,10 @@ It's also possible to inspect iOS WkWebView apps once they are installed in the 
 
 ### Android
 
+NOTE: Currently Android builds are only supported on Linux.
+
 1. In your project's `default.nix` set a suitable value for `android.applicationId` and `android.displayName`.
+1. In your project's `default.nix` pass `config.android_sdk.accept_license = true;` in the arguments to the import of of `.obelisk/impl` to indicate your acceptance of the [Android Software Development Kit License Agreement](https://developer.android.com/studio/terms), which is required to build Android apps.
 1. Run `nix-build -A android.frontend -o result-android` to build the Android app.
 1. A debug version of the app should be generated at `result-android/android-app-debug.apk`
 
@@ -247,38 +288,20 @@ Now deploy the built apk file to your Android device:
 1. Connect the device using USB (be sure to confirm any security prompts on the device)
 1. Run the deploy script: `result-android/bin/deploy`
 
+Alternatively, you can deploy from an obelisk deployment directory (a directory generated post `ob deploy init ...` command) using the `ob deploy test android` command.
+This command will accomplish the following:
+
+1. Create a key store and apk signing key (`android_keystore.jks`)
+1. Build a Signed Android apk for your application
+1. Deploy the Signed apk to your connected Android device
+
+In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`
+
+Additional documentation on java key stores can be found [here] (https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html)
+
 This should copy over and install the application on your device (if you see a  "*signatures do not match*" error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 
 #### Releasing to Play Store
-
-##### Configure signing
-
-The previous section would have generated a debug version of the app. In order to build a release version you will need to sign your app. Obelisk can automatically sign the app during build if you provide it with your keystore file in `default.nix`.
-
-First, if you do not already have a keystore, create it as follows (for more information, see the [Android documentation](https://developer.android.com/studio/publish/app-signing#signing-manually)):
-
-```
-nix-shell -p androidenv.platformTools --run "keytool -genkey -v -keystore myandroidkey.jks -keyalg RSA -keysize 2048 -validity 10000 -alias myandroidalias"
-```
-
-(Be sure to give an appropriate keystore filename and key alias string above.)
-
-The `keytool` command will ask you for some details, including a keystore password and a key password (we will use these passwords further below). It will now have created a `myandroidkey.jks` file under the current directory. Move that to somewhere safe, and note down its full path.
-
-Now edit your project's `default.nix` and tell Obelisk of your app's keystore file. Your `default.nix` should look like this after the edit:
-
-```nix
-  ...
-  android.applicationId = "com.example.myapp";
-  android.displayName = "My App";
-  android.releaseKey =
-    { storeFile = /path/to/myandroidkey.jks;
-      storePassword = "abcd1234";
-      keyAlias = "myandroidalias";
-      keyPassword = "abcd1234";
-    };
-  ...
-```
 
 ##### Build a release version
 

@@ -29,5 +29,6 @@ library
     Obelisk.CliApp.Process
     Obelisk.CliApp.Spinner
     Obelisk.CliApp.TerminalString
+    Obelisk.CliApp.Theme
     Obelisk.CliApp.Types
   ghc-options: -Wall -fobject-code

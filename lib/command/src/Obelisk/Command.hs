@@ -17,6 +17,7 @@ import Data.List
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Text.Encoding
+import Data.Text.Encoding.Error (lenientDecode)
 import GHC.StaticPtr
 import Options.Applicative
 import System.Directory
@@ -91,6 +92,7 @@ data ObCommand
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
    | ObCommand_Watch
+   | ObCommand_Shell ShellOpts
    | ObCommand_Internal ObInternal
    deriving Show
 
@@ -102,7 +104,7 @@ data ObInternal
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
-  projectShell root False "ghc" cmd
+  projectShell root False "ghc" (Just cmd)
   where
     mkCmd = do
       argsCfg <- getArgsConfig
@@ -126,6 +128,7 @@ obCommand cfg = hsubparser
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
       , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+      , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
       ])
   <|> subparser
     (mconcat
@@ -142,8 +145,8 @@ deployCommand cfg = hsubparser $ mconcat
   ]
   where
     platformP = hsubparser $ mconcat
-      [ command "android" $ info (pure Android) mempty
-      , command "ios"     $ info (pure IOS <*> strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal")) mempty
+      [ command "android" $ info (pure (Android, [])) mempty
+      , command "ios"     $ info ((,) <$> pure IOS <*> (fmap pure $ strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal"))) mempty
       ]
 
     remoteBuilderParser :: Parser (Maybe RemoteBuilder)
@@ -173,16 +176,13 @@ deployInitOpts = DeployInitOpts
   <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
 
 type TeamID = String
-data PlatformDeployment = Android | IOS TeamID
-  deriving (Show)
-
 data RemoteBuilder = RemoteBuilder_ObeliskVM
   deriving (Eq, Show)
 
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
   | DeployCommand_Push (Maybe RemoteBuilder)
-  | DeployCommand_Test PlatformDeployment
+  | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
   deriving Show
 
@@ -211,17 +211,35 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   ]
 
 data ThunkCommand
-   = ThunkCommand_Update [FilePath]
+   = ThunkCommand_Update [FilePath] (Maybe String)
    | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack   [FilePath]
+   | ThunkCommand_Pack   [FilePath] Bool
   deriving Show
+
+forceFlag :: Parser Bool
+forceFlag = switch $ long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care."
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser) $ progDesc "Update thunk to latest revision available"
+  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> optional (strOption (long "branch" <> metavar "BRANCH"))) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> forceFlag) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
+
+data ShellOpts
+  = ShellOpts
+    { _shellOpts_shell :: String
+    , _shellOpts_command :: Maybe String
+    }
+  deriving Show
+
+shellOpts :: Parser ShellOpts
+shellOpts = ShellOpts
+  <$> (    flag' "ghc" (long "ghc" <> help "Enter a shell environment having ghc (default)")
+       <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
+       <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
+      )
+  <*> optional (strArgument (metavar "COMMAND"))
 
 parserPrefs :: ParserPrefs
 parserPrefs = defaultPrefs
@@ -327,30 +345,30 @@ ob = \case
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr' False root
+          getThunkPtr False root
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
           route = _deployInitOpts_route deployOpts
           adminEmail = _deployInitOpts_adminEmail deployOpts
           enableHttps = _deployInitOpts_enableHttps deployOpts
-      deployInit thunkPtr (root </> "config") deployDir
-        sshKeyPath hostname route adminEmail enableHttps
+      deployInit thunkPtr deployDir sshKeyPath hostname route adminEmail enableHttps
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployPush deployPath $ case remoteBuilder of
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
-    DeployCommand_Test Android -> deployMobile "android" []
-    DeployCommand_Test (IOS teamID) -> deployMobile "ios" [teamID]
+    DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run -> inNixShell' $ static run
     -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks -> mapM_ updateThunkToLatest thunks
+    ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
-    ThunkCommand_Pack thunks -> forM_ thunks packThunk
+    ThunkCommand_Pack thunks force -> forM_ thunks (packThunk force)
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
+  ObCommand_Shell so -> withProjectRoot "." $ \root ->
+    projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
@@ -365,7 +383,7 @@ getArgsConfig :: IO ArgsConfig
 getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = System.Info.os == "darwin" }
 
 encodeStaticKey :: StaticKey -> String
-encodeStaticKey = T.unpack . decodeUtf8 . Base16.encode . LBS.toStrict . Binary.encode
+encodeStaticKey = T.unpack . decodeUtf8With lenientDecode . Base16.encode . LBS.toStrict . Binary.encode
 
 -- TODO: Use failWith in place of fail to be consistent.
 decodeStaticKey :: String -> Either String StaticKey

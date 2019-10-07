@@ -15,6 +15,7 @@ module Obelisk.Command.Nix
   , nixCmdConfig_args
   , nixCmdConfig_builders
   , NixBuildConfig (..)
+  , nixBuildConfig_common
   , nixBuildConfig_outLink
   , NixInstantiateConfig (..)
   , nixInstantiateConfig_eval
@@ -180,3 +181,4 @@ nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built 
       [ (" on " <>) <$> path
       , (\a -> " [" <> a <> "]") <$> (commonCfg ^. nixCmdConfig_target . target_attr)
       ]
+

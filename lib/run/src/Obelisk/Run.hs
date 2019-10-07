@@ -1,17 +1,12 @@
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE EmptyCase #-}
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-} -- Due to instance HasJS x (EventWriterT t w m)
@@ -31,11 +26,15 @@ import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Identity
 import Data.Functor.Sum
 import Data.List (uncons)
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
+import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -49,8 +48,7 @@ import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import qualified Obelisk.Asset.Serve.Snap as Snap
-import Obelisk.ExecutableConfig (get)
-import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
+import Obelisk.Backend
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
@@ -58,10 +56,11 @@ import Snap.Core (Snap)
 import System.Environment
 import System.IO
 import System.Process
+import System.Exit (ExitCode(..))
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
-import Obelisk.Backend
+import Web.Cookie
 
 run
   :: Int -- ^ Port to run the backend
@@ -76,6 +75,7 @@ run port serveStaticAsset backend frontend = do
   case checkEncoder $ _backend_routeEncoder backend of
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
     Right validFullEncoder -> do
+      publicConfigs <- getPublicConfigs
       backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
         _backend_run backend $ \serveRoute -> do
           runSnapWithCommandLineArgs $ do
@@ -83,29 +83,31 @@ run port serveStaticAsset backend frontend = do
               Identity r -> case r of
                 InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
                 InR obeliskRoute :=> Identity a ->
-                  serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend $ obeliskRoute :/ a
+                  serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
       let conf = defRunConfig { _runConfig_redirectPort = port }
-      runWidget conf frontend validFullEncoder `finally` killThread backendTid
+      runWidget conf publicConfigs frontend validFullEncoder `finally` killThread backendTid
 
 -- Convenience wrapper to handle path segments for 'Snap.serveAsset'
 runServeAsset :: FilePath -> [Text] -> Snap ()
 runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
 
-getConfigRoute :: IO (Maybe URI)
-getConfigRoute = get "config/common/route" >>= \case
-  Just r -> case URI.mkURI $ T.strip r of
-    Just route -> pure $ Just route
-    Nothing -> do
-      putStrLn $ "Route is invalid: " <> show r
-      pure Nothing
-  Nothing -> pure Nothing
+getConfigRoute :: Map Text ByteString -> Either Text URI
+getConfigRoute configs = case Map.lookup "common/route" configs of
+    Just r -> 
+      let stripped = T.strip (T.decodeUtf8 r)
+      in case URI.mkURI stripped of
+          Just route -> Right route
+          Nothing -> Left $ "Couldn't parse route as URI; value read was: " <> T.pack (show stripped)
+    Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
 
-defAppUri :: URI
-defAppUri = fromMaybe (error "defAppUri") $ URI.mkURI "http://127.0.0.1:8000"
-
-runWidget :: RunConfig -> Frontend (R route) -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName -> IO ()
-runWidget conf frontend validFullEncoder = do
-  uri <- fromMaybe defAppUri <$> getConfigRoute
+runWidget
+  :: RunConfig
+  -> Map Text ByteString
+  -> Frontend (R route)
+  -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
+  -> IO ()
+runWidget conf configs frontend validFullEncoder = do
+  uri <- either (fail . T.unpack) pure $ getConfigRoute configs
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
@@ -117,19 +119,25 @@ runWidget conf frontend validFullEncoder = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp defaultConnectionOptions frontend validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
+        app <- obeliskApp configs defaultConnectionOptions frontend validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
         runSettingsSocket settings skt app)
 
 obeliskApp
-  :: forall route backendRoute. ConnectionOptions
+  :: forall route backendRoute
+  .  Map Text ByteString
+  -> ConnectionOptions
   -> Frontend (R route)
   -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
   -> URI
   -> Application
   -> IO Application
-obeliskApp opts frontend validFullEncoder uri backend = do
-  let entryPoint = do
-        runFrontend validFullEncoder frontend
+obeliskApp configs opts frontend validFullEncoder uri backend = do
+  let mode = FrontendMode
+        { _frontendMode_hydrate = True
+        , _frontendMode_adjustRoute = False
+        }
+      entryPoint = do
+        runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
         syncPoint
   jsaddlePath <- URI.mkPathPiece "jsaddle"
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
@@ -143,15 +151,22 @@ obeliskApp opts frontend validFullEncoder uri backend = do
           { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
       InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
-        html <- renderJsaddleFrontend (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
+        let cookies = maybe [] parseCookies $ lookup (fromString "Cookie") (W.requestHeaders req)
+        html <- renderJsaddleFrontend configs cookies (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
       _ -> backend req sendResponse
 
-renderJsaddleFrontend :: (route -> Text) -> route -> Frontend route -> IO ByteString
-renderJsaddleFrontend urlEnc r f =
+renderJsaddleFrontend
+  :: Map Text ByteString
+  -> Cookies
+  -> (route -> Text)
+  -> route
+  -> Frontend route
+  -> IO ByteString
+renderJsaddleFrontend configs cookies urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
       jsaddlePreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "/jsaddle/jsaddle.js") blank
-  in renderFrontendHtml urlEnc r (_frontend_head f >> injectExecutableConfigs >> jsaddlePreload) (_frontend_body f >> jsaddleScript)
+  in renderFrontendHtml configs cookies urlEnc r f jsaddlePreload jsaddleScript
 
 -- | like 'bindPortTCP' but reconnects on exception
 bindPortTCPRetry :: Settings
@@ -170,10 +185,15 @@ logPortBindErr p e = getProcessIdForPort p >>= \case
 
 getProcessIdForPort :: Int -> IO (Maybe Int)
 getProcessIdForPort port = do
-  xs <- lines <$> readProcess "ss" ["-lptn", "sport = " <> show port] mempty
-  case uncons xs of
-    Just (_, x:_) -> return $ A.maybeResult $ A.parse parseSsPid $ BSC.pack x
-    _ -> return Nothing
+  -- First check if 'ss' is available
+  (c, _, _) <- readProcessWithExitCode "which" ["ss"] mempty
+  case c of
+   ExitSuccess -> do
+     xs <- lines <$> readProcess "ss" ["-lptn", "sport = " <> show port] mempty
+     case uncons xs of
+       Just (_, x:_) -> return $ A.maybeResult $ A.parse parseSsPid $ BSC.pack x
+       _ -> return Nothing
+   _ -> return Nothing
 
 parseSsPid :: A.Parser Int
 parseSsPid = do

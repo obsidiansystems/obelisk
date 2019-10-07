@@ -1,7 +1,7 @@
 { system ? builtins.currentSystem
 , profiling ? false
 , iosSdkVersion ? "10.2"
-, __useLegacyCompilers ? false
+, config ? {}
 }:
 let
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -12,14 +12,12 @@ let
   commandRuntimeDeps = pkgs: with pkgs; [
     coreutils
     git
-    gitAndTools.hub
     nix-prefetch-git
     openssh
   ];
 
-  getReflexPlatform = getReflexPlatform' __useLegacyCompilers;
-  getReflexPlatform' = __useLegacyCompilers: sys: import ./dep/reflex-platform {
-    inherit iosSdkVersion __useLegacyCompilers;
+  getReflexPlatform = sys: import ./dep/reflex-platform {
+    inherit iosSdkVersion config;
     system = sys;
     enableLibraryProfiling = profiling;
 
@@ -35,21 +33,20 @@ let
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
       in {
-        # Need 8.0.2 build support
-        # PR: https://github.com/dmwit/universe/pull/33
-        universe-template = self.callCabal2nix "universe-template" (pkgs.fetchFromGitHub {
-          owner = "obsidiansystems";
-          repo = "universe";
-          rev = "6a71119bfa5db2b9990a2491c941469ff8ef5d13";
-          sha256 = "0z8smyainnlzcglv3dlx6x1n9j6d2jv48aa8f2421iayfkxg3js5";
-        } + /template) {};
+        hnix = pkgs.haskell.lib.dontCheck (self.callCabal2nix "hnix" (pkgs.fetchFromGitHub {
+          owner = "haskell-nix";
+          repo = "hnix";
+          rev = "42afdc21da5d9e076eab57eaa42bfdde938192b8";
+          sha256 = "0psw384dx9bw2dp93xrzw8rd9amvcwgzn64jzzwby7sfspj6k349";
+        }) {});
       })
+
+      pkgs.obeliskExecutableConfig.haskellOverlay
 
       # Add obelisk packages
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
       in {
-        obelisk-executable-config = pkgs.obeliskExecutableConfig.haskellPackage self;
         obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
 
         obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
@@ -62,6 +59,7 @@ let
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
         obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
+        tabulation = self.callCabal2nix "tabulation" (cleanSource ./lib/tabulation) {};
       })
 
       (self: super: let
@@ -87,7 +85,7 @@ let
     ];
   };
 
-  reflex-platform = getReflexPlatform' false system;
+  reflex-platform = getReflexPlatform system;
   inherit (reflex-platform) hackGet nixpkgs;
   pkgs = nixpkgs;
 
@@ -180,7 +178,8 @@ in rec {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
-            proxyPass = "http://localhost:" + toString internalPort;
+            proxyPass = "http://127.0.0.1:" + toString internalPort;
+            proxyWebsockets = true;
           };
         };
       };
@@ -188,10 +187,11 @@ in rec {
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
         restartIfChanged = true;
+        path = [ pkgs.gnutar ];
         script = ''
           ln -sft . '${exe}'/*
           mkdir -p log
-          exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
+          exec ./backend ${backendArgs} </dev/null
         '';
         serviceConfig = {
           User = user;
@@ -214,18 +214,17 @@ in rec {
     };
   };
 
-  serverExe = backend: frontend: assets: config: optimizationLevel: version:
+  serverExe = backend: frontend: assets: optimizationLevel: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
-      cp -r ${config} $out/config
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, config, version }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -241,8 +240,7 @@ in rec {
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
-    let configPath = base + "/config";
-        projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
+    let projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
                           , packages ? {}
@@ -275,7 +273,25 @@ in rec {
                   privateConfigDirs = ["config/backend"];
                   injectableConfig = builtins.filterSource (path: _:
                     !(lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path)) privateConfigDirs)
-                  ) configPath;
+                  );
+                  __androidWithConfig = configPath: {
+                    ${if android == null then null else frontendName} = {
+                      executableName = "frontend";
+                      ${if builtins.pathExists staticFiles then "assets" else null} =
+                        nixpkgs.obeliskExecutableConfig.platforms.android.inject
+                          (injectableConfig configPath)
+                          processedStatic.symlinked;
+                    } // android;
+                  };
+                  __iosWithConfig = configPath: {
+                    ${if ios == null then null else frontendName} = {
+                      executableName = "frontend";
+                      ${if builtins.pathExists staticFiles then "staticSrc" else null} =
+                        nixpkgs.obeliskExecutableConfig.platforms.ios.inject
+                          (injectableConfig configPath)
+                          processedStatic.symlinked;
+                    } // ios;
+                  };
               in {
                 inherit shellToolOverrides tools withHoogle;
                 overrides = totalOverrides;
@@ -295,39 +311,25 @@ in rec {
                     commonName
                   ];
                 };
-                android = {
-                  ${if android == null then null else frontendName} = {
-                    executableName = "frontend";
-                    ${if builtins.pathExists staticFiles then "assets" else null} =
-                      nixpkgs.obeliskExecutableConfig.platforms.android.inject injectableConfig processedStatic.symlinked;
-                  } // android;
-                };
-                ios = {
-                  ${if ios == null then null else frontendName} = {
-                    executableName = "frontend";
-                    ${if builtins.pathExists staticFiles then "staticSrc" else null} =
-                      nixpkgs.obeliskExecutableConfig.platforms.ios.inject injectableConfig processedStatic.symlinked;
-                  } // ios;
-                };
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel; };
+                android = __androidWithConfig (base + "/config");
+                ios = __iosWithConfig (base + "/config");
+                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __iosWithConfig __androidWithConfig; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: config: version: serverExe
+      serverOn = sys: version: serverExe
         (projectOut sys).ghc.backend
         (projectOut system).ghcjs.frontend
         (projectOut sys).passthru.staticFiles
-        config
         (projectOut sys).passthru.__closureCompilerOptimizationLevel
         version;
       linuxExe = serverOn "x86_64-linux";
       dummyVersion = "Version number is only available for deployments";
     in projectOut system // {
       linuxExeConfigurable = linuxExe;
-      linuxExe = linuxExe (base + "/config") dummyVersion;
-      exe = serverOn system (base + "/config") dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, config, version }: let
-        injectableConfig = builtins.filterSource (path: _: !(lib.hasPrefix (toString config + "/backend") (toString path))) config;
-      in server (args // { exe = linuxExe injectableConfig version; });
+      linuxExe = linuxExe dummyVersion;
+      exe = serverOn system dummyVersion;
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
+        server (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {

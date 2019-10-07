@@ -22,6 +22,7 @@ import qualified Data.Text as T
 import Data.Void (Void)
 import System.Directory (canonicalizePath)
 import System.Environment (getExecutablePath)
+import System.Exit (ExitCode)
 import qualified System.Process as P
 import Text.Megaparsec as MP
 import Text.Megaparsec.Char as MP
@@ -78,6 +79,9 @@ copyDir src dest =
 readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
 readGitProcess repo = readProcessAndLogOutput (Debug, Notice) . gitProc repo
 
+readGitProcessNoRepo :: MonadObelisk m => [String] -> m Text
+readGitProcessNoRepo = readProcessAndLogOutput (Debug, Notice) . gitProcNoRepo
+
 processToShellString :: FilePath -> [String] -> String
 processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
   where quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
@@ -119,16 +123,21 @@ gitLsRemote
   :: MonadObelisk m
   => String
   -> Maybe GitRef
-  -> m GitLsRemoteMaps
-gitLsRemote repository mRef = do
-  t <- readProc $ gitProcNoRepo $
-    ["ls-remote", "--symref", repository]
-    ++ (maybeToList $ T.unpack . showGitRef <$> mRef)
+  -> Maybe String
+  -> m (ExitCode, GitLsRemoteMaps)
+gitLsRemote repository mRef mBranch = do
+  (exitCode, out, _err) <- case mBranch of
+    Nothing -> readCreateProcessWithExitCode $ gitProcNoRepo $
+        ["ls-remote", "--exit-code", "--symref", repository]
+        ++ (maybeToList $ T.unpack . showGitRef <$> mRef)
+    Just branchName -> readCreateProcessWithExitCode $ gitProcNoRepo $
+        ["ls-remote", "--exit-code", repository, branchName]
+  let t = T.pack out
   maps <- case MP.runParser parseLsRemote "" t of
     Left err -> failWith $ T.pack $ MP.parseErrorPretty' t err
     Right table -> pure $ bimap M.fromList M.fromList $ partitionEithers $ table
   putLog Debug $ "git ls-remote maps: " <> T.pack (show maps)
-  pure maps
+  pure (exitCode, maps)
 
 lexeme :: Parsec Void Text a -> Parsec Void Text a
 lexeme = ML.lexeme $ void $ MP.takeWhileP (Just "within-line white space") $
