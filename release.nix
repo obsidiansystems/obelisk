@@ -1,4 +1,7 @@
-{ self-args ? {}
+{ self-args ? {
+    config.android_sdk.accept_license = true;
+    iosSdkVersion = "10.2";
+  }
 , local-self ? import ./. self-args
 }:
 
@@ -45,7 +48,7 @@ let
   in pkgAttrs: builtins.concatLists (map extractDeps (builtins.attrValues pkgAttrs));
 
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
-    obelisk = import ./. { inherit system; };
+    obelisk = import ./. (self-args // { inherit system; });
     reflex-platform = obelisk.reflex-platform;
     ghc = pnameToAttrs
       obelisk.haskellPackageSets.ghc
@@ -62,8 +65,8 @@ let
       (lib.optional reflex-platform.iosSupport iosSkeleton)
       [ command serverSkeletonExe serverSkeletonShell ]
     ];
-    command = local-self.command;
-    skeleton = import ./skeleton { obelisk = local-self; };
+    command = obelisk.command;
+    skeleton = import ./skeleton { inherit obelisk; };
     serverSkeletonExe = skeleton.exe;
     # TODO fix nixpkgs so it doesn't try to run the result of haskell shells as setup hooks.
     serverSkeletonShell = local-self.nixpkgs.runCommand "shell-safe-for-dep" {} ''
@@ -71,15 +74,8 @@ let
       echo "return" >> "$out"
       cat "${skeleton.shells.ghc}" >> "$out"
     '';
-    androidObelisk = import ./. (self-args // {
-      config.android_sdk.accept_license = true;
-    });
-    androidSkeleton = (import ./skeleton { obelisk = androidObelisk; }).android.frontend;
-    iosObelisk = import ./. (self-args // {
-      system = "x86_64-darwin";
-      iosSdkVersion = "10.2";
-    });
-    iosSkeleton = (import ./skeleton { obelisk = iosObelisk; }).ios.frontend;
+    androidSkeleton = (import ./skeleton { inherit obelisk; }).android.frontend;
+    iosSkeleton = (import ./skeleton { inherit obelisk; }).ios.frontend;
   in {
     inherit
       command
@@ -94,7 +90,7 @@ let
     inherit iosSkeleton;
   });
 
-  metaCache = local-self.pinBuildInputs
+  metaCache = local-self.reflex-platform.pinBuildInputs
     "obelisk-everywhere"
     (map (a: a.cache) (builtins.attrValues perPlatform));
 
