@@ -60,10 +60,12 @@ let
       (concatDepends ghcjs)
       (lib.optional reflex-platform.androidSupport androidSkeleton)
       (lib.optional reflex-platform.iosSupport iosSkeleton)
-      [ command serverExeSkeleton ]
+      [ command serverSkeletonExe serverSkeletonShell ]
     ];
     command = local-self.command;
-    serverExeSkeleton = (import ./skeleton { obelisk = local-self; }).exe;
+    skeleton = import ./skeleton { obelisk = local-self; };
+    serverSkeletonExe = skeleton.exe;
+    serverSkeletonShell = skeleton.shells.ghc;
     androidObelisk = import ./. (self-args // {
       config.android_sdk.accept_license = true;
     });
@@ -77,7 +79,8 @@ let
     inherit
       command
       ghc ghcjs
-      serverExeSkeleton
+      serverSkeletonExe
+      serverSkeletonShell
       ;
     cache = reflex-platform.pinBuildInputs "obelisk-${system}" cachePackages;
   } // lib.optionalAttrs reflex-platform.androidSupport {
