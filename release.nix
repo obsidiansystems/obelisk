@@ -65,7 +65,12 @@ let
     command = local-self.command;
     skeleton = import ./skeleton { obelisk = local-self; };
     serverSkeletonExe = skeleton.exe;
-    serverSkeletonShell = skeleton.shells.ghc;
+    # TODO fix nixpkgs so it doesn't try to run the result of haskell shells as setup hooks.
+    serverSkeletonShell = local-self.nixpkgs.runCommand "shell-safe-for-dep" {} ''
+      touch "$out"
+      echo "return" >> "$out"
+      cat "${skeleton.shells.ghc}" >> "$out"
+    '';
     androidObelisk = import ./. (self-args // {
       config.android_sdk.accept_license = true;
     });
