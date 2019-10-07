@@ -20,11 +20,10 @@ import Control.Exception
 import Control.Lens ((%~), (^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy.Char8 as BSLC
-import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Identity
-import Data.Functor.Sum
 import Data.List (uncons)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -81,8 +80,8 @@ run port serveStaticAsset backend frontend = do
           runSnapWithCommandLineArgs $ do
             getRouteWith validFullEncoder >>= \case
               Identity r -> case r of
-                InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
-                InR obeliskRoute :=> Identity a ->
+                FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
+                FullRoute_Frontend obeliskRoute :/ a ->
                   serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf publicConfigs frontend validFullEncoder `finally` killThread backendTid
@@ -103,8 +102,8 @@ getConfigRoute configs = case Map.lookup "common/route" configs of
 runWidget
   :: RunConfig
   -> Map Text ByteString
-  -> Frontend (R route)
-  -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
+  -> Frontend (R frontendRoute)
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> IO ()
 runWidget conf configs frontend validFullEncoder = do
   uri <- either (fail . T.unpack) pure $ getConfigRoute configs
@@ -123,11 +122,11 @@ runWidget conf configs frontend validFullEncoder = do
         runSettingsSocket settings skt app)
 
 obeliskApp
-  :: forall route backendRoute
+  :: forall frontendRoute backendRoute
   .  Map Text ByteString
   -> ConnectionOptions
-  -> Frontend (R route)
-  -> Encoder Identity Identity (R (Sum backendRoute (ObeliskRoute route))) PageName
+  -> Frontend (R frontendRoute)
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> URI
   -> Application
   -> IO Application
@@ -143,14 +142,14 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
   Right (jsaddleWarpRouteValidEncoder :: Encoder Identity (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
   jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
-  return $ \req sendResponse -> case tryDecode validFullEncoder (W.pathInfo req, mempty) of --TODO: Query strings
+  return $ \req sendResponse -> case tryDecode validFullEncoder $ byteStringsToPageName (BS.dropWhile (== (fromIntegral $ fromEnum '/')) $ W.rawPathInfo req) (BS.drop 1 $ W.rawQueryString req) of
     Identity r -> case r of
-      InR (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :=> Identity jsaddleRoute -> case jsaddleRoute of
+      FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :/ jsaddleRoute -> case jsaddleRoute of
         JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just jsaddleUri) False
         _ -> flip jsaddle sendResponse $ req
           { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder jsaddleRoute
           }
-      InR (ObeliskRoute_App appRouteComponent) :=> Identity appRouteRest -> do
+      FullRoute_Frontend (ObeliskRoute_App appRouteComponent) :/ appRouteRest -> do
         let cookies = maybe [] parseCookies $ lookup (fromString "Cookie") (W.requestHeaders req)
         html <- renderJsaddleFrontend configs cookies (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
