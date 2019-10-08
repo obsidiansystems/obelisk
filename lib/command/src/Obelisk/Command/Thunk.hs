@@ -26,7 +26,6 @@ module Obelisk.Command.Thunk
   , readThunk
   , updateThunk
   , getThunkPtr
-  , getThunkPtr'
   , parseGitUri
   , uriThunkPtr
   ) where
@@ -95,7 +94,7 @@ type NixSha256 = Text --TODO: Use a smart constructor and make this actually ver
 
 -- | A specific revision of data; it may be available from multiple sources
 data ThunkRev = ThunkRev
-  { _thunkRev_commit :: Ref
+  { _thunkRev_commit :: Ref Ref.SHA1
   , _thunkRev_nixSha256 :: NixSha256
   }
   deriving (Show, Eq, Ord)
@@ -150,7 +149,7 @@ getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
   ThunkSource_GitHub s -> _gitHubSource_branch s
   ThunkSource_Git s -> _gitSource_branch s
 
-commitNameToRef :: Name Commit -> Ref
+commitNameToRef :: Name Commit -> Ref Ref.SHA1
 commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 
 -- TODO: Use spinner here.
@@ -573,7 +572,7 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
         return tmpThunk
       Right _ -> failWith $ "Thunk is not packed"
     updateThunkFromTmp p' = do
-      _ <- packThunk' True p'
+      _ <- packThunk' True False p'
       callProcessAndLogOutput (Notice, Error) $
         proc "cp" ["-r", "-T", p', p]
 
@@ -622,28 +621,24 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from with
         callProcessAndLogOutput (Notice, Error) $
           proc "mv" ["-T", tmpRepo, thunkDir]
 
---TODO: add force mode to pack even if changes are present
 --TODO: add a rollback mode to pack to the original thunk
-packThunk :: MonadObelisk m => FilePath -> m ThunkPtr
+packThunk :: MonadObelisk m => Bool -> FilePath -> m ThunkPtr
 packThunk = packThunk' False
 
-packThunk' :: MonadObelisk m => Bool -> FilePath -> m ThunkPtr
-packThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
+packThunk' :: MonadObelisk m => Bool -> Bool -> FilePath -> m ThunkPtr
+packThunk' noTrail force thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
     withSpinner' ("Packing thunk " <> T.pack thunkDir)
                  (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
-      thunkPtr <- getThunkPtr thunkDir
+      thunkPtr <- getThunkPtr (not force) thunkDir
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
       pure thunkPtr
 
-getThunkPtr :: MonadObelisk m => FilePath -> m ThunkPtr
-getThunkPtr = getThunkPtr' True
-
-getThunkPtr' :: forall m. MonadObelisk m => Bool -> FilePath -> m ThunkPtr
-getThunkPtr' checkClean thunkDir = do
+getThunkPtr :: forall m. MonadObelisk m => Bool -> FilePath -> m ThunkPtr
+getThunkPtr checkClean thunkDir = do
   when checkClean $ ensureCleanGitRepo thunkDir True $
     "thunk pack: thunk checkout contains unsaved modifications"
 

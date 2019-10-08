@@ -196,20 +196,22 @@ isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
 -- | Run a command in the given shell for the current project
 inProjectShell :: MonadObelisk m => String -> String -> m ()
 inProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root True shellName command
+  projectShell root True shellName (Just command)
 
 inImpureProjectShell :: MonadObelisk m => String -> String -> m ()
 inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root False shellName command
+  projectShell root False shellName (Just command)
 
-projectShell :: MonadObelisk m => FilePath -> Bool -> String -> String -> m ()
+projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
+     [ "default.nix"] <>
      [ "--pure" | isPure ] <>
      [ "-A"
      , "shells." <> shellName
-     , "--run", command
-     ]
+     ] <> case command of
+       Nothing -> []
+       Just c -> ["--run", c]
   void $ liftIO $ waitForProcess ph
 
 setCtlc :: CreateProcess -> CreateProcess

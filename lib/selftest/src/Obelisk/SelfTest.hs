@@ -34,6 +34,7 @@ import Test.HUnit.Base
 
 import Obelisk.CliApp hiding (runCli, readCreateProcessWithExitCode)
 import qualified Obelisk.CliApp as CliApp
+import Obelisk.ExecutableConfig.Lookup (getConfigs)
 import Obelisk.Run (getConfigRoute)
 
 data ObRunState
@@ -74,6 +75,7 @@ main = do
   unless isVerbose $
     putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output"
   let verbosity = bool silently verbosely isVerbose
+      nixBuild args = run "nix-build" ("--no-out-link" : args)
   obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
   [p0, p1, p2, p3] <- liftIO $ getFreePorts 4
@@ -126,8 +128,10 @@ main = do
           void $ errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
-        it "produces a valid route config" $ inTmpObInit $ \tmp -> do
-          liftIO $ withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ getConfigRoute `shouldNotReturn` Nothing
+        it "produces a valid route config" $ inTmpObInit $ \tmp -> liftIO $ do
+          withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ do
+            configs <- getConfigs
+            return (either (const Nothing) Just $ getConfigRoute configs) `shouldNotReturn` Nothing
 
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'
@@ -138,32 +142,28 @@ main = do
           testObRunInDir p2 p3 (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
-        it "can build obelisk command"  $ inTmpObInit $ \_ -> run "nix-build" ["-A", "command" , obeliskImpl]
-        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> run "nix-build" ["-A", "skeleton", obeliskImpl]
-        it "can build obelisk shell"    $ inTmpObInit $ \_ -> run "nix-build" ["-A", "shell",    obeliskImpl]
-        -- See https://github.com/obsidiansystems/obelisk/issues/101
-        -- it "can build everything"       $ shelly_ $ run "nix-build" [obeliskImpl]
+        it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , obeliskImpl]
+        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", obeliskImpl]
+        it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    obeliskImpl]
+        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [obeliskImpl]
 
       describe "blank initialized project" $ parallel $ do
 
         it "can build ghc.backend" $ inTmpObInit $ \_ -> do
-          run "nix-build" ["--no-out-link", "-A", "ghc.backend"]
+          nixBuild ["-A", "ghc.backend"]
         it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> do
-          run "nix-build" ["--no-out-link", "-A", "ghcjs.frontend"]
+          nixBuild ["-A", "ghcjs.frontend"]
 
         if os == "darwin"
-          then it "can build ios"     $ inTmpObInit $ \_ -> run "nix-build" ["--no-out-link", "-A", "ios.frontend"    ]
-          else it "can build android" $ inTmpObInit $ \_ -> run "nix-build" ["--no-out-link", "-A", "android.frontend"]
+          then it "can build ios"     $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
+          else it "can build android" $ inTmpObInit $ \_ -> nixBuild ["-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
             shell = "shells." <> compiler
-            inShell cmd' = run "nix-shell" ["-A", fromString shell, "--run", cmd']
+            inShell cmd' = run "nix-shell" ["default.nix", "-A", fromString shell, "--run", cmd']
           it ("can enter "    <> shell) $ inTmpObInit $ \_ -> inShell "exit"
           it ("can build in " <> shell) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
-
-        it "can build reflex project" $ inTmpObInit $ \_ -> do
-          run "nix-build" []
 
         it "has idempotent thunk update" $ inTmpObInit $ \_ -> do
           u  <- update

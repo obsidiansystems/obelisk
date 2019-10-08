@@ -1,0 +1,45 @@
+name: obelisk-executable-config-lookup
+version: 0.1.1
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  exposed-modules: Obelisk.ExecutableConfig.Lookup, Obelisk.Configs
+  if os(ios)
+    hs-source-dirs: src-ios, src
+    other-modules: Obelisk.Configs.Internal.Directory
+    build-depends: jsaddle-wkwebview
+    build-depends: directory
+  else
+    if os(linux-android)
+      hs-source-dirs: src-android, src
+      c-sources: cbits/ExecutableConfig.c
+      other-modules: Obelisk.ExecutableConfig.Internal.AssetManager
+      build-depends: android-activity
+      ld-options: -landroid
+    else
+      if impl(ghcjs)
+        hs-source-dirs: src-ghcjs, src
+        build-depends: ghcjs-dom
+      else
+        hs-source-dirs: src-other, src
+        other-modules: Obelisk.Configs.Internal.Directory
+        build-depends: directory
+
+  build-depends:
+    base, 
+    base64-bytestring,
+    bytestring,
+    containers,
+    filepath,
+    text,
+    transformers,
+    transformers-base,
+    ref-tf,
+    primitive,
+    monad-control,
+    reflex,
+    reflex-dom,
+    jsaddle
+
+  ghc-options: -Wall

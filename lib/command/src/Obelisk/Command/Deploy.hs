@@ -4,7 +4,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Deploy where
 
 import Control.Lens
@@ -22,8 +21,8 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.Generics
-import Nix.Convert
 import Nix.Pretty
+import Nix.String (principledMakeNixStringWithoutContext)
 import Nix.Value
 import System.Directory
 import System.Environment (getEnvironment)
@@ -47,33 +46,38 @@ deployInit
   => ThunkPtr
   -> FilePath
   -> FilePath
-  -> FilePath
   -> [String] -- ^ hostnames
   -> String -- ^ route
   -> String -- ^ admin email
   -> Bool -- ^ enable https
   -> m ()
-deployInit thunkPtr configDir deployDir sshKeyPath hostnames route adminEmail enableHttps = do
-  (hasConfigDir, localKey) <- withSpinner ("Preparing " <> T.pack deployDir) $ do
-    hasConfigDir <- liftIO $ do
-      createDirectoryIfMissing True deployDir
-      doesDirectoryExist configDir
+deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps = do
+  localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
       False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
       True -> pure $ deployDir </> "ssh_key"
     callProcessAndLogOutput (Notice, Error) $
       proc "cp" [sshKeyPath, localKey]
     liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
-    return $ (hasConfigDir, localKey)
+    return localKey
   withSpinner "Validating configuration" $ do
     void $ getHostFromRoute enableHttps route -- make sure that hostname is present
   forM_ hostnames $ \hostname -> do
     putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
     -- Note: we can't use a spinner here as this function will prompt the user.
     verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
-  when hasConfigDir $ withSpinner "Importing project configuration" $ do
+  --IMPORTANT: We cannot copy config directory from the development project to
+  --the deployment directory.  If we do, it's very likely someone will
+  --accidentally create a production deployment that uses development
+  --credentials to connect to some resources.  This could result in, e.g.,
+  --production data backed up to a dev environment.
+  withSpinner "Creating project configuration directories" $ do
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp" [ "-r" , "-T" , configDir , deployDir </> "config"]
+      proc "mkdir" [ "-p"
+                   , deployDir </> "config" </> "backend"
+                   , deployDir </> "config" </> "common"
+                   , deployDir </> "config" </> "frontend"
+                   ]
   withSpinner "Writing deployment configuration" $ do
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
     writeDeployConfig deployDir "enable_https" $ show enableHttps
@@ -103,7 +107,7 @@ deployPush deployPath getNixBuilders = do
     Right (ThunkData_Packed ptr) -> return ptr
     Right (ThunkData_Checkout _) -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> packThunk srcPath
+        True -> packThunk False srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
@@ -131,7 +135,7 @@ deployPush deployPath getNixBuilders = do
   withSpinner "Uploading closures" $ ifor_ buildOutputByHost $ \host outputPath -> do
     callProcess'
       (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
-      "nix-copy-closure" ["-v", "--to", "root@" <> host, "--gzip", outputPath]
+      "nix-copy-closure" ["-v", "--to", "--use-substitutes", "root@" <> host, "--gzip", outputPath]
   withSpinner "Uploading config" $ ifor_ buildOutputByHost $ \host _ -> do
     callProcessAndLogOutput (Notice, Warning) $
       proc "rsync"
@@ -168,13 +172,14 @@ deployPush deployPath getNixBuilders = do
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest (deployPath </> "src") Nothing
 
-keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValueNF Identity)
-keytoolToAndroidConfig conf = runIdentity $ do
-  path <- toValue $ Path $ _keytoolConfig_keystore conf
-  storepass <- toValue $ T.pack $ _keytoolConfig_storepass conf
-  alias <- toValue $ T.pack $ _keytoolConfig_alias conf
-  keypass <- toValue $ T.pack $ _keytoolConfig_keypass conf
-  return $ HM.fromList
+keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValue  t Identity m)
+keytoolToAndroidConfig conf =
+  let path = nvPath $ _keytoolConfig_keystore conf
+      fromStr = nvStr . principledMakeNixStringWithoutContext . T.pack
+      storepass = fromStr $ _keytoolConfig_storepass conf
+      alias = fromStr $ _keytoolConfig_alias conf
+      keypass = fromStr $ _keytoolConfig_keypass conf
+  in HM.fromList
     [ ("storeFile", path)
     , ("storePassword", storepass)
     , ("keyAlias", alias)
@@ -189,7 +194,7 @@ renderPlatformDeployment = \case
   Android -> "android"
   IOS -> "ios"
 
-deployMobile :: MonadObelisk m => PlatformDeployment -> [String] -> m ()
+deployMobile :: forall m. MonadObelisk m => PlatformDeployment -> [String] -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
       configDir = root </> "config"
@@ -219,17 +224,17 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
       checkKeytoolConfExist <- liftIO $ doesFileExist keytoolConfPath
       unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"
       keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
-      liftIO $ putStrLn $ show keytoolConfContents
-      releaseKey <- case eitherDecode keytoolConfContents of
+      liftIO $ print keytoolConfContents
+      releaseKey :: String <- case eitherDecode keytoolConfContents :: Either String KeytoolConfig of
         Left err -> failWith $ T.pack err
-        Right conf -> do
-          let nvset = toValue @(HM.HashMap Text (NValueNF Identity)) @Identity @(NValueNF Identity) $ keytoolToAndroidConfig conf
-          return $ printNix $ runIdentity nvset
+        Right conf -> return $
+          (printNix :: MonadObelisk m => NValue t Identity m -> String) $
+            nvSet (keytoolToAndroidConfig conf) HM.empty
       let expr = mconcat
             [ "with (import ", srcDir, " {});"
             , "android.frontend.override (drv: { "
             , "releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; "
-            , "staticSrc = (passthru.__android ", configDir, ").frontend.staticSrc;"
+            , "staticSrc = (passthru.__androidWithConfig ", configDir, ").frontend.staticSrc;"
             , "})"
             ]
       return $ Target
@@ -240,7 +245,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
     IOS -> do
       let expr = mconcat
             [ "with (import ", srcDir, " {});"
-            , "ios.frontend.override (_: { staticSrc = (passthru.__ios ", configDir, ").frontend.staticSrc; })"
+            , "ios.frontend.override (_: { staticSrc = (passthru.__iosWithConfig ", configDir, ").frontend.staticSrc; })"
             ]
       return $ Target
         { _target_path = Nothing
@@ -250,7 +255,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   result <- nixCmd $ NixCmd_Build $ def
     & nixBuildConfig_outLink .~ OutLink_None
     & nixCmdConfig_target .~ nixBuildTarget
-  putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> (show result)
+  putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> show result
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
   where
     withEcho showEcho f = do
@@ -270,7 +275,7 @@ instance ToJSON KeytoolConfig
 createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
 createKeystore root config = do
   let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
-  callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
+  callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["default.nix", "-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
   where
     keytoolCmd = processToShellString "keytool"
       [ "-genkeypair", "-noprompt"
