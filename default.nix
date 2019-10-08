@@ -2,6 +2,7 @@
 , profiling ? false
 , iosSdkVersion ? "10.2"
 , config ? {}
+, haskellOverlays ? []
 }:
 let
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -102,7 +103,7 @@ let
         obelisk-selftest = haskellLib.justStaticExecutables super.obelisk-selftest;
       })
 
-    ];
+    ] ++ haskellOverlays;
   };
 
   reflex-platform = getReflexPlatform system;
