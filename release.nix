@@ -8,7 +8,10 @@
 let
   inherit (local-self.nixpkgs) lib runCommand nix;
 
-  cacheBuildSystems = [ "x86_64-linux" "x86_64-darwin" ];
+  cacheBuildSystems = [
+    "x86_64-linux"
+    "x86_64-darwin"
+  ];
 
   obeliskPackagesCommon = [
     "obelisk-frontend"
