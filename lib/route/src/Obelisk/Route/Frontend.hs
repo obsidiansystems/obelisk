@@ -500,10 +500,10 @@ runRouteViewT routeEncoder switchover useHash a = do
 routeLink
   :: forall t m a route.
      ( DomBuilder t m
-     , RouteToUrl (R route) m
-     , SetRoute t (R route) m
+     , RouteToUrl route m
+     , SetRoute t route m
      )
-  => R route -- ^ Target route
+  => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
 routeLink r w = do
