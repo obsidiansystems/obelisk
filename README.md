@@ -326,9 +326,9 @@ This command will accomplish the following:
 1. Build a Signed Android apk for your application
 1. Deploy the Signed apk to your connected Android device
 
-In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`
+In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`.
 
-Additional documentation on java key stores can be found [here] (https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html)
+Additional documentation on Java key stores can be found [here](https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html).
 
 This should copy over and install the application on your device (if you see a  "*signatures do not match*" error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 
