@@ -14,6 +14,7 @@ import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import qualified Data.Text as T
+import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
 import Distribution.Pretty
@@ -48,6 +49,8 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of globally enable extensions of the library component
   , _cabalPackageInfo_defaultLanguage :: Maybe Language
     -- ^ List of globally set languages of the library component
+  , _cabalPackageInfo_compilerOptions :: [(CompilerFlavor, [String])]
+    -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
   }
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
@@ -73,7 +76,10 @@ run = do
       -- Check whether the impure static files are a derivation (and so must be built)
       if isDerivation == "1"
         then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc "nix-build" ["-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"]
+          proc "nix-build"
+            [ "--no-out-link"
+            , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
+            ]
         else readProcessAndLogStderr Debug $
           proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
@@ -115,12 +121,12 @@ parseCabalPackage dir = do
     then Just <$> liftIO (readUTF8File cabalFp)
     else if hasHpack
       then do
-        let decodeOptions = DecodeOptions hpackFp Nothing decodeYaml
+        let decodeOptions = DecodeOptions (ProgramName "ob") hpackFp Nothing decodeYaml
         liftIO (readPackageConfig decodeOptions) >>= \case
           Left err -> do
             putLog Error $ T.pack $ "Failed to parse " <> hpackFp <> ": " <> err
             return Nothing
-          Right (DecodeResult hpackPackage _ _) -> do
+          Right (DecodeResult hpackPackage _ _ _) -> do
             return $ Just $ renderPackage [] hpackPackage
       else return Nothing
 
@@ -140,6 +146,7 @@ parseCabalPackage dir = do
                 defaultExtensions $ libBuildInfo lib
             , _cabalPackageInfo_defaultLanguage =
                 defaultLanguage $ libBuildInfo lib
+            , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
             }
       Left (_, errors) -> do
         putLog Error $ T.pack $ "Failed to parse " <> cabalFp <> ":"
@@ -175,8 +182,13 @@ withGhciScript pkgs f = do
       extensionsLine = if extensions == mempty
         then ""
         else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
+      ghcOptions = concat $ mapMaybe (\case (GHC, xs) -> Just xs; _ -> Nothing) $
+        packageInfos >>= _cabalPackageInfo_compilerOptions
       dotGhci = unlines $
         [ ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
+        , case ghcOptions of
+            [] -> ""
+            xs -> ":set " <> intercalate " " xs
         , extensionsLine
         , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
         , ":load Backend Frontend"
