@@ -51,7 +51,9 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , routeLinkScrollToTop
   , dynRouteLink
+  , dynRouteLinkScrollToTop
   , adaptedUriPath
   , setAdaptedUriPath
   ) where
@@ -61,7 +63,7 @@ import Prelude hiding ((.), id)
 import Obelisk.Route
 
 import Control.Category (Category (..), (.))
-import Control.Category.Cartesian
+import Control.Category.Cartesian ((&&&))
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
 import Control.Monad ((<=<))
 import Control.Monad.Fix
@@ -89,7 +91,9 @@ import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
 import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
 import Reflex.Dom.Core
+import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
+import qualified GHCJS.DOM.Window as Window
 import Network.URI
 import Data.Maybe (fromMaybe)
 import qualified Data.List as L
@@ -506,14 +510,46 @@ routeLink
   => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-routeLink r w = do
+routeLink r w = snd <$> routeLinkImpl r w
+
+-- | Like 'routeLink' but scrolls to the top of the page.
+routeLinkScrollToTop
+  :: forall js t m a route.
+     ( DomBuilder t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender js t m
+     )
+  => route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+routeLinkScrollToTop r w = do
+  (e, a) <- routeLinkImpl r w
+  scrollToTop e
+  return a
+
+routeLinkImpl
+  :: forall t m a route.
+     ( DomBuilder t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     )
+  => route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m (Event t (), a)
+routeLinkImpl r w = do
   enc <- askRouteToUrl
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
   setRoute $ r <$ domEvent Click e
-  return a
+  return (domEvent Click e, a)
+
+scrollToTop :: (Prerender js t m, Monad m) => Event t () -> m ()
+scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.currentWindow >>= \case
+    Nothing -> pure ()
+    Just win -> Window.scrollTo win 0 0
 
 -- | A link widget that, when clicked, sets the route to current value of the
 -- provided dynamic route. In non-javascript contexts the value of the dynamic post
@@ -522,13 +558,42 @@ dynRouteLink
   :: forall t m a route.
      ( DomBuilder t m
      , PostBuild t m
-     , RouteToUrl (R route) m
-     , SetRoute t (R route) m
+     , RouteToUrl route m
+     , SetRoute t route m
      )
-  => Dynamic t (R route) -- ^ Target route
+  => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-dynRouteLink dr w = do
+dynRouteLink dr w = snd <$> dynRouteLinkImpl dr w
+
+-- | Like 'dynRouteLink' but scrolls to the top of the page.
+dynRouteLinkScrollToTop
+  :: forall js t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender js t m
+     )
+  => Dynamic t route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+dynRouteLinkScrollToTop r w = do
+  (e, a) <- dynRouteLinkImpl r w
+  scrollToTop e
+  return a
+
+dynRouteLinkImpl
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     )
+  => Dynamic t route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m (Event t (), a)
+dynRouteLinkImpl dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
@@ -536,7 +601,7 @@ dynRouteLink dr w = do
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
   setRoute $ tag (current dr) $ domEvent Click e
-  return a
+  return (domEvent Click e, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
