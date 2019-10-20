@@ -586,8 +586,8 @@ dynRouteLinkScrollToTop
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-dynRouteLinkScrollToTop r w = do
-  (e, a) <- routeLinkImpl (Right (Dict, r)) w
+dynRouteLinkScrollToTop dr w = do
+  (e, a) <- routeLinkImpl (Right (Dict, dr)) w
   scrollToTop e
   return a
 
