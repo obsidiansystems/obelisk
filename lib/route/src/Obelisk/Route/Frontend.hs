@@ -504,18 +504,20 @@ runRouteViewT routeEncoder switchover useHash a = do
 routeLink
   :: forall t m a route.
      ( DomBuilder t m
+     , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-routeLink r w = snd <$> routeLinkImpl r w
+routeLink r w = snd <$> routeLinkImpl (Left r) w
 
 -- | Like 'routeLink' but scrolls to the top of the page.
 routeLinkScrollToTop
   :: forall js t m a route.
      ( DomBuilder t m
+     , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
      , Prerender js t m
@@ -524,27 +526,35 @@ routeLinkScrollToTop
   -> m a -- ^ Child widget
   -> m a
 routeLinkScrollToTop r w = do
-  (e, a) <- routeLinkImpl r w
+  (e, a) <- routeLinkImpl (Left r) w
   scrollToTop e
   return a
 
 routeLinkImpl
   :: forall t m a route.
      ( DomBuilder t m
+     , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
      )
-  => route -- ^ Target route
+  => Either route (Dynamic t route) -- ^ Target route
   -> m a -- ^ Child widget
   -> m (Event t (), a)
-routeLinkImpl r w = do
+routeLinkImpl r' w = do
   enc <- askRouteToUrl
-  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+  let cfg' = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
-        & elementConfig_initialAttributes .~ "href" =: enc r
+  cfg <- case r' of
+    Left r -> pure $ cfg' & elementConfig_initialAttributes .~ "href" =: enc r
+    Right dr -> do
+      er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+      pure $ cfg' & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  setRoute $ r <$ domEvent Click e
-  return (domEvent Click e, a)
+  let clk = domEvent Click e
+  setRoute $ case r' of
+    Left r -> r <$ clk
+    Right dr -> current dr <@ clk
+  return (clk, a)
 
 scrollToTop :: (Prerender js t m, Monad m) => Event t () -> m ()
 scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.currentWindow >>= \case
@@ -564,7 +574,7 @@ dynRouteLink
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-dynRouteLink dr w = snd <$> dynRouteLinkImpl dr w
+dynRouteLink dr w = snd <$> routeLinkImpl (Right dr) w
 
 -- | Like 'dynRouteLink' but scrolls to the top of the page.
 dynRouteLinkScrollToTop
@@ -579,29 +589,9 @@ dynRouteLinkScrollToTop
   -> m a -- ^ Child widget
   -> m a
 dynRouteLinkScrollToTop r w = do
-  (e, a) <- dynRouteLinkImpl r w
+  (e, a) <- routeLinkImpl (Right r) w
   scrollToTop e
   return a
-
-dynRouteLinkImpl
-  :: forall t m a route.
-     ( DomBuilder t m
-     , PostBuild t m
-     , RouteToUrl route m
-     , SetRoute t route m
-     )
-  => Dynamic t route -- ^ Target route
-  -> m a -- ^ Child widget
-  -> m (Event t (), a)
-dynRouteLinkImpl dr w = do
-  enc <- askRouteToUrl
-  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
-  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
-        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
-        & elementConfig_modifyAttributes .~ er
-  (e, a) <- element "a" cfg w
-  setRoute $ tag (current dr) $ domEvent Click e
-  return (domEvent Click e, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
