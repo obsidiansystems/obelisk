@@ -72,6 +72,7 @@ import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Control
 import Data.Coerce
+import Data.Constraint (Dict(..))
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
@@ -504,7 +505,6 @@ runRouteViewT routeEncoder switchover useHash a = do
 routeLink
   :: forall t m a route.
      ( DomBuilder t m
-     , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
      )
@@ -517,7 +517,6 @@ routeLink r w = snd <$> routeLinkImpl (Left r) w
 routeLinkScrollToTop
   :: forall js t m a route.
      ( DomBuilder t m
-     , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
      , Prerender js t m
@@ -533,11 +532,10 @@ routeLinkScrollToTop r w = do
 routeLinkImpl
   :: forall t m a route.
      ( DomBuilder t m
-     , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
      )
-  => Either route (Dynamic t route) -- ^ Target route
+  => Either route (Dict (PostBuild t m), Dynamic t route) -- ^ Target route
   -> m a -- ^ Child widget
   -> m (Event t (), a)
 routeLinkImpl r' w = do
@@ -546,14 +544,14 @@ routeLinkImpl r' w = do
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
   cfg <- case r' of
     Left r -> pure $ cfg' & elementConfig_initialAttributes .~ "href" =: enc r
-    Right dr -> do
+    Right (Dict, dr) -> do
       er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
       pure $ cfg' & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
   let clk = domEvent Click e
   setRoute $ case r' of
     Left r -> r <$ clk
-    Right dr -> current dr <@ clk
+    Right (_, dr) -> current dr <@ clk
   return (clk, a)
 
 scrollToTop :: (Prerender js t m, Monad m) => Event t () -> m ()
@@ -574,7 +572,7 @@ dynRouteLink
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-dynRouteLink dr w = snd <$> routeLinkImpl (Right dr) w
+dynRouteLink dr w = snd <$> routeLinkImpl (Right (Dict, dr)) w
 
 -- | Like 'dynRouteLink' but scrolls to the top of the page.
 dynRouteLinkScrollToTop
@@ -589,7 +587,7 @@ dynRouteLinkScrollToTop
   -> m a -- ^ Child widget
   -> m a
 dynRouteLinkScrollToTop r w = do
-  (e, a) <- routeLinkImpl (Right r) w
+  (e, a) <- routeLinkImpl (Right (Dict, r)) w
   scrollToTop e
   return a
 
