@@ -511,7 +511,7 @@ routeLink
   => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-routeLink r w = snd <$> routeLinkImpl (Left r) w
+routeLink r = routeLinkImpl Nothing (Left r)
 
 -- | Like 'routeLink' but scrolls to the top of the page.
 routeLinkScrollToTop
@@ -524,21 +524,19 @@ routeLinkScrollToTop
   => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-routeLinkScrollToTop r w = do
-  (e, a) <- routeLinkImpl (Left r) w
-  scrollToTop e
-  return a
+routeLinkScrollToTop r = routeLinkImpl (Just Dict) (Left r)
 
 routeLinkImpl
-  :: forall t m a route.
+  :: forall js t m a route.
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
      )
-  => Either route (Dict (PostBuild t m), Dynamic t route) -- ^ Target route
+  => Maybe (Dict (Prerender js t m))
+  -> Either route (Dict (PostBuild t m), Dynamic t route) -- ^ Target route
   -> m a -- ^ Child widget
-  -> m (Event t (), a)
-routeLinkImpl r' w = do
+  -> m a
+routeLinkImpl shouldScrollToTop r' w = do
   enc <- askRouteToUrl
   let cfg' = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
@@ -552,7 +550,10 @@ routeLinkImpl r' w = do
   setRoute $ case r' of
     Left r -> r <$ clk
     Right (_, dr) -> current dr <@ clk
-  return (clk, a)
+  case shouldScrollToTop of
+    Nothing -> pure ()
+    Just Dict -> scrollToTop clk
+  return a
 
 scrollToTop :: (Prerender js t m, Monad m) => Event t () -> m ()
 scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.currentWindow >>= \case
@@ -572,7 +573,7 @@ dynRouteLink
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-dynRouteLink dr w = snd <$> routeLinkImpl (Right (Dict, dr)) w
+dynRouteLink dr = routeLinkImpl Nothing (Right (Dict, dr))
 
 -- | Like 'dynRouteLink' but scrolls to the top of the page.
 dynRouteLinkScrollToTop
@@ -586,10 +587,7 @@ dynRouteLinkScrollToTop
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-dynRouteLinkScrollToTop dr w = do
-  (e, a) <- routeLinkImpl (Right (Dict, dr)) w
-  scrollToTop e
-  return a
+dynRouteLinkScrollToTop dr = routeLinkImpl (Just Dict) (Right (Dict, dr))
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
