@@ -330,6 +330,7 @@ in rec {
                     backendName
                     commonName
                     frontendName
+                    "desktop"
                   ]);
                   ghcjs = lib.filter (x: lib.hasAttr x combinedPackages) [
                     frontendName
