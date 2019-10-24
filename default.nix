@@ -157,12 +157,16 @@ in rec {
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
-  compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
+  compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
     mkdir $out
     cd $out
     ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-    closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
-    echo "//# sourceMappingURL=all.js.map" >> all.js
+    ${if optimizationLevel == null then ''
+      ln -s all.unminified.js all.js
+    '' else ''
+      ${pkgs.closurecompiler}/bin/closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+      echo "//# sourceMappingURL=all.js.map" >> all.js
+    ''}
   '';
 
   serverModules = {
@@ -233,6 +237,33 @@ in rec {
     };
   };
 
+  dockerImage = args@{exe, name, version, extraContents ? [], extraPaths ? []}: let
+    appDirSetupScript = nixpkgs.runCommand "appDirSetupScript.sh" {} ''
+      mkdir -p    $out/var/lib/backend
+      ln -sft $out/var/lib/backend '${exe}'/*
+      ${nixpkgs.findutils}/bin/find $out/var/lib/backend
+      '';
+
+  in nixpkgs.dockerTools.buildImage {
+    name = name;
+    tag = version;
+    contents = [ nixpkgs.iana-etc nixpkgs.cacert appDirSetupScript ] ++ extraContents;
+    keepContentsDirlinks = true;
+    config = {
+      Env = [
+         ("PATH=" + builtins.concatStringsSep(":")(extraPaths ++ [
+           "/var/lib/backend" # put the obelisk project on the path.
+           "/bin" # put contents on path
+         ] ++ map (pkg: "${pkg}/bin") pkgs.stdenv.initialPath # put common tools in path so docker exec is useful
+         ))
+       ];
+       Expose = 8000;
+       Entrypoint = ["/var/lib/backend/backend"];
+       WorkingDir = "/var/lib/backend";
+       User = "99:99";
+    };
+  };
+
   serverExe = backend: frontend: assets: optimizationLevel: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
@@ -268,7 +299,7 @@ in rec {
                           , tools ? _: []
                           , shellToolOverrides ? _: _: {}
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
-                          , __closureCompilerOptimizationLevel ? "ADVANCED"
+                          , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
                           }:
               let frontendName = "frontend";
                   backendName = "backend";
@@ -349,6 +380,8 @@ in rec {
       exe = serverOn system dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
         server (args // { exe = linuxExe version; });
+      dockerImage = args@{ name, version }:
+        dockerImage (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
