@@ -21,6 +21,8 @@
 module Obelisk.Route
   ( R
   , pattern (:/)
+  , (:.)
+  , pattern (:.)
   , hoistR
   , PageName
   , PathQuery
@@ -43,6 +45,9 @@ module Obelisk.Route
   , checkEnum1EncoderFunc
   , unitEncoder
   , pathOnlyEncoder
+  , addPathSegmentEncoder
+  , pathParamEncoder
+  , pathLiteralEncoder
   , singletonListEncoder
   , unpackTextEncoder
   , prefixTextEncoder
@@ -199,6 +204,48 @@ mapSome f (Some a) = Some $ f a
 
 hoistR :: (forall x. f x -> g x) -> R f -> R g
 hoistR f (x :=> Identity y) = f x :/ y
+
+--------------------------------------------------------------------------------
+-- Dealing with pairs (i.e. non-dependently-typed subroutes/paths)
+--------------------------------------------------------------------------------
+
+infixr 5 :.
+type (:.) = (,)
+
+{-# COMPLETE (:.) #-}
+pattern (:.) :: a -> b -> a :. b
+pattern a :. b = (a, b)
+
+addPathSegmentEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => Encoder check parse (Text, PageName) PageName
+addPathSegmentEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = \(ph, (pt, q)) -> (ph : pt, q)
+  , _encoderImpl_decode = \(p, q) -> case p of
+      [] -> throwError "Expected a path segment"
+      ph : pt -> pure (ph, (pt, q))
+  }
+
+pathParamEncoder
+  :: forall check parse item rest.
+     ( Applicative check
+     , MonadError Text parse
+     )
+  => Encoder check parse item Text
+  -> Encoder check parse rest PageName
+  -> Encoder check parse (item :. rest) PageName
+pathParamEncoder itemUnchecked restUnchecked = addPathSegmentEncoder . bimap itemUnchecked restUnchecked
+
+pathLiteralEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => Text
+  -> Encoder check parse a PageName
+  -> Encoder check parse a PageName
+pathLiteralEncoder t e = addPathSegmentEncoder . bimap (unitEncoder t) e . coidl
 
 --------------------------------------------------------------------------------
 -- Encoder fundamentals
