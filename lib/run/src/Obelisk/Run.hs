@@ -75,14 +75,18 @@ run port serveStaticAsset backend frontend = do
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
     Right validFullEncoder -> do
       publicConfigs <- getPublicConfigs
-      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
-        _backend_run backend $ \serveRoute -> do
-          runSnapWithCommandLineArgs $ do
+      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $
+        _backend_run backend $ \serveRoute ->
+          runSnapWithCommandLineArgs $
             getRouteWith validFullEncoder >>= \case
               Identity r -> case r of
                 FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
                 FullRoute_Frontend obeliskRoute :/ a ->
-                  serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
+                  serveDefaultObeliskApp appRouteToUrl allJsUrl serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
+                  where
+                    appRouteToUrl (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
+                    allJsUrl = renderAllJsPath validFullEncoder
+
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf publicConfigs frontend validFullEncoder `finally` killThread backendTid
 
@@ -92,7 +96,7 @@ runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate 
 
 getConfigRoute :: Map Text ByteString -> Either Text URI
 getConfigRoute configs = case Map.lookup "common/route" configs of
-    Just r -> 
+    Just r ->
       let stripped = T.strip (T.decodeUtf8 r)
       in case URI.mkURI stripped of
           Just route -> Right route
@@ -151,7 +155,8 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
           }
       FullRoute_Frontend (ObeliskRoute_App appRouteComponent) :/ appRouteRest -> do
         let cookies = maybe [] parseCookies $ lookup (fromString "Cookie") (W.requestHeaders req)
-        html <- renderJsaddleFrontend configs cookies (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
+            routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
+        html <- renderJsaddleFrontend configs cookies routeToUrl (appRouteComponent :/ appRouteRest) frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
       _ -> backend req sendResponse
 
