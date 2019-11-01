@@ -9,6 +9,12 @@ This project's release branch is `master`. This log is written from the perspect
 * Add "ob doc" command, which lists paths to haddock documentation for specified packages
 * Bump reflex-platform so that obelisk now uses GHC 8.6.5 and the nixos-19.03 nixpkgs set
 * Add support in obelisk-route for single parameters in URL paths
+* Removed `Obelisk.Backend.mkRouteToUrl` since it is easily written in terms of `Obelisk.Route.renderObeliskRoute`:
+
+      mkRouteToUrl validFullEncoder (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
+
+* Added `Obelisk.Backend.renderAllJsPath` to expose URL path to `ghcjs/all.js`.
+* Added argument to `serveDefaultObeliskApp`, `serveObeliskApp`, and `serveGhcjsApp` to take the path to `all.js` instead of hard-coding it.
 
 ## v0.2.0.0 - 2019-8-17
 
