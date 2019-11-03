@@ -237,11 +237,20 @@ in rec {
     };
   };
 
-  dockerImage = args@{exe, name, version, extraContents ? [], extraPaths ? []}: let
+  dockerImage = args@{exe, name, version, extraContents ? [], extraPaths ? [], config ? {}}: let
     appDirSetupScript = nixpkgs.runCommand "appDirSetupScript.sh" {} ''
       mkdir -p    $out/var/lib/backend
       ln -sft $out/var/lib/backend '${exe}'/*
       ${nixpkgs.findutils}/bin/find $out/var/lib/backend
+
+      # Needed for postgresql
+      mkdir $out/bin
+      ln -s ${nixpkgs.bash}/bin/sh $out/bin/sh
+      mkdir $out/etc
+      echo 'nobody:x:99:99:Nobody:/:/sbin/nologin' >> $out/etc/passwd
+      echo 'nobody:*:17416:0:99999:7:::'           >> $out/etc/shadow
+      echo 'nobody:x:99:'                          >> $out/etc/group
+      echo 'nobody:::'                             >> $out/etc/gshadow
       '';
 
   in nixpkgs.dockerTools.buildImage {
@@ -249,6 +258,9 @@ in rec {
     tag = version;
     contents = [ nixpkgs.iana-etc nixpkgs.cacert appDirSetupScript ] ++ extraContents;
     keepContentsDirlinks = true;
+    extraCommands = ''
+      chmod 1777 var/lib/backend
+    '';
     config = {
       Env = [
          ("PATH=" + builtins.concatStringsSep(":")(extraPaths ++ [
@@ -261,7 +273,7 @@ in rec {
        Entrypoint = ["/var/lib/backend/backend"];
        WorkingDir = "/var/lib/backend";
        User = "99:99";
-    };
+    } // config;
   };
 
   serverExe = backend: frontend: assets: optimizationLevel: version:
@@ -380,8 +392,8 @@ in rec {
       exe = serverOn system dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
         server (args // { exe = linuxExe version; });
-      dockerImage = args@{ name, version }:
-        dockerImage (args // { exe = linuxExe version; });
+      dockerImage = args@{ name, version, ... }:
+        dockerImage ({ exe = linuxExe version; } // args);
       obelisk = import (base + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
