@@ -251,6 +251,10 @@ in rec {
       echo 'nobody:*:17416:0:99999:7:::'           >> $out/etc/shadow
       echo 'nobody:x:99:'                          >> $out/etc/group
       echo 'nobody:::'                             >> $out/etc/gshadow
+
+      # Allow us to use docker secrets as backend config files more easily.
+      mkdir -p $out/var/lib/backend/config
+      ln -s /run/secrets $out/var/lib/backend/config/backend
       '';
 
   in nixpkgs.dockerTools.buildImage {
