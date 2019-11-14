@@ -27,7 +27,7 @@ import Control.Category
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Fail (MonadFail)
-import Control.Categorical.Bifunctor
+import qualified Data.Aeson as Aeson
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
@@ -38,7 +38,6 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding
 import Obelisk.Asset.Serve.Snap (serveAsset)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
@@ -57,20 +56,20 @@ data Backend backendRoute frontendRoute = Backend
   }
 
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
-data GhcjsApp route = GhcjsApp
+data GhcjsApp route result = GhcjsApp
   { _ghcjsApp_compiled :: !StaticAssets
-  , _ghcjsApp_value :: !(Frontend route)
+  , _ghcjsApp_value :: !(Frontend route result)
   }
 
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
 serveDefaultObeliskApp
-  :: (MonadSnap m, HasCookies m, MonadFail m)
+  :: (MonadSnap m, HasCookies m, MonadFail m, Semigroup result, Aeson.ToJSON result)
   => (R appRoute
   -> Text)
   -> ([Text]
   -> m ())
-  -> Frontend (R appRoute)
+  -> Frontend (R appRoute) result
   -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
@@ -122,10 +121,10 @@ getRouteWith e = do
   return $ tryDecode e pageName
 
 serveObeliskApp
-  :: (MonadSnap m, HasCookies m, MonadFail m)
+  :: (MonadSnap m, HasCookies m, MonadFail m, Semigroup result, Aeson.ToJSON result)
   => (R appRoute -> Text)
   -> ([Text] -> m ())
-  -> GhcjsApp (R appRoute)
+  -> GhcjsApp (R appRoute) result
   -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
@@ -158,9 +157,9 @@ staticRenderContentType = "text/html; charset=utf-8"
 
 --TODO: Don't assume we're being served at "/"
 serveGhcjsApp
-  :: (MonadSnap m, HasCookies m, MonadFail m)
+  :: (MonadSnap m, HasCookies m, MonadFail m, Semigroup result, Aeson.ToJSON result)
   => (R appRouteComponent -> Text)
-  -> GhcjsApp (R appRouteComponent)
+  -> GhcjsApp (R appRouteComponent) result
   -> Map Text ByteString
   -> R (GhcjsAppRoute appRouteComponent)
   -> m ()
@@ -171,7 +170,9 @@ serveGhcjsApp urlEnc app config = \case
     writeBS <=< renderGhcjsFrontend urlEnc (appRouteComponent :/ appRouteRest) config $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
-runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
+runBackend
+  :: (Semigroup result, Aeson.ToJSON result)
+  => Backend backendRoute frontendRoute -> Frontend (R frontendRoute) result -> IO ()
 runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
@@ -191,11 +192,11 @@ mkRouteToUrl validFullEncoder =
   in \(k :/ v) -> T.pack . uncurry (<>) . encode pageNameEncoder' . encode validFullEncoder $ (FullRoute_Frontend $ ObeliskRoute_App k) :/ v
 
 renderGhcjsFrontend
-  :: (MonadSnap m, HasCookies m)
+  :: (MonadSnap m, HasCookies m, Semigroup result, Aeson.ToJSON result)
   => (route -> Text)
   -> route
   -> Map Text ByteString
-  -> Frontend route
+  -> Frontend route result
   -> m ByteString
 renderGhcjsFrontend urlEnc route configs f = do
   let ghcjsPreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "ghcjs/all.js") blank

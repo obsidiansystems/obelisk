@@ -18,6 +18,7 @@ import Control.Category
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((%~), (^?), _Just, _Right)
+import qualified Data.Aeson as Aeson
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -62,10 +63,11 @@ import Text.URI.Lens
 import Web.Cookie
 
 run
-  :: Int -- ^ Port to run the backend
+  :: (Semigroup result, Aeson.ToJSON result)
+  => Int -- ^ Port to run the backend
   -> ([Text] -> Snap ()) -- ^ Static asset handler
   -> Backend fullRoute frontendRoute -- ^ Backend
-  -> Frontend (R frontendRoute) -- ^ Frontend
+  -> Frontend (R frontendRoute) result -- ^ Frontend
   -> IO ()
 run port serveStaticAsset backend frontend = do
   prettifyOutput
@@ -92,7 +94,7 @@ runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate 
 
 getConfigRoute :: Map Text ByteString -> Either Text URI
 getConfigRoute configs = case Map.lookup "common/route" configs of
-    Just r -> 
+    Just r ->
       let stripped = T.strip (T.decodeUtf8 r)
       in case URI.mkURI stripped of
           Just route -> Right route
@@ -100,9 +102,10 @@ getConfigRoute configs = case Map.lookup "common/route" configs of
     Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
 
 runWidget
-  :: RunConfig
+  :: (Semigroup result, Aeson.ToJSON result)
+  => RunConfig
   -> Map Text ByteString
-  -> Frontend (R frontendRoute)
+  -> Frontend (R frontendRoute) result
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> IO ()
 runWidget conf configs frontend validFullEncoder = do
@@ -122,10 +125,11 @@ runWidget conf configs frontend validFullEncoder = do
         runSettingsSocket settings skt app)
 
 obeliskApp
-  :: forall frontendRoute backendRoute
-  .  Map Text ByteString
+  :: forall frontendRoute backendRoute result
+   . (Semigroup result, Aeson.ToJSON result)
+  => Map Text ByteString
   -> ConnectionOptions
-  -> Frontend (R frontendRoute)
+  -> Frontend (R frontendRoute) result
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> URI
   -> Application
@@ -156,11 +160,12 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
       _ -> backend req sendResponse
 
 renderJsaddleFrontend
-  :: Map Text ByteString
+  :: (Semigroup result, Aeson.ToJSON result)
+  => Map Text ByteString
   -> Cookies
   -> (route -> Text)
   -> route
-  -> Frontend route
+  -> Frontend route result
   -> IO ByteString
 renderJsaddleFrontend configs cookies urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank

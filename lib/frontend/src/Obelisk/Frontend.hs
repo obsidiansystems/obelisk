@@ -32,13 +32,16 @@ import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
+import qualified Data.Aeson as Aeson
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (for_)
 import Data.Functor.Sum
 import Data.Map (Map)
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
 import Data.Text (Text)
+import qualified Data.Text.Encoding as T
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.History as DOM
@@ -94,9 +97,9 @@ type PrebuildAgnostic t route m =
   , HasConfigs (Performable m)
   )
 
-data Frontend route = Frontend
-  { _frontend_head :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
-  , _frontend_body :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
+data Frontend route result = Frontend
+  { _frontend_head :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m result)
+  , _frontend_body :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m result)
   }
 
 baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
@@ -144,9 +147,10 @@ data FrontendMode = FrontendMode
 -- route exists ambiently in the context (e.g. anything but web).
 -- Selects FrontendMode based on platform; this doesn't work for jsaddle-warp
 runFrontend
-  :: forall backendRoute route
-  .  Encoder Identity Identity (R (FullRoute backendRoute route)) PageName
-  -> Frontend (R route)
+  :: forall backendRoute route result
+   . (Semigroup result, Aeson.ToJSON result)
+  => Encoder Identity Identity (R (FullRoute backendRoute route)) PageName
+  -> Frontend (R route) result
   -> JSM ()
 runFrontend validFullEncoder frontend = do
   let mode = FrontendMode
@@ -173,11 +177,12 @@ runFrontend validFullEncoder frontend = do
   runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
 
 runFrontendWithConfigsAndCurrentRoute
-  :: forall backendRoute frontendRoute
-  .  FrontendMode
+  :: forall backendRoute frontendRoute result
+   . (Semigroup result, Aeson.ToJSON result)
+  => FrontendMode
   -> Map Text ByteString
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
-  -> Frontend (R frontendRoute)
+  -> Frontend (R frontendRoute) result
   -> JSM ()
 runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = do
   let ve = validFullEncoder . hoistParse errorLeft (prismEncoder (rPrism $ _FullRoute_Frontend . _ObeliskRoute_App))
@@ -210,12 +215,14 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
       w appendHead appendBody = do
         rec switchover <- runRouteViewT ve switchover (_frontendMode_adjustRoute mode) $ do
               (switchover'', fire) <- newTriggerEvent
-              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
+              headResult <- mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
                 -- The order here is important - baseTag has to be before headWidget!
                 baseTag
                 _frontend_head frontend
               mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runConfigsT configs))) $ do
-                _frontend_body frontend
+                bodyResult <- _frontend_body frontend
+                elAttr "script" ("type"=:"text/plain" <> "data-initial-data"=:"") $
+                  text $ T.decodeUtf8 $ LBS.toStrict $ Aeson.encode $ headResult <> bodyResult
                 switchover' <- case _frontendMode_hydrate mode of
                   True -> lift $ lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
                   False -> getPostBuild
@@ -230,12 +237,13 @@ renderFrontendHtml
   :: ( t ~ DomTimeline
      , MonadIO m
      , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost))))))))
+     , Semigroup result, Aeson.ToJSON result
      )
   => Map Text ByteString
   -> Cookies
   -> (r -> Text)
   -> r
-  -> Frontend r
+  -> Frontend r result
   -> widget ()
   -> widget ()
   -> m ByteString
@@ -243,12 +251,15 @@ renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = d
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
   html <- fmap snd $ liftIO $ renderStatic $ runHydratableT $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
-      el "head" $ do
+      headResult <- el "head" $ do
         baseTag
         injectExecutableConfigs configs
-        _frontend_head frontend
+        headResult <- _frontend_head frontend
         headExtra
+        pure headResult
       el "body" $ do
-        _frontend_body frontend
+        bodyResult <- _frontend_body frontend
         bodyExtra
+        elAttr "script" ("type"=:"text/plain" <> "data-initial-data"=:"") $
+          text $ T.decodeUtf8 $ LBS.toStrict $ Aeson.encode $ headResult <> bodyResult
   return $ "<!DOCTYPE html>" <> html
