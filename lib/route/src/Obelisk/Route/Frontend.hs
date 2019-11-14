@@ -35,6 +35,8 @@ module Obelisk.Route.Frontend
   , mapRoutedT
   , subRoute
   , subRoute_
+  , subPairRoute
+  , subPairRoute_
   , maybeRoute
   , maybeRoute_
   , maybeRouted
@@ -77,6 +79,7 @@ import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Functor.Compose
+import Data.Functor.Misc
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PostBuild.Class
@@ -202,9 +205,17 @@ subRoute_ :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r 
 subRoute_ f = factorRouted $ strictDynWidget_ $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute_ :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m ()) -> RoutedT t (a, b) m ()
+subPairRoute_ f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute_ (\(Const2 a) -> f a)
+
 subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m b) -> RoutedT t (R r) m (Dynamic t b)
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
+
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m c) -> RoutedT t (a, b) m (Dynamic t c)
+subPairRoute f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute (\(Const2 a) -> f a)
 
 maybeRoute_ :: (MonadFix m, MonadHold t m, Adjustable t m) => m () -> RoutedT t r m () -> RoutedT t (Maybe r) m ()
 maybeRoute_ n j = maybeRouted $ strictDynWidget_ $ \case

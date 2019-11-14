@@ -8,6 +8,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Added some Prisms to the encoder library for manipulating DSums (perhaps they should get moved to dependent-sum before release?)
 * Add "ob doc" command, which lists paths to haddock documentation for specified packages
 * Bump reflex-platform so that obelisk now uses GHC 8.6.5 and the nixos-19.03 nixpkgs set
+* Add support in obelisk-route for single parameters in URL paths
 
 ## v0.2.0.0 - 2019-8-17
 
