@@ -3,6 +3,8 @@
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
 
 ## Unreleased
+
+* Backport ACMEv2 support in obelisk server to regain LetsEncrypt account creation.
 * Configs become ByteStrings.
 * FrontendConfigsT has been changed into ConfigsT and configs are made available via getConfig/getConfigs
   * The frontend will still only have access to configs that are placed in config/frontend and config/common, while the backend has access to the entire contents of the config directory via `Obelisk.ExecutableConfig.Lookup.getConfigs`.
