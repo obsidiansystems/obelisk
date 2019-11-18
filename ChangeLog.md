@@ -12,6 +12,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Bump reflex-platform so that obelisk now uses reflex-dom 0.5.2.0
 * Use a `--pure` nix shell in `ob run` for parity with `ob repl` and more resilience against "works on my machine".
 * Use `--keep NIX_PATH` for all pure shells so references to `<nixpkgs>` continues to work.
+* Backport ACMEv2 support in obelisk server to regain LetsEncrypt account creation.
 
 ## v0.2.0.0 - 2019-8-17
 
