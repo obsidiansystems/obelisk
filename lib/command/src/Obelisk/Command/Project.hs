@@ -206,7 +206,9 @@ projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> 
 projectShell root isPure shellName command = do
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
      [ "default.nix"] <>
-     [ "--pure" | isPure ] <>
+     -- Keep $NIX_PATH in the env for --pure shells so '<nixpkgs>' works in sub-commands
+     -- TODO: Don't use <nixpkgs> for anything!
+     (if isPure then [ "--pure", "--keep", "NIX_PATH" ] else []) <>
      [ "-A"
      , "shells." <> shellName
      ] <> case command of
