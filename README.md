@@ -105,7 +105,8 @@ Obelisk leverages ghcid to provide a live-reloading server that handles both fro
 ob run
 ```
 
-Now go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Now, with an appropriate browser, go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Firefox will not be able to properly run the development website due to [issue 460](https://github.com/obsidiansystems/obelisk/issues/460). Fortunately, this problem does not occur on a fully built website.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
 
