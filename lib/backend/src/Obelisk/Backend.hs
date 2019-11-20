@@ -17,6 +17,7 @@ module Obelisk.Backend
   , serveDefaultObeliskApp
   , prettifyOutput
   , runBackend
+  , runBackendWithAssetsFromDirectory
   , staticRenderContentType
   , mkRouteToUrl
   , getPublicConfigs
@@ -50,6 +51,7 @@ import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, htt
             , rqCookies, Cookie(..))
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
+import System.FilePath
 
 data Backend backendRoute frontendRoute = Backend
   { _backend_routeEncoder :: Encoder (Either Text) Identity (R (Sum backendRoute (ObeliskRoute frontendRoute))) PageName
@@ -145,7 +147,13 @@ serveObeliskApp urlEnc serveStaticAsset frontendApp config = \case
     ResourceRoute_Version :=> Identity () -> doNotCache >> serveFileIfExistsAs "text/plain" "version"
 
 serveStaticAssets :: MonadSnap m => StaticAssets -> [Text] -> m ()
-serveStaticAssets assets pathSegments = serveAsset (_staticAssets_processed assets) (_staticAssets_unprocessed assets) $ T.unpack $ T.intercalate "/" pathSegments
+serveStaticAssets = serveStaticAssetsFromDirectory "."
+
+-- | Serve static assets from a specific directory
+serveStaticAssetsFromDirectory :: MonadSnap m => FilePath -> StaticAssets -> [Text] -> m ()
+serveStaticAssetsFromDirectory dir assets pathSegments =
+  serveAsset (normalise $ dir </> _staticAssets_processed assets) (normalise $ dir </> _staticAssets_unprocessed assets) $
+    T.unpack $ T.intercalate "/" pathSegments
 
 data StaticAssets = StaticAssets
   { _staticAssets_processed :: !FilePath
@@ -175,7 +183,10 @@ serveGhcjsApp urlEnc app config = \case
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
 runBackend :: Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
-runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackend = runBackendWithAssetsFromDirectory "."
+
+runBackendWithAssetsFromDirectory :: FilePath -> Backend fullRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
+runBackendWithAssetsFromDirectory assetDir backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
@@ -185,7 +196,14 @@ runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend 
           Identity r -> case r of
             InL backendRoute :=> Identity a -> serveRoute $ backendRoute :/ a
             InR obeliskRoute :=> Identity a ->
-              serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) (serveStaticAssets defaultStaticAssets) frontend publicConfigs $
+              let frontendApp = GhcjsApp
+                    { _ghcjsApp_compiled = StaticAssets {
+                          _staticAssets_processed = (normalise $ assetDir </> _staticAssets_processed defaultFrontendGhcjsAssets)
+                        , _staticAssets_unprocessed = (normalise $ assetDir </> _staticAssets_unprocessed defaultFrontendGhcjsAssets)
+                      }
+                    , _ghcjsApp_value = frontend
+                    }
+              in serveObeliskApp (mkRouteToUrl validFullEncoder) (serveStaticAssetsFromDirectory assetDir defaultStaticAssets) frontendApp publicConfigs $
                 obeliskRoute :/ a
 
 mkRouteToUrl :: Encoder Identity parse (R (Sum f (ObeliskRoute r))) PageName -> R r -> Text
