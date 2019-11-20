@@ -326,12 +326,12 @@ in rec {
                     commonName
                     frontendName
                   ]);
-                  ghc = (lib.filter (x: lib.hasAttr x combinedPackages) [
+                  ghc = lib.filter (x: lib.hasAttr x combinedPackages) ([
                     backendName
                     commonName
                     frontendName
                     "desktop"
-                  ]);
+                    ] ++ lib.optionals pkgs.stdenv.isDarwin ["mac"]);
                   ghcjs = lib.filter (x: lib.hasAttr x combinedPackages) [
                     frontendName
                     commonName
