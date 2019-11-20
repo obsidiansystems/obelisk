@@ -94,7 +94,7 @@ type NixSha256 = Text --TODO: Use a smart constructor and make this actually ver
 
 -- | A specific revision of data; it may be available from multiple sources
 data ThunkRev = ThunkRev
-  { _thunkRev_commit :: Ref
+  { _thunkRev_commit :: Ref Ref.SHA1
   , _thunkRev_nixSha256 :: NixSha256
   }
   deriving (Show, Eq, Ord)
@@ -149,7 +149,7 @@ getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
   ThunkSource_GitHub s -> _gitHubSource_branch s
   ThunkSource_Git s -> _gitSource_branch s
 
-commitNameToRef :: Name Commit -> Ref
+commitNameToRef :: Name Commit -> Ref Ref.SHA1
 commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 
 -- TODO: Use spinner here.

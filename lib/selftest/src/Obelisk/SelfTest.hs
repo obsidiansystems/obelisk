@@ -129,8 +129,8 @@ main = do
           ls tmp >>= liftIO . assertEqual "" []
 
         it "produces a valid route config" $ inTmpObInit $ \tmp -> liftIO $ do
-          configs <- getConfigs
-          withCurrentDirectory (T.unpack $ toTextIgnore tmp) $
+          withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ do
+            configs <- getConfigs
             return (either (const Nothing) Just $ getConfigRoute configs) `shouldNotReturn` Nothing
 
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
@@ -145,8 +145,7 @@ main = do
         it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , obeliskImpl]
         it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", obeliskImpl]
         it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    obeliskImpl]
-        -- See https://github.com/obsidiansystems/obelisk/issues/101
-        -- it "can build everything"       $ shelly_ $ nixBuild [obeliskImpl]
+        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [obeliskImpl]
 
       describe "blank initialized project" $ parallel $ do
 
@@ -162,12 +161,9 @@ main = do
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
             shell = "shells." <> compiler
-            inShell cmd' = run "nix-shell" ["-A", fromString shell, "--run", cmd']
+            inShell cmd' = run "nix-shell" ["default.nix", "-A", fromString shell, "--run", cmd']
           it ("can enter "    <> shell) $ inTmpObInit $ \_ -> inShell "exit"
           it ("can build in " <> shell) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
-
-        it "can build reflex project" $ inTmpObInit $ \_ -> do
-          nixBuild []
 
         it "has idempotent thunk update" $ inTmpObInit $ \_ -> do
           u  <- update

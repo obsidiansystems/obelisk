@@ -21,6 +21,8 @@
 module Obelisk.Route
   ( R
   , pattern (:/)
+  , (:.)
+  , pattern (:.)
   , hoistR
   , PageName
   , PathQuery
@@ -43,6 +45,9 @@ module Obelisk.Route
   , checkEnum1EncoderFunc
   , unitEncoder
   , pathOnlyEncoder
+  , addPathSegmentEncoder
+  , pathParamEncoder
+  , pathLiteralEncoder
   , singletonListEncoder
   , unpackTextEncoder
   , prefixTextEncoder
@@ -201,6 +206,48 @@ hoistR :: (forall x. f x -> g x) -> R f -> R g
 hoistR f (x :=> Identity y) = f x :/ y
 
 --------------------------------------------------------------------------------
+-- Dealing with pairs (i.e. non-dependently-typed subroutes/paths)
+--------------------------------------------------------------------------------
+
+infixr 5 :.
+type (:.) = (,)
+
+{-# COMPLETE (:.) #-}
+pattern (:.) :: a -> b -> a :. b
+pattern a :. b = (a, b)
+
+addPathSegmentEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => Encoder check parse (Text, PageName) PageName
+addPathSegmentEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = \(ph, (pt, q)) -> (ph : pt, q)
+  , _encoderImpl_decode = \(p, q) -> case p of
+      [] -> throwError "Expected a path segment"
+      ph : pt -> pure (ph, (pt, q))
+  }
+
+pathParamEncoder
+  :: forall check parse item rest.
+     ( Applicative check
+     , MonadError Text parse
+     )
+  => Encoder check parse item Text
+  -> Encoder check parse rest PageName
+  -> Encoder check parse (item :. rest) PageName
+pathParamEncoder itemUnchecked restUnchecked = addPathSegmentEncoder . bimap itemUnchecked restUnchecked
+
+pathLiteralEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => Text
+  -> Encoder check parse a PageName
+  -> Encoder check parse a PageName
+pathLiteralEncoder t e = addPathSegmentEncoder . bimap (unitEncoder t) e . coidl
+
+--------------------------------------------------------------------------------
 -- Encoder fundamentals
 --------------------------------------------------------------------------------
 
@@ -233,7 +280,7 @@ decode e x = runIdentity (tryDecode e x)
 tryDecode :: Encoder Identity parse decoded encoded -> encoded -> parse decoded
 tryDecode (Encoder (Identity impl)) x = _encoderImpl_decode impl x
 
--- | Similar to 'decode' above, once an encoder has been checked so that its check monad is Identity, it
+-- | Similar to 'decode', once an encoder has been checked so that its check monad is Identity, it
 -- can be used to actually encode by using this. Note that while there's no constraint on the parse monad here,
 -- one should usually be applying decode and encode to the same 'Encoder'
 encode :: Encoder Identity parse decoded encoded -> decoded -> encoded
@@ -505,8 +552,9 @@ chainEncoder cons this rest = Encoder $ do
   pure $ EncoderImpl
     { _encoderImpl_decode = \v -> do
         (here, following) <- _encoderImpl_decode consValid v
-        Some r <- _encoderImpl_decode thisValid here
-        (r :/) <$> _encoderImpl_decode (runIdentity . unEncoder $ rest r) following
+        _encoderImpl_decode thisValid here >>= \case
+          Some r ->
+            (r :/) <$> _encoderImpl_decode (runIdentity . unEncoder $ rest r) following
     , _encoderImpl_encode = \(r :/ s) ->
         _encoderImpl_encode consValid
           ( _encoderImpl_encode thisValid $ Some r
@@ -1046,12 +1094,12 @@ dmapEncoder keyEncoder' valueEncoderFor = unsafeEncoder $ do
                , encode (toEncoder (DMap.findWithDefault (error . keyError $ gshow k') k' valueDecoders)) v'
                )
     , _encoderImpl_decode = \m -> fmap DMap.fromList . forM (Map.toList m) $ \(k,v) -> do
-          Some (k' :: k' t) <- tryDecode keyEncoder k
-          case DMap.lookup k' valueDecoders of
-            Nothing -> throwError . T.pack . keyError $ gshow k'
-            Just (Decoder e) -> do
-              v' <- tryDecode e v
-              return (k' :=> Identity v')
+          tryDecode keyEncoder k >>= \case
+            Some (k' :: k' t) -> case DMap.lookup k' valueDecoders of
+              Nothing -> throwError . T.pack . keyError $ gshow k'
+              Just (Decoder e) -> do
+                v' <- tryDecode e v
+                return (k' :=> Identity v')
     }
 
 fieldMapEncoder :: forall check parse r.

@@ -60,6 +60,28 @@ Or to launch ghcid for `lib/command` project:
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
+To re-install `ob` from source do
+```
+nix-env -f /path/to/obelisk -iA command
+```
+
+Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
+
+```shell
+ob thunk unpack ./obelisk/impl
+cd ./obelisk/impl
+# apply your changes
+```
+
+If you want to commit your changes, first push them to your fork of obelisk and then
+
+```shell
+cd /your/project/root
+ob thunk pack .obelisk/impl
+git add .obelisk/impl
+git commit -m "Bump obelisk"
+```
+
 ### Accessing private repositories
 
 To allow the Nix builder to access private git repositories, you must be set up
@@ -83,7 +105,8 @@ Obelisk leverages ghcid to provide a live-reloading server that handles both fro
 ob run
 ```
 
-Now go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Now, with an appropriate browser, go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Firefox will not be able to properly run the development website due to [issue 460](https://github.com/obsidiansystems/obelisk/issues/460). Fortunately, this problem does not occur on a fully built website.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
 
@@ -99,14 +122,14 @@ In order to add package dependencies, declare them under the build-depends field
 
 ### Adding package overrides
 
-To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package, your `default.nix` will look like:
+To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package fetched from GitHub and a specific version of the `waargonaut` package fetched from Hackage, your `default.nix` will look like:
 
 ```nix
 # ...
 project ./. ({ pkgs, ... }: {
 # ...
   overrides = self: super: let
-    aeson = pkgs.fetchFromGitHub {
+    aesonSrc = pkgs.fetchFromGitHub {
       owner = "obsidiansystems";
       repo = "aeson-gadt-th";
       rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
@@ -114,7 +137,12 @@ project ./. ({ pkgs, ... }: {
     };
   in
   {
-    aeson = self.callCabal2nix "aeson" aeson {};
+    aeson = self.callCabal2nix "aeson" aesonSrc {};
+    waargonaut = self.callHackageDirect {
+      pkg = "waargonaut";
+      ver = "0.8.0.1";
+      sha256 = "1zv28np3k3hg378vqm89v802xr0g8cwk7gy3mr77xrzy5jbgpa39";
+    } {};
   };
 # ...
 ```
@@ -128,14 +156,16 @@ For further information see [the Haskell section](https://nixos.org/nixpkgs/manu
 Build everything:
 
 ```
-nix-build -A exe -o result-exe
+nix-build -A exe --no-out-link
 ```
 
-Run the server:
+Copy the result to a new directory, add configuration, and run!
 
 ```
-cd result-exe
-./backend
+mkdir test-app
+ln -s $(nix-build -A exe --no-out-link)/* test-app/
+cp -r config test-app
+(cd test-app && ./backend)
 ```
 
 ### EC2
@@ -167,9 +197,11 @@ ob deploy init \
   ~/code/myapp-deploy
 ```
 
-NOTE: HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
+HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
 
-Then go to that created deployment configuration directory, and initiate the deployment:
+This step will also require that you manually verify the authenticity of the host `$SERVER`. Obelisk will save the fingerprint in a deployment-specific configuration. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
+
+Next, go to the deployment directory that you just initialized and deploy!
 
 ```
 cd ~/code/myapp-deploy
@@ -295,9 +327,9 @@ This command will accomplish the following:
 1. Build a Signed Android apk for your application
 1. Deploy the Signed apk to your connected Android device
 
-In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`
+In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`.
 
-Additional documentation on java key stores can be found [here] (https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html)
+Additional documentation on Java key stores can be found [here](https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html).
 
 This should copy over and install the application on your device (if you see a  "*signatures do not match*" error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 

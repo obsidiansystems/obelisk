@@ -23,7 +23,7 @@ library
     , filepath
     , github
     , here
-    , hit
+    , git
     , hnix
     , hpack
     , io-streams
