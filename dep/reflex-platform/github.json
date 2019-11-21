@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "mb-fix-jsaddle-with-ledgerjs",
-  "rev": "1d8a445918d2dc04dc93f3aad91a32178d73ade6",
-  "sha256": "0h19dkd4vxfjlfwpxvvy6kapgzd4vvwkwgv79bnqadq8k6f14ic7"
+  "branch": "mb-fix-ghc-16893-for-19-03",
+  "rev": "4b6b0ffe58a3a3edec6a7cfcfe25ad119309535a",
+  "sha256": "1yc72q1g4yvwxgkvfyrkgw97lzgk2dhv808bh9n7f79y5kcz8gjb"
 }
