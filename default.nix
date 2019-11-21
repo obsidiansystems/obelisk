@@ -1,3 +1,9 @@
+let
+  nixos1909 = import (builtins.fetchTarball {
+    url = https://github.com/NixOS/nixpkgs-channels/archive/nixos-19.09.tar.gz;
+    sha256 = "0ysb2017n8g0bpkxy3lsnlf6mcya5gqwggmwdjxlfnj1ilj3lnqz";
+  }) {};
+in
 { system ? builtins.currentSystem
 , profiling ? false
 , iosSdkVersion ? "10.2"
@@ -69,7 +75,7 @@ let
         # Dynamic linking with split objects dramatically increases startup time (about
         # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.
         obelisk-command = haskellLib.overrideCabal
-          (haskellLib.addOptparseApplicativeCompletionScripts "ob"
+          (haskellLib.generateOptparseApplicativeCompletion "ob"
             (haskellLib.justStaticExecutables super.obelisk-command))
           (drv: {
             buildTools = (drv.buildTools or []) ++ [ pkgs.buildPackages.makeWrapper ];
@@ -237,6 +243,15 @@ in rec {
         imports = [
           (serverModules.mkBaseEc2 args)
           (serverModules.mkObeliskApp args)
+          ./acme.nix
+        ];
+        disabledModules = [
+          (pkgs.path + /nixos/modules/security/acme.nix)
+        ];
+        nixpkgs.overlays = [
+          (self: super: {
+            simp_le = nixos1909.simp_le;
+          })
         ];
       };
     };
