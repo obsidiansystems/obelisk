@@ -9,6 +9,7 @@ This project's release branch is `master`. This log is written from the perspect
 * The backend no longer runs in BackendConfigsT.
 * Add tabulation package. See Data.Tabulation for details.
 * Add encoders for `DMap`, `HasFields` (cf. Data.Tabulation), and JSON.
+* Enable https in `ob run`
 
 ## v0.1.1.0 - 2019-05-17
 
