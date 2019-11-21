@@ -16,6 +16,7 @@ library
     , dependent-sum-template
     , directory
     , ghcjs-dom
+    , HsOpenSSL
     , http-client
     , http-reverse-proxy
     , http-types
@@ -37,6 +38,7 @@ library
     , snap-core
     , streaming-commons
     , text
+    , time
     , universe
     , wai
     , wai-websockets

@@ -18,6 +18,7 @@ import Control.Category
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((%~), (^?), _Just, _Right)
+import Control.Monad (unless)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC
@@ -35,6 +36,7 @@ import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.Time.Clock (getCurrentTime, addUTCTime)
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -52,9 +54,13 @@ import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.Backend
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
+import qualified OpenSSL.PEM as PEM
+import qualified OpenSSL.RSA as RSA
+import qualified OpenSSL.X509 as X509
+import qualified OpenSSL.X509.Request as X509Request
 import Reflex.Dom.Core
 import Snap.Core (Snap)
-import System.Directory (getXdgDirectory, XdgDirectory(..))
+import System.Directory (getXdgDirectory, XdgDirectory(..), doesFileExist, createDirectoryIfMissing)
 import System.Environment
 import System.IO
 import System.Process
@@ -110,7 +116,6 @@ runWidget
   -> IO ()
 runWidget conf configs frontend validFullEncoder = do
   uri <- either (fail . T.unpack) pure $ getConfigRoute configs
-  userCfg <- getXdgDirectory XdgConfig "obelisk"
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
@@ -118,9 +123,36 @@ runWidget conf configs frontend validFullEncoder = do
         putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
-      runner = case (uri ^? uriScheme . _Just . unRText) of
-        Just "https" -> runTLSSocket $ tlsSettings (userCfg <> "/certificate.pem") (userCfg <> "/key.pem")
-        _ -> runSettingsSocket
+      prepareRunner = case (uri ^? uriScheme . _Just . unRText) of
+        Just "https" -> do 
+          userCfg <- getXdgDirectory XdgConfig "obelisk"
+          let (sslCertFile, sslKeyFile) = (userCfg <> "/certificate.pem",  userCfg <> "/key.pem")
+          sslCertExists <- doesFileExist sslCertFile
+          sslKeyExists <- doesFileExist sslKeyFile
+
+          -- Generate private key and self-signed certificate if not already available
+          unless (sslCertExists && sslKeyExists) $ do 
+              privateKey <- RSA.generateRSAKey' 2048 3
+
+              certRequest <- X509Request.newX509Req
+              _ <- X509Request.setPublicKey certRequest privateKey
+              _ <- X509Request.signX509Req certRequest privateKey Nothing 
+
+              cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
+              _ <- X509.setPublicKey cert privateKey
+              now <- getCurrentTime
+              _ <- X509.setNotBefore cert $ addUTCTime (-1) now
+              let days = 365
+              _ <- X509.setNotAfter cert $ addUTCTime (days * 24 * 60 * 60) now
+              _ <- X509.signX509 cert privateKey Nothing 
+
+              _ <- createDirectoryIfMissing True userCfg
+              PEM.writeX509 cert >>= writeFile sslCertFile
+              PEM.writePKCS8PrivateKey privateKey Nothing >>= writeFile sslKeyFile
+
+          return $ runTLSSocket (tlsSettings sslCertFile sslKeyFile)
+        _ -> return runSettingsSocket
+  runner <- prepareRunner
   bracket
     (bindPortTCPRetry settings (logPortBindErr port) (_runConfig_retryTimeout conf))
     close
