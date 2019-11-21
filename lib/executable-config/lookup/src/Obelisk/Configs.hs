@@ -15,6 +15,7 @@ module Obelisk.Configs
   , ConfigsT
   , runConfigsT
   , mapConfigsT
+  , getTextConfig
   ) where
 
 import Control.Applicative
@@ -31,6 +32,7 @@ import Data.ByteString (ByteString)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
+import qualified Data.Text.Encoding as T
 import Reflex
 import Reflex.Host.Class
 import Reflex.Dom
@@ -49,6 +51,9 @@ class Monad m => HasConfigs m where
 
 instance Monad m => HasConfigs (ConfigsT m) where
   getConfigs = ConfigsT ask
+
+getTextConfig :: HasConfigs m => Text -> m (Maybe Text)
+getTextConfig k = fmap T.decodeUtf8 <$> getConfig k
 
 instance HasConfigs m => HasConfigs (BehaviorWriterT t w m)
 instance HasConfigs m => HasConfigs (DynamicWriterT t w m)

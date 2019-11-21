@@ -20,6 +20,7 @@ import Data.Text.Encoding
 import Data.Text.Encoding.Error (lenientDecode)
 import GHC.StaticPtr
 import Options.Applicative
+import Options.Applicative.Help.Pretty (text, (<$$>))
 import System.Directory
 import System.Environment
 import System.FilePath
@@ -93,6 +94,7 @@ data ObCommand
    | ObCommand_Repl
    | ObCommand_Watch
    | ObCommand_Shell ShellOpts
+   | ObCommand_Doc String [String] -- shell and list of packages
    | ObCommand_Internal ObInternal
    deriving Show
 
@@ -104,7 +106,7 @@ data ObInternal
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
-  projectShell root False "ghc" (Just cmd)
+  projectShell root True "ghc" (Just cmd)
   where
     mkCmd = do
       argsCfg <- getArgsConfig
@@ -129,12 +131,20 @@ obCommand cfg = hsubparser
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
       , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
       , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
+      , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
+          progDesc "List paths to haddock documentation for specified packages"
+          <> footerDoc (Just $
+               text "Hint: To open the documentation you can pipe the output of this command like"
+               <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
       ])
   <|> subparser
     (mconcat
       [ internal
       , command "internal" (info (ObCommand_Internal <$> internalCommand) mempty)
       ])
+
+packageNames :: Parser [String]
+packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
 
 deployCommand :: ArgsConfig -> Parser DeployCommand
 deployCommand cfg = hsubparser $ mconcat
@@ -233,12 +243,15 @@ data ShellOpts
     }
   deriving Show
 
+shellFlags :: Parser String
+shellFlags =
+  flag' "ghc" (long "ghc" <> help "Enter a shell environment having ghc (default)")
+  <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
+  <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
+
 shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
-  <$> (    flag' "ghc" (long "ghc" <> help "Enter a shell environment having ghc (default)")
-       <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
-       <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
-      )
+  <$> shellFlags
   <*> optional (strArgument (metavar "COMMAND"))
 
 parserPrefs :: ParserPrefs
@@ -369,6 +382,8 @@ ob = \case
   ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
+  ObCommand_Doc shell pkgs -> withProjectRoot "." $ \root ->
+    projectShell root False shell (Just $ haddockCommand pkgs)
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
@@ -376,6 +391,14 @@ ob = \case
         c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
     ObInternal_CLIDemo -> cliDemo
+
+haddockCommand :: [String] -> String
+haddockCommand pkgs = unwords
+  [ "for p in"
+  , unwords [getHaddockPath p ++ "/index.html" | p <- pkgs]
+  , "; do echo $p; done"
+  ]
+  where getHaddockPath p = "$(ghc-pkg field " ++ p ++ " haddock-html --simple-output)"
 
 --TODO: Clean up all the magic strings throughout this codebase
 

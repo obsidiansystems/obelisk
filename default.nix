@@ -1,3 +1,9 @@
+let
+  nixos1909 = import (builtins.fetchTarball {
+    url = https://github.com/NixOS/nixpkgs-channels/archive/nixos-19.09.tar.gz;
+    sha256 = "0ysb2017n8g0bpkxy3lsnlf6mcya5gqwggmwdjxlfnj1ilj3lnqz";
+  }) {};
+in
 { system ? builtins.currentSystem
 , profiling ? false
 , iosSdkVersion ? "10.2"
@@ -32,13 +38,13 @@ let
       # Fix misc upstream packages
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
+        haskellLib = pkgs.haskell.lib;
       in {
-        hnix = pkgs.haskell.lib.dontCheck (self.callCabal2nix "hnix" (pkgs.fetchFromGitHub {
-          owner = "haskell-nix";
-          repo = "hnix";
-          rev = "42afdc21da5d9e076eab57eaa42bfdde938192b8";
-          sha256 = "0psw384dx9bw2dp93xrzw8rd9amvcwgzn64jzzwby7sfspj6k349";
-        }) {});
+        hnix = haskellLib.overrideCabal (self.callHackage "hnix" "0.6.1" { these = self.these_0_8; }) (_: {
+          jailbreak = true;
+          doCheck = false;
+        });
+        hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
       })
 
       pkgs.obeliskExecutableConfig.haskellOverlay
@@ -49,8 +55,8 @@ let
       in {
         obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
 
-        obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
-        obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
+        obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (cleanSource ./lib/asset/manifest) {};
+        obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (cleanSource ./lib/asset/serve-snap) {};
         obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
         obelisk-command = self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {};
@@ -65,31 +71,11 @@ let
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         haskellLib = pkgs.haskell.lib;
-        #TODO: Upstream
-        # Modify a Haskell package to add completion scripts for the given
-        # executable produced by it.  These completion scripts will be picked up
-        # automatically if the resulting derivation is installed, e.g. by
-        # `nix-env -i`.
-        addOptparseApplicativeCompletionScripts = exeName: pkg: haskellLib.overrideCabal pkg (drv: {
-          postInstall = (drv.postInstall or "") + ''
-            BASH_COMP_DIR="$out/share/bash-completion/completions"
-            mkdir -p "$BASH_COMP_DIR"
-            "$out/bin/${exeName}" --bash-completion-script "$out/bin/${exeName}" >"$BASH_COMP_DIR/ob"
-
-            ZSH_COMP_DIR="$out/share/zsh/vendor-completions"
-            mkdir -p "$ZSH_COMP_DIR"
-            "$out/bin/${exeName}" --zsh-completion-script "$out/bin/${exeName}" >"$ZSH_COMP_DIR/_ob"
-
-            FISH_COMP_DIR="$out/share/fish/vendor_completions.d"
-            mkdir -p "$FISH_COMP_DIR"
-            "$out/bin/${exeName}" --fish-completion-script "$out/bin/${exeName}" >"$FISH_COMP_DIR/ob.fish"
-          '';
-        });
       in {
         # Dynamic linking with split objects dramatically increases startup time (about
         # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.
         obelisk-command = haskellLib.overrideCabal
-          (addOptparseApplicativeCompletionScripts "ob"
+          (haskellLib.generateOptparseApplicativeCompletion "ob"
             (haskellLib.justStaticExecutables super.obelisk-command))
           (drv: {
             buildTools = (drv.buildTools or []) ++ [ pkgs.buildPackages.makeWrapper ];
@@ -128,7 +114,7 @@ in rec {
   obelisk = ghcObelisk;
   obeliskEnvs = ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
-  shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs) [];
+  shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs);
 
   selftest = pkgs.writeScript "selftest" ''
     #!/usr/bin/env bash
@@ -157,12 +143,16 @@ in rec {
     obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
-  compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" { buildInputs = [ pkgs.closurecompiler ]; } ''
+  compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
     mkdir $out
     cd $out
     ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-    closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
-    echo "//# sourceMappingURL=all.js.map" >> all.js
+    ${if optimizationLevel == null then ''
+      ln -s all.unminified.js all.js
+    '' else ''
+      ${pkgs.closurecompiler}/bin/closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
+      echo "//# sourceMappingURL=all.js.map" >> all.js
+    ''}
   '';
 
   serverModules = {
@@ -198,7 +188,7 @@ in rec {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
-            proxyPass = "http://localhost:" + toString internalPort;
+            proxyPass = "http://127.0.0.1:" + toString internalPort;
             proxyWebsockets = true;
           };
         };
@@ -207,10 +197,11 @@ in rec {
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
         restartIfChanged = true;
+        path = [ pkgs.gnutar ];
         script = ''
           ln -sft . '${exe}'/*
           mkdir -p log
-          exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
+          exec ./backend ${backendArgs} </dev/null
         '';
         serviceConfig = {
           User = user;
@@ -252,6 +243,15 @@ in rec {
         imports = [
           (serverModules.mkBaseEc2 args)
           (serverModules.mkObeliskApp args)
+          ./acme.nix
+        ];
+        disabledModules = [
+          (pkgs.path + /nixos/modules/security/acme.nix)
+        ];
+        nixpkgs.overlays = [
+          (self: super: {
+            simp_le = nixos1909.simp_le;
+          })
         ];
       };
     };
@@ -268,7 +268,7 @@ in rec {
                           , tools ? _: []
                           , shellToolOverrides ? _: _: {}
                           , withHoogle ? false # Setting this to `true` makes shell reloading far slower
-                          , __closureCompilerOptimizationLevel ? "ADVANCED"
+                          , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
                           }:
               let frontendName = "frontend";
                   backendName = "backend";

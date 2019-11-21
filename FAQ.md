@@ -81,7 +81,7 @@ project's dependencies and,
 Assuming we are in a project created with `ob init`, `ob run` calls (see
 `lib/command/src/Obelisk/Command.hs`):
 
-    nix-shell -A shells.ghc --run 'ob --no-handoff internal run-static-io <real-run-function>'
+    nix-shell --pure --keep NIX_PATH -A shells.ghc --run 'ob --no-handoff internal run-static-io <real-run-function>'
 
 where
 
@@ -109,7 +109,7 @@ It is defined in `lib/run/src/Obelisk/Run.hs`:
     * or to `serveDefaultObeliskApp` (`lib/backend/src/Obelisk/Backend.hs`) to
       serve static assets.
 * Starts `runWidget`
-  which itself runs 
+  which itself runs
   [runSettingsSocket](https://hackage.haskell.org/package/warp-3.2.26/docs/Network-Wai-Handler-Warp.html#v:runSettingsSocket)
   (the *“TCP listen loop”*):
     * it binds to TCP socket, and
