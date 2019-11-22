@@ -59,6 +59,7 @@ data CabalPackageInfo = CabalPackageInfo
 run :: ObeliskT IO ()
 run = do
   let nixPath = $(staticWhich "nix")
+      nixBuildPath = $(staticWhich "nix-build")
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
@@ -79,7 +80,7 @@ run = do
       -- Check whether the impure static files are a derivation (and so must be built)
       if isDerivation == "1"
         then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc (nixPath <> "-build")
+          proc nixBuildPath
             [ "--no-out-link"
             , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
             ]
