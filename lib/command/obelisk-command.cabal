@@ -46,6 +46,7 @@ library
     , transformers
     , unix
     , unordered-containers
+    , which
     , yaml
   exposed-modules:
     Obelisk.App
