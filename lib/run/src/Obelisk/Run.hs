@@ -18,12 +18,12 @@ import Control.Category
 import Control.Concurrent
 import Control.Exception
 import Control.Lens ((%~), (^?), _Just, _Right)
-import Control.Monad (unless)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy.Char8 as BSLC
+import qualified Data.ByteString.UTF8 as BSUTF8
 import Data.Functor.Identity
 import Data.List (uncons)
 import Data.Map (Map)
@@ -59,7 +59,6 @@ import qualified OpenSSL.X509 as X509
 import qualified OpenSSL.X509.Request as X509Request
 import Reflex.Dom.Core
 import Snap.Core (Snap)
-import System.Directory (getXdgDirectory, XdgDirectory(..), doesFileExist, createDirectoryIfMissing)
 import System.Environment
 import System.IO
 import System.Process
@@ -124,32 +123,24 @@ runWidget conf configs frontend validFullEncoder = do
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
       prepareRunner = case (uri ^? uriScheme . _Just . unRText) of
         Just "https" -> do 
-          userCfg <- getXdgDirectory XdgConfig "obelisk"
-          let (sslCertFile, sslKeyFile) = (userCfg <> "/certificate.pem",  userCfg <> "/key.pem")
-          sslCertExists <- doesFileExist sslCertFile
-          sslKeyExists <- doesFileExist sslKeyFile
+          -- Generate a private key and self-signed certificate for TLS
+          privateKey <- RSA.generateRSAKey' 2048 3
 
-          -- Generate private key and self-signed certificate if not already available
-          unless (sslCertExists && sslKeyExists) $ do 
-              privateKey <- RSA.generateRSAKey' 2048 3
+          certRequest <- X509Request.newX509Req
+          _ <- X509Request.setPublicKey certRequest privateKey
+          _ <- X509Request.signX509Req certRequest privateKey Nothing 
 
-              certRequest <- X509Request.newX509Req
-              _ <- X509Request.setPublicKey certRequest privateKey
-              _ <- X509Request.signX509Req certRequest privateKey Nothing 
+          cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
+          _ <- X509.setPublicKey cert privateKey
+          now <- getCurrentTime
+          _ <- X509.setNotBefore cert $ addUTCTime (-1) now
+          _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) now
+          _ <- X509.signX509 cert privateKey Nothing 
 
-              cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
-              _ <- X509.setPublicKey cert privateKey
-              now <- getCurrentTime
-              _ <- X509.setNotBefore cert $ addUTCTime (-1) now
-              let days = 365
-              _ <- X509.setNotAfter cert $ addUTCTime (days * 24 * 60 * 60) now
-              _ <- X509.signX509 cert privateKey Nothing 
+          certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
+          privateKeyByteString <- BSUTF8.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
 
-              _ <- createDirectoryIfMissing True userCfg
-              PEM.writeX509 cert >>= writeFile sslCertFile
-              PEM.writePKCS8PrivateKey privateKey Nothing >>= writeFile sslKeyFile
-
-          return $ runTLSSocket (tlsSettings sslCertFile sslKeyFile)
+          return $ runTLSSocket (tlsSettingsMemory certByteString privateKeyByteString)
         _ -> return runSettingsSocket
   runner <- prepareRunner
   bracket

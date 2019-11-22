@@ -14,7 +14,6 @@ library
     , cookie
     , dependent-sum
     , dependent-sum-template
-    , directory
     , ghcjs-dom
     , HsOpenSSL
     , http-client
@@ -40,6 +39,7 @@ library
     , text
     , time
     , universe
+    , utf8-string
     , wai
     , wai-websockets
     , warp
