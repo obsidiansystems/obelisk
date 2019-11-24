@@ -23,6 +23,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy.Char8 as BSLC
+import qualified Data.ByteString.UTF8 as BSUTF8
 import Data.Functor.Identity
 import Data.List (uncons)
 import Data.Map (Map)
@@ -34,6 +35,7 @@ import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.Time.Clock (getCurrentTime, addUTCTime)
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
@@ -43,6 +45,7 @@ import Network.Socket
 import Network.Wai (Application)
 import qualified Network.Wai as W
 import Network.Wai.Handler.Warp
+import Network.Wai.Handler.WarpTLS
 import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
 import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
@@ -50,6 +53,10 @@ import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.Backend
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
+import qualified OpenSSL.PEM as PEM
+import qualified OpenSSL.RSA as RSA
+import qualified OpenSSL.X509 as X509
+import qualified OpenSSL.X509.Request as X509Request
 import Reflex.Dom.Core
 import Snap.Core (Snap)
 import System.Environment
@@ -113,13 +120,36 @@ runWidget conf configs frontend validFullEncoder = do
       beforeMainLoop = do
         putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
+      -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
+      prepareRunner = case (uri ^? uriScheme . _Just . unRText) of
+        Just "https" -> do 
+          -- Generate a private key and self-signed certificate for TLS
+          privateKey <- RSA.generateRSAKey' 2048 3
+
+          certRequest <- X509Request.newX509Req
+          _ <- X509Request.setPublicKey certRequest privateKey
+          _ <- X509Request.signX509Req certRequest privateKey Nothing 
+
+          cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
+          _ <- X509.setPublicKey cert privateKey
+          now <- getCurrentTime
+          _ <- X509.setNotBefore cert $ addUTCTime (-1) now
+          _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) now
+          _ <- X509.signX509 cert privateKey Nothing 
+
+          certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
+          privateKeyByteString <- BSUTF8.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
+
+          return $ runTLSSocket (tlsSettingsMemory certByteString privateKeyByteString)
+        _ -> return runSettingsSocket
+  runner <- prepareRunner
   bracket
     (bindPortTCPRetry settings (logPortBindErr port) (_runConfig_retryTimeout conf))
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
         app <- obeliskApp configs defaultConnectionOptions frontend validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
-        runSettingsSocket settings skt app)
+        runner settings skt app)
 
 obeliskApp
   :: forall frontendRoute backendRoute
