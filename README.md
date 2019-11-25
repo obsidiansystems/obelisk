@@ -384,11 +384,11 @@ let
     exe = project.linuxExe;
     version = version;
   };
-  mkCustomDockerImageConfig = args: mkBaseDockerImageConfig args // { 
-    config.expose = 3000; # overriding default port 8000
-  };
 in { 
-  customDockerImage = args@{ version ? "latest" }: obelisk.nixpkgs.dockerTools.buildImage (mkCustomDockerImageConfig args);
+  customDockerImage = args@{ version ? "latest" }: 
+    obelisk.nixpkgs.dockerTools.buildImage (mkBaseDockerImageConfig args // { 
+      config.expose = 3000; # overriding default port 8000
+    });
 }
 ```
 
