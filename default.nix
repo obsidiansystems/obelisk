@@ -59,7 +59,7 @@ let
         obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (cleanSource ./lib/asset/serve-snap) {};
         obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-        obelisk-command = self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {};
+        obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) { librarySystemDepends = [ pkgs.nix ]; };
         obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
         obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
