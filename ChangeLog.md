@@ -14,6 +14,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Use `--keep NIX_PATH` for all pure shells so references to `<nixpkgs>` continues to work.
 * Backport ACMEv2 support in obelisk server to regain LetsEncrypt account creation.
 * Enable https in `ob run`
+* Add Docker support, for building minimal and customizable images
 
 ## v0.2.0.0 - 2019-8-17
 
