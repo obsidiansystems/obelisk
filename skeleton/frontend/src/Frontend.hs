@@ -25,6 +25,6 @@ frontend = Frontend
         exampleConfig <- getConfig "common/example"
         case exampleConfig of
           Nothing -> text "No config file found in config/common/example"
-          Just s -> text (T.decodeUtf8 s)
+          Just s -> text $ T.decodeUtf8 s
       return ()
   }

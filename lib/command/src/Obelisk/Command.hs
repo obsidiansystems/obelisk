@@ -106,7 +106,7 @@ data ObInternal
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
-  projectShell root False "ghc" (Just cmd)
+  projectShell root True "ghc" (Just cmd)
   where
     mkCmd = do
       argsCfg <- getArgsConfig
