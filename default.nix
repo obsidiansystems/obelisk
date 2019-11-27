@@ -16,6 +16,7 @@ let
   ));
 
   commandRuntimeDeps = pkgs: with pkgs; [
+    which
     coreutils
     git
     nix-prefetch-git
