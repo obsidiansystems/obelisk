@@ -1,9 +1,3 @@
-let
-  nixos1909 = import (builtins.fetchTarball {
-    url = https://github.com/NixOS/nixpkgs-channels/archive/nixos-19.09.tar.gz;
-    sha256 = "0ysb2017n8g0bpkxy3lsnlf6mcya5gqwggmwdjxlfnj1ilj3lnqz";
-  }) {};
-in
 { system ? builtins.currentSystem
 , profiling ? false
 , iosSdkVersion ? "10.2"
@@ -250,7 +244,9 @@ in rec {
           (pkgs.path + /nixos/modules/security/acme.nix)
         ];
         nixpkgs.overlays = [
-          (self: super: {
+          (self: super: let
+            nixos1909 =  hackGet ./dep/nixpkgs-19.09;
+          in {
             simp_le = nixos1909.simp_le;
           })
         ];
