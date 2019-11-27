@@ -245,9 +245,9 @@ in rec {
         ];
         nixpkgs.overlays = [
           (self: super: let
-            nixos1909 =  hackGet ./dep/nixpkgs-19.09;
+            nixos1909 = import (hackGet ./dep/nixpkgs-19.09) {};
           in {
-            simp_le = nixos1909.simp_le;
+            inherit (nixos1909) simp_le;
           })
         ];
       };
