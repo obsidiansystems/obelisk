@@ -24,8 +24,8 @@ Types and functions for defining routes and 'Encoder's.
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route
-  ( -- * Primary Types
-    R
+  ( R ((:/))
+  , hoistR
   , PageName
   , PathQuery
   , Encoder
