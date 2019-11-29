@@ -227,7 +227,7 @@ runGhcid
   => FilePath -- ^ Path to .ghci
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
+runGhcid dotGhci mcmd = callCommand $ unwords $ $(staticWhich "ghcid") : opts
   where
     opts =
       [ "-W"
