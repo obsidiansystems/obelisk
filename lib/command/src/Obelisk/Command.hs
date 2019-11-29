@@ -184,6 +184,7 @@ deployInitOpts = DeployInitOpts
   <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Publicly accessible URL of your app")
   <*> strOption (long "admin-email" <> metavar "ADMINEMAIL" <> help "Email address where administrative alerts will be sent")
   <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
+  <*> flag True False (long "use-known-hosts" <> help "Add keys for the system's known_hosts matching the hostname to the configuration's known_hosts")
 
 type TeamID = String
 data RemoteBuilder = RemoteBuilder_ObeliskVM
@@ -203,6 +204,7 @@ data DeployInitOpts = DeployInitOpts
   , _deployInitOpts_route :: String
   , _deployInitOpts_adminEmail :: String
   , _deployInitOpts_enableHttps :: Bool
+  , _deployInitOpts_checkSystemKnownHosts :: Bool
   }
   deriving Show
 
@@ -364,7 +366,8 @@ ob = \case
           route = _deployInitOpts_route deployOpts
           adminEmail = _deployInitOpts_adminEmail deployOpts
           enableHttps = _deployInitOpts_enableHttps deployOpts
-      deployInit thunkPtr deployDir sshKeyPath hostname route adminEmail enableHttps
+          checkKnownHosts = _deployInitOpts_checkSystemKnownHosts deployOpts
+      deployInit thunkPtr deployDir sshKeyPath hostname route adminEmail enableHttps checkKnownHosts
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployPush deployPath $ case remoteBuilder of

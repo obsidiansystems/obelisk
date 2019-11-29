@@ -12,6 +12,8 @@ import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, tr
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
 import qualified Data.HashMap.Strict as HM
@@ -26,6 +28,7 @@ import Nix.String (principledMakeNixStringWithoutContext)
 import Nix.Value
 import System.Directory
 import System.Environment (getEnvironment)
+import System.Exit (ExitCode(ExitSuccess))
 import System.FilePath
 import System.IO
 import System.Posix.Files
@@ -35,7 +38,7 @@ import qualified Text.URI as URI
 import Text.URI.Lens
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
+import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, readCreateProcessWithExitCode, withSpinner)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
@@ -50,8 +53,9 @@ deployInit
   -> String -- ^ route
   -> String -- ^ admin email
   -> Bool -- ^ enable https
+  -> Bool -- ^ check system known_hosts
   -> m ()
-deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps = do
+deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps checkKnownHosts = do
   localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
       False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
@@ -62,10 +66,13 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
     return localKey
   withSpinner "Validating configuration" $ do
     void $ getHostFromRoute enableHttps route -- make sure that hostname is present
+  let obKnownHostsPath = deployDir </> "backend_known_hosts"
   forM_ hostnames $ \hostname -> do
     putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
+    when checkKnownHosts $ addKnownHostFromEnv hostname obKnownHostsPath
     -- Note: we can't use a spinner here as this function will prompt the user.
-    verifyHostKey (deployDir </> "backend_known_hosts") localKey hostname
+    verifyHostKey obKnownHostsPath localKey hostname
+
   --IMPORTANT: We cannot copy config directory from the development project to
   --the deployment directory.  If we do, it's very likely someone will
   --accidentally create a production deployment that uses development
@@ -295,6 +302,24 @@ readDeployConfig :: MonadObelisk m => FilePath -> FilePath -> m String
 readDeployConfig deployDir fname = liftIO $ do
   fmap (T.unpack . T.strip) $ T.readFile $ deployDir </> fname
 
+lookupKnownHosts :: MonadObelisk m  => String -> m [BS.ByteString]
+lookupKnownHosts hostName =
+  fmap filterComments $ readCreateProcessWithExitCode $ proc "ssh-keygen" ["-F", hostName]
+   where
+     filterComments (exitCode, out, _) =
+       if exitCode /= ExitSuccess || null out
+         then []
+         else
+           -- ssh-keygen prints the following above each result it finds: "# Host <hostname> found: line <lineno>"
+           filter (not . C.isPrefixOf "# Host") $ C.lines $ C.pack out
+
+addKnownHostFromEnv :: MonadObelisk m => String -> FilePath -> m ()
+addKnownHostFromEnv hostName obKnownHostsPath = do
+  lookupKnownHosts hostName >>= \res -> case res of
+    [knownKey] -> liftIO $ BS.appendFile obKnownHostsPath knownKey
+    [] -> putLog Notice "Found no matching hosts in user's known_hosts file"
+    _ -> putLog Notice "Found more than one matching host/key pair in user's known_hosts"
+    
 verifyHostKey :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
 verifyHostKey knownHostsPath keyPath hostName =
   callProcessAndLogOutput (Notice, Warning) $ proc "ssh" $
