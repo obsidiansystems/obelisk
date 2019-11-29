@@ -1,9 +1,3 @@
-let
-  nixos1909 = import (builtins.fetchTarball {
-    url = https://github.com/NixOS/nixpkgs-channels/archive/nixos-19.09.tar.gz;
-    sha256 = "0ysb2017n8g0bpkxy3lsnlf6mcya5gqwggmwdjxlfnj1ilj3lnqz";
-  }) {};
-in
 { system ? builtins.currentSystem
 , profiling ? false
 , iosSdkVersion ? "10.2"
@@ -59,7 +53,7 @@ let
         obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (cleanSource ./lib/asset/serve-snap) {};
         obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-        obelisk-command = self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {};
+        obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) { librarySystemDepends = [ pkgs.nix ]; };
         obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
         obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
@@ -249,8 +243,10 @@ in rec {
           (pkgs.path + /nixos/modules/security/acme.nix)
         ];
         nixpkgs.overlays = [
-          (self: super: {
-            simp_le = nixos1909.simp_le;
+          (self: super: let
+            nixos1909 = import (hackGet ./dep/nixpkgs-19.09) {};
+          in {
+            inherit (nixos1909) simp_le;
           })
         ];
       };
