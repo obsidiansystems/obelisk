@@ -39,6 +39,8 @@ let
           doCheck = false;
         });
         hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
+
+        ghcid = haskellLib.justStaticExecutables (self.callCabal2nix "ghcid" (hackGet ./dep/ghcid) {});
       })
 
       pkgs.obeliskExecutableConfig.haskellOverlay
@@ -53,7 +55,7 @@ let
         obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (cleanSource ./lib/asset/serve-snap) {};
         obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-        obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) { librarySystemDepends = [ pkgs.nix ]; };
+        obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) { librarySystemDepends = [ pkgs.nix self.ghcid ]; };
         obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
         obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
