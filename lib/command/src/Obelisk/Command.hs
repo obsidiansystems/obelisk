@@ -184,7 +184,7 @@ deployInitOpts = DeployInitOpts
   <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Publicly accessible URL of your app")
   <*> strOption (long "admin-email" <> metavar "ADMINEMAIL" <> help "Email address where administrative alerts will be sent")
   <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
-  <*> flag True False (long "use-known-hosts" <> help "Add keys for the system's known_hosts matching the hostname to the configuration's known_hosts")
+  <*> flag False True (long "use-known-hosts" <> help "Add keys for the system's known_hosts matching the hostname to the configuration's known_hosts")
 
 type TeamID = String
 data RemoteBuilder = RemoteBuilder_ObeliskVM
