@@ -5,6 +5,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
   - [Hoogle](#hoogle)
+  - [HLint](#hlint)
   - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
   - [Running over https](#running-over-https)
@@ -117,6 +118,11 @@ To enter a nix-shell from which you can run the hoogle command-line client or a 
 
 `nix-shell -A shells.ghc --arg withHoogle true`
 
+### HLint
+
+To avoid running HLint run on reloaded modules, pass the `--no-hlint` flag to `ob run` or `ob watch`.
+Customizing hlints is done as in [standalone use](https://github.com/ndmitchell/hlint#customizing-the-hints).
+
 ### Adding packages
 
 In order to add package dependencies, declare them under the build-depends field in the appropriate cabal files (backend, common, and frontend each have their own). The corresponding Nix packages will automatically be selected when building.
@@ -152,7 +158,7 @@ For further information see [the Haskell section](https://nixos.org/nixpkgs/manu
 
 ### Running over https
 
-To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal. 
+To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
 
 Since Obelisk generates a self-signed certificate for running https, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
 

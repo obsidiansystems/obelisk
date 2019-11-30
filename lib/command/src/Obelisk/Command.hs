@@ -9,6 +9,7 @@ module Obelisk.Command where
 
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
+import Data.Aeson (ToJSON)
 import qualified Data.Binary as Binary
 import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
@@ -89,22 +90,22 @@ initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run
+   | ObCommand_Run LintOpts
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
-   | ObCommand_Watch
+   | ObCommand_Watch LintOpts
    | ObCommand_Shell ShellOpts
    | ObCommand_Doc String [String] -- shell and list of packages
    | ObCommand_Internal ObInternal
    deriving Show
 
 data ObInternal
-   = ObInternal_RunStaticIO StaticKey
+   = ObInternal_RunStaticIO StaticKey LintOpts
    | ObInternal_CLIDemo
    deriving Show
 
-inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
-inNixShell' p = withProjectRoot "." $ \root -> do
+inNixShell' :: (MonadObelisk m, ToJSON opts) => opts -> StaticPtr (opts -> ObeliskT IO ()) -> m ()
+inNixShell' lintOpts p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
   projectShell root True "ghc" (Just cmd)
   where
@@ -119,6 +120,7 @@ inNixShell' p = withProjectRoot "." $ \root -> do
         , Just "internal"
         , Just "run-static-io"
         , Just $ encodeStaticKey $ staticKey p
+        , Just $ encodeOpts lintOpts
         ]
 
 obCommand :: ArgsConfig -> Parser ObCommand
@@ -126,10 +128,10 @@ obCommand cfg = hsubparser
     (mconcat
       [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
       , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-      , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+      , command "run" $ info (pure ObCommand_Run <*> lintCommand) $ progDesc "Run current project in development mode"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-      , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+      , command "watch" $ info (pure ObCommand_Watch <*> lintCommand) $ progDesc "Watch current project for errors and warnings"
       , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
       , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
           progDesc "List paths to haddock documentation for specified packages"
@@ -145,6 +147,12 @@ obCommand cfg = hsubparser
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
+
+lintCommand :: Parser LintOpts
+lintCommand = fmap (LintOpts . not) $ switch $ mconcat
+          [ long "no-hlint"
+          , help "Do not run HLint on reloaded modules"
+          ]
 
 deployCommand :: ArgsConfig -> Parser DeployCommand
 deployCommand cfg = hsubparser $ mconcat
@@ -208,7 +216,9 @@ data DeployInitOpts = DeployInitOpts
 
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
-  [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
+  [ command "run-static-io" $ flip info mempty $ ObInternal_RunStaticIO
+    <$> argument (eitherReader decodeStaticKey) (action "static-key")
+    <*> argument (eitherReader decodeOpts) internal
   , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
 
@@ -372,24 +382,23 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> inNixShell' $ static run
-    -- inNixShell ($(mkClosure 'ghcidAction) ())
+  ObCommand_Run lintOpts -> inNixShell' lintOpts $ static run
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks force -> forM_ thunks (packThunk force)
   ObCommand_Repl -> runRepl
-  ObCommand_Watch -> inNixShell' $ static runWatch
+  ObCommand_Watch lintOpts -> inNixShell' lintOpts $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
   ObCommand_Doc shell pkgs -> withProjectRoot "." $ \root ->
     projectShell root False shell (Just $ haddockCommand pkgs)
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
+    ObInternal_RunStaticIO k o -> liftIO (unsafeLookupStaticPtr @(LintOpts -> ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> do
         c <- getObelisk
-        liftIO $ runObelisk c $ deRefStaticPtr p
+        liftIO $ runObelisk c $ deRefStaticPtr p o
     ObInternal_CLIDemo -> cliDemo
 
 haddockCommand :: [String] -> String

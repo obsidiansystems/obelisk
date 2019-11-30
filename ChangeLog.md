@@ -17,6 +17,7 @@ This project's release branch is `master`. This log is written from the perspect
 * `ob run` now handles ghci errors better, and includes a custom ghcid
   version. As a result, you no longer need to have ghcid installed to
   use `ob run`, as we provide one for you.
+* `ob run` and `ob watch` now run `hlint` on reloaded modules by default.
 
 ## v0.2.0.0 - 2019-8-17
 

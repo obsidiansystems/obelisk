@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -10,11 +11,17 @@ import Control.Exception (bracket)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
+import Data.Aeson (ToJSON, FromJSON)
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString.Lazy as LBS
 import Data.Either
+import Data.Functor (($>))
 import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
@@ -55,9 +62,24 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
   }
 
+-- | Decode from a base 16 bytestring
+decodeOpts :: FromJSON a => String -> Either String a
+decodeOpts = Aeson.eitherDecodeStrict . fst . B16.decode . T.encodeUtf8 . T.pack
+
+-- | Encode to a base 16 bytestring. This uses base 16 to avoid
+-- shell quoting issues with JSON
+encodeOpts :: ToJSON a => a -> String
+encodeOpts = T.unpack . T.decodeUtf8 . B16.encode . LBS.toStrict . Aeson.encode
+
+data LintOpts = LintOpts
+  { _lintOpts_hlint :: Bool
+  } deriving (Eq, Ord, Generic, Show)
+instance ToJSON LintOpts
+instance FromJSON LintOpts
+
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
-run :: ObeliskT IO ()
-run = do
+run :: LintOpts -> ObeliskT IO ()
+run lintOpts = do
   let nixPath = $(staticWhich "nix")
       nixBuildPath = $(staticWhich "nix-build")
   pkgs <- getLocalPkgs
@@ -87,7 +109,7 @@ run = do
         else readProcessAndLogStderr Debug $
           proc nixPath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
-    runGhcid dotGhciPath $ Just $ unwords
+    runGhcid dotGhciPath lintOpts $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
       , "(runServeAsset " ++ show assets ++ ")"
@@ -101,10 +123,10 @@ runRepl = do
   withGhciScript pkgs $ \dotGhciPath -> do
     runGhciRepl dotGhciPath
 
-runWatch :: MonadObelisk m => m ()
-runWatch = do
+runWatch :: MonadObelisk m => LintOpts -> m ()
+runWatch lintOpts = do
   pkgs <- getLocalPkgs
-  withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath Nothing
+  withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath lintOpts Nothing
 
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
@@ -166,7 +188,7 @@ withUTF8FileContentsM fp f = do
 withGhciScript
   :: MonadObelisk m
   => [FilePath] -- ^ List of packages to load into ghci
-  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporory .ghci
+  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
   -> m ()
 withGhciScript pkgs f = do
   (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
@@ -225,18 +247,20 @@ runGhciRepl dotGhci = inProjectShell "ghc" $ unwords $ "ghci" : ["-no-user-packa
 runGhcid
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
+  -> LintOpts
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid dotGhci mcmd = callCommand $ unwords $ $(staticWhich "ghcid") : opts
+runGhcid dotGhci (LintOpts hlint) mcmd = callCommand $ unwords $ $(staticWhich "ghcid") : opts
   where
-    opts =
-      [ "-W"
+    opts = catMaybes
+      [ Just "-W"
+      , guard hlint $> ("--lint=" <> $(staticWhich "hlint"))
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -no-user-package-db -ghci-script " <> dotGhci <> "' "
-      , "--reload=config"
-      , "--outputfile=ghcid-output.txt"
-      ] <> testCmd
-    testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'")
+      , Just $ "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -no-user-package-db -ghci-script " <> dotGhci <> "' "
+      , Just $ "--reload=config"
+      , Just $ "--outputfile=ghcid-output.txt"
+      , flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'"
+      ]
 
 getFreePort :: MonadIO m => m PortNumber
 getFreePort = liftIO $ withSocketsDo $ do
