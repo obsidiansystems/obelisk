@@ -120,8 +120,8 @@ To enter a nix-shell from which you can run the hoogle command-line client or a 
 
 ### HLint
 
-To avoid running HLint run on reloaded modules, pass the `--no-hlint` flag to `ob run` or `ob watch`.
-Customizing hlints is done as in [standalone use](https://github.com/ndmitchell/hlint#customizing-the-hints).
+To avoid having HLint run on reloaded modules, pass the `--no-hlint` flag to `ob run` or `ob watch`.
+Customizing hints is done as in [standalone use](https://github.com/ndmitchell/hlint#customizing-the-hints).
 
 ### Adding packages
 
