@@ -149,30 +149,33 @@ runFrontend
   .  Encoder (Either Text) Identity (R (FullRoute backendRoute route)) PageName
   -> Frontend (R route)
   -> IO ()
-runFrontend fullRouteEncoder frontend = run $ do
-  let Right validFullEncoder = checkEncoder fullRouteEncoder
-  let mode = FrontendMode
-        { _frontendMode_hydrate =
+runFrontend fullRouteEncoder frontend =
+  case checkEncoder fullRouteEncoder of
+    Right validFullEncoder -> run $ do
+      let mode = FrontendMode
+            { _frontendMode_hydrate =
 #ifdef ghcjs_HOST_OS
-          True
+              True
 #else
-          False
+              False
 #endif
-        , _frontendMode_adjustRoute =
+            , _frontendMode_adjustRoute =
 #ifdef ghcjs_HOST_OS
-          False
+              False
 #else
-          True
+              True
 #endif
-        }
-  configs <- liftIO Lookup.getConfigs
-  when (_frontendMode_hydrate mode) removeHTMLConfigs
-  -- There's no fundamental reason that adjustRoute needs to control setting the
-  -- initial route and *also* the useHash parameter; that's why these are
-  -- separate here.  However, currently, they are always the same.
-  when (_frontendMode_adjustRoute mode) $ do
-    setInitialRoute $ _frontendMode_adjustRoute mode
-  runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
+            }
+      configs <- liftIO Lookup.getConfigs
+      when (_frontendMode_hydrate mode) removeHTMLConfigs
+      -- There's no fundamental reason that adjustRoute needs to control setting the
+      -- initial route and *also* the useHash parameter; that's why these are
+      -- separate here.  However, currently, they are always the same.
+      when (_frontendMode_adjustRoute mode) $ do
+        setInitialRoute $ _frontendMode_adjustRoute mode
+      runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
+    Left err ->
+      error $ "Route encoder check failed: " <> show err
 
 runFrontendWithConfigsAndCurrentRoute
   :: forall backendRoute frontendRoute
