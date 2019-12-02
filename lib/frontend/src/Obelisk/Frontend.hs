@@ -51,6 +51,7 @@ import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
 import GHCJS.DOM.ParentNode (querySelectorAll)
 import Obelisk.Frontend.Cookie
 import Obelisk.Route.Frontend
+import Reflex.Dom (run)
 import Reflex.Dom.Core
 import Reflex.Host.Class
 import Obelisk.Configs
@@ -145,10 +146,11 @@ data FrontendMode = FrontendMode
 -- Selects FrontendMode based on platform; this doesn't work for jsaddle-warp
 runFrontend
   :: forall backendRoute route
-  .  Encoder Identity Identity (R (FullRoute backendRoute route)) PageName
+  .  Encoder (Either Text) Identity (R (FullRoute backendRoute route)) PageName
   -> Frontend (R route)
-  -> JSM ()
-runFrontend validFullEncoder frontend = do
+  -> IO ()
+runFrontend fullRouteEncoder frontend = run $ do
+  let Right validFullEncoder = checkEncoder fullRouteEncoder
   let mode = FrontendMode
         { _frontendMode_hydrate =
 #ifdef ghcjs_HOST_OS
