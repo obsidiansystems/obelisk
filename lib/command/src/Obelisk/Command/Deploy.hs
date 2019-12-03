@@ -316,7 +316,7 @@ lookupKnownHosts hostName =
 addKnownHostFromEnv :: MonadObelisk m => String -> FilePath -> m ()
 addKnownHostFromEnv hostName obKnownHostsPath = do
   lookupKnownHosts hostName >>= \res -> case res of
-    [knownKey] -> liftIO $ BS.appendFile obKnownHostsPath knownKey
+    [knownKey] -> liftIO $ BS.appendFile obKnownHostsPath (knownKey `BS.append` $ C.singleton '\n')
     [] -> putLog Notice "Found no matching hosts in user's known_hosts file"
     _ -> putLog Notice "Found more than one matching host/key pair in user's known_hosts"
     
