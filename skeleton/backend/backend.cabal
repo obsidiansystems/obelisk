@@ -23,6 +23,3 @@ executable backend
     buildable: False
   build-depends: base
                , backend
-               , common
-               , frontend
-               , obelisk-backend
