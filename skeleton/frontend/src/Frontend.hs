@@ -14,6 +14,9 @@ import Common.Api
 import Common.Route
 import Obelisk.Generated.Static
 
+frontendMain :: IO ()
+frontendMain = runFrontend fullRouteEncoder frontend
+
 frontend :: Frontend (R FrontendRoute)
 frontend = Frontend
   { _frontend_head = el "title" $ text "Obelisk Minimal Example"
