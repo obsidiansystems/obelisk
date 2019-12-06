@@ -99,7 +99,7 @@ runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate 
 
 getConfigRoute :: Map Text ByteString -> Either Text URI
 getConfigRoute configs = case Map.lookup "common/route" configs of
-    Just r -> 
+    Just r ->
       let stripped = T.strip (T.decodeUtf8 r)
       in case URI.mkURI stripped of
           Just route -> Right route
@@ -122,20 +122,20 @@ runWidget conf configs frontend validFullEncoder = do
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
       prepareRunner = case (uri ^? uriScheme . _Just . unRText) of
-        Just "https" -> do 
+        Just "https" -> do
           -- Generate a private key and self-signed certificate for TLS
           privateKey <- RSA.generateRSAKey' 2048 3
 
           certRequest <- X509Request.newX509Req
           _ <- X509Request.setPublicKey certRequest privateKey
-          _ <- X509Request.signX509Req certRequest privateKey Nothing 
+          _ <- X509Request.signX509Req certRequest privateKey Nothing
 
           cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
           _ <- X509.setPublicKey cert privateKey
           now <- getCurrentTime
           _ <- X509.setNotBefore cert $ addUTCTime (-1) now
           _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) now
-          _ <- X509.signX509 cert privateKey Nothing 
+          _ <- X509.signX509 cert privateKey Nothing
 
           certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
           privateKeyByteString <- BSUTF8.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
