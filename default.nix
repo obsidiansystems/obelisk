@@ -48,6 +48,7 @@ let
       # Add obelisk packages
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
+        onLinux = pkg: f: if pkgs.stdenv.isLinux then f pkg else pkg;
       in {
         obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
 
@@ -62,7 +63,9 @@ let
           ];
         };
         obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
-        obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
+        obelisk-run = onLinux (self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {}) (pkg:
+          haskellLib.overrideCabal pkg (drv: { librarySystemDepends = [ pkgs.iproute ]; })
+        );
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
         obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
