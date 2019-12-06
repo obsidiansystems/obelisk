@@ -1,3 +1,8 @@
+{-# LANGUAGE CPP #-}
+#if defined(IPROUTE_SUPPORTED)
+{-# LANGUAGE TemplateHaskell #-}
+#endif
+
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -62,11 +67,14 @@ import Snap.Core (Snap)
 import System.Environment
 import System.IO
 import System.Process
-import System.Exit (ExitCode(..))
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
 import Web.Cookie
+
+#if defined(IPROUTE_SUPPORTED)
+import qualified System.Which
+#endif
 
 run
   :: Int -- ^ Port to run the backend
@@ -212,17 +220,22 @@ logPortBindErr p e = getProcessIdForPort p >>= \case
   Nothing -> putStrLn $ "runWidget: " <> show e
   Just pid -> putStrLn $ unwords [ "Port", show p, "is being used by process ID", show pid <> ".", "Please kill that process or change the port in config/common/route."]
 
+ssPath :: Maybe String
+ssPath =
+#if defined(IPROUTE_SUPPORTED)
+  Just $(System.Which.staticWhich "ss")
+#else
+  Nothing
+#endif
+
 getProcessIdForPort :: Int -> IO (Maybe Int)
-getProcessIdForPort port = do
-  -- First check if 'ss' is available
-  (c, _, _) <- readProcessWithExitCode "which" ["ss"] mempty
-  case c of
-   ExitSuccess -> do
-     xs <- lines <$> readProcess "ss" ["-lptn", "sport = " <> show port] mempty
-     case uncons xs of
-       Just (_, x:_) -> return $ A.maybeResult $ A.parse parseSsPid $ BSC.pack x
-       _ -> return Nothing
-   _ -> return Nothing
+getProcessIdForPort port = case ssPath of
+  Just ss -> do
+    xs <- lines <$> readProcess ss ["-lptn", "sport = " <> show port] mempty
+    case uncons xs of
+      Just (_, x:_) -> return $ A.maybeResult $ A.parse parseSsPid $ BSC.pack x
+      _ -> return Nothing
+  _ -> return Nothing
 
 parseSsPid :: A.Parser Int
 parseSsPid = do
