@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Command.Run where
 
 import Control.Exception (bracket)
@@ -21,6 +22,7 @@ import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
 import Distribution.Pretty
@@ -39,6 +41,7 @@ import System.Directory
 import System.FilePath
 import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
+import System.Which (staticWhich)
 import Data.ByteString (ByteString)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
@@ -56,6 +59,8 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of globally enable extensions of the library component
   , _cabalPackageInfo_defaultLanguage :: Maybe Language
     -- ^ List of globally set languages of the library component
+  , _cabalPackageInfo_compilerOptions :: [(CompilerFlavor, [String])]
+    -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
   }
 
 data ReplOpts = ReplOpts
@@ -120,6 +125,8 @@ runOptsModulesToLoad opts = mconcat
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
 run :: RunOpts -> ObeliskT IO ()
 run opts = do
+  let nixPath = $(staticWhich "nix")
+      nixBuildPath = $(staticWhich "nix-build")
   pkgs <- getLocalPkgs opts
   withGhciScript opts pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
@@ -128,7 +135,7 @@ run opts = do
             then root
             else "./" <> root
       isDerivation <- readProcessAndLogStderr Debug $
-        proc "nix"
+        proc nixPath
           [ "eval"
           , "-f"
           , root
@@ -140,12 +147,12 @@ run opts = do
       -- Check whether the impure static files are a derivation (and so must be built)
       if isDerivation == "1"
         then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc "nix-build"
+          proc nixBuildPath
             [ "--no-out-link"
             , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
             ]
         else readProcessAndLogStderr Debug $
-          proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+          proc nixPath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
     mFrontend <- runOptsFrontend opts
     mBackend <- runOptsBackend opts
@@ -215,6 +222,7 @@ parseCabalPackage dir = do
                 defaultExtensions $ libBuildInfo lib
             , _cabalPackageInfo_defaultLanguage =
                 defaultLanguage $ libBuildInfo lib
+            , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
             }
       Left (_, errors) -> do
         putLog Error $ T.pack $ "Failed to parse " <> cabalFp <> ":"
@@ -251,8 +259,13 @@ withGhciScript opts pkgs f = do
       extensionsLine = if extensions == mempty
         then ""
         else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
+      ghcOptions = concat $ mapMaybe (\case (GHC, xs) -> Just xs; _ -> Nothing) $
+        packageInfos >>= _cabalPackageInfo_compilerOptions
       dotGhci = unlines $
         [ ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
+        , case ghcOptions of
+            [] -> ""
+            xs -> ":set " <> intercalate " " xs
         , extensionsLine
         , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
         , ":load " <> intercalate " " (runOptsModulesToLoad opts)
