@@ -15,6 +15,7 @@ module Obelisk.Command.Project
   , toImplDir
   ) where
 
+import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
@@ -24,7 +25,8 @@ import qualified Data.Text as T
 import System.Directory
 import System.FilePath
 import System.IO.Temp
-import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
+import System.IO.Unsafe (unsafePerformIO)
+import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process (CreateProcess, cwd, proc, waitForProcess, delegate_ctlc)
 
@@ -34,6 +36,7 @@ import GitHub.Data.Name (Name)
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Thunk
+
 --TODO: Make this module resilient to random exceptions
 
 --TODO: Don't hardcode this
@@ -114,15 +117,16 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
 findProjectObeliskCommand :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectObeliskCommand target = do
   myUid <- liftIO getRealUserID
+  processUmask <- liftIO getUmask
   targetStat <- liftIO $ getFileStatus target
-  (result, insecurePaths) <- flip runStateT [] $ walkToProjectRoot target targetStat myUid >>= \case
+  (result, insecurePaths) <- flip runStateT [] $ walkToProjectRoot target targetStat processUmask myUid >>= \case
     Nothing -> pure Nothing
     Just projectRoot -> liftIO (doesDirectoryExist $ toImplDir projectRoot) >>= \case
       False -> do
         putLog Warning $ "Found obelisk directory in " <> T.pack projectRoot <> " but the implementation (impl) file is missing"
         pure Nothing
       True -> do
-        walkToImplDir projectRoot myUid -- For security check
+        walkToImplDir projectRoot myUid processUmask -- For security check
         return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
@@ -133,16 +137,36 @@ findProjectObeliskCommand target = do
       putLog Error $ T.unlines
         [ "Error: Found a project at " <> T.pack (normalise projDir) <> ", but had to traverse one or more insecure directories to get there:"
         , T.unlines $ fmap (T.pack . normalise) insecurePaths
-        , "Please ensure that all of these directories are owned by you and are not writable by anyone else."
+        , "Please ensure that all of these directories are owned by you, not world-writable, and no more group-writable than permitted by your umask."
         ]
       return Nothing
+
+-- | Get the umask for the Obelisk process.
+--
+-- Because of
+-- http://man7.org/linux/man-pages/man2/umask.2.html#NOTES we have to set the
+-- umask to read it. We are using 'withMVarMasked' to guarantee that setting and
+-- reading isn't interrupted by any exception or interleaved with another thread.
+getUmask :: IO FileMode
+getUmask = withMVarMasked globalUmaskLock $ \() -> do
+  initialMask <- setFileCreationMask safeUmask
+  void (setFileCreationMask initialMask)
+  pure initialMask
+  where
+    safeUmask :: FileMode
+    safeUmask = CMode 0o22
+
+{-# NOINLINE globalUmaskLock #-}
+globalUmaskLock :: MVar ()
+globalUmaskLock = unsafePerformIO (newMVar ())
 
 -- | Get the FilePath to the containing project directory, if there is one
 findProjectRoot :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectRoot target = do
   myUid <- liftIO getRealUserID
   targetStat <- liftIO $ getFileStatus target
-  (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat myUid) []
+  umask <- liftIO $ getUmask
+  (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat umask myUid) []
   return result
 
 withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
@@ -155,15 +179,15 @@ withProjectRoot target f = findProjectRoot target >>= \case
 -- traversed in the process.  Return the project root directory, if found.
 walkToProjectRoot
   :: (MonadState [FilePath] m, MonadIO m)
-  => FilePath -> FileStatus -> UserID -> m (Maybe FilePath)
-walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
+  => FilePath -> FileStatus -> FileMode -> UserID -> m (Maybe FilePath)
+walkToProjectRoot this thisStat desiredUmask myUid = liftIO (doesDirectoryExist this) >>= \case
   -- It's not a directory, so it can't be a project
   False -> do
     let dir = takeDirectory this
     dirStat <- liftIO $ getFileStatus dir
-    walkToProjectRoot dir dirStat myUid
+    walkToProjectRoot dir dirStat desiredUmask myUid
   True -> do
-    when (not $ isWritableOnlyBy thisStat myUid) $ modify (this:)
+    when (not $ isWellOwnedAndWellPermissioned thisStat myUid desiredUmask) $ modify (this:)
     liftIO (doesDirectoryExist $ toObeliskDir this) >>= \case
       True -> return $ Just this
       False -> do
@@ -173,25 +197,38 @@ walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \ca
             isSameFileAs = (==) `on` fileIdentity
         if thisStat `isSameFileAs` nextStat
           then return Nothing -- Found a cycle; probably hit root directory
-          else walkToProjectRoot next nextStat myUid
+          else walkToProjectRoot next nextStat desiredUmask myUid
 
 -- | Walk from the given project root directory to its Obelisk implementation
 -- directory, accumulating potentially insecure directories that were traversed
 -- in the process.
-walkToImplDir :: (MonadState [FilePath] m, MonadIO m) => FilePath -> UserID -> m ()
-walkToImplDir projectRoot myUid = do
+walkToImplDir :: (MonadState [FilePath] m, MonadIO m) => FilePath -> UserID -> FileMode -> m ()
+walkToImplDir projectRoot myUid umask = do
   let obDir = toObeliskDir projectRoot
   obDirStat <- liftIO $ getFileStatus obDir
-  when (not $ isWritableOnlyBy obDirStat myUid) $ modify (obDir:)
+  when (not $ isWellOwnedAndWellPermissioned obDirStat myUid umask) $ modify (obDir:)
   let implThunk = obDir </> "impl"
   implThunkStat <- liftIO $ getFileStatus implThunk
-  when (not $ isWritableOnlyBy implThunkStat myUid) $ modify (implThunk:)
+  when (not $ isWellOwnedAndWellPermissioned implThunkStat myUid umask) $ modify (implThunk:)
 
---TODO: Is there a better way to ask if anyone else can write things?
---E.g. what about ACLs?
--- | Check to see if directory is only writable by a user whose User ID matches the second argument provided
-isWritableOnlyBy :: FileStatus -> UserID -> Bool
-isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
+-- | Check to see if directory is writable by a user whose User ID matches the
+-- second argument provided, and if the fact that other people can write to that
+-- directory is in accordance with the umask of the system, passed as the third
+-- argument.
+isWellOwnedAndWellPermissioned :: FileStatus -> UserID -> FileMode -> Bool
+isWellOwnedAndWellPermissioned s uid umask = isOwnedBy s uid && filePermissionIsSafe s umask
+
+isOwnedBy :: FileStatus -> UserID -> Bool
+isOwnedBy s uid = fileOwner s == uid
+
+-- | Check to see if a directory respect the umask, but check explicitly that
+-- it's not world writable in any case.
+filePermissionIsSafe :: FileStatus -> FileMode -> Bool
+filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= umaskGroupWritable
+  where
+    fileWorldWritable = fileMode s .&. 0o002 == 0o002
+    fileGroupWritable = fileMode s .&. 0o020 == 0o020
+    umaskGroupWritable = umask .&. 0o020 == 0
 
 -- | Run a command in the given shell for the current project
 inProjectShell :: MonadObelisk m => String -> String -> m ()
