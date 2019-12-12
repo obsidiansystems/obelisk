@@ -78,8 +78,8 @@ If you want to commit your changes, first push them to your fork of obelisk and 
 
 ```shell
 cd /your/project/root
-ob thunk pack ./.obelisk/impl
-git add ./.obelisk/impl
+ob thunk pack .obelisk/impl
+git add .obelisk/impl
 git commit -m "Bump obelisk"
 ```
 
