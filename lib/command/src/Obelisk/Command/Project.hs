@@ -53,10 +53,10 @@ obeliskSourceWithBranch branch = ThunkSource_GitHub $ GitHubSource
   }
 
 data InitSource
-   = InitSource_Default
-   | InitSource_Branch (Name Branch)
-   | InitSource_Symlink FilePath
-   deriving Show
+  = InitSource_Default
+  | InitSource_Branch (Name Branch)
+  | InitSource_Symlink FilePath
+  deriving Show
 
 -- | Path to obelisk directory in given path
 toObeliskDir :: FilePath -> FilePath
