@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -31,7 +30,7 @@ import Common.Schema
 
 data BackendRoute :: * -> * where
   BackendRoute_Missing :: BackendRoute ()
-  BackendRoute_Url_Id :: BackendRoute (Id Url)
+  BackendRoute_Get_Url :: BackendRoute (Id Url)
   -- TODO validate this or use a URL type
   BackendRoute_Shorten :: BackendRoute ()
 
@@ -50,7 +49,7 @@ fullRouteEncoder = mkFullRouteEncoder
   (FullRoute_Backend BackendRoute_Missing :/ ())
   (\case
       BackendRoute_Shorten -> PathSegment "create" $ unitEncoder mempty
-      BackendRoute_Url_Id -> PathSegment "s" idPathSegmentEncoder
+      BackendRoute_Get_Url -> PathSegment "s" idPathSegmentEncoder
       BackendRoute_Missing -> PathSegment "missing" $ unitEncoder mempty)
   (\case
       FrontendRoute_Main -> PathEnd $ unitEncoder mempty)

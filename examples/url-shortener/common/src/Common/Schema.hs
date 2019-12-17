@@ -5,7 +5,7 @@ import Data.Text (Text)
 import Database.Id.Class
 import GHC.Generics
 
-data Url = Url { unUrl :: Text }
+newtype Url = Url { unUrl :: Text }
   deriving Generic
 
 instance HasId Url

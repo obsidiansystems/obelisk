@@ -3,8 +3,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 module Frontend where
 
@@ -20,14 +18,14 @@ import Common.Route
 import Obelisk.Generated.Static
 
 type AppWidget js t m =
-    ( DomBuilder t m
-    , MonadFix m
-    , MonadHold t m
-    , TriggerEvent t m
-    , PostBuild t m
-    , PerformEvent t m
-    , Prerender js t m
-    )
+  ( DomBuilder t m
+  , MonadFix m
+  , MonadHold t m
+  , TriggerEvent t m
+  , PostBuild t m
+  , PerformEvent t m
+  , Prerender js t m
+  )
 
 type FrontendWidget js t m =
   ( AppWidget js t m
@@ -47,7 +45,7 @@ urlInput = do
   let url = tagPromptlyDyn (_inputElement_value inputEl) click
   request <- prerender
     (pure never)
-    ((decodeXhrResponse <$>) <$> (performRequestAsync $ shortenRequest <$> url))
+    ((decodeXhrResponse <$>) <$> performRequestAsync (shortenRequest <$> url))
   let requestEv = switchDyn request
   holdDyn NotStarted $
     leftmost [Loading <$ click, Loaded <$> requestEv]
@@ -64,7 +62,7 @@ createdLink = \case
   Loading -> text "loading"
   Loaded a -> case a of
     Nothing -> text "Error"
-    Just url -> text url
+    Just url -> elAttr "a" ("href" =: url) $ text url
 
 app :: AppWidget js t m => m ()
 app = do
@@ -77,6 +75,5 @@ frontend = Frontend
   { _frontend_head = do
       el "title" $ text "Url Shortener"
       elAttr "link" ("rel" =: "stylesheet" <> "href" =: static @"style.css") blank
-  , _frontend_body = do
-    app
+  , _frontend_body = app
   }
