@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Command.Project
   ( InitSource (..)
   , initProject
@@ -29,6 +30,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process (CreateProcess, cwd, proc, waitForProcess, delegate_ctlc)
+import System.Which (staticWhich)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -241,16 +243,16 @@ inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
+  let nixPath = $(staticWhich "nix")
+  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ proc nixPath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
      [ "default.nix"] <>
-     -- Keep $NIX_PATH in the env for --pure shells so '<nixpkgs>' works in sub-commands
-     -- TODO: Don't use <nixpkgs> for anything!
-     (if isPure then [ "--pure", "--keep", "NIX_PATH" ] else []) <>
+     ["--pure" | isPure] <>
      [ "-A"
      , "shells." <> shellName
      ] <> case command of
        Nothing -> []
-       Just c -> ["--run", c]
+       Just c -> ["--run", "export NIX_PATH=nixpkgs=" <> T.unpack nixpkgsPath <> "; " <> c] -- TODO: Escape nixpkgsPath
   void $ liftIO $ waitForProcess ph
 
 setCtlc :: CreateProcess -> CreateProcess
