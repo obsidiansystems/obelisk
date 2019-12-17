@@ -18,32 +18,42 @@ import Control.Category
 -}
 
 import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Function
 import Data.Functor.Identity
-import Data.Functor.Sum
+import Database.Id.Class (Id)
+import Database.Id.Obelisk.Route (idPathSegmentEncoder)
 
 import Obelisk.Route
 import Obelisk.Route.TH
 
+import Common.Schema
+
 data BackendRoute :: * -> * where
-  -- | Used to handle unparseable routes.
   BackendRoute_Missing :: BackendRoute ()
-  -- You can define any routes that will be handled specially by the backend here.
-  -- i.e. These do not serve the frontend, but do something different, such as serving static files.
+  BackendRoute_Url_Id :: BackendRoute (Id Url)
+  -- TODO validate this or use a URL type
+  BackendRoute_Shorten :: BackendRoute ()
 
 data FrontendRoute :: * -> * where
   FrontendRoute_Main :: FrontendRoute ()
-  -- This type is used to define frontend routes, i.e. ones for which the backend will serve the frontend.
 
-backendRouteEncoder
-  :: Encoder (Either Text) Identity (R (Sum BackendRoute (ObeliskRoute FrontendRoute))) PageName
-backendRouteEncoder = handleEncoder (const (InL BackendRoute_Missing :/ ())) $
-  pathComponentEncoder $ \case
-    InL backendRoute -> case backendRoute of
-      BackendRoute_Missing -> PathSegment "missing" $ unitEncoder mempty
-    InR obeliskRoute -> obeliskRouteSegment obeliskRoute $ \case
-      -- The encoder given to PathEnd determines how to parse query parameters,
-      -- in this example, we have none, so we insist on it.
-      FrontendRoute_Main -> PathEnd $ unitEncoder mempty
+checkedFullRouteEncoder
+  :: Encoder Identity Identity (R (FullRoute BackendRoute FrontendRoute)) PageName
+checkedFullRouteEncoder = checkEncoder fullRouteEncoder & \case
+  Left err -> error $ T.unpack err
+  Right encoder -> encoder
+
+fullRouteEncoder
+  :: Encoder (Either Text) Identity (R (FullRoute BackendRoute FrontendRoute)) PageName
+fullRouteEncoder = mkFullRouteEncoder
+  (FullRoute_Backend BackendRoute_Missing :/ ())
+  (\case
+      BackendRoute_Shorten -> PathSegment "create" $ unitEncoder mempty
+      BackendRoute_Url_Id -> PathSegment "s" idPathSegmentEncoder
+      BackendRoute_Missing -> PathSegment "missing" $ unitEncoder mempty)
+  (\case
+      FrontendRoute_Main -> PathEnd $ unitEncoder mempty)
 
 concat <$> mapM deriveRouteComponent
   [ ''BackendRoute

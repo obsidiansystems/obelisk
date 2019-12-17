@@ -6,5 +6,5 @@ import Reflex.Dom
 
 main :: IO ()
 main = do
-  let Right validFullEncoder = checkEncoder backendRouteEncoder
+  let validFullEncoder = checkedFullRouteEncoder
   run $ runFrontend validFullEncoder frontend

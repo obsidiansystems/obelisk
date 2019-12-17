@@ -12,6 +12,8 @@ library
                , frontend
                , obelisk-backend
                , obelisk-route
+               , gargoyle-postgresql-connect
+               , resource-pool
   exposed-modules:
     Backend
   ghc-options: -Wall
