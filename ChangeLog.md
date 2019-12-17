@@ -14,6 +14,12 @@ This project's release branch is `master`. This log is written from the perspect
 * Use `--keep NIX_PATH` for all pure shells so references to `<nixpkgs>` continues to work.
 * Backport ACMEv2 support in obelisk server to regain LetsEncrypt account creation.
 * Enable https in `ob run`
+* `ob run` now handles ghci errors better, and includes a custom ghcid
+  version. As a result, you no longer need to have ghcid installed to
+  use `ob run`, as we provide one for you.
+* `ob` commands now complain less on systems with umasks other than `0022`.
+* Ignore package environment files in `ob run` and `ob repl`
+* Add `Obelisk.Route.Frontend.routeLinkDynAttr`.
 
 ## v0.2.0.0 - 2019-8-17
 
