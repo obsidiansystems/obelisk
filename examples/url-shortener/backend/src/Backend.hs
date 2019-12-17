@@ -5,20 +5,21 @@
 {-# LANGUAGE TypeFamilies #-}
 module Backend where
 
-import Control.Monad.IO.Class
-import Data.Word
-import Data.ByteString.Lazy
-import Database.PostgreSQL.Simple
-import Database.Id.Class
-import Data.Text (Text)
-import qualified Data.Aeson as A
-import Data.Pool
-import Prelude hiding (id)
 import Common.Route
+import Control.Concurrent
+import Control.Monad.IO.Class
+import qualified Data.Aeson as A
+import Data.ByteString.Lazy
+import Data.Text (Text)
+import Data.Word
+import Database.Id.Class
+import Data.Pool
+import Database.PostgreSQL.Simple
+import Gargoyle.PostgreSQL.Connect
+import Prelude hiding (id)
 import Obelisk.Backend
 import Obelisk.Route
 import Snap.Core
-import Gargoyle.PostgreSQL.Connect
 
 maxUrlSize :: Word64
 maxUrlSize = 2000
@@ -50,6 +51,7 @@ backend = Backend
             [[id]] <- liftIO $ withResource pool $ \dbcon -> do
                 _ <- execute dbcon "INSERT INTO urls (url) values (?);" [url :: Text]
                 query_ dbcon "SELECT last_value FROM urls_id_seq;"
+            liftIO $ threadDelay 1000000
             modifyResponse $ setResponseStatus 200 "OK"
             writeBS $ toStrict $ A.encode $ ("/s/" <>) $ show (id :: Int)
             r <- getResponse

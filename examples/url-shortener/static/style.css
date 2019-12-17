@@ -1,3 +1,15 @@
 html {
   background-color: #eee;
 }
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  align-items: center;
+  justify-content: center;
+}
+
+#submit {
+  margin-left: 8px;
+}
