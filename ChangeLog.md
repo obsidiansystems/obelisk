@@ -11,7 +11,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Add support in obelisk-route for single parameters in URL paths
 * Bump reflex-platform so that obelisk now uses reflex-dom 0.5.2.0
 * Use a `--pure` nix shell in `ob run` for parity with `ob repl` and more resilience against "works on my machine".
-* Use `--keep NIX_PATH` for all pure shells so references to `<nixpkgs>` continues to work.
+* Pin usages of `<nixpkgs>` in obelisk thunks, etc. to the nixpkgs used by the project's obelisk impl.
 * Backport ACMEv2 support in obelisk server to regain LetsEncrypt account creation.
 * Enable https in `ob run`
 * `ob run` now handles ghci errors better, and includes a custom ghcid
