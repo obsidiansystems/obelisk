@@ -11,11 +11,6 @@
 
 module Common.Route where
 
-{- -- You will probably want these imports for composing Encoders.
-import Prelude hiding (id, (.))
-import Control.Category
--}
-
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Function
@@ -31,7 +26,6 @@ import Common.Schema
 data BackendRoute :: * -> * where
   BackendRoute_Missing :: BackendRoute ()
   BackendRoute_Get_Url :: BackendRoute (Id Url)
-  -- TODO validate this or use a URL type
   BackendRoute_Shorten :: BackendRoute ()
 
 data FrontendRoute :: * -> * where
