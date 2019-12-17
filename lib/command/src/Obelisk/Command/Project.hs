@@ -24,6 +24,7 @@ import Data.Bits
 import Data.Function (on)
 import qualified Data.Text as T
 import System.Directory
+import System.Environment (lookupEnv)
 import System.FilePath
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
@@ -245,6 +246,7 @@ projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> 
 projectShell root isPure shellName command = do
   let nixPath = $(staticWhich "nix")
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ proc nixPath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
      [ "default.nix"] <>
      ["--pure" | isPure] <>
@@ -252,7 +254,13 @@ projectShell root isPure shellName command = do
      , "shells." <> shellName
      ] <> case command of
        Nothing -> []
-       Just c -> ["--run", "export NIX_PATH=nixpkgs=" <> T.unpack nixpkgsPath <> "; " <> c] -- TODO: Escape nixpkgsPath
+       Just c ->
+        -- TODO: Escape nixpkgsPath and nixRemote
+        [ "--run"
+        , "export NIX_PATH=nixpkgs=" <> T.unpack nixpkgsPath <> "; " <>
+          maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote <>
+          c
+        ]
   void $ liftIO $ waitForProcess ph
 
 setCtlc :: CreateProcess -> CreateProcess
