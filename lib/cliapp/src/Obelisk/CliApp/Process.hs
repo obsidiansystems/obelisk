@@ -29,6 +29,7 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Lens (Prism', review)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.UTF8 as BSU
 import Data.Function (fix)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -40,10 +41,10 @@ import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
 import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
-import System.Posix.Escape (escape)
 import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmdspec, std_err, std_out,
                        waitForProcess)
 import qualified System.Process as Process
+import Text.ShellEscape (bytes, bash)
 
 import Control.Monad.Log (Severity (..))
 import Obelisk.CliApp.Logging (putLog, putLogRaw)
@@ -183,4 +184,5 @@ reconstructCommand :: Process.CmdSpec -> Text
 reconstructCommand (Process.ShellCommand str) = T.pack str
 reconstructCommand (Process.RawCommand c as) = processToShellString c as
   where
-    processToShellString cmd args = T.pack $ unwords $ map escape (cmd : args)
+    processToShellString cmd args = T.pack $ unwords $
+      map (BSU.toString . bytes . bash . BSU.fromString) (cmd : args)

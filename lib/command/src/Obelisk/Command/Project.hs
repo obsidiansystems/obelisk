@@ -7,8 +7,10 @@ module Obelisk.Command.Project
   , findProjectObeliskCommand
   , findProjectRoot
   , withProjectRoot
+  , inProjectProc
   , inProjectShell
   , inImpureProjectShell
+  , projectProc
   , projectShell
 
   , toObeliskDir
@@ -18,6 +20,7 @@ module Obelisk.Command.Project
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
+import qualified Data.ByteString.UTF8 as BSU
 import Data.Bits
 import Data.Function (on)
 import qualified Data.Text as T
@@ -27,6 +30,7 @@ import System.IO.Temp
 import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process (CreateProcess, cwd, proc, waitForProcess, delegate_ctlc)
+import Text.ShellEscape (Bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -193,6 +197,10 @@ walkToImplDir projectRoot myUid = do
 isWritableOnlyBy :: FileStatus -> UserID -> Bool
 isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
 
+inProjectProc :: MonadObelisk m => String -> [Bash] -> m ()
+inProjectProc shellName command = withProjectRoot "." $ \root ->
+  projectProc root True shellName (Just command)
+
 -- | Run a command in the given shell for the current project
 inProjectShell :: MonadObelisk m => String -> String -> m ()
 inProjectShell shellName command = withProjectRoot "." $ \root ->
@@ -201,6 +209,12 @@ inProjectShell shellName command = withProjectRoot "." $ \root ->
 inImpureProjectShell :: MonadObelisk m => String -> String -> m ()
 inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
   projectShell root False shellName (Just command)
+
+projectProc :: MonadObelisk m => FilePath -> Bool -> String -> Maybe [Bash] -> m ()
+projectProc root isPure shellName command =
+  projectShell root isPure shellName $ commandToString <$> command
+    where
+      commandToString = unwords . fmap (BSU.toString . bytes)
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
@@ -213,7 +227,7 @@ projectShell root isPure shellName command = do
      , "shells." <> shellName
      ] <> case command of
        Nothing -> []
-       Just c -> ["--run", c]
+       Just c -> ["--run",  c]
   void $ liftIO $ waitForProcess ph
 
 setCtlc :: CreateProcess -> CreateProcess

@@ -13,6 +13,7 @@ import qualified Data.Binary as Binary
 import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.ByteString.UTF8 as BSU
 import Data.List
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
@@ -26,7 +27,7 @@ import System.Environment
 import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
-import System.Posix.Escape (escapeMany)
+import Text.ShellEscape (bash)
 import System.Posix.Process (executeFile)
 
 import Obelisk.App
@@ -106,8 +107,8 @@ data ObInternal
 
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
-  cmd <- liftIO $ escapeMany <$> mkCmd
-  projectShell root True "ghc" (Just cmd)
+  cmd <- liftIO $ fmap (bash . BSU.fromString) <$> mkCmd
+  projectProc root True "ghc" (Just cmd)
   where
     mkCmd = do
       argsCfg <- getArgsConfig
@@ -382,7 +383,7 @@ ob = \case
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
-    projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
+    projectProc root False (_shellOpts_shell so) (pure . bash . BSU.fromString <$> _shellOpts_command so)
   ObCommand_Doc shell pkgs -> withProjectRoot "." $ \root ->
     projectShell root False shell (Just $ haddockCommand pkgs)
   ObCommand_Internal icmd -> case icmd of

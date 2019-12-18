@@ -10,6 +10,8 @@ import Control.Exception (bracket)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.UTF8 as BSU
 import Data.Either
 import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
@@ -34,14 +36,14 @@ import System.FilePath
 import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Which (staticWhich)
-import Data.ByteString (ByteString)
+import Text.ShellEscape (bash)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp
   ( CliT (..), HasCliConfig, Severity (..)
   , callCommand, failWith, getCliConfig, putLog
   , readProcessAndLogStderr, runCli)
-import Obelisk.Command.Project (inProjectShell, withProjectRoot)
+import Obelisk.Command.Project (inProjectProc, withProjectRoot)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageRoot :: FilePath
@@ -219,7 +221,7 @@ runGhciRepl
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
   -> m ()
-runGhciRepl dotGhci = inProjectShell "ghc" $ unwords $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci]
+runGhciRepl dotGhci = inProjectProc "ghc" $ fmap (bash . BSU.fromString) $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci]
 
 -- | Run ghcid
 runGhcid
