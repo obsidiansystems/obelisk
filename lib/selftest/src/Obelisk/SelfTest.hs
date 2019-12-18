@@ -151,7 +151,14 @@ main = do
 
         if os == "darwin"
           then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
-          else it "can build android" $ inTmpObInit $ \_ -> nixBuild ["-A", "android.frontend"]
+          else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
+            let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
+            writefile defaultNixPath
+              =<< T.replace
+                "# config.android_sdk.accept_license = false;"
+                "config.android_sdk.accept_license = true;"
+              <$> readfile defaultNixPath
+            nixBuild ["-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
