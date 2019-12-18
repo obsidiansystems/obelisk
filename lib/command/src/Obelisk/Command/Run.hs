@@ -22,10 +22,13 @@ import Data.Bifoldable (bifoldr1)
 import Data.Bifunctor (bimap)
 import Data.Coerce (coerce)
 import Data.Default (def)
-import Data.Either (partitionEithers)
 import Data.Foldable (fold, for_, toList)
 import Data.Functor.Identity (runIdentity)
 import Data.List.NonEmpty (NonEmpty)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.UTF8 as BSU
+import Data.Either
+import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -60,10 +63,10 @@ import System.Environment (getExecutablePath)
 import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
-
-import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (
     Severity (..),
+    CliT (..),
+    HasCliConfig,
     createProcess_,
     failWith,
     proc,
@@ -74,11 +77,18 @@ import Obelisk.CliApp (
     setDelegateCtlc,
     waitForProcess,
     withSpinner,
-  )
+    callCommand,
+    getCliConfig,
+    runCli
+    )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets)
+import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets, inProjectProc)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
+import System.Which (staticWhich)
+import Text.ShellEscape (bash)
+
+import Obelisk.App (MonadObelisk, ObeliskT)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -460,11 +470,15 @@ runGhciRepl
   -> f CabalPackageInfo -- ^ Packages to keep unbuilt
   -> [String] -- ^ GHCi arguments
   -> m ()
+<<<<<<< HEAD
 runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
   nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
     Just $ unwords $ "ghci" : ghciArgs -- TODO: Shell escape
+=======
+runGhciRepl dotGhci = inProjectProc "ghc" $ fmap (bash . BSU.fromString) $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci]
+>>>>>>> 0c977864 (added projectProc commands)
 
 -- | Run ghcid
 runGhcid

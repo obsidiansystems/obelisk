@@ -8,11 +8,19 @@ module Obelisk.Command where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
+<<<<<<< HEAD
 import Data.Foldable (for_)
 import Data.List (isInfixOf, isPrefixOf)
 import Data.List.NonEmpty (NonEmpty, nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
+=======
+import qualified Data.ByteString.Base16 as Base16
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.ByteString.UTF8 as BSU
+import Data.List
+import Data.Maybe (catMaybes)
+>>>>>>> 0c977864 (added projectProc commands)
 import qualified Data.Text as T
 import Data.Traversable (for)
 import Options.Applicative
@@ -22,7 +30,7 @@ import System.Environment
 import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
-import System.Posix.Escape (escapeMany)
+import Text.ShellEscape (bash)
 import System.Posix.Process (executeFile)
 
 import Obelisk.App
@@ -108,8 +116,8 @@ data ObInternal
 
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
-  cmd <- liftIO $ escapeMany <$> mkCmd
-  projectShell root True "ghc" (Just cmd)
+  cmd <- liftIO $ fmap (bash . BSU.fromString) <$> mkCmd
+  projectProc root True "ghc" (Just cmd)
   where
     mkCmd = do
       argsCfg <- getArgsConfig

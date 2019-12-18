@@ -12,6 +12,13 @@ module Obelisk.Command.Project
   , nixShellWithHoogle
   , nixShellWithoutPkgs
   , obeliskDirName
+  , withProjectRoot
+  , inProjectProc
+  , inProjectShell
+  , inImpureProjectShell
+  , projectProc
+  , projectShell
+  , toObeliskDir
   , toImplDir
   , toObeliskDir
   , withProjectRoot
@@ -23,6 +30,7 @@ import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
 import qualified Data.Aeson as Json
+import qualified Data.ByteString.UTF8 as BSU
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
@@ -39,6 +47,8 @@ import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
+import System.Process (CreateProcess, cwd, proc, waitForProcess, delegate_ctlc)
+import Text.ShellEscape (Bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -342,3 +352,49 @@ findProjectAssets root = do
         ]
     else readProcessAndLogStderr Debug $ setCwd (Just root) $
       proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
+  when (not $ isWritableOnlyBy implThunkStat myUid) $ modify (implThunk:)
+
+--TODO: Is there a better way to ask if anyone else can write things?
+--E.g. what about ACLs?
+-- | Check to see if directory is only writable by a user whose User ID matches the second argument provided
+isWritableOnlyBy :: FileStatus -> UserID -> Bool
+isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
+
+inProjectProc :: MonadObelisk m => String -> [Bash] -> m ()
+inProjectProc shellName command = withProjectRoot "." $ \root ->
+  projectProc root True shellName (Just command)
+
+-- | Run a command in the given shell for the current project
+inProjectShell :: MonadObelisk m => String -> String -> m ()
+inProjectShell shellName command = withProjectRoot "." $ \root ->
+  projectShell root True shellName (Just command)
+
+inImpureProjectShell :: MonadObelisk m => String -> String -> m ()
+inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
+  projectShell root False shellName (Just command)
+
+projectProc :: MonadObelisk m => FilePath -> Bool -> String -> Maybe [Bash] -> m ()
+projectProc root isPure shellName command =
+  projectShell root isPure shellName $ commandToString <$> command
+    where
+      commandToString = unwords . fmap (BSU.toString . bytes)
+
+projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
+projectShell root isPure shellName command = do
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
+     [ "default.nix"] <>
+     -- Keep $NIX_PATH in the env for --pure shells so '<nixpkgs>' works in sub-commands
+     -- TODO: Don't use <nixpkgs> for anything!
+     (if isPure then [ "--pure", "--keep", "NIX_PATH" ] else []) <>
+     [ "-A"
+     , "shells." <> shellName
+     ] <> case command of
+       Nothing -> []
+       Just c -> ["--run",  c]
+  void $ liftIO $ waitForProcess ph
+
+setCtlc :: CreateProcess -> CreateProcess
+setCtlc cfg = cfg { delegate_ctlc = True }
+
+setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
+setCwd fp cfg = cfg { cwd = fp }
