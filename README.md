@@ -69,8 +69,8 @@ nix-env -f /path/to/obelisk -iA command
 Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
 
 ```shell
-ob thunk unpack ./obelisk/impl
-cd ./obelisk/impl
+ob thunk unpack ./.obelisk/impl
+cd ./.obelisk/impl
 # apply your changes
 ```
 
