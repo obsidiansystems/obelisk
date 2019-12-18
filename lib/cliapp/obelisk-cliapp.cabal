@@ -18,6 +18,7 @@ library
     , logging-effect
     , monad-loops
     , mtl
+    , posix-escape
     , process
     , terminal-size
     , text

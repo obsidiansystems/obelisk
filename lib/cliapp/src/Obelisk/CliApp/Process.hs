@@ -52,7 +52,9 @@ import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
 import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
-import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), std_err, std_out)
+import System.Posix.Escape (escape)
+import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmdspec, std_err, std_out,
+                       waitForProcess)
 import qualified System.Process as Process
 import qualified Data.Aeson as Aeson
 
@@ -246,8 +248,12 @@ reconstructCommand p = case p of
   Process.ShellCommand str -> T.pack str
   Process.RawCommand c as -> processToShellString c as
   where
+<<<<<<< HEAD
     processToShellString cmd args = T.unwords $ map quoteAndEscape (cmd : args)
     quoteAndEscape x = "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
 
 reconstructProcSpec :: ProcessSpec -> Text
 reconstructProcSpec = reconstructCommand . Process.cmdspec . _processSpec_createProcess
+=======
+    processToShellString cmd args = T.pack $ unwords $ map escape (cmd : args)
+>>>>>>> 5224b211 (added posix shell escape lib)

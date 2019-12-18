@@ -22,6 +22,7 @@ import System.Environment
 import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
+import System.Posix.Escape (escapeMany)
 import System.Posix.Process (executeFile)
 
 import Obelisk.App
@@ -103,6 +104,25 @@ data ObInternal
       [(FilePath, Interpret)]
       Bool -- ^ Use relative paths
    deriving Show
+
+
+inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
+inNixShell' p = withProjectRoot "." $ \root -> do
+  cmd <- liftIO $ escapeMany <$> mkCmd
+  projectShell root True "ghc" (Just cmd)
+  where
+    mkCmd = do
+      argsCfg <- getArgsConfig
+      myArgs <- getArgs
+      obArgs <- parseCLIArgs argsCfg myArgs
+      progName <- getObeliskExe
+      return $ progName : catMaybes
+        [ Just "--no-handoff"
+        , bool Nothing (Just "--verbose") $ _args_verbose obArgs
+        , Just "internal"
+        , Just "run-static-io"
+        , Just $ encodeStaticKey $ staticKey p
+        ]
 
 obCommand :: ArgsConfig -> Parser ObCommand
 obCommand cfg = hsubparser
