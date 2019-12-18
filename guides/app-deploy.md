@@ -145,9 +145,9 @@ You need to have
 
 and then Ctrl+O and Ctrl+X.
 
-Followed by: `sudo nixos-rebuild switch` and then set the root password to anything you want using `passwd`.
+Now run `sudo nixos-rebuild switch` and then set the root password to anything you want using `sudo passwd root`.
 
-With that you will be able to ssh into that machine from a terminal, using the username root and the IP address you found out during the previous step:
+With that you will be able to SSH into that machine from a terminal, using the username root and the IP address you found out during the previous step:
 
 ![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575395157871_image.png)
 
