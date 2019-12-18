@@ -53,7 +53,9 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , routeLink'
   , routeLinkScrollToTop
+  , routeLinkScrollToTop'
   , dynRouteLink
   , dynRouteLinkScrollToTop
   , adaptedUriPath
@@ -521,7 +523,8 @@ routeLink
   => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-routeLink r w = snd <$> routeLinkImpl r w
+routeLink r w = snd <$> routeLink' r w
+
 
 -- | Like 'routeLink' but scrolls to the top of the page.
 routeLinkScrollToTop
@@ -534,12 +537,24 @@ routeLinkScrollToTop
   => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-routeLinkScrollToTop r w = do
-  (e, a) <- routeLinkImpl r w
-  scrollToTop e
-  return a
+routeLinkScrollToTop r w = snd <$> routeLinkScrollToTop' r w
 
-routeLinkImpl
+routeLinkScrollToTop'
+  :: forall js t m a route.
+     ( DomBuilder t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender js t m
+     )
+  => route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m (Element EventResult (DomBuilderSpace m) t, a)
+routeLinkScrollToTop' r w = do
+  (e, a) <- routeLink' r w
+  scrollToTop (domEvent Click e)
+  return (e, a)
+
+routeLink'
   :: forall t m a route.
      ( DomBuilder t m
      , RouteToUrl route m
@@ -547,15 +562,15 @@ routeLinkImpl
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
-  -> m (Event t (), a)
-routeLinkImpl r w = do
+  -> m (Element EventResult (DomBuilderSpace m) t, a)
+routeLink' r w = do
   enc <- askRouteToUrl
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
   setRoute $ r <$ domEvent Click e
-  return (domEvent Click e, a)
+  return (e, a)
 
 scrollToTop :: (Prerender js t m, Monad m) => Event t () -> m ()
 scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.currentWindow >>= \case
