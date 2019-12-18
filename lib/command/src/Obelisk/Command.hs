@@ -26,6 +26,7 @@ import System.Environment
 import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
+import System.Posix.Escape (escapeMany)
 import System.Posix.Process (executeFile)
 
 import Obelisk.App
@@ -105,7 +106,7 @@ data ObInternal
 
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
-  cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
+  cmd <- liftIO $ escapeMany <$> mkCmd
   projectShell root True "ghc" (Just cmd)
   where
     mkCmd = do

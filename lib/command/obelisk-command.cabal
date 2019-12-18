@@ -39,6 +39,7 @@ library
     , optparse-applicative
     , placeholders
     , process
+    , posix-escape
     , temporary
     , terminal-size
     , text

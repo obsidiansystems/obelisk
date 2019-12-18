@@ -40,6 +40,7 @@ import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
 import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
+import System.Posix.Escape (escape)
 import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), cmdspec, std_err, std_out,
                        waitForProcess)
 import qualified System.Process as Process
@@ -182,5 +183,4 @@ reconstructCommand :: Process.CmdSpec -> Text
 reconstructCommand (Process.ShellCommand str) = T.pack str
 reconstructCommand (Process.RawCommand c as) = processToShellString c as
   where
-    processToShellString cmd args = T.unwords $ map quoteAndEscape (cmd : args)
-    quoteAndEscape x = "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
+    processToShellString cmd args = T.pack $ unwords $ map escape (cmd : args)
