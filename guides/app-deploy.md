@@ -83,7 +83,7 @@ Now open a browser and point it to http://localhost:8000 ( <- or just click on t
 
 
 
-![img](/x/os/obelisk/guides/assets/app-deploy.png)
+![img](./assets/app-deploy.png)
 
 ## c) Deploy a web app on a remote machine
 
@@ -97,7 +97,7 @@ With the downloaded file, open VirtualBox and import the .ova file:
 
 
 
-![img](/x/os/obelisk/guides/assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575390933162_image.png)
+![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575390933162_image.png)
 
 
 
@@ -113,13 +113,13 @@ then click on start:
 
 
 
-![img](/x/os/obelisk/guides/assets/FAQ.png)
+![img](./assets/FAQ.png)
 
 
 
 Make sure the selected Processor is Ubuntu-64 and not Ubuntu-32.
 
-![img](/x/os/obelisk/guides/assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392446973_image.png)
+![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392446973_image.png)
 
 
 
@@ -135,7 +135,7 @@ You will then have a fully booted NixOS machine:
 
 
 
-![img](/x/os/obelisk/guides/assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392475824_image.png)
+![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392475824_image.png)
 
 Then open up Konsole by clicking on the start menu and typing it and type ifconfig to learn the target ip address:
 
@@ -143,7 +143,7 @@ Then open up Konsole by clicking on the start menu and typing it and type ifconf
 
 
 
-![img](/x/os/obelisk/guides/assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392616616_image.png)
+![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392616616_image.png)
 
 
 
@@ -159,7 +159,7 @@ nano /etc/nixos/configuration
 
 
 
-![img](/x/os/obelisk/guides/assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392731139_image.png)
+![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392731139_image.png)
 
 
 
@@ -175,7 +175,7 @@ With that you will be able to ssh into that machine from a terminal, using the u
 
 
 
-![img](/x/os/obelisk/guides/assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575395157871_image.png)
+![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575395157871_image.png)
 
 
 
@@ -210,7 +210,7 @@ And then navigate to: http://192.168.5.185 (adjust for your IP address) and make
 
 
 
-![](/x/os/obelisk/guides/assets/app-deploy-2.png)
+![](./assets/app-deploy-2.png)
 
 Congratulations! You have deployed an Obelisk application to a remote server via ssh.
 
@@ -232,9 +232,9 @@ After that, make sure  *USB debugging* is enabled n your Android device ([instru
 
 
 
-![](/x/os/obelisk/guides/assets/IMG_0512.jpg)
+![](./assets/IMG_0512.jpg)
 
-![](/x/os/obelisk/guides/assets/IMG_0513.jpg)
+![](./assets/IMG_0513.jpg)
 
 Congratulations!  You have deployed an Obelisk Android app via USB.
 
@@ -244,7 +244,7 @@ Congratulations!  You have deployed an Obelisk Android app via USB.
 
 Verify that you can see the device from XCode and you have installed a Provisioning profile that links your Apple Developer Id and the Device identifier. The workflow depends on wether or not you are an independent developer or part of an organization and is out of scope for this manual. 
 
-![](/x/os/obelisk/guides/assets/Screen Shot 2019-12-18 at 1.35.04 PM.png)
+![](./assets/Screen Shot 2019-12-18 at 1.35.04 PM.png)
 
 First, create the app:
 
@@ -252,7 +252,7 @@ First, create the app:
 
 this will generate a `result-ios` folder that looks similar to this:
 
-![](/x/os/obelisk/guides/assets/Screen Shot 2019-12-18 at 1.40.48 PM.png)
+![](./assets/Screen Shot 2019-12-18 at 1.40.48 PM.png)
 
 and then find your `Team ID` at the following url (Apple Developer Membership details): https://developer.apple.com/account/#/membership/
 
@@ -260,17 +260,17 @@ It will be something like `5B445B3WY1` with that, you can start the deployment w
 
 
 
-![](/x/os/obelisk/guides/assets/Screen Shot 2019-12-18 at 1.47.21 PM.png)
+![](./assets/Screen Shot 2019-12-18 at 1.47.21 PM.png)
 
-![](/x/os/obelisk/guides/assets/Screen Shot 2019-12-18 at 1.48.02 PM.png)
+![](./assets/Screen Shot 2019-12-18 at 1.48.02 PM.png)
 
 If there are no errors and the last line says `100% Installed Package` you can open the device and look for the Obelisk app:
 
 
 
-![](/x/os/obelisk/guides/assets/out514.jpg)
+![](./assets/out514.jpg)
 
-![](/x/os/obelisk/guides/assets/out515.jpg)
+![](./assets/out515.jpg)
 
 Congratulations, you have deployed an Obelisk app on an iOS device.
 
