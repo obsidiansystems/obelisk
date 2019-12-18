@@ -3,7 +3,7 @@ This document serves two purposes, the first one is to guide new users that want
 
 
 
-> NOTE: This guide assumes you have access to a  MacOS machine running the
+> NOTE: This guide assumes you have access to a MacOS machine running the
 > latest OSX release, a NixOS machine (can be a VM on that mac) an
 > iPhone or iPad and a recent Android device. It also assumes that you
 > have Nix correctly set up and that your system is set up to fetch from
@@ -20,12 +20,12 @@ This document serves two purposes, the first one is to guide new users that want
 > nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
 > ```
 >
-> or 
+> or
 >
 > `/etc/nix/nix.conf`
 >
 > ```nix
-> binary-caches = https://cache.nixos.org/ https://nixcache.reflex-frp.org 
+> binary-caches = https://cache.nixos.org/ https://nixcache.reflex-frp.org
 > trusted-binary-caches =
 > binary-cache-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
 > ```
@@ -39,29 +39,28 @@ There are several ways to install Obelisk, but the one we are going to use here 
 First, let's open a terminal, navigate to the path of your choice and define a variable called `WORKDIR` to help us avoid running commands in the wrong folder.
 
 ~~~
-export WORKDIR=`pwd`
+export WORKDIR=$(pwd)
 ~~~
 
 Then let's get obelisk from Github using the qa branch:
 
 ~~~
-git clone https://github.com/obsidiansystems/obelisk -b qa
+git clone https://github.com/obsidiansystems/obelisk -b qa "$WORKDIR/obelisk"
 ~~~
 
 Once you have an obelisk check out, you can build it using Nix. And make a shortcut (alias) for the rest of the terminal session. With this, you will be able to type `ob` anywhere else in the system as long as you do not close the terminal.
 
 ~~~
-cd $WORKDIR/obelisk
-nix-build -A command
+nix-build $WORKDIR/obelisk -A command
 alias ob=$WORKDIR/obelisk/result/bin/ob
 ~~~
 
 In order to start an obelisk project, we need to create an empty directory, let's call it `myapp`:
 
 ~~~
-mkdir -p $WORKDIR/myapp
-cd $WORKDIR/myapp
-ob init --symlink=$WORKDIR/obelisk
+mkdir -p "$WORKDIR/myapp"
+cd "$WORKDIR/myapp"
+ob init --symlink "$WORKDIR/obelisk"
 ~~~
 
 > Note: If the --symlink parameter is not used, then obelisk sets your project
@@ -75,7 +74,7 @@ ob init --symlink=$WORKDIR/obelisk
 Let's test that we can run a server on localhost, this is quite easy:
 
 ~~~
-cd $WORKDIR/myapp
+cd "$WORKDIR/myapp"
 ob run
 ~~~
 
@@ -88,8 +87,17 @@ Now open a browser and point it to http://localhost:8000 ( <- or just click on t
 ## c) Deploy a web app on a remote machine
 
 
+Install VirtualBox on your machine.
 
-The NixOS download page has a section called VirtualBox image, you can download that as the target system, the writer used 19.09 .ova files: https://nixos.org/nixos/download.html
+On NixOS do this by adding the following line to your `/etc/nixos/configuration.nix`:
+
+```
+virtualisation.virtualbox.host.enable = true;
+```
+
+then `sudo nixos-rebuild switch`.
+
+The NixOS download page has a section called VirtualBox image. Download that as the target system. The author used 19.09 .ova files: https://nixos.org/nixos/download.html
 
 
 
@@ -163,15 +171,15 @@ nano /etc/nixos/configuration
 
 
 
-Set `services.openssh.enable = true; and services.openssh.permitRootLogin = "yes" ` and then Ctrl + W and Ctrl + X
+Set `services.openssh.enable = true;` and `services.openssh.permitRootLogin = "yes" ` and then Ctrl+W and Ctrl+X.
 
 
 
-Followed by: `nixos-rebuild switch` and then set the root password to anything you want using `passwd`
+Followed by: `nixos-rebuild switch` and then set the root password to anything you want using `passwd`.
 
 
 
-With that you will be able to ssh into that machine from a terminal, using the username root and the ip address you found out during the previous step:
+With that you will be able to ssh into that machine from a terminal, using the username root and the IP address you found out during the previous step:
 
 
 
@@ -242,7 +250,7 @@ Congratulations!  You have deployed an Obelisk Android app via USB.
 
 ## e) Deploy an iOS app
 
-Verify that you can see the device from XCode and you have installed a Provisioning profile that links your Apple Developer Id and the Device identifier. The workflow depends on wether or not you are an independent developer or part of an organization and is out of scope for this manual. 
+Verify that you can see the device from XCode and you have installed a Provisioning profile that links your Apple Developer Id and the Device identifier. The workflow depends on wether or not you are an independent developer or part of an organization and is out of scope for this manual.
 
 ![](./assets/Screen Shot 2019-12-18 at 1.35.04 PM.png)
 
@@ -252,7 +260,7 @@ First, create the app:
 
 this will generate a `result-ios` folder that looks similar to this:
 
-![](./assets/Screen Shot 2019-12-18 at 1.40.48 PM.png)
+![](./assets/Screen%20Shot%202019-12-18%20at%201.40.48%20PM.png)
 
 and then find your `Team ID` at the following url (Apple Developer Membership details): https://developer.apple.com/account/#/membership/
 
