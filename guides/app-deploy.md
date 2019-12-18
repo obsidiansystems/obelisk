@@ -151,9 +151,13 @@ With that you will be able to SSH into that machine from a terminal, using the u
 
 ![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575395157871_image.png)
 
-Create a new ssh key with ssh-keygen , call it obtest and leave it on the local folder.
+Create a new SSH key with ssh-keygen called obtest and leave it on the local folder:
 
-Now copy your local ssh key to the server to enable passwordless login:
+```shell
+ssh-keygen -t ed25519 -f obtest -P ""
+```
+
+Now copy your local SSH key to the server to enable passwordless login:
 
 ```bash
 ssh-copy-id -i obtest.pub root@192.168.5.185
