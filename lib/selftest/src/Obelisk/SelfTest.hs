@@ -3,7 +3,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 module Obelisk.SelfTest where
 
 import Control.Exception (bracket, throw)
@@ -71,7 +70,7 @@ shellyOb f obTest = shelly $ f obTest
 main :: IO ()
 main = do
   -- Note: you can pass hspec arguments as well, eg: `-m <pattern>`
-  isVerbose <- (elem "-v") <$> getArgs
+  isVerbose <- elem "-v" <$> getArgs
   unless isVerbose $
     putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output"
   let verbosity = bool silently verbosely isVerbose
@@ -118,7 +117,7 @@ main = do
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
         it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init" $ \dir -> do
-          let p force = (proc "ob" $ "--no-handoff" : "init" : if force then ["--force"] else []) { cwd = Just dir }
+          let p force = (proc "ob" $ "--no-handoff" : "init" : ["--force"|force]) { cwd = Just dir }
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitFailure _, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p True) ""
@@ -128,7 +127,7 @@ main = do
           void $ errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
-        it "produces a valid route config" $ inTmpObInit $ \tmp -> liftIO $ do
+        it "produces a valid route config" $ inTmpObInit $ \tmp -> liftIO $
           withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ do
             configs <- getConfigs
             return (either (const Nothing) Just $ getConfigRoute configs) `shouldNotReturn` Nothing
@@ -136,10 +135,8 @@ main = do
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'
       describe "ob run" $ parallel $ do
-        it "works in root directory" $ inTmpObInit $ \_ -> do
-          testObRunInDir p0 p1 Nothing httpManager
-        it "works in sub directory" $ inTmpObInit $ \_ -> do
-          testObRunInDir p2 p3 (Just "frontend") httpManager
+        it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir p0 p1 Nothing httpManager
+        it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir p2 p3 (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
         it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , obeliskImpl]
@@ -149,13 +146,11 @@ main = do
 
       describe "blank initialized project" $ parallel $ do
 
-        it "can build ghc.backend" $ inTmpObInit $ \_ -> do
-          nixBuild ["-A", "ghc.backend"]
-        it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> do
-          nixBuild ["-A", "ghcjs.frontend"]
+        it "can build ghc.backend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghc.backend"]
+        it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghcjs.frontend"]
 
         if os == "darwin"
-          then it "can build ios"     $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
+          then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
           else it "can build android" $ inTmpObInit $ \_ -> nixBuild ["-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
@@ -191,7 +186,7 @@ main = do
           branch' <- chdir dir $ run "git" ["rev-parse", "--abbrev-ref", "HEAD"]
           liftIO $ assertEqual "" branch (T.strip branch')
 
-        it "can pack and unpack plain git repos" $ do
+        it "can pack and unpack plain git repos" $
           shelly_ $ withSystemTempDirectory "git-repo" $ \dir -> do
             let repo = toTextIgnore $ dir </> ("repo" :: String)
             run_ "git" ["clone", "https://github.com/haskell/process.git", repo]
@@ -210,7 +205,7 @@ main = do
             testThunkPack $ fromText repo
 
         it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
-          void $ unpack
+          void unpack
           testThunkPack (dir </> thunk)
 
       describe "ob thunk update --branch" $ parallel $ do
@@ -289,7 +284,7 @@ alterRouteTo uri stdout = do
 
 -- | Handle stdout of `ob run`: check that the frontend and backend servers are started correctly
 handleObRunStdout :: HTTP.Manager -> Handle -> Sh Text
-handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (state, msgs) -> do
+handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (state, msgs) ->
   liftIO (T.hGetLine stdout) >>= \t -> case state of
     ObRunState_Init
       | "Running test..." `T.isPrefixOf` t -> loop (ObRunState_BackendStarted, msgs)
