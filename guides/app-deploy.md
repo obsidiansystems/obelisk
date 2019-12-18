@@ -99,111 +99,67 @@ then `sudo nixos-rebuild switch`.
 
 The NixOS download page has a section called VirtualBox image. Download that as the target system. The author used 19.09 .ova files: https://nixos.org/nixos/download.html
 
-
-
 With the downloaded file, open VirtualBox and import the .ova file:
-
-
 
 ![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575390933162_image.png)
 
-
-
 leave the default settings, that will take a few minutes:
-
-
 
 ![img](https://paper-attachments.dropbox.com/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575390997785_image.png)
 
-
-
 then click on start:
 
-
-
 ![img](./assets/FAQ.png)
-
-
 
 Make sure the selected Processor is Ubuntu-64 and not Ubuntu-32.
 
 ![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392446973_image.png)
 
-
-
 If you are on a network with DHCP on your wireless or network card then select Bridged Adapter in network:
 
 ![img](https://paper-attachments.dropbox.com/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392569418_image.png)
 
-
-
-
-
 You will then have a fully booted NixOS machine:
-
-
 
 ![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392475824_image.png)
 
 Then open up Konsole by clicking on the start menu and typing it and type ifconfig to learn the target ip address:
 
-
-
-
-
 ![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392616616_image.png)
-
-
 
 Change the system configuration using sudo to enable ssh access:
 
 ```bash
-sudo -i
-
-nano /etc/nixos/configuration
+sudo nano /etc/nixos/configuration.nix
 ```
-
-
-
-
 
 ![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392731139_image.png)
 
 
+You need to have
 
-Set `services.openssh.enable = true;` and `services.openssh.permitRootLogin = "yes" ` and then Ctrl+W and Ctrl+X.
+```nix
+  services.openssh.enable = true;
+  services.openssh.permitRootLogin = "yes";
+```
 
+and then Ctrl+O and Ctrl+X.
 
-
-Followed by: `nixos-rebuild switch` and then set the root password to anything you want using `passwd`.
-
-
+Followed by: `sudo nixos-rebuild switch` and then set the root password to anything you want using `passwd`.
 
 With that you will be able to ssh into that machine from a terminal, using the username root and the IP address you found out during the previous step:
 
-
-
 ![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575395157871_image.png)
-
-
 
 Create a new ssh key with ssh-keygen , call it obtest and leave it on the local folder.
 
-
-
 Now copy your local ssh key to the server to enable passwordless login:
-
-
 
 ```bash
 ssh-copy-id -i obtest.pub root@192.168.5.185
 ```
 
-
-
 With that, we can come back to obelisk and  deploy the system:
-
-
 
 ```
 mkdir $WORKDIR/myappdeploy
