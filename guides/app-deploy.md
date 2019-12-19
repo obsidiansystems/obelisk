@@ -221,7 +221,7 @@ Congratulations!  You have deployed an Obelisk Android app via USB.
 
 Verify that you can see the device from XCode and you have installed a Provisioning profile that links your Apple Developer Id and the Device identifier. The workflow depends on wether or not you are an independent developer or part of an organization and is out of scope for this manual.
 
-![](./assets/Screen Shot 2019-12-18 at 1.35.04 PM.png)
+![](./assets/Screen%20Shot%202019-12-18%20at%201.35.04%20PM.png)
 
 First, create the app:
 
@@ -236,9 +236,9 @@ and then find your `Team ID` at the following url (Apple Developer Membership de
 It will be something like `5B445B3WY1` with that, you can start the deployment workflow after plugging in an iPhone or iPad via USB and setting it to trust the computer:
 
 
-![](./assets/Screen Shot 2019-12-18 at 1.47.21 PM.png)
+![](./assets/Screen%20Shot%202019-12-18%20at%201.47.21%20PM.png)
 
-![](./assets/Screen Shot 2019-12-18 at 1.48.02 PM.png)
+![](./assets/Screen%20Shot%202019-12-18%20at%201.48.02%20PM.png)
 
 If there are no errors and the last line says `100% Installed Package` you can open the device and look for the Obelisk app:
 
