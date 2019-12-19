@@ -34,7 +34,7 @@ let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         haskellLib = pkgs.haskell.lib;
       in {
-        hnix = self.callCabal2nix "hnix" (hackGet dep/hnix) {};
+        hnix = haskellLib.dontCheck (haskellLib.doJailbreak (self.callCabal2nix "hnix" (hackGet dep/hnix) {}));
         hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
       })
 
@@ -240,11 +240,6 @@ in rec {
           (pkgs.path + /nixos/modules/security/acme.nix)
         ];
         nixpkgs.overlays = [
-          (self: super: let
-            nixos1909 = import (hackGet ./dep/nixpkgs-19.09) {};
-          in {
-            inherit (nixos1909) simp_le;
-          })
         ];
       };
     };
