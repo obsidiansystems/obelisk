@@ -417,3 +417,5 @@ decodeStaticKey s = case Base16.decode $ encodeUtf8 $ T.pack s of
     Right _ -> fail "decodeStaticKey: Binary.decodeOrFail didn't consume all input"
     Left (_, _, e) -> fail $ "decodeStaticKey: Binary.decodeOrFail failed: " <> show e
   _ -> fail $ "decodeStaticKey: could not decode hex string: " <> show s
+
+-- TODO: Let the end user select cloud provider.

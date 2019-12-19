@@ -160,9 +160,9 @@ in rec {
   '';
 
   serverModules = {
-    mkBaseEc2 = { hostName, routeHost, enableHttps, adminEmail, ... }: {...}: {
+    mkBaseHost = { hostName, routeHost, enableHttps, adminEmail, defaultCloud ? "virtualbox", ... }: {...}: {
       imports = [
-        (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+        ( "${pkgs.path}/nixos/modules/virtualisation/${defaultCloud}-image.nix" )
       ];
       networking = {
         inherit hostName;
@@ -245,7 +245,7 @@ in rec {
       system = "x86_64-linux";
       configuration = {
         imports = [
-          (serverModules.mkBaseEc2 args)
+          (serverModules.mkBaseHost args)
           (serverModules.mkObeliskApp args)
           ./acme.nix
         ];
