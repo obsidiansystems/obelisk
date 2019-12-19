@@ -191,7 +191,13 @@ git init --bare ~/myapp.git
 Go back to your project folder and set it up as the `origin` remote:
 
 ```bash
-git remote add origin ssh://root@192.168.5.185
+git remote add origin ssh://root@10.1.0.118:/root/myapp.git 
+```
+
+and push all the code to it:
+
+```bash
+git push origin master
 ```
 
 With that, we can come back to obelisk and  deploy the system:
