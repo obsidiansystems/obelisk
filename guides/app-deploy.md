@@ -163,6 +163,15 @@ Now copy your local SSH key to the server to enable passwordless login:
 ssh-copy-id -i obtest.pub root@192.168.5.185
 ```
 
+Before the project can be deployed, it needs to be a valid git repository. This is taken care of by doing:
+
+```bash
+cd $WORKDIR/myapp
+git init .
+git add *
+git commit -m "initial commit"
+```
+
 With that, we can come back to obelisk and  deploy the system:
 
 ```
@@ -225,7 +234,6 @@ this will generate a `result-ios` folder that looks similar to this:
 and then find your `Team ID` at the following url (Apple Developer Membership details): https://developer.apple.com/account/#/membership/
 
 It will be something like `5B445B3WY1` with that, you can start the deployment workflow after plugging in an iPhone or iPad via USB and setting it to trust the computer:
-
 
 
 ![](./assets/Screen Shot 2019-12-18 at 1.47.21 PM.png)
