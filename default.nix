@@ -34,10 +34,7 @@ let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         haskellLib = pkgs.haskell.lib;
       in {
-        hnix = haskellLib.overrideCabal (self.callHackage "hnix" "0.6.1" { these = self.these_0_8; }) (_: {
-          jailbreak = true;
-          doCheck = false;
-        });
+        hnix = self.callCabal2nix "hnix" (hackGet dep/hnix) {};
         hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
       })
 

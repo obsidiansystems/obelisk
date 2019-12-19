@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "develop",
-  "rev": "aa8a9d1ac3d41ad51fbe04e575d4350da65cf3db",
-  "sha256": "0hffy5rcfy6ay06ww3cxykqzp024jfcdg6w1yrmnf0h80sjfgdcm"
+  "branch": "nixpkgs-19.09",
+  "rev": "19e84a3e37ce670fab3a68559a8ae6e72ea91a4e",
+  "sha256": "0fm8gsah7xbiz26n3cy4iyzlivriwal43hjd5x3db77d3a91x3w1"
 }
