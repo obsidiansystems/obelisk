@@ -86,7 +86,7 @@ import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjec
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 import System.Which (staticWhich)
-import Text.ShellEscape (bash)
+import Text.ShellEscape (bash, bytes)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
 
@@ -470,15 +470,11 @@ runGhciRepl
   -> f CabalPackageInfo -- ^ Packages to keep unbuilt
   -> [String] -- ^ GHCi arguments
   -> m ()
-<<<<<<< HEAD
 runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
   nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
     Just $ unwords $ "ghci" : ghciArgs -- TODO: Shell escape
-=======
-runGhciRepl dotGhci = inProjectProc "ghc" $ fmap (bash . BSU.fromString) $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci]
->>>>>>> 0c977864 (added projectProc commands)
 
 -- | Run ghcid
 runGhcid
@@ -495,6 +491,10 @@ runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
   where
     opts =
       [ "-W"
+      --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
+      , "--command=" <> (BSU.toString $ bytes $ bash $ BSU.fromString $
+          "ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> unwords (makeBaseGhciOptions dotGhci))
+      , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> map (\x -> "--reload='" <> x <> "'") reloadFiles
         <> map (\x -> "--restart='" <> x <> "'") restartFiles
