@@ -48,3 +48,6 @@ library
   exposed-modules:
       Obelisk.Run
   ghc-options: -Wall -fwarn-redundant-constraints
+  if os(linux)
+    cpp-options: -DIPROUTE_SUPPORTED
+    build-depends: which

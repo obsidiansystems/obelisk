@@ -81,7 +81,7 @@ project's dependencies and,
 Assuming we are in a project created with `ob init`, `ob run` calls (see
 `lib/command/src/Obelisk/Command.hs`):
 
-    nix-shell --pure --keep NIX_PATH -A shells.ghc --run 'ob --no-handoff internal run-static-io <real-run-function>'
+    nix-shell --pure -A shells.ghc --run 'ob --no-handoff internal run-static-io <real-run-function>'
 
 where
 
