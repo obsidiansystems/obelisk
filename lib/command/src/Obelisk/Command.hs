@@ -277,7 +277,8 @@ mkObeliskConfig :: IO Obelisk
 mkObeliskConfig = do
   cliArgs <- getArgs
   -- This function should not use argument parser (full argument parsing happens post handoff)
-  let logLevel = toLogLevel $ "-v" `elem` cliArgs
+  -- TODO: See if we can use the argument parser with a subset of the parsers to get logging level out.
+  let logLevel = toLogLevel $ any (`elem` ["-v", "--verbose"]) cliArgs
   notInteractive <- not <$> isInteractiveTerm
   cliConf <- newCliConfig logLevel notInteractive notInteractive $ \case
     ObeliskError_ProcessError (ProcessFailure p code) ann ->

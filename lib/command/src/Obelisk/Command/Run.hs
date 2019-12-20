@@ -241,7 +241,7 @@ runGhciRepl
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
   -> m ()
-runGhciRepl dotGhci = inProjectShell "ghc" $ unwords $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci]
+runGhciRepl dotGhci = inProjectShell "ghc" $ "ghci " <> makeBaseGhciOptions dotGhci
 
 -- | Run ghcid
 runGhcid
@@ -252,15 +252,24 @@ runGhcid
   -> m ()
 runGhcid dotGhci (LintOpts hlint) mcmd = callCommand $ unwords $ $(staticWhich "ghcid") : opts
   where
-    opts = catMaybes
-      [ Just "-W"
-      , guard hlint $> ("--lint=" <> $(staticWhich "hlint"))
+    opts =
+      [ "-W"
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , Just $ "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -no-user-package-db -ghci-script " <> dotGhci <> "' "
-      , Just $ "--reload=config"
-      , Just $ "--outputfile=ghcid-output.txt"
+      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> makeBaseGhciOptions dotGhci <> "' "
+      , "--reload=config"
+      , "--outputfile=ghcid-output.txt"
+      ] <> catMaybes
+      [ guard hlint $> ("--lint=" <> $(staticWhich "hlint"))
       , flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'"
       ]
+
+makeBaseGhciOptions :: FilePath -> String
+makeBaseGhciOptions dotGhci =
+  unwords
+    [ "-no-user-package-db"
+    , "-package-env -"
+    , "-ghci-script " <> dotGhci
+    ]
 
 getFreePort :: MonadIO m => m PortNumber
 getFreePort = liftIO $ withSocketsDo $ do
