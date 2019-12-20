@@ -556,8 +556,7 @@ dynRouteLink
   -> m a
 dynRouteLink = routeLinkDynAttr mempty
 
-
--- | Like 'routeLinkDynAttr' but without custom attributes and also returns the events associatd with the link.
+-- | Like 'routeLinkDynAttr' but without custom attributes and also returns the events associated with the link.
 dynRouteLink'
   :: forall t m a route.
      ( DomBuilder t m
