@@ -36,7 +36,7 @@ import System.FilePath
 import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Which (staticWhich)
-import Text.ShellEscape (bash)
+import Text.ShellEscape (bash, bytes)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp
@@ -234,7 +234,8 @@ runGhcid dotGhci mcmd = callCommand $ unwords $ $(staticWhich "ghcid") : opts
     opts =
       [ "-W"
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> unwords (makeBaseGhciOptions dotGhci) <> "' "
+      , "--command=" <> (BSU.toString $ bytes $ bash $ BSU.fromString $
+          "ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> unwords (makeBaseGhciOptions dotGhci))
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd
