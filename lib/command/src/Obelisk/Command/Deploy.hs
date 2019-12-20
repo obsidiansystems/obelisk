@@ -281,7 +281,7 @@ createKeystore root config = do
       [ "-genkeypair", "-noprompt"
       , "-keystore", _keytoolConfig_keystore config
       , "-keyalg", "RSA", "-keysize", "2048"
-      , "-validity", "1000000000"
+      , "-validity", "1000000"
       , "-storepass", _keytoolConfig_storepass config
       , "-alias", _keytoolConfig_alias config
       , "-keypass", _keytoolConfig_keypass config

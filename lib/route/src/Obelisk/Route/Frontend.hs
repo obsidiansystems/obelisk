@@ -53,6 +53,7 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , routeLinkDynAttr
   , dynRouteLink
   , adaptedUriPath
   , setAdaptedUriPath
@@ -74,6 +75,7 @@ import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
+import Data.Map (Map)
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
@@ -526,9 +528,7 @@ routeLink r w = do
   setRoute $ r <$ domEvent Click e
   return a
 
--- | A link widget that, when clicked, sets the route to current value of the
--- provided dynamic route. In non-javascript contexts the value of the dynamic post
--- build is used so the link still works like 'routeLink'.
+-- | Like 'routeLinkDynAttr' but without custom attributes.
 dynRouteLink
   :: forall t m a route.
      ( DomBuilder t m
@@ -537,11 +537,27 @@ dynRouteLink
      , SetRoute t (R route) m
      )
   => Dynamic t (R route) -- ^ Target route
-  -> m a -- ^ Child widget
+  -> m a -- ^ Child widget of the @a@ element
   -> m a
-dynRouteLink dr w = do
+dynRouteLink = routeLinkDynAttr mempty
+
+-- | An @a@-tag link widget that, when clicked, sets the route to current value of the
+-- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
+-- build is used so the link still works like 'routeLink'.
+routeLinkDynAttr
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
+  -> Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget of the @a@ element
+  -> m a
+routeLinkDynAttr dAttr dr w = do
   enc <- askRouteToUrl
-  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+  er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_modifyAttributes .~ er
