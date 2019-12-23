@@ -44,9 +44,6 @@ data ObRunState
 doubleQuotes :: (IsString a, Semigroup a) => a -> a
 doubleQuotes s = "\"" <> s <> "\""
 
-routeFile :: IsString a => a
-routeFile = "config/common/route"
-
 commit :: Text -> Sh ()
 commit msg = void $ run "git"
   [ "commit"
@@ -151,16 +148,16 @@ main = do
         it "can build ghc.backend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghc.backend"]
         it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghcjs.frontend"]
 
-        -- if os == "darwin"
-        --   then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
-        --   else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
-        --     let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
-        --     writefile defaultNixPath
-        --       =<< T.replace
-        --         "# config.android_sdk.accept_license = false;"
-        --         "config.android_sdk.accept_license = true;"
-        --       <$> readfile defaultNixPath
-        --     nixBuild ["-A", "android.frontend"]
+        if os == "darwin"
+          then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
+          else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
+            let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
+            writefile defaultNixPath
+              =<< T.replace
+                "# config.android_sdk.accept_license = false;"
+                "config.android_sdk.accept_license = true;"
+              <$> readfile defaultNixPath
+            nixBuild ["-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
@@ -238,7 +235,7 @@ main = do
 testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
 testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
-  writefile routeFile $ uri p0
+  writefile "config/common/route" $ uri p0
   maybe id chdir mdir $ runHandle "ob" ["run"] $ \stdout -> do
     firstUri <- handleObRunStdout httpManager stdout
     let newUri = uri p1
@@ -283,10 +280,10 @@ hGetLineSkipBlanks h = liftIO $ fix $ \loop -> T.hGetLine h >>= \case
 -- | Alters the route file and waits for `ob run` to reload
 alterRouteTo :: Text -> Handle -> Sh ()
 alterRouteTo uri stdout = do
-  writefile routeFile uri
+  writefile "config/common/route" uri
   hGetLineSkipBlanks stdout >>= \t -> when (t /= "Reloading...") $ errorExit $
     "Reloading failed: " <> T.pack (show t)
-  hGetLineSkipBlanks stdout >>= \t -> when (t /= "  " <> routeFile) $ errorExit $
+  hGetLineSkipBlanks stdout >>= \t -> when (t /= "  config/common/route") $ errorExit $
     "Reloading failed: " <> T.pack (show t)
   hGetLineSkipBlanks stdout >>= \t -> when (t /= "Interrupted.") $ errorExit $
     "Reloading failed: " <> T.pack (show t)
