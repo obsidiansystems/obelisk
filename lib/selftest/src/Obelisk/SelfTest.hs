@@ -24,7 +24,7 @@ import Shelly
 import System.Directory (withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
-import System.Info
+import qualified System.Info
 import System.IO (Handle, hClose)
 import System.IO.Temp
 import System.Process (readProcessWithExitCode, CreateProcess(cwd), readCreateProcessWithExitCode, proc)
@@ -78,7 +78,7 @@ main = do
   obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
   [p0, p1, p2, p3] <- liftIO $ getFreePorts 4
-  withSystemTempDirectory "initCache" $ \initCache -> do
+  withSystemTempDirectory "init Cache λ" $ \initCache -> do
     -- Setup the ob init cache
     void . shellyOb verbosity $ chdir (fromString initCache) $ do
       run_ "ob" ["init"]
@@ -89,7 +89,7 @@ main = do
           inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
           inTmp f = withTmp (chdir <*> f)
 
-          withTmp f = shelly_ . withSystemTempDirectory "test" $ f . fromString
+          withTmp f = shelly_ . withSystemTempDirectory "test λ" $ f . fromString
 
           inTmpObInit f = inTmp $ \dir -> do
             run_ "cp" ["-a", fromString $ initCache <> "/.", toTextIgnore dir]
@@ -116,7 +116,7 @@ main = do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
-        it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init" $ \dir -> do
+        it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init λ" $ \dir -> do
           let p force = (proc "ob" $ "--no-handoff" : "init" : ["--force"|force]) { cwd = Just dir }
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitFailure _, _, _) <- readCreateProcessWithExitCode (p False) ""
@@ -149,7 +149,7 @@ main = do
         it "can build ghc.backend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghc.backend"]
         it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghcjs.frontend"]
 
-        if os == "darwin"
+        if System.Info.os == "darwin"
           then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
           else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
             let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
