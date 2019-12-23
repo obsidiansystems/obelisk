@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns #-}
 module Obelisk.SelfTest where
 
 import Control.Exception (bracket, throw)
@@ -75,14 +76,28 @@ main = do
     putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output"
   let verbosity = bool silently verbosely isVerbose
       nixBuild args = run "nix-build" ("--no-out-link" : args)
-  obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
+  obeliskImplRaw <- fromString <$> getEnv "OBELISK_IMPL"
+  let
+    withObeliskImpl f =
+      withSystemTempDirectory "obelisk-impl-copy" $ \(fromString -> obeliskImpl) -> do
+        void . shellyOb verbosity $ chdir obeliskImpl $ do
+          user <- T.strip <$> run "whoami" []
+          run_ "cp" ["-rT", toTextIgnore obeliskImplRaw, toTextIgnore obeliskImpl]
+          run_ "chown" ["-R", user, toTextIgnore obeliskImpl]
+          run_ "chmod" ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
+
+        withSystemTempDirectory "init Cache λ" $ \initCache -> do
+          -- Setup the ob init cache
+          void . shellyOb verbosity $ chdir (fromString initCache) $ do
+            run_ "ob" ["init", "--symlink", toTextIgnore obeliskImpl]
+            run_ "git" ["init"]
+
+          f obeliskImpl initCache
+
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
   [p0, p1, p2, p3] <- liftIO $ getFreePorts 4
-  withSystemTempDirectory "init Cache λ" $ \initCache -> do
-    -- Setup the ob init cache
-    void . shellyOb verbosity $ chdir (fromString initCache) $ do
-      run_ "ob" ["init"]
-      run_ "git" ["init"]
+
+  withObeliskImpl $ \obeliskImpl initCache ->
     hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
@@ -92,7 +107,7 @@ main = do
           withTmp f = shelly_ . withSystemTempDirectory "test λ" $ f . fromString
 
           inTmpObInit f = inTmp $ \dir -> do
-            run_ "cp" ["-a", fromString $ initCache <> "/.", toTextIgnore dir]
+            run_ "cp" ["-rT", fromString initCache, toTextIgnore dir]
             f dir
 
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
@@ -115,7 +130,7 @@ main = do
       describe "ob init" $ parallel $ do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
-        it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
+        it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", toTextIgnore obeliskImpl]
         it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init λ" $ \dir -> do
           let p force = (proc "ob" $ "--no-handoff" : "init" : ["--force"|force]) { cwd = Just dir }
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
@@ -139,10 +154,10 @@ main = do
         it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir p2 p3 (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
-        it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , obeliskImpl]
-        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", obeliskImpl]
-        it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    obeliskImpl]
-        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [obeliskImpl]
+        it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImpl]
+        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", toTextIgnore obeliskImpl]
+        it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    toTextIgnore obeliskImpl]
+        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [toTextIgnore obeliskImpl]
 
       describe "blank initialized project" $ parallel $ do
 
