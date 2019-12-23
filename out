@@ -1,0 +1,4 @@
+Tests may take longer to run if there are unbuilt derivations: use -v for verbose output
+
+ob init
+
