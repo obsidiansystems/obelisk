@@ -24,6 +24,7 @@ import Shelly
 import System.Directory (withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
+import qualified System.Info
 import System.IO (Handle, hClose)
 import System.IO.Temp
 import System.Process (readProcessWithExitCode, CreateProcess(cwd), readCreateProcessWithExitCode, proc)
@@ -148,7 +149,7 @@ main = do
         it "can build ghc.backend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghc.backend"]
         it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghcjs.frontend"]
 
-        if os == "darwin"
+        if System.Info.os == "darwin"
           then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
           else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
             let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
