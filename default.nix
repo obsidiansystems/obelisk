@@ -160,9 +160,9 @@ in rec {
   '';
 
   serverModules = {
-    mkBaseEc2 = { hostName, routeHost, enableHttps, adminEmail, ... }: {...}: {
+    mkBaseHost = { hostName, routeHost, enableHttps, adminEmail, virtualizationType ? "amazon", ... }: {...}: {
       imports = [
-        (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+        (pkgs.path + "/nixos/modules/virtualisation/${virtualizationType}-image.nix")
       ];
       networking = {
         inherit hostName;
@@ -238,20 +238,21 @@ in rec {
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, virtualizationType ? "amazon" }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
       system = "x86_64-linux";
       configuration = {
         imports = [
-          (serverModules.mkBaseEc2 args)
+          (serverModules.mkBaseHost args)
           (serverModules.mkObeliskApp args)
           ./acme.nix
         ];
         disabledModules = [
           (pkgs.path + /nixos/modules/security/acme.nix)
         ];
+        services.openssh.enable = true;
         nixpkgs.overlays = [
           (self: super: let
             nixos1909 = import (hackGet ./dep/nixpkgs-19.09) {};
@@ -353,7 +354,7 @@ in rec {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn system dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, virtualizationType ? "amazon" }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};
     };

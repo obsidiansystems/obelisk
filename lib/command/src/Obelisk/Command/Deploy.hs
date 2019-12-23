@@ -82,6 +82,7 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
     writeDeployConfig deployDir "enable_https" $ show enableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
+    writeDeployConfig deployDir "virtualization_type" "amazon"
     writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
   withSpinner "Creating source thunk (./src)" $ liftIO $ do
     createThunk (deployDir </> "src") thunkPtr
@@ -99,6 +100,7 @@ deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
   hosts <- Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "backend_hosts"
   adminEmail <- readDeployConfig deployPath "admin_email"
+  virtualizationType <- readDeployConfig deployPath "virtualization_type"
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
   route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
   routeHost <- getHostFromRoute enableHttps route
@@ -124,6 +126,7 @@ deployPush deployPath getNixBuilders = do
       & nixCmdConfig_args .~
         [ strArg "hostName" host
         , strArg "adminEmail" adminEmail
+        , strArg "virtualizationType" virtualizationType
         , strArg "routeHost" routeHost
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
