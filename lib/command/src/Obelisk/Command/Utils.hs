@@ -64,6 +64,7 @@ initGit repo = do
 gitProcNoRepo :: [String] -> P.CreateProcess
 gitProcNoRepo = P.proc "git"
 
+-- TODO: GIT_TERMINAL_PROMPT=0
 gitProc :: FilePath -> [String] -> P.CreateProcess
 gitProc repo = gitProcNoRepo . runGitInDir
   where
@@ -71,10 +72,10 @@ gitProc repo = gitProcNoRepo . runGitInDir
       args@("clone":_) -> args <> [repo]
       args -> ["-C", repo] <> args
 
--- | Recursively copy a directory using `cp -a`
+-- | Recursively copy a directory using `cp -a` -- TODO: Should use -rT instead of -a
 copyDir :: FilePath -> FilePath -> P.CreateProcess
 copyDir src dest =
-  (P.proc "cp" ["-a", ".", dest]) { P.cwd = Just src }
+  (P.proc "cp" ["-a", ".", dest]) { P.cwd = Just src } -- TODO: This will break if dest is relative since we change cwd
 
 readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
 readGitProcess repo = readProcessAndLogOutput (Debug, Notice) . gitProc repo
