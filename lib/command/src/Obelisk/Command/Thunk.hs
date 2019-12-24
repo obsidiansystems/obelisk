@@ -414,8 +414,9 @@ setThunk target gs branch = do
 -- This tool will only ever produce the newest one when it writes a thunk.
 gitHubStandaloneLoaders :: NonEmpty Text
 gitHubStandaloneLoaders =
-  gitHubStandaloneLoaderV2 :|
+  gitHubStandaloneLoaderV4 :|
   [ gitHubStandaloneLoaderV3
+  , gitHubStandaloneLoaderV2
   , gitHubStandaloneLoaderV1
   ]
 
@@ -452,6 +453,25 @@ gitHubStandaloneLoaderV3 = T.unlines
   , "      }"
   , "      // (if branch == null then {} else { ref = branch; })"
   , "      // (if name == null then {} else { inherit name; }));"
+  , "in import (fetch (builtins.fromJSON (builtins.readFile ./github.json)))"
+  ]
+
+gitHubStandaloneLoaderV4 :: Text
+gitHubStandaloneLoaderV4 = T.unlines
+  [ "# DO NOT HAND-EDIT THIS FILE"
+  , "let"
+  , "  fetch = { private ? false, ... }@args:"
+  , "    if private && builtins.hasAttr \"fetchGit\" builtins"
+  , "    then fetchFromGitHubPrivate args"
+  , "    else fetchFromGitHub (builtins.removeAttrs args [\"branch\"]);"
+  , "  fetchFromGitHub = if builtins.hasAttr \"fetchTarball\" builtins then"
+  , "    ({ owner, repo, rev, sha256, ... }: builtins.fetchTarball {"
+  , "      url = \"https://github.com/${owner}/${repo}/archive/${rev}.tar.gz\";"
+  , "      inherit sha256; })"
+  , "    else (import <nixpkgs> {}).fetchFromGitHub;"
+  , "  fetchFromGitHubPrivate = { owner, repo, rev, sha256, ... }:"
+  , "    (import <nixpkgs> {}).fetchFromGitHub"
+  , "      { inherit owner repo rev sha256; private = true; }"
   , "in import (fetch (builtins.fromJSON (builtins.readFile ./github.json)))"
   ]
 
