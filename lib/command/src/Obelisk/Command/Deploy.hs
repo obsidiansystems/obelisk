@@ -107,7 +107,7 @@ deployPush deployPath getNixBuilders = do
     Right (ThunkData_Packed ptr) -> return ptr
     Right (ThunkData_Checkout _) -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> packThunk False srcPath
+        True -> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
@@ -170,7 +170,7 @@ deployPush deployPath getNixBuilders = do
       callProcessAndLogOutput (Notice, Notice) p
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
-deployUpdate deployPath = updateThunkToLatest (deployPath </> "src") Nothing
+deployUpdate deployPath = updateThunkToLatest (ThunkUpdateConfig Nothing (ThunkConfig Nothing)) (deployPath </> "src")
 
 keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValue  t Identity m)
 keytoolToAndroidConfig conf =
