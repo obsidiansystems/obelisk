@@ -82,7 +82,7 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
     writeDeployConfig deployDir "enable_https" $ show enableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
-    writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
+    writeDeployConfig deployDir ("config" </> "common" </> "route") route
   withSpinner "Creating source thunk (./src)" $ liftIO $ do
     createThunk (deployDir </> "src") thunkPtr
     setupObeliskImpl deployDir
@@ -219,7 +219,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
               , _keytoolConfig_storepass = keyStorePassword
               , _keytoolConfig_keypass = keyStorePassword
               }
-        createKeystore root $ keyToolConf
+        createKeystore root keyToolConf
         liftIO $ BSL.writeFile keytoolConfPath $ encode keyToolConf
       checkKeytoolConfExist <- liftIO $ doesFileExist keytoolConfPath
       unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"

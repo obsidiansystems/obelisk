@@ -540,7 +540,7 @@ nixBuildThunkAttrWithCache thunkDir attr = do
     Just c -> return c
     Nothing -> do
       putLog Warning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
-      _ <- nixCmd $ NixCmd_Build$ def
+      _ <- nixCmd $ NixCmd_Build $ def
         Lens.& nixBuildConfig_outLink Lens..~ OutLink_IndirectRoot cachePath
         Lens.& nixCmdConfig_target Lens..~ Target
           { _target_path = Just thunkDir
