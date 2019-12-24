@@ -157,7 +157,7 @@ deployPush deployPath getNixBuilders = do
         ]
   isClean <- checkGitCleanStatus deployPath True
   when (not isClean) $ do
-    withSpinner "Commiting changes to Git" $ do
+    withSpinner "Committing changes to Git" $ do
       callProcessAndLogOutput (Debug, Error) $ proc "git"
         ["-C", deployPath, "add", "."]
       callProcessAndLogOutput (Debug, Error) $ proc "git"
