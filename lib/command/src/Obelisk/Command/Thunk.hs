@@ -402,7 +402,7 @@ updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack t
           ThunkSource_GitHub tsgh -> do
             let tsg = forgetGithub False tsgh
             setThunk target tsg branch
-        ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> (show target) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
+        ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> show target <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
 
 setThunk :: MonadObelisk m => FilePath -> GitSource -> String -> m ()
 setThunk target gs branch = do
@@ -570,7 +570,7 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
         callProcessAndLogOutput (Notice, Error) $
           proc "cp" ["-r", "-T", thunkDir, tmpThunk]
         return tmpThunk
-      Right _ -> failWith $ "Thunk is not packed"
+      Right _ -> failWith "Thunk is not packed"
     updateThunkFromTmp p' = do
       _ <- packThunk' True False p'
       callProcessAndLogOutput (Notice, Error) $
@@ -639,7 +639,7 @@ packThunk' noTrail force thunkDir = checkThunkDirectory "Can't pack/unpack from 
 
 getThunkPtr :: forall m. MonadObelisk m => Bool -> FilePath -> m ThunkPtr
 getThunkPtr checkClean thunkDir = do
-  when checkClean $ ensureCleanGitRepo thunkDir True $
+  when checkClean $ ensureCleanGitRepo thunkDir True
     "thunk pack: thunk checkout contains unsaved modifications"
 
   -- Check whether there are any stashes
@@ -733,7 +733,7 @@ getThunkPtr checkClean thunkDir = do
       [ "thunk pack: Certain branches in the thunk have commits not yet pushed upstream:"
       , ""
       ] ++
-      (flip map (Map.toList nonGood) $ \(branch, (upstream, (ahead, behind))) -> mconcat
+      flip map (Map.toList nonGood) (\(branch, (upstream, (ahead, behind))) -> mconcat
         ["  ", branch, " ahead: ", T.pack (show ahead), " behind: ", T.pack (show behind), " remote branch ", upstream]) ++
       [ ""
       , "Please push these upstream and try again. (Or just fetch, if they are somehow \
@@ -741,7 +741,7 @@ getThunkPtr checkClean thunkDir = do
       ]
 
   -- We assume it's safe to pack the thunk at this point
-  putLog Informational $ "All changes safe in git remotes. OK to pack thunk."
+  putLog Informational "All changes safe in git remotes. OK to pack thunk."
 
   let remote = maybe "origin" snd $ flip Map.lookup headUpstream =<< mCurrentBranch
 
@@ -784,7 +784,7 @@ uriThunkPtr uri mbranch mcommit = do
       case rev of
         Right r -> pure (ThunkSource_GitHub s, r)
         Left e -> do
-          putLog Warning $ "\
+          putLog Warning "\
 \Failed to fetch archive from GitHub. This is probably a private repo. \
 \Falling back on normal fetchgit. Original failure:"
           errorToWarning e
@@ -818,9 +818,7 @@ uriToThunkSource u
     { _gitHubSource_owner = N $ unRText owner
     , _gitHubSource_repo = N $ let
         repoish' = unRText repoish
-      in case T.stripSuffix ".git" repoish' of
-        Just repo -> repo
-        Nothing -> repoish'
+      in fromMaybe repoish' $ T.stripSuffix ".git" repoish'
     , _gitHubSource_branch = N <$> mbranch
     }
 
@@ -917,7 +915,7 @@ parseAbsoluteURI :: Text -> Maybe URI
 parseAbsoluteURI uri = do
   parsedUri <- mkURI uri
   guard $ isPathAbsolute parsedUri
-  pure $ parsedUri
+  pure parsedUri
 
 parseSshShorthand :: Text -> Maybe URI
 parseSshShorthand uri = do
