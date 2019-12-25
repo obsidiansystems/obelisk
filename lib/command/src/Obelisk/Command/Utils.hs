@@ -70,6 +70,16 @@ gitProc repo = gitProcNoRepo . runGitInDir
       args@("clone":_) -> args <> [repo]
       args -> ["-C", repo] <> args
 
+isolateGitProc :: ProcessSpec -> ProcessSpec
+isolateGitProc = setEnvOverride (overrides <>)
+  where
+    overrides = M.fromList
+      [ ("HOME", "/dev/null")
+      , ("GIT_CONFIG_NOSYSTEM", "1")
+      , ("GIT_TERMINAL_PROMPT", "0")
+      , ("GIT_SSH_COMMAND", "ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no -o GSSAPIAuthentication=no")
+      ]
+
 -- | Recursively copy a directory using `cp -a` -- TODO: Should use -rT instead of -a
 copyDir :: FilePath -> FilePath -> ProcessSpec
 copyDir src dest =
