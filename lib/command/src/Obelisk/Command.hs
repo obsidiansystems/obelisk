@@ -398,8 +398,8 @@ ob = \case
   ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
-  ObCommand_Doc shell pkgs -> withProjectRoot "." $ \root ->
-    projectShell root False shell (Just $ haddockCommand pkgs)
+  ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
+    projectShell root False shell' (Just $ haddockCommand pkgs)
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)

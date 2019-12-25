@@ -37,7 +37,6 @@ import Data.List (intercalate)
 import Data.Maybe
 import Data.Monoid ((<>))
 import qualified Data.Text as T
-import System.Process (proc)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp

@@ -30,7 +30,7 @@ import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
-import System.Process (CreateProcess, cwd, proc, waitForProcess, delegate_ctlc)
+import System.Process (waitForProcess)
 import System.Which (staticWhich)
 
 import GitHub.Data.GitData (Branch)
@@ -248,7 +248,7 @@ projectShell root isPure shellName command = do
   let nixPath = $(staticWhich "nix")
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ proc nixPath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
      [ "default.nix"] <>
      ["--pure" | isPure] <>
      [ "-A"
@@ -263,9 +263,3 @@ projectShell root isPure shellName command = do
           c
         ]
   void $ liftIO $ waitForProcess ph
-
-setCtlc :: CreateProcess -> CreateProcess
-setCtlc cfg = cfg { delegate_ctlc = True }
-
-setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
-setCwd fp cfg = cfg { cwd = fp }

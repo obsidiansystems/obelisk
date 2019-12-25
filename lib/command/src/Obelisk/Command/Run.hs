@@ -31,7 +31,6 @@ import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
 import System.Directory
 import System.FilePath
-import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Which (staticWhich)
 import Data.ByteString (ByteString)
@@ -39,7 +38,7 @@ import Data.ByteString (ByteString)
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp
   ( CliT (..), HasCliConfig, Severity (..)
-  , callCommand, failWith, getCliConfig, putLog
+  , callCommand, failWith, getCliConfig, putLog, proc
   , readProcessAndLogStderr, runCli)
 import Obelisk.Command.Project (inProjectShell, withProjectRoot)
 

@@ -25,17 +25,17 @@ import Nix.Pretty
 import Nix.String (principledMakeNixStringWithoutContext)
 import Nix.Value
 import System.Directory
-import System.Environment (getEnvironment)
 import System.FilePath
 import System.IO
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc, cwd)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
+import Obelisk.CliApp (
+  Severity (..), callProcessAndLogOutput, failWith, proc, putLog,
+  setCwd, setDelegateCtlc, setEnvOverride, withSpinner)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
@@ -165,8 +165,7 @@ deployPush deployPath getNixBuilders = do
   putLog Notice $ "Deployed => " <> T.pack route
   where
     callProcess' envMap cmd args = do
-      processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
-      let p = (proc cmd args) { delegate_ctlc = True, env = Just processEnv }
+      let p = setEnvOverride (envMap <>) $ setDelegateCtlc True $ proc cmd args
       callProcessAndLogOutput (Notice, Notice) p
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
@@ -275,7 +274,7 @@ instance ToJSON KeytoolConfig
 createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
 createKeystore root config = do
   let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
-  callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["default.nix", "-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
+  callProcessAndLogOutput (Notice,Notice) $ setCwd (Just root) $ proc "nix-shell" ["default.nix", "-E" , expr, "--run" , keytoolCmd]
   where
     keytoolCmd = processToShellString "keytool"
       [ "-genkeypair", "-noprompt"

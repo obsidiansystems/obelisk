@@ -18,7 +18,6 @@ import System.Directory (createDirectoryIfMissing)
 import System.Exit (ExitCode(..))
 import System.FilePath ((<.>), (</>))
 import qualified System.Info
-import System.Process (proc)
 
 import Obelisk.App (MonadObelisk, getObeliskUserStateDir)
 import Obelisk.CliApp

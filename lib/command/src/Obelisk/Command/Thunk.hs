@@ -71,7 +71,6 @@ import System.FilePath
 import System.IO.Error
 import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
-import System.Process (proc)
 import Text.URI
 
 import Obelisk.App (MonadObelisk)
