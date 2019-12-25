@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Thunk
   ( GitHubSource (..)
+  , GitUri (..)
   , ReadThunkError (..)
   , ThunkConfig (..)
   , ThunkData (..)
@@ -17,19 +18,20 @@ module Obelisk.Command.Thunk
   , ThunkRev (..)
   , ThunkSource (..)
   , ThunkUpdateConfig (..)
-  , getThunkGitBranch
-  , getLatestRev
-  , updateThunkToLatest
   , createThunk
   , createThunkWithLatest
+  , getLatestRev
+  , getThunkGitBranch
+  , getThunkPtr
+  , gitUriToText
   , nixBuildAttrWithCache
   , nixBuildThunkAttrWithCache
-  , unpackThunk
   , packThunk
-  , readThunk
-  , updateThunk
-  , getThunkPtr
   , parseGitUri
+  , readThunk
+  , unpackThunk
+  , updateThunk
+  , updateThunkToLatest
   , uriThunkPtr
   ) where
 
@@ -71,7 +73,7 @@ import System.FilePath
 import System.IO.Error
 import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
-import Text.URI
+import qualified Text.URI as URI
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
@@ -117,8 +119,17 @@ data GitHubSource = GitHubSource
   }
   deriving (Show, Eq, Ord)
 
+newtype GitUri = GitUri URI.URI deriving (Eq, Ord, Show)
+
+gitUriToText :: GitUri -> Text
+gitUriToText (GitUri uri)
+  | (T.toLower . URI.unRText <$> URI.uriScheme uri) == Just "file"
+  , Just (_, path) <- URI.uriPath uri
+  = "/" <> T.intercalate "/" (map URI.unRText $ NonEmpty.toList path)
+  | otherwise = URI.render uri
+
 data GitSource = GitSource
-  { _gitSource_url :: URI
+  { _gitSource_url :: GitUri
   , _gitSource_branch :: Maybe (Name Branch)
   , _gitSource_fetchSubmodules :: Bool
   , _gitSource_private :: Bool
@@ -142,21 +153,21 @@ data ThunkPackConfig = ThunkPackConfig
 -- | Convert a GitHub source to a regular Git source. Assumes no submodules.
 forgetGithub :: Bool -> GitHubSource -> GitSource
 forgetGithub useSsh s = GitSource
-  { _gitSource_url = URI
-    { uriScheme = Just $ fromRight' $ mkScheme $ if useSsh then "ssh" else "https"
-    , uriAuthority = Right $ Authority
-        { authUserInfo = UserInfo (fromRight' $ mkUsername "git") Nothing
+  { _gitSource_url = GitUri $ URI.URI
+    { URI.uriScheme = Just $ fromRight' $ URI.mkScheme $ if useSsh then "ssh" else "https"
+    , URI.uriAuthority = Right $ URI.Authority
+        { URI.authUserInfo = URI.UserInfo (fromRight' $ URI.mkUsername "git") Nothing
           <$ guard useSsh
-        , authHost = fromRight' $ mkHost "github.com"
-        , authPort = Nothing
+        , URI.authHost = fromRight' $ URI.mkHost "github.com"
+        , URI.authPort = Nothing
         }
-    , uriPath = Just ( False
-                     , fromRight' . mkPathPiece <$>
+    , URI.uriPath = Just ( False
+                     , fromRight' . URI.mkPathPiece <$>
                        untagName (_gitHubSource_owner s)
                        :| [ untagName (_gitHubSource_repo s) <> ".git" ]
                      )
-    , uriQuery = []
-    , uriFragment = Nothing
+    , URI.uriQuery = []
+    , URI.uriFragment = Nothing
     }
   , _gitSource_branch = _gitHubSource_branch s
   , _gitSource_fetchSubmodules = False
@@ -174,20 +185,20 @@ commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 -- TODO: Use spinner here.
 getNixSha256ForUriUnpacked
   :: MonadObelisk m
-  => URI
+  => GitUri
   -> m NixSha256
 getNixSha256ForUriUnpacked uri =
-  withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> render uri) $ do
+  withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> gitUriToText uri) $ do
     [hash] <- fmap T.lines $ readProcessAndLogOutput (Debug, Debug) $
-      proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , T.unpack $ render uri]
+      proc "nix-prefetch-url" ["--unpack", "--type", "sha256", T.unpack $ gitUriToText uri]
     pure hash
 
-nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
+nixPrefetchGit :: MonadObelisk m => GitUri -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
-  withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> render uri <> " at " <> rev) $ do
+  withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> gitUriToText uri <> " at " <> rev) $ do
     out <- readProcessAndLogStderr Debug $
       proc "nix-prefetch-git" $ filter (/="")
-        [ "--url", T.unpack $ render uri
+        [ "--url", T.unpack $ gitUriToText uri
         , "--rev", T.unpack rev
         , if fetchSubmodules then "--fetch-submodules" else ""
         , "--quiet"
@@ -353,7 +364,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     , Just $ "private" .= _gitHubSource_private s
     ]
   ThunkSource_Git s -> encodePretty' plainGitCfg $ Aeson.object $ catMaybes
-    [ Just $ "url" .= render (_gitSource_url s)
+    [ Just $ "url" .= gitUriToText (_gitSource_url s)
     , Just $ "rev" .= Ref.toHexString (_thunkRev_commit rev)
     , ("branch" .=) <$> _gitSource_branch s
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
@@ -662,7 +673,7 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from with
         let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
         git $ [ "clone" ]
           ++  ("--recursive" <$ guard (_gitSource_fetchSubmodules s))
-          ++  [ T.unpack $ render $ _gitSource_url s ]
+          ++  [ T.unpack $ gitUriToText $ _gitSource_url s ]
           ++  do branch <- maybeToList $ _gitSource_branch s
                  [ "--branch", T.unpack $ untagName branch ]
         git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
@@ -837,7 +848,7 @@ getLatestRev os = do
 -- performance. If that doesn't work (e.g. authentication issue), we fall back
 -- on just doing things the normal way for git repos in general, and save it as
 -- a regular git thunk.
-uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> Maybe Text -> m ThunkPtr
+uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Text -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mbranch mcommit = do
   commit <- case mcommit of
     Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
@@ -865,30 +876,30 @@ uriThunkPtr uri mbranch mcommit = do
 -- If the thunk is a GitHub thunk and fails, we do *not* fall back like with
 -- `uriThunkPtr`. Unlike a plain URL, a thunk src explicitly states which method
 -- should be employed, and so we respect that.
-uriToThunkSource :: URI -> Maybe Text -> ThunkSource
-uriToThunkSource u
-  | Right uriAuth <- uriAuthority u
-  , Just scheme <- unRText <$> uriScheme u
+uriToThunkSource :: GitUri -> Maybe Text -> ThunkSource
+uriToThunkSource (GitUri u)
+  | Right uriAuth <- URI.uriAuthority u
+  , Just scheme <- URI.unRText <$> URI.uriScheme u
   , case scheme of
-      "ssh" -> uriAuth == Authority
-        { authUserInfo = Just $ UserInfo (fromRight' $ mkUsername "git") Nothing
-        , authHost = fromRight' $ mkHost "github.com"
-        , authPort = Nothing
+      "ssh" -> uriAuth == URI.Authority
+        { URI.authUserInfo = Just $ URI.UserInfo (fromRight' $ URI.mkUsername "git") Nothing
+        , URI.authHost = fromRight' $ URI.mkHost "github.com"
+        , URI.authPort = Nothing
         }
       s -> s `L.elem` [ "git", "https", "http" ] -- "http:" just redirects to "https:"
-        && unRText (authHost uriAuth) == "github.com"
-  , Just (_, owner :| [repoish]) <- uriPath u
+        && URI.unRText (URI.authHost uriAuth) == "github.com"
+  , Just (_, owner :| [repoish]) <- URI.uriPath u
   = \mbranch -> ThunkSource_GitHub $ GitHubSource
-    { _gitHubSource_owner = N $ unRText owner
+    { _gitHubSource_owner = N $ URI.unRText owner
     , _gitHubSource_repo = N $ let
-        repoish' = unRText repoish
+        repoish' = URI.unRText repoish
       in fromMaybe repoish' $ T.stripSuffix ".git" repoish'
     , _gitHubSource_branch = N <$> mbranch
     , _gitHubSource_private = False -- TODO: Can we try something to infer this?
     }
 
   | otherwise = \mbranch -> ThunkSource_Git $ GitSource
-    { _gitSource_url = u
+    { _gitSource_url = GitUri u
     , _gitSource_branch = N <$> mbranch
     , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
     , _gitSource_private = False -- TODO: Can we try something to infer this?
@@ -904,19 +915,19 @@ githubThunkRev
 githubThunkRev s commit = do
   owner <- forcePP $ _gitHubSource_owner s
   repo <- forcePP $ _gitHubSource_repo s
-  revTarball <- mkPathPiece $ commit <> ".tar.gz"
-  let archiveUri =  URI
-        { uriScheme = Just $ fromRight' $ mkScheme "https"
-        , uriAuthority = Right $ Authority
-          { authUserInfo = Nothing
-          , authHost = fromRight' $ mkHost "github.com"
-          , authPort = Nothing
+  revTarball <- URI.mkPathPiece $ commit <> ".tar.gz"
+  let archiveUri = GitUri $ URI.URI
+        { URI.uriScheme = Just $ fromRight' $ URI.mkScheme "https"
+        , URI.uriAuthority = Right $ URI.Authority
+          { URI.authUserInfo = Nothing
+          , URI.authHost = fromRight' $ URI.mkHost "github.com"
+          , URI.authPort = Nothing
           }
-        , uriPath = Just ( False
-                         , owner :| [ repo, fromRight' $ mkPathPiece "archive", revTarball ]
+        , URI.uriPath = Just ( False
+                         , owner :| [ repo, fromRight' $ URI.mkPathPiece "archive", revTarball ]
                      )
-    , uriQuery = []
-    , uriFragment = Nothing
+    , URI.uriQuery = []
+    , URI.uriFragment = Nothing
     }
   hash <- getNixSha256ForUriUnpacked archiveUri
   putLog Debug $ "Nix sha256 is " <> hash
@@ -925,8 +936,8 @@ githubThunkRev s commit = do
     , _thunkRev_nixSha256 = hash
     }
   where
-    forcePP :: Name entity -> m (RText 'PathPiece)
-    forcePP = mkPathPiece . untagName
+    forcePP :: Name entity -> m (URI.RText 'URI.PathPiece)
+    forcePP = URI.mkPathPiece . untagName
 
 gitThunkRev
   :: MonadObelisk m
@@ -935,11 +946,11 @@ gitThunkRev
   -> m ThunkRev
 gitThunkRev s commit = do
   let u = _gitSource_url s
-      protocols = ["https", "ssh", "git"]
-  Just scheme <- pure $ unRText <$> uriScheme u
+      protocols = ["file", "https", "ssh", "git"]
+      scheme = maybe "file" URI.unRText $ URI.uriScheme $ (\(GitUri x) -> x) u
   unless (T.toLower scheme `elem` protocols) $
     failWith $ "obelisk currently only supports "
-      <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
+      <> T.intercalate ", " protocols <> " protocols for plain Git remotes"
   hash <- nixPrefetchGit u commit $ _gitSource_fetchSubmodules s
   putLog Informational $ "Nix sha256 is " <> hash
   pure $ ThunkRev
@@ -953,10 +964,10 @@ gitThunkRev s commit = do
 -- If the branch name is passed in, it is returned exactly as-is. If it is not
 -- passed it, the default branch of the repo is used instead.
 gitGetCommitBranch
-  :: MonadObelisk m => URI -> Maybe Text -> m (Text, CommitId)
+  :: MonadObelisk m => GitUri -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
   (_, bothMaps) <- gitLsRemote
-    (T.unpack $ render uri)
+    (T.unpack $ gitUriToText uri)
     (GitRef_Branch <$> mbranch)
     Nothing
   branch <- case mbranch of
@@ -972,18 +983,21 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
   pure (branch, commit)
   where
     rethrowE = either failWith pure
-    uriMsg = render uri
+    uriMsg = gitUriToText uri
 
-parseGitUri :: Text -> Maybe URI
-parseGitUri x = parseAbsoluteURI x <|> parseSshShorthand x
+parseGitUri :: Text -> Maybe GitUri
+parseGitUri x = GitUri <$> (parseFileURI x <|> parseAbsoluteURI x <|> parseSshShorthand x)
 
-parseAbsoluteURI :: Text -> Maybe URI
+parseFileURI :: Text -> Maybe URI.URI
+parseFileURI uri = if "/" `T.isPrefixOf` uri then parseAbsoluteURI ("file://" <> uri) else Nothing
+
+parseAbsoluteURI :: Text -> Maybe URI.URI
 parseAbsoluteURI uri = do
-  parsedUri <- mkURI uri
-  guard $ isPathAbsolute parsedUri
+  parsedUri <- URI.mkURI uri
+  guard $ URI.isPathAbsolute parsedUri
   pure parsedUri
 
-parseSshShorthand :: Text -> Maybe URI
+parseSshShorthand :: Text -> Maybe URI.URI
 parseSshShorthand uri = do
   -- This is what git does to check that the remote
   -- is not a local file path when parsing shorthand.
@@ -996,4 +1010,4 @@ parseSshShorthand uri = do
   -- This check is used to disambiguate a filepath containing a colon from shorthand
   guard $ isNothing (T.findIndex (=='/') authAndHostname)
         && not (T.null colonAndPath)
-  mkURI properUri
+  URI.mkURI properUri
