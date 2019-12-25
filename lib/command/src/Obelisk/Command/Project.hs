@@ -169,7 +169,7 @@ findProjectRoot :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectRoot target = do
   myUid <- liftIO getRealUserID
   targetStat <- liftIO $ getFileStatus target
-  umask <- liftIO $ getUmask
+  umask <- liftIO getUmask
   (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat umask myUid) []
   return result
 

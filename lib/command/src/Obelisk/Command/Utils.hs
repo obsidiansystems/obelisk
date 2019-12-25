@@ -130,13 +130,13 @@ gitLsRemote repository mRef mBranch = do
   (exitCode, out, _err) <- case mBranch of
     Nothing -> readCreateProcessWithExitCode $ gitProcNoRepo $
         ["ls-remote", "--exit-code", "--symref", repository]
-        ++ (maybeToList $ T.unpack . showGitRef <$> mRef)
-    Just branchName -> readCreateProcessWithExitCode $ gitProcNoRepo $
+        ++ maybeToList (T.unpack . showGitRef <$> mRef)
+    Just branchName -> readCreateProcessWithExitCode $ gitProcNoRepo
         ["ls-remote", "--exit-code", repository, branchName]
   let t = T.pack out
   maps <- case MP.runParser parseLsRemote "" t of
     Left err -> failWith $ T.pack $ MP.errorBundlePretty err
-    Right table -> pure $ bimap M.fromList M.fromList $ partitionEithers $ table
+    Right table -> pure $ bimap M.fromList M.fromList $ partitionEithers table
   putLog Debug $ "git ls-remote maps: " <> T.pack (show maps)
   pure (exitCode, maps)
 

@@ -726,7 +726,7 @@ getThunkPtr checkClean thunkDir = do
       <$> T.lines
       <$> readGitProcess thunkDir ["rev-parse", "HEAD"]
     case b of
-      (Just "HEAD") -> failWith $ T.unlines $
+      (Just "HEAD") -> failWith $ T.unlines
         [ "thunk pack: You are in 'detached HEAD' state."
         , "If you want to pack at the current ref \
           \then please create a new branch with 'git checkout -b <new-branch-name>' and push this upstream."

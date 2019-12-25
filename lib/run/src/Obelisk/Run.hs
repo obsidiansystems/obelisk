@@ -129,7 +129,7 @@ runWidget conf configs frontend validFullEncoder = do
         putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
-      prepareRunner = case (uri ^? uriScheme . _Just . unRText) of
+      prepareRunner = case uri ^? uriScheme . _Just . unRText of
         Just "https" -> do
           -- Generate a private key and self-signed certificate for TLS
           privateKey <- RSA.generateRSAKey' 2048 3
