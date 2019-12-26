@@ -132,7 +132,7 @@ main = do
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", toTextIgnore obeliskImpl]
         it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init λ" $ \dir -> do
-          let p force = (proc "ob" $ "--no-handoff" : "init" : ["--force"|force]) { cwd = Just dir }
+          let p force = (System.Process.proc "ob" $ "--no-handoff" : "init" : ["--force"|force]) { cwd = Just dir }
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitFailure _, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p True) ""
@@ -164,23 +164,23 @@ main = do
         it "can build ghc.backend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghc.backend"]
         it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghcjs.frontend"]
 
-        if System.Info.os == "darwin"
-          then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
-          else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
-            let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
-            writefile defaultNixPath
-              =<< T.replace
-                "# config.android_sdk.accept_license = false;"
-                "config.android_sdk.accept_license = true;"
-              <$> readfile defaultNixPath
-            nixBuild ["-A", "android.frontend"]
+        -- if System.Info.os == "darwin"
+        --   then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
+        --   else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
+        --     let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
+        --     writefile defaultNixPath
+        --       =<< T.replace
+        --         "# config.android_sdk.accept_license = false;"
+        --         "config.android_sdk.accept_license = true;"
+        --       <$> readfile defaultNixPath
+        --     nixBuild ["-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
-            shell = "shells." <> compiler
-            inShell cmd' = run "nix-shell" ["default.nix", "-A", fromString shell, "--run", cmd']
-          it ("can enter "    <> shell) $ inTmpObInit $ \_ -> inShell "exit"
-          it ("can build in " <> shell) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
+            shellName = "shells." <> compiler
+            inShell cmd' = run "nix-shell" ["default.nix", "-A", fromString shellName, "--run", cmd']
+          it ("can enter "    <> shellName) $ inTmpObInit $ \_ -> inShell "exit"
+          it ("can build in " <> shellName) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
         it "has idempotent thunk update" $ inTmpObInit $ \_ -> do
           u  <- update
