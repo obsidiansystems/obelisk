@@ -164,16 +164,16 @@ main = do
         it "can build ghc.backend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghc.backend"]
         it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghcjs.frontend"]
 
-        -- if System.Info.os == "darwin"
-        --   then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
-        --   else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
-        --     let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
-        --     writefile defaultNixPath
-        --       =<< T.replace
-        --         "# config.android_sdk.accept_license = false;"
-        --         "config.android_sdk.accept_license = true;"
-        --       <$> readfile defaultNixPath
-        --     nixBuild ["-A", "android.frontend"]
+        if System.Info.os == "darwin"
+          then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
+          else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
+            let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
+            writefile defaultNixPath
+              =<< T.replace
+                "# config.android_sdk.accept_license = false;"
+                "config.android_sdk.accept_license = true;"
+              <$> readfile defaultNixPath
+            nixBuild ["-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
