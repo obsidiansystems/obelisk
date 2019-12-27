@@ -132,7 +132,9 @@ parseCabalPackage dir = do
             return Nothing
           Right (DecodeResult hpackPackage _ _ _) -> do
             return $ Just $ renderPackage [] hpackPackage
-      else return Nothing
+      else do
+        putLog Error $ T.pack $ "Found neither cabal nor hpack file"
+        return Nothing
 
   fmap join $ forM mCabalContents $ \cabalContents -> do
     let (warnings, result) = runParseResult $ parseGenericPackageDescription $
