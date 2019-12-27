@@ -108,15 +108,16 @@ runWatch = do
 
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
-getLocalPkgs :: Applicative f => f [FilePath]
-getLocalPkgs = pure ["backend", "common", "frontend"]
+getLocalPkgs :: Applicative f => f [(FilePath, Maybe String)]
+getLocalPkgs = pure [("backend", Nothing), ("common", Nothing), ("frontend", Nothing)]
 
 parseCabalPackage
   :: (MonadObelisk m)
   => FilePath -- ^ package directory
+  -> Maybe String -- ^ package name, defaults to directory
   -> m (Maybe CabalPackageInfo)
-parseCabalPackage dir = do
-  let cabalFp = dir </> (takeBaseName dir <> ".cabal")
+parseCabalPackage dir name = do
+  let cabalFp = dir </> (fromMaybe (takeBaseName dir) name <> ".cabal")
       hpackFp = dir </> "package.yaml"
   hasCabal <- liftIO $ doesFileExist cabalFp
   hasHpack <- liftIO $ doesFileExist hpackFp
@@ -165,17 +166,18 @@ withUTF8FileContentsM fp f = do
 -- | Create ghci configuration to load the given packages
 withGhciScript
   :: MonadObelisk m
-  => [FilePath] -- ^ List of packages to load into ghci
+  => [(FilePath, Maybe String)] -- ^ List of packages to load into ghci
   -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporory .ghci
   -> m ()
 withGhciScript pkgs f = do
-  (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
-    flip fmap (parseCabalPackage pkg) $ \case
-      Nothing -> Left pkg
+  (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \(dir, name) -> do
+    flip fmap (parseCabalPackage dir name) $ \case
+      Nothing -> Left dir
       Just packageInfo -> Right packageInfo
 
+  let dirs = fmap fst pkgs
   when (null packageInfos) $
-    failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
+    failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " dirs
   unless (null pkgDirErrs) $
     putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
 
