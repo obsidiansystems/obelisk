@@ -166,7 +166,7 @@ withUTF8FileContentsM fp f = do
 withGhciScript
   :: MonadObelisk m
   => [FilePath] -- ^ List of packages to load into ghci
-  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporory .ghci
+  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
   -> m ()
 withGhciScript pkgs f = do
   (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
