@@ -28,7 +28,7 @@ This guide assumes your company is already set up for Apple development and you 
 
 6. Now let's add certificate for our newly created Apple ID:
    Open Keychain Access on the Mac:
-   ![Screen Shot 2019-12-20 at 4.46.34 PM](./assets/Screen Shot 2019-12-20 at 4.46.34%20PM.png)
+   ![Screen Shot 2019-12-20 at 4.46.34 PM](./assets/Screen%20Shot%202019-12-20%20at%204.46.34%20PM.png)
 
 And after clicking on Certificates and System, use the Certificate Assistant to Request a Certificate From a Certificate Authority and Save it to a file:
 
