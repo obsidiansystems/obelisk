@@ -247,7 +247,7 @@ Congratulations!  You have deployed an Obelisk Android app via USB.
 
 ## e) Deploy an iOS app
 
-Verify that you can see the device from XCode and you have installed a Provisioning profile that links your Apple Developer Id and the Device identifier. The workflow depends on wether or not you are an independent developer or part of an organization and is out of scope for this manual.
+Verify that you can see the device from XCode and you have installed a Provisioning profile that links your Apple Developer Id and the Device identifier. The workflow depends on whether or not you are an independent developer or part of an organization and is out of scope for this manual.
 
 ![](./assets/Screen%20Shot%202019-12-18%20at%201.35.04%20PM.png)
 
