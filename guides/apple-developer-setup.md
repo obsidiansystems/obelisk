@@ -24,7 +24,7 @@ This guide assumes your company is already set up for Apple development and you 
 
 ![Screen Shot 2019-12-20 at 4.04.30 PM](./assets/Screen%20Shot%202019-12-20%20at%204.04.30%20PM.png)
 
-![Screen%20Shot](./assets/Screen%20Shot.png)
+![Screen Shot](./assets/Screen%20Shot.png)
 
 6. Now let's add certificate for our newly created Apple ID:
    Open Keychain Access on the Mac:
