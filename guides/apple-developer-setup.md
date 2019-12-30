@@ -63,6 +63,6 @@ and then double click it to install it:
 ![Screen Shot 2019-12-20 at 4.56.49 PM](./assets/Screen%20Shot%202019-12-20%20at%204.58.54%20PM.png)
 
 8. Check you can see the device from Xcode:
-   ![Screen Shot 2019-12-20 at 6.27.31 PM](./assets/Screen Shot 2019-12-20 at 6.27.31 PM.png)
+   ![Screen Shot 2019-12-20 at 6.27.31 PM](./assets/Screen%20Shot%202019-12-20%20at%206.27.31%20PM.png)
 
 ![Screen Shot 2019-12-20 at 6.28.04 PM](./assets/Screen%20Shot%202019-12-20%20at%206.28.04%20PM.png)
