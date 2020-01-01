@@ -574,6 +574,20 @@ scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.
     Nothing -> pure ()
     Just win -> Window.scrollTo win 0 0
 
+-- | Like 'dynRouteLink' but scrolls to the top of the page.
+dynRouteLinkScrollToTop
+  :: forall js t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender js t m
+     )
+  => Dynamic t route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+dynRouteLinkScrollToTop dr = routeLinkImpl (Just Dict) mempty (Right (Dict, dr))
+
 -- | Like 'routeLinkDynAttr' but without custom attributes.
 dynRouteLink
   :: forall t m a route.
@@ -602,21 +616,6 @@ routeLinkDynAttr
   -> m a -- ^ Child widget of the @a@ element
   -> m a
 routeLinkDynAttr dAttr dr w = routeLinkImpl Nothing dAttr (Right (Dict, dr)) w
-
--- | Like 'dynRouteLink' but scrolls to the top of the page.
-dynRouteLinkScrollToTop
-  :: forall js t m a route.
-     ( DomBuilder t m
-     , PostBuild t m
-     , RouteToUrl route m
-     , SetRoute t route m
-     , Prerender js t m
-     )
-  => Dynamic t route -- ^ Target route
-  -> m a -- ^ Child widget
-  -> m a
-dynRouteLinkScrollToTop dr = routeLinkImpl (Just Dict) mempty (Right (Dict, dr))
-
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
