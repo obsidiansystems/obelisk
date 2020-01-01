@@ -106,7 +106,7 @@ data ObInternal
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
-  projectShell root False "ghc" (Just cmd)
+  projectShell root True "ghc" (Just cmd)
   where
     mkCmd = do
       argsCfg <- getArgsConfig
@@ -267,7 +267,8 @@ mkObeliskConfig :: IO Obelisk
 mkObeliskConfig = do
   cliArgs <- getArgs
   -- This function should not use argument parser (full argument parsing happens post handoff)
-  let logLevel = toLogLevel $ "-v" `elem` cliArgs
+  -- TODO: See if we can use the argument parser with a subset of the parsers to get logging level out.
+  let logLevel = toLogLevel $ any (`elem` ["-v", "--verbose"]) cliArgs
   notInteractive <- not <$> isInteractiveTerm
   cliConf <- newCliConfig logLevel notInteractive notInteractive $ \case
     ObeliskError_ProcessError (ProcessFailure p code) ann ->

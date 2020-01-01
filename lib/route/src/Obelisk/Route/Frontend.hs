@@ -35,6 +35,8 @@ module Obelisk.Route.Frontend
   , mapRoutedT
   , subRoute
   , subRoute_
+  , subPairRoute
+  , subPairRoute_
   , maybeRoute
   , maybeRoute_
   , maybeRouted
@@ -52,6 +54,7 @@ module Obelisk.Route.Frontend
   , mapRouteToUrlT
   , routeLink
   , routeLinkScrollToTop
+  , routeLinkDynAttr
   , dynRouteLink
   , dynRouteLinkScrollToTop
   , adaptedUriPath
@@ -74,11 +77,13 @@ import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
+import Data.Map (Map)
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Functor.Compose
+import Data.Functor.Misc
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PostBuild.Class
@@ -206,9 +211,17 @@ subRoute_ :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r 
 subRoute_ f = factorRouted $ strictDynWidget_ $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute_ :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m ()) -> RoutedT t (a, b) m ()
+subPairRoute_ f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute_ (\(Const2 a) -> f a)
+
 subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m b) -> RoutedT t (R r) m (Dynamic t b)
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
+
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m c) -> RoutedT t (a, b) m (Dynamic t c)
+subPairRoute f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute (\(Const2 a) -> f a)
 
 maybeRoute_ :: (MonadFix m, MonadHold t m, Adjustable t m) => m () -> RoutedT t r m () -> RoutedT t (Maybe r) m ()
 maybeRoute_ n j = maybeRouted $ strictDynWidget_ $ \case
@@ -551,21 +564,6 @@ scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.
     Nothing -> pure ()
     Just win -> Window.scrollTo win 0 0
 
--- | A link widget that, when clicked, sets the route to current value of the
--- provided dynamic route. In non-javascript contexts the value of the dynamic post
--- build is used so the link still works like 'routeLink'.
-dynRouteLink
-  :: forall t m a route.
-     ( DomBuilder t m
-     , PostBuild t m
-     , RouteToUrl route m
-     , SetRoute t route m
-     )
-  => Dynamic t route -- ^ Target route
-  -> m a -- ^ Child widget
-  -> m a
-dynRouteLink dr w = snd <$> dynRouteLinkImpl dr w
-
 -- | Like 'dynRouteLink' but scrolls to the top of the page.
 dynRouteLinkScrollToTop
   :: forall js t m a route.
@@ -602,6 +600,43 @@ dynRouteLinkImpl dr w = do
   (e, a) <- element "a" cfg w
   setRoute $ tag (current dr) $ domEvent Click e
   return (domEvent Click e, a)
+
+-- | Like 'routeLinkDynAttr' but without custom attributes.
+dynRouteLink
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget of the @a@ element
+  -> m a
+dynRouteLink = routeLinkDynAttr mempty
+
+-- | An @a@-tag link widget that, when clicked, sets the route to current value of the
+-- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
+-- build is used so the link still works like 'routeLink'.
+routeLinkDynAttr
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
+  -> Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget of the @a@ element
+  -> m a
+routeLinkDynAttr dAttr dr w = do
+  enc <- askRouteToUrl
+  er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
+  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_modifyAttributes .~ er
+  (e, a) <- element "a" cfg w
+  setRoute $ tag (current dr) $ domEvent Click e
+  return a
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
