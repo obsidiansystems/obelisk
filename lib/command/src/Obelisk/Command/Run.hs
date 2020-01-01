@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Command.Run where
 
 import Control.Exception (bracket)
@@ -32,6 +33,7 @@ import System.Directory
 import System.FilePath
 import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
+import System.Which (staticWhich)
 import Data.ByteString (ByteString)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
@@ -56,6 +58,8 @@ data CabalPackageInfo = CabalPackageInfo
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
 run :: ObeliskT IO ()
 run = do
+  let nixPath = $(staticWhich "nix")
+      nixBuildPath = $(staticWhich "nix-build")
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
@@ -64,7 +68,7 @@ run = do
             then root
             else "./" <> root
       isDerivation <- readProcessAndLogStderr Debug $
-        proc "nix"
+        proc nixPath
           [ "eval"
           , "-f"
           , root
@@ -76,12 +80,12 @@ run = do
       -- Check whether the impure static files are a derivation (and so must be built)
       if isDerivation == "1"
         then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc "nix-build"
+          proc nixBuildPath
             [ "--no-out-link"
             , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
             ]
         else readProcessAndLogStderr Debug $
-          proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+          proc nixPath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
     runGhcid dotGhciPath $ Just $ unwords
       [ "Obelisk.Run.run"
@@ -215,7 +219,7 @@ runGhciRepl
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
   -> m ()
-runGhciRepl dotGhci = inProjectShell "ghc" $ unwords $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci]
+runGhciRepl dotGhci = inProjectShell "ghc" $ "ghci " <> makeBaseGhciOptions dotGhci
 
 -- | Run ghcid
 runGhcid
@@ -223,16 +227,24 @@ runGhcid
   => FilePath -- ^ Path to .ghci
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
+runGhcid dotGhci mcmd = callCommand $ unwords $ $(staticWhich "ghcid") : opts
   where
     opts =
       [ "-W"
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -no-user-package-db -ghci-script " <> dotGhci <> "' "
+      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> makeBaseGhciOptions dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd
     testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'")
+
+makeBaseGhciOptions :: FilePath -> String
+makeBaseGhciOptions dotGhci =
+  unwords
+    [ "-no-user-package-db"
+    , "-package-env -"
+    , "-ghci-script " <> dotGhci
+    ]
 
 getFreePort :: MonadIO m => m PortNumber
 getFreePort = liftIO $ withSocketsDo $ do
