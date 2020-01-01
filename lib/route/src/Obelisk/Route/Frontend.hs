@@ -53,8 +53,8 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
-  , routeLinkDynAttr
   , routeLinkScrollToTop
+  , routeLinkDynAttr
   , dynRouteLink
   , dynRouteLinkScrollToTop
   , adaptedUriPath
@@ -574,9 +574,7 @@ scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.
     Nothing -> pure ()
     Just win -> Window.scrollTo win 0 0
 
--- | A link widget that, when clicked, sets the route to current value of the
--- provided dynamic route. In non-javascript contexts the value of the dynamic post
--- build is used so the link still works like 'routeLink'.
+-- | Like 'routeLinkDynAttr' but without custom attributes.
 dynRouteLink
   :: forall t m a route.
      ( DomBuilder t m
@@ -589,6 +587,9 @@ dynRouteLink
   -> m a
 dynRouteLink = routeLinkDynAttr mempty
 
+-- | An @a@-tag link widget that, when clicked, sets the route to current value of the
+-- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
+-- build is used so the link still works like 'routeLink'.
 routeLinkDynAttr
   :: forall t m a route.
      ( DomBuilder t m
@@ -615,6 +616,7 @@ dynRouteLinkScrollToTop
   -> m a -- ^ Child widget
   -> m a
 dynRouteLinkScrollToTop dr = routeLinkImpl (Just Dict) mempty (Right (Dict, dr))
+
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
