@@ -1,5 +1,5 @@
 name: obelisk-command
-version: 0.1
+version: 0.3
 cabal-version: >= 1.8
 build-type: Simple
 
@@ -46,6 +46,7 @@ library
     , transformers
     , unix
     , unordered-containers
+    , which
     , yaml
   exposed-modules:
     Obelisk.App

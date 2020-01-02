@@ -229,7 +229,7 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
 renderFrontendHtml
   :: ( t ~ DomTimeline
      , MonadIO m
-     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost)))))))
+     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost))))))))
      )
   => Map Text ByteString
   -> Cookies
@@ -241,7 +241,7 @@ renderFrontendHtml
   -> m ByteString
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
+  html <- fmap snd $ liftIO $ renderStatic $ runHydratableT $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
       el "head" $ do
         baseTag
