@@ -183,6 +183,7 @@ main = do
           it ("can build in " <> shellName) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
         it "has idempotent thunk update" $ inTmpObInit $ \_ -> do
+          _  <- pack
           u  <- update
           uu <- update
           assertRevEQ u uu
@@ -190,6 +191,7 @@ main = do
       describe "ob thunk pack/unpack" $ parallel $ do
         it "has thunk pack and unpack inverses" $ inTmpObInit $ \_ -> do
 
+          _    <- pack
           e    <- commitAll
           eu   <- unpack
           eup  <- pack
@@ -227,7 +229,6 @@ main = do
             testThunkPack $ fromText repo
 
         it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
-          void unpack
           testThunkPack (dir </> thunk)
 
       describe "ob thunk update --branch" $ parallel $ do
