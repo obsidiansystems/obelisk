@@ -4,9 +4,10 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
-* Obelisk now depends directly on reflex-dom-core instead of
-  reflex-dom. This avoids requiring a jsaddle-webkit2gtk dependency in
-  apps that are only using jsaddle-warp.
+* Bump reflex-platform which, notably, bumps nixpkgs to 19.09
+* Obelisk now depends directly on `reflex-dom-core` instead of reflex-dom.
+  This avoids requiring a `jsaddle-webkit2gtk` dependency in
+  apps that are only using `jsaddle-warp`.
 
 ## v0.3.0.0 - 2019-12-20
 
