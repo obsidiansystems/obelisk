@@ -31,7 +31,6 @@ import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
 import System.Directory
 import System.FilePath
-import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Which (staticWhich)
 import Data.ByteString (ByteString)
@@ -39,7 +38,7 @@ import Data.ByteString (ByteString)
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp
   ( CliT (..), HasCliConfig, Severity (..)
-  , callCommand, failWith, getCliConfig, putLog
+  , callCommand, failWith, getCliConfig, putLog, proc
   , readProcessAndLogStderr, runCli)
 import Obelisk.Command.Project (inProjectShell, withProjectRoot)
 
@@ -133,11 +132,13 @@ parseCabalPackage dir name = do
             return Nothing
           Right (DecodeResult hpackPackage _ _ _) -> do
             return $ Just $ renderPackage [] hpackPackage
-      else return Nothing
+      else do
+        putLog Error $ T.pack "Found neither cabal nor hpack file"
+        return Nothing
 
   fmap join $ forM mCabalContents $ \cabalContents -> do
     let (warnings, result) = runParseResult $ parseGenericPackageDescription $
-          toUTF8BS $ cabalContents
+          toUTF8BS cabalContents
     mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
     case result of
       Right gpkg -> do
@@ -167,7 +168,7 @@ withUTF8FileContentsM fp f = do
 withGhciScript
   :: MonadObelisk m
   => [(FilePath, Maybe String)] -- ^ List of packages to load into ghci
-  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporory .ghci
+  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
   -> m ()
 withGhciScript pkgs f = do
   (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \(dir, name) -> do
@@ -187,16 +188,16 @@ withGhciScript pkgs f = do
       language = NE.toList $ fromMaybe (Haskell98 NE.:| []) $ NE.nonEmpty languageFromPkgs
       extensionsLine = if extensions == mempty
         then ""
-        else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
+        else ":set " <> unwords (("-X" <>) . prettyShow <$> extensions)
       ghcOptions = concat $ mapMaybe (\case (GHC, xs) -> Just xs; _ -> Nothing) $
         packageInfos >>= _cabalPackageInfo_compilerOptions
-      dotGhci = unlines $
+      dotGhci = unlines
         [ ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
         , case ghcOptions of
             [] -> ""
-            xs -> ":set " <> intercalate " " xs
+            xs -> ":set " <> unwords xs
         , extensionsLine
-        , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
+        , ":set " <> unwords (("-X" <>) . prettyShow <$> language)
         , ":load Backend Frontend"
         , "import Obelisk.Run"
         , "import qualified Frontend"
