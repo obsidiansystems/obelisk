@@ -27,7 +27,7 @@ library
         build-depends: directory
 
   build-depends:
-    base, 
+    base,
     base64-bytestring,
     bytestring,
     containers,
