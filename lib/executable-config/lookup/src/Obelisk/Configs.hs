@@ -35,7 +35,7 @@ import Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import Reflex
 import Reflex.Host.Class
-import Reflex.Dom
+import Reflex.Dom.Core
 #ifndef ghcjs_HOST_OS
 import Language.Javascript.JSaddle (MonadJSM)
 #endif

@@ -64,6 +64,12 @@ This project's release branch is `master`. This log is written from the perspect
 * Fix `ob` commands to again support running from any subdirectory of an obelisk project ([#591](https://github.com/obsidiansystems/obelisk/pull/591))
 * Add `reflex-platform-func` argument to Obelisk's `default.nix`. It defaults to it's prior behavior of using the reflex-platform in in `dep`. ([#612](https://github.com/obsidiansystems/obelisk/pull/612))
 
+## Unreleased
+
+* Obelisk now depends directly on reflex-dom-core instead of
+  reflex-dom. This avoids requiring a jsaddle-webkit2gtk dependency in
+  apps that are only using jsaddle-warp.
+
 ## v0.3.0.0 - 2019-12-20
 
 * Change the structure of Obelisk routes to use a designated
