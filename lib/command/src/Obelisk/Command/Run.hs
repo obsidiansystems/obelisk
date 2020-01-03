@@ -35,13 +35,9 @@ import System.Directory
 import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
 import System.Which (staticWhich)
-import Data.ByteString (ByteString)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
-import Obelisk.CliApp
-  ( CliT (..), HasCliConfig, Severity (..)
-  , callCommand, failWith, getCliConfig, putLog, proc
-  , readProcessAndLogStderr, runCli)
+import Obelisk.CliApp (Severity (..) , callCommand, failWith, putLog, proc, readProcessAndLogStderr)
 import Obelisk.Command.Project (inProjectShell, withProjectRoot)
 
 data CabalPackageInfo = CabalPackageInfo
@@ -172,11 +168,6 @@ parseCabalPackage dir = do
         putLog Error $ T.pack $ "Failed to parse " <> packageFile <> ":"
         mapM_ (putLog Error) $ fmap (T.pack . show) errors
         return Nothing
-
-withUTF8FileContentsM :: (MonadIO m, HasCliConfig e m) => FilePath -> (ByteString -> CliT e IO a) -> m a
-withUTF8FileContentsM fp f = do
-  c <- getCliConfig
-  liftIO $ withUTF8FileContents fp $ runCli c . f . toUTF8BS
 
 -- | Create ghci configuration to load the given packages
 withGhciScript
