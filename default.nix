@@ -150,6 +150,7 @@ in rec {
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
     mkdir $out
     cd $out
+    # TODO profiling + static shouldn't break and need an ad-hoc workaround like that
     ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
     ${if optimizationLevel == null then ''
       ln -s all.unminified.js all.js
