@@ -8,7 +8,6 @@ import Control.Monad.Fail
 import Control.Monad.IO.Class
 import Data.Semigroup ((<>))
 import qualified Data.Text as T
-import System.Process (proc)
 
 import Control.Monad.Catch (MonadMask)
 
