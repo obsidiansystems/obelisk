@@ -4,9 +4,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 module Obelisk.Command.Run where
 
-import Control.Exception (bracket)
+import Control.Applicative (liftA2)
+import Control.Exception (Exception, bracket)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -24,9 +26,9 @@ import Distribution.Types.CondTree
 import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Library
 import Distribution.Utils.Generic
-import Hpack.Config
-import Hpack.Render
-import Hpack.Yaml
+import qualified Hpack.Config as Hpack
+import qualified Hpack.Render as Hpack
+import qualified Hpack.Yaml as Hpack
 import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
 import System.Directory
@@ -105,38 +107,50 @@ runWatch = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath Nothing
 
+data GuessPackageFileError = GuessPackageFileError_Ambiguous [FilePath] | GuessPackageFileError_NotFound
+  deriving (Eq, Ord, Show)
+instance Exception GuessPackageFileError
+
+-- | Given a directory, try to guess what the appropriate @.cabal@ or @package.yaml@ file is for the package.
+guessCabalPackageFile
+  :: MonadIO m
+  => FilePath -- ^ Directory to search for cabal package
+  -> m (Either GuessPackageFileError (Either FilePath FilePath))
+  -- ^ 'Right' 'Left' for hpack package, 'Right' 'Right' for cabal package; 'FilePath' is relative to given directory.
+guessCabalPackageFile dir = do
+  candidates <- liftIO $
+        filterM doesFileExist
+    =<< filter (liftA2 (||) (== Hpack.packageConfig) (".cabal" `L.isSuffixOf`))
+    <$> listDirectory dir
+  pure $ case L.partition (== Hpack.packageConfig) candidates of
+    ([hpack], _) -> Right $ Left hpack
+    ([], [cabal]) -> Right $ Right cabal
+    ([], []) -> Left GuessPackageFileError_NotFound
+    (hpacks, cabals) -> Left $ GuessPackageFileError_Ambiguous $ hpacks <> cabals
+
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
-getLocalPkgs :: Applicative f => f [(FilePath, Maybe String)]
-getLocalPkgs = pure [("backend", Nothing), ("common", Nothing), ("frontend", Nothing)]
+getLocalPkgs :: Applicative f => f [FilePath]
+getLocalPkgs = pure ["backend", "common", "frontend"]
 
 parseCabalPackage
   :: (MonadObelisk m)
   => FilePath -- ^ package directory
-  -> Maybe String -- ^ package name, defaults to directory
   -> m (Maybe CabalPackageInfo)
-parseCabalPackage dir name = do
-  let cabalFp = dir </> (fromMaybe (takeBaseName dir) name <> ".cabal")
-      hpackFp = dir </> "package.yaml"
-  hasCabal <- liftIO $ doesFileExist cabalFp
-  hasHpack <- liftIO $ doesFileExist hpackFp
+parseCabalPackage dir = do
+  package <- guessCabalPackageFile dir >>= \case
+    Left GuessPackageFileError_NotFound -> Nothing <$ putLog Error ("No .cabal or package.yaml file found in " <> T.pack dir)
+    Left (GuessPackageFileError_Ambiguous _) -> Nothing <$ putLog Error ("Unable to determine which .cabal file to use in " <> T.pack dir)
+    Right (Right cabalFileName) -> let file = dir </> cabalFileName in Just . (, file) <$> liftIO (readUTF8File file)
+    Right (Left hpackFileName) -> do
+      let
+        file = dir </> hpackFileName
+        decodeOptions = Hpack.DecodeOptions (Hpack.ProgramName "ob") file Nothing Hpack.decodeYaml
+      liftIO (Hpack.readPackageConfig decodeOptions) >>= \case
+        Left err -> Nothing <$ putLog Error (T.pack $ "Failed to parse " <> file <> ": " <> err)
+        Right (Hpack.DecodeResult hpackPackage _ _ _) -> pure $ Just (Hpack.renderPackage [] hpackPackage, file)
 
-  mCabalContents <- if hasCabal
-    then Just <$> liftIO (readUTF8File cabalFp)
-    else if hasHpack
-      then do
-        let decodeOptions = DecodeOptions (ProgramName "ob") hpackFp Nothing decodeYaml
-        liftIO (readPackageConfig decodeOptions) >>= \case
-          Left err -> do
-            putLog Error $ T.pack $ "Failed to parse " <> hpackFp <> ": " <> err
-            return Nothing
-          Right (DecodeResult hpackPackage _ _ _) -> do
-            return $ Just $ renderPackage [] hpackPackage
-      else do
-        putLog Error $ T.pack "Found neither cabal nor hpack file"
-        return Nothing
-
-  fmap join $ forM mCabalContents $ \cabalContents -> do
+  fmap join $ forM package $ \(cabalContents, packageFile) -> do
     let (warnings, result) = runParseResult $ parseGenericPackageDescription $
           toUTF8BS cabalContents
     mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
@@ -145,7 +159,7 @@ parseCabalPackage dir name = do
         return $ do
           (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
           pure $ CabalPackageInfo
-            { _cabalPackageInfo_packageRoot = takeDirectory cabalFp
+            { _cabalPackageInfo_packageRoot = dir
             , _cabalPackageInfo_sourceDirs =
                 fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
             , _cabalPackageInfo_defaultExtensions =
@@ -155,7 +169,7 @@ parseCabalPackage dir name = do
             , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
             }
       Left (_, errors) -> do
-        putLog Error $ T.pack $ "Failed to parse " <> cabalFp <> ":"
+        putLog Error $ T.pack $ "Failed to parse " <> packageFile <> ":"
         mapM_ (putLog Error) $ fmap (T.pack . show) errors
         return Nothing
 
@@ -167,16 +181,15 @@ withUTF8FileContentsM fp f = do
 -- | Create ghci configuration to load the given packages
 withGhciScript
   :: MonadObelisk m
-  => [(FilePath, Maybe String)] -- ^ List of packages to load into ghci
+  => [FilePath] -- ^ List of packages to load into ghci
   -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
   -> m ()
-withGhciScript pkgs f = do
-  (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \(dir, name) -> do
-    flip fmap (parseCabalPackage dir name) $ \case
+withGhciScript dirs f = do
+  (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM dirs $ \dir -> do
+    flip fmap (parseCabalPackage dir) $ \case
       Nothing -> Left dir
       Just packageInfo -> Right packageInfo
 
-  let dirs = fmap fst pkgs
   when (null packageInfos) $
     failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " dirs
   unless (null pkgDirErrs) $
