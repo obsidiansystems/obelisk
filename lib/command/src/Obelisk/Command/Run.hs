@@ -132,12 +132,12 @@ parseCabalPackage dir = do
           Right (DecodeResult hpackPackage _ _ _) -> do
             return $ Just $ renderPackage [] hpackPackage
       else do
-        putLog Error $ T.pack $ "Found neither cabal nor hpack file"
+        putLog Error $ T.pack "Found neither cabal nor hpack file"
         return Nothing
 
   fmap join $ forM mCabalContents $ \cabalContents -> do
     let (warnings, result) = runParseResult $ parseGenericPackageDescription $
-          toUTF8BS $ cabalContents
+          toUTF8BS cabalContents
     mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
     case result of
       Right gpkg -> do
@@ -186,16 +186,16 @@ withGhciScript pkgs f = do
       language = NE.toList $ fromMaybe (Haskell98 NE.:| []) $ NE.nonEmpty languageFromPkgs
       extensionsLine = if extensions == mempty
         then ""
-        else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
+        else ":set " <> unwords (("-X" <>) . prettyShow <$> extensions)
       ghcOptions = concat $ mapMaybe (\case (GHC, xs) -> Just xs; _ -> Nothing) $
         packageInfos >>= _cabalPackageInfo_compilerOptions
-      dotGhci = unlines $
+      dotGhci = unlines
         [ ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
         , case ghcOptions of
             [] -> ""
-            xs -> ":set " <> intercalate " " xs
+            xs -> ":set " <> unwords xs
         , extensionsLine
-        , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
+        , ":set " <> unwords (("-X" <>) . prettyShow <$> language)
         , ":load Backend Frontend"
         , "import Obelisk.Run"
         , "import qualified Frontend"
