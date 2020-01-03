@@ -2,6 +2,10 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
 
+## Unreleased
+
+* Bump reflex-platform which, notably, bumps nixpkgs to 19.09
+
 ## v0.3.0.0 - 2019-12-20
 
 * Generalised `pathSegmentEncoder`, added `pathFieldEncoder`.
