@@ -188,6 +188,7 @@ getNixSha256ForUriUnpacked
   => GitUri
   -> m NixSha256
 getNixSha256ForUriUnpacked uri =
+  --FIXME: this should be curled instead, and then added to the nix store
   withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> gitUriToText uri) $ do
     [hash] <- fmap T.lines $ readProcessAndLogOutput (Debug, Debug) $
       proc "nix-prefetch-url" ["--unpack", "--type", "sha256", T.unpack $ gitUriToText uri]
@@ -851,9 +852,9 @@ getLatestRev os = do
 uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Text -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mbranch mcommit = do
   commit <- case mcommit of
-    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
+    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd --perhaps do io here instead of making uriToTHunkSource effectful ?
     (Just c) -> return c
-  (src, rev) <- case uriToThunkSource uri mbranch of
+  (src, rev) <- uriToThunkSource uri mbranch >>= \case
     ThunkSource_GitHub s -> do
       rev <- runExceptT $ githubThunkRev s commit
       case rev of
@@ -862,6 +863,7 @@ uriThunkPtr uri mbranch mcommit = do
           putLog Warning "\
 \Failed to fetch archive from GitHub. This is probably a private repo. \
 \Falling back on normal fetchgit. Original failure:"
+          --FIXME: right here is where we want to add the error handling
           errorToWarning e
           let s' = forgetGithub True s
           (,) (ThunkSource_Git s') <$> gitThunkRev s' commit
@@ -876,7 +878,7 @@ uriThunkPtr uri mbranch mcommit = do
 -- If the thunk is a GitHub thunk and fails, we do *not* fall back like with
 -- `uriThunkPtr`. Unlike a plain URL, a thunk src explicitly states which method
 -- should be employed, and so we respect that.
-uriToThunkSource :: GitUri -> Maybe Text -> ThunkSource
+uriToThunkSource :: MonadObelisk m => GitUri -> Maybe Text -> m ThunkSource
 uriToThunkSource (GitUri u)
   | Right uriAuth <- URI.uriAuthority u
   , Just scheme <- URI.unRText <$> URI.uriScheme u
@@ -889,7 +891,7 @@ uriToThunkSource (GitUri u)
       s -> s `L.elem` [ "git", "https", "http" ] -- "http:" just redirects to "https:"
         && URI.unRText (URI.authHost uriAuth) == "github.com"
   , Just (_, owner :| [repoish]) <- URI.uriPath u
-  = \mbranch -> ThunkSource_GitHub $ GitHubSource
+  = \mbranch -> pure . ThunkSource_GitHub $ GitHubSource
     { _gitHubSource_owner = N $ URI.unRText owner
     , _gitHubSource_repo = N $ let
         repoish' = URI.unRText repoish
@@ -898,7 +900,7 @@ uriToThunkSource (GitUri u)
     , _gitHubSource_private = False -- TODO: Can we try something to infer this?
     }
 
-  | otherwise = \mbranch -> ThunkSource_Git $ GitSource
+  | otherwise = \mbranch -> pure . ThunkSource_Git $ GitSource
     { _gitSource_url = GitUri u
     , _gitSource_branch = N <$> mbranch
     , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
@@ -963,13 +965,17 @@ gitThunkRev s commit = do
 --
 -- If the branch name is passed in, it is returned exactly as-is. If it is not
 -- passed it, the default branch of the repo is used instead.
-gitGetCommitBranch
-  :: MonadObelisk m => GitUri -> Maybe Text -> m (Text, CommitId)
+
+gitGetCommitBranch --FIXME:definitely encode the check to see if repo exists here
+  :: MonadObelisk m => GitUri -> Maybe Text -> m (Text, CommitId, Bool)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
   (_, bothMaps) <- gitLsRemote
     (T.unpack $ gitUriToText uri)
     (GitRef_Branch <$> mbranch)
     Nothing
+  unAuthenticatedExitCode <-
+    readCreateProcessWithExitCode . isolateGitProc . gitProcNoRepo $
+      ["ls-remote", "--exit-code", "--symref", repository]
   branch <- case mbranch of
     Nothing -> withExitFailMessage "Failed to find default branch" $ do
       b <- rethrowE $ gitLookupDefaultBranch bothMaps
@@ -980,7 +986,7 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
   putLog Informational $ "Latest commit in branch " <> branch
     <> " from remote repo " <> uriMsg
     <> " is " <> commit
-  pure (branch, commit)
+  pure (branch, commit )-- , exitCode == ExitSuccess)
   where
     rethrowE = either failWith pure
     uriMsg = gitUriToText uri
