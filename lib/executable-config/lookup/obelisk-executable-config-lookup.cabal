@@ -39,7 +39,7 @@ library
     primitive,
     monad-control,
     reflex,
-    reflex-dom,
+    reflex-dom-core,
     jsaddle
 
   ghc-options: -Wall

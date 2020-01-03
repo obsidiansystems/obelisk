@@ -2,6 +2,12 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
 
+## Unreleased
+
+* Obelisk now depends directly on reflex-dom-core instead of
+  reflex-dom. This avoids requiring a jsaddle-webkit2gtk dependency in
+  apps that are only using jsaddle-warp.
+
 ## v0.3.0.0 - 2019-12-20
 
 * Generalised `pathSegmentEncoder`, added `pathFieldEncoder`.
