@@ -14,6 +14,7 @@ import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.UTF8 as BSU
+import Data.Foldable (for_)
 import Data.List
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
@@ -222,20 +223,35 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   , help "Path to directory containing thunk data"
   ]
 
-data ThunkCommand
-   = ThunkCommand_Update [FilePath] (Maybe String)
-   | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack   [FilePath] Bool
-  deriving Show
+thunkConfig :: Parser ThunkConfig
+thunkConfig = ThunkConfig
+  <$>
+    (   flag' (Just True) (long "private" <> help "Mark thunks as pointing to a private repository")
+    <|> flag' (Just False) (long "public" <> help "Mark thunks as pointing to a public repository")
+    <|> pure Nothing
+    )
 
-forceFlag :: Parser Bool
-forceFlag = switch $ long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care."
+thunkUpdateConfig :: Parser ThunkUpdateConfig
+thunkUpdateConfig = ThunkUpdateConfig
+  <$> optional (strOption (long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
+  <*> thunkConfig
+
+thunkPackConfig :: Parser ThunkPackConfig
+thunkPackConfig = ThunkPackConfig
+  <$> switch (long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care.")
+  <*> thunkConfig
+
+data ThunkCommand
+   = ThunkCommand_Update [FilePath] ThunkUpdateConfig
+   | ThunkCommand_Unpack [FilePath]
+   | ThunkCommand_Pack   [FilePath] ThunkPackConfig
+  deriving Show
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> optional (strOption (long "branch" <> metavar "BRANCH"))) $ progDesc "Update thunk to latest revision available"
+  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> thunkUpdateConfig) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> forceFlag) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> thunkPackConfig) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
 
 data ShellOpts
@@ -376,17 +392,16 @@ ob = \case
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run -> inNixShell' $ static run
-    -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
-    ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
-    ThunkCommand_Pack thunks force -> forM_ thunks (packThunk force)
+    ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
+    ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
+    ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectProc root False (_shellOpts_shell so) (pure . bash . BSU.fromString <$> _shellOpts_command so)
-  ObCommand_Doc shell pkgs -> withProjectRoot "." $ \root ->
-    projectShell root False shell (Just $ haddockCommand pkgs)
+  ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
+    projectShell root False shell' (Just $ haddockCommand pkgs)
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)

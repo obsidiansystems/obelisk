@@ -2,23 +2,23 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
 
-## Unreleased
+## v0.3.0.0 - 2019-12-20
 
-* Generalised pathSegmentEncoder, added pathFieldEncoder.
-* Added some Prisms to the encoder library for manipulating DSums (perhaps they should get moved to dependent-sum before release?)
-* Add "ob doc" command, which lists paths to haddock documentation for specified packages
-* Bump reflex-platform so that obelisk now uses GHC 8.6.5 and the nixos-19.03 nixpkgs set
-* Add support in obelisk-route for single parameters in URL paths
-* Bump reflex-platform so that obelisk now uses reflex-dom 0.5.2.0
+* Generalised `pathSegmentEncoder`, added `pathFieldEncoder`.
+* Added some `Prism`s to the encoder library for manipulating `DSum`s.
+* Add `ob doc` command, which lists paths to haddock documentation for specified packages.
+* Bump reflex-platform so that obelisk now uses GHC 8.6.5 and the nixos-19.03 nixpkgs set.
+* Add support in `obelisk-route` for single parameters in URL paths.
+* Bump reflex-platform so that obelisk now uses reflex-dom 0.5.2.0.
 * Use a `--pure` nix shell in `ob run` for parity with `ob repl` and more resilience against "works on my machine".
 * Pin usages of `<nixpkgs>` in obelisk thunks, etc. to the nixpkgs used by the project's obelisk impl.
 * Backport ACMEv2 support in obelisk server to regain LetsEncrypt account creation.
-* Enable https in `ob run`
-* `ob run` now handles ghci errors better, and includes a custom ghcid
+* Enable HTTPS in `ob run`.
+* `ob run` now handles `ghci` errors better, and includes a custom `ghcid`
   version. As a result, you no longer need to have ghcid installed to
   use `ob run`, as we provide one for you.
 * `ob` commands now complain less on systems with umasks other than `0022`.
-* Ignore package environment files in `ob run` and `ob repl`
+* Ignore package environment files in `ob run` and `ob repl`.
 * Add `Obelisk.Route.Frontend.routeLinkDynAttr`.
 
 ## v0.2.0.0 - 2019-8-17

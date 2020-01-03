@@ -33,7 +33,6 @@ import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
 import System.Directory
 import System.FilePath
-import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Which (staticWhich)
 import Text.ShellEscape (bash, bytes)
@@ -41,7 +40,7 @@ import Text.ShellEscape (bash, bytes)
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp
   ( CliT (..), HasCliConfig, Severity (..)
-  , callCommand, failWith, getCliConfig, putLog
+  , callCommand, failWith, getCliConfig, putLog, proc
   , readProcessAndLogStderr, runCli)
 import Obelisk.Command.Project (inProjectProc, withProjectRoot)
 
@@ -134,7 +133,9 @@ parseCabalPackage dir = do
             return Nothing
           Right (DecodeResult hpackPackage _ _ _) -> do
             return $ Just $ renderPackage [] hpackPackage
-      else return Nothing
+      else do
+        putLog Error $ T.pack $ "Found neither cabal nor hpack file"
+        return Nothing
 
   fmap join $ forM mCabalContents $ \cabalContents -> do
     let (warnings, result) = runParseResult $ parseGenericPackageDescription $
@@ -168,7 +169,7 @@ withUTF8FileContentsM fp f = do
 withGhciScript
   :: MonadObelisk m
   => [FilePath] -- ^ List of packages to load into ghci
-  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporory .ghci
+  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
   -> m ()
 withGhciScript pkgs f = do
   (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \pkg -> do

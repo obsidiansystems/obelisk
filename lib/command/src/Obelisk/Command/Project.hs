@@ -33,9 +33,9 @@ import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
-import System.Process (CreateProcess, cwd, proc, waitForProcess, delegate_ctlc)
-import Text.ShellEscape (Bash, bytes)
+import System.Process (waitForProcess)
 import System.Which (staticWhich)
+import Text.ShellEscape (Bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -57,6 +57,7 @@ obeliskSourceWithBranch branch = ThunkSource_GitHub $ GitHubSource
   { _gitHubSource_owner = "obsidiansystems"
   , _gitHubSource_repo = "obelisk"
   , _gitHubSource_branch = Just branch
+  , _gitHubSource_private = False
   }
 
 data InitSource
@@ -172,7 +173,7 @@ findProjectRoot :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectRoot target = do
   myUid <- liftIO getRealUserID
   targetStat <- liftIO $ getFileStatus target
-  umask <- liftIO $ getUmask
+  umask <- liftIO getUmask
   (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat umask myUid) []
   return result
 
@@ -259,9 +260,9 @@ projectProc root isPure shellName command =
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
   let nixPath = $(staticWhich "nix")
-  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ proc nixPath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ proc nixPath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
      [ "default.nix"] <>
      ["--pure" | isPure] <>
      [ "-A"
@@ -276,9 +277,3 @@ projectShell root isPure shellName command = do
           c
         ]
   void $ liftIO $ waitForProcess ph
-
-setCtlc :: CreateProcess -> CreateProcess
-setCtlc cfg = cfg { delegate_ctlc = True }
-
-setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
-setCwd fp cfg = cfg { cwd = fp }
