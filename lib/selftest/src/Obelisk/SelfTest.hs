@@ -25,6 +25,7 @@ import Shelly
 import System.Directory (withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
+import System.FilePath (replaceBaseName, takeBaseName)
 import qualified System.Info
 import System.IO (Handle, hClose)
 import System.IO.Temp
@@ -95,13 +96,12 @@ main = do
           f obeliskImpl initCache
 
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
-  [p0, p1, p2, p3] <- liftIO $ getFreePorts 4
 
   withObeliskImpl $ \obeliskImpl initCache ->
     hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
-          inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
+          inTmp :: (FilePath -> Sh a) -> IO ()
           inTmp f = withTmp (chdir <*> f)
 
           withTmp f = shelly_ . withSystemTempDirectory "test λ" $ f . fromString
@@ -149,9 +149,12 @@ main = do
 
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'
-      describe "ob run" $ parallel $ do
-        it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir p0 p1 Nothing httpManager
-        it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir p2 p3 (Just "frontend") httpManager
+      describe "ob run" $ {- NOT parallel $ -} do
+        it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir Nothing httpManager
+        it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir (Just "frontend") httpManager
+        it "works with differently named cabal files" $ inTmpObInit $ \_ -> do
+          changeCabalPackageName "backend/backend.cabal" "new-backend"
+          testObRunInDir Nothing httpManager
 
       describe "obelisk project" $ parallel $ do
         it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImpl]
@@ -167,7 +170,7 @@ main = do
         if System.Info.os == "darwin"
           then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
           else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
-            let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
+            let defaultNixPath = dir </> ("default.nix" :: FilePath)
             writefile defaultNixPath
               =<< T.replace
                 "# config.android_sdk.accept_license = false;"
@@ -249,8 +252,9 @@ main = do
 
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
-testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
-testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+testObRunInDir :: Maybe FilePath -> HTTP.Manager -> Sh ()
+testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+  [p0, p1] <- liftIO $ getFreePorts 2
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
   maybe id chdir mdir $ runHandle "ob" ["run", "-v"] $ \stdout -> do
@@ -264,7 +268,7 @@ testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure ();
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
 
-testThunkPack :: Shelly.FilePath -> Sh ()
+testThunkPack :: FilePath -> Sh ()
 testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
   let pack' = readProcessWithExitCode "ob" ["thunk", "pack", T.unpack $ toTextIgnore path'] ""
       ensureThunkPackFails q = liftIO $ pack' >>= \case
@@ -329,6 +333,14 @@ obRunCheck httpManager _stdout frontendUri = do
   let req uri = liftIO $ HTTP.parseRequest (T.unpack uri) >>= flip HTTP.httpLbs httpManager
   req frontendUri >>= \r -> when (HTTP.responseStatus r /= HTTP.ok200) $ errorExit $
     "Request to frontend server failed: " <> T.pack (show r)
+
+-- | Rename a cabal file and do a really dumb, brittle search/replace in its content to update the name.
+changeCabalPackageName :: FilePath -> Text -> Sh ()
+changeCabalPackageName cabalFile newName = do
+  contents <- readfile cabalFile
+  writefile (replaceBaseName cabalFile (T.unpack newName)) $
+    T.replace (" " <> T.pack (takeBaseName cabalFile)) (" " <> newName) contents -- WARNING: Super brittle
+  rm cabalFile
 
 getFreePorts :: Int -> IO [Socket.PortNumber]
 getFreePorts 0 = pure []
