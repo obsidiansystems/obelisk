@@ -10,9 +10,11 @@ module Obelisk.Command.Run where
 import Control.Applicative (liftA2)
 import Control.Exception (Exception, bracket)
 import Control.Monad
+import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
 import Data.Either
+import Data.Foldable (for_)
 import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
@@ -133,41 +135,38 @@ parseCabalPackage
   :: (MonadObelisk m)
   => FilePath -- ^ package directory
   -> m (Maybe CabalPackageInfo)
-parseCabalPackage dir = do
-  package <- guessCabalPackageFile dir >>= \case
-    Left GuessPackageFileError_NotFound -> Nothing <$ putLog Error ("No .cabal or package.yaml file found in " <> T.pack dir)
-    Left (GuessPackageFileError_Ambiguous _) -> Nothing <$ putLog Error ("Unable to determine which .cabal file to use in " <> T.pack dir)
-    Right (Right cabalFileName) -> let file = dir </> cabalFileName in Just . (, file) <$> liftIO (readUTF8File file)
+parseCabalPackage dir = either ((Nothing <$) . putLog Error) (pure . Just) <=< runExceptT $ do
+  (cabalContents, packageFile) <- guessCabalPackageFile dir >>= \case
+    Left GuessPackageFileError_NotFound -> throwError $ "No .cabal or package.yaml file found in " <> T.pack dir
+    Left (GuessPackageFileError_Ambiguous _) -> throwError $ "Unable to determine which .cabal file to use in " <> T.pack dir
+    Right (Right cabalFileName) -> let file = dir </> cabalFileName in (, file) <$> liftIO (readUTF8File file)
     Right (Left hpackFileName) -> do
       let
         file = dir </> hpackFileName
         decodeOptions = Hpack.DecodeOptions (Hpack.ProgramName "ob") file Nothing Hpack.decodeYaml
       liftIO (Hpack.readPackageConfig decodeOptions) >>= \case
-        Left err -> Nothing <$ putLog Error (T.pack $ "Failed to parse " <> file <> ": " <> err)
-        Right (Hpack.DecodeResult hpackPackage _ _ _) -> pure $ Just (Hpack.renderPackage [] hpackPackage, file)
+        Left err -> throwError $ T.pack $ "Failed to parse " <> file <> ": " <> err
+        Right (Hpack.DecodeResult hpackPackage _ _ _) -> pure (Hpack.renderPackage [] hpackPackage, file)
 
-  fmap join $ forM package $ \(cabalContents, packageFile) -> do
-    let (warnings, result) = runParseResult $ parseGenericPackageDescription $
-          toUTF8BS cabalContents
-    mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
-    case result of
-      Right gpkg -> do
-        return $ do
-          (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
-          pure $ CabalPackageInfo
-            { _cabalPackageInfo_packageRoot = dir
-            , _cabalPackageInfo_sourceDirs =
-                fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
-            , _cabalPackageInfo_defaultExtensions =
-                defaultExtensions $ libBuildInfo lib
-            , _cabalPackageInfo_defaultLanguage =
-                defaultLanguage $ libBuildInfo lib
-            , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
-            }
-      Left (_, errors) -> do
-        putLog Error $ T.pack $ "Failed to parse " <> packageFile <> ":"
-        mapM_ (putLog Error) $ fmap (T.pack . show) errors
-        return Nothing
+  let (warnings, result) = runParseResult $ parseGenericPackageDescription $
+        toUTF8BS cabalContents
+  for_ warnings $ putLog Warning . T.pack . show
+  case condLibrary <$> result of
+    Right (Just condLib) -> do
+      let (_, lib) = simplifyCondTree (const $ pure True) condLib
+      pure $ CabalPackageInfo
+        { _cabalPackageInfo_packageRoot = dir
+        , _cabalPackageInfo_sourceDirs =
+            fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
+        , _cabalPackageInfo_defaultExtensions =
+            defaultExtensions $ libBuildInfo lib
+        , _cabalPackageInfo_defaultLanguage =
+            defaultLanguage $ libBuildInfo lib
+        , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
+        }
+    Right Nothing -> throwError "Haskell package has no library component"
+    Left (_, errors) ->
+      throwError $ T.pack $ "Failed to parse " <> packageFile <> ":\n" <> unlines (map show errors)
 
 -- | Create ghci configuration to load the given packages
 withGhciScript
