@@ -117,7 +117,7 @@ guessCabalPackageFile
   -- ^ 'Right' 'Left' for hpack package, 'Right' 'Right' for cabal package; 'FilePath' is relative to given directory.
 guessCabalPackageFile dir = do
   candidates <- liftIO $
-        filterM doesFileExist
+        filterM (doesFileExist . (dir </>))
     =<< filter (liftA2 (||) (== Hpack.packageConfig) (".cabal" `L.isSuffixOf`))
     <$> listDirectory dir
   pure $ case L.partition (== Hpack.packageConfig) candidates of
