@@ -253,7 +253,7 @@ testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe Shelly.FilePat
 testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
-  maybe id chdir mdir $ runHandle "ob" ["run"] $ \stdout -> do
+  maybe id chdir mdir $ runHandle "ob" ["run", "-v"] $ \stdout -> do
     firstUri <- handleObRunStdout httpManager stdout
     let newUri = uri p1
     when (firstUri == newUri) $ errorExit $
