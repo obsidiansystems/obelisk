@@ -95,7 +95,6 @@ main = do
           f obeliskImpl initCache
 
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
-  [p0, p1, p2, p3] <- liftIO $ getFreePorts 4
 
   withObeliskImpl $ \obeliskImpl initCache ->
     hspec $ parallel $ do
@@ -149,9 +148,9 @@ main = do
 
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'
-      describe "ob run" $ parallel $ do
-        it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir p0 p1 Nothing httpManager
-        it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir p2 p3 (Just "frontend") httpManager
+      describe "ob run" $ {- NOT parallel $ -} do
+        it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir Nothing httpManager
+        it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir (Just "frontend") httpManager
 
       describe "obelisk project" $ parallel $ do
         it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImpl]
@@ -249,8 +248,9 @@ main = do
 
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
-testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe FilePath -> HTTP.Manager -> Sh ()
-testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+testObRunInDir :: Maybe FilePath -> HTTP.Manager -> Sh ()
+testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+  [p0, p1] <- liftIO $ getFreePorts 2
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
   maybe id chdir mdir $ runHandle "ob" ["run", "-v"] $ \stdout -> do
