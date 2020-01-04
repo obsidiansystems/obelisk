@@ -101,7 +101,7 @@ main = do
     hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
-          inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
+          inTmp :: (FilePath -> Sh a) -> IO ()
           inTmp f = withTmp (chdir <*> f)
 
           withTmp f = shelly_ . withSystemTempDirectory "test λ" $ f . fromString
@@ -167,7 +167,7 @@ main = do
         if System.Info.os == "darwin"
           then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
           else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
-            let defaultNixPath = dir </> ("default.nix" :: Shelly.FilePath)
+            let defaultNixPath = dir </> ("default.nix" :: FilePath)
             writefile defaultNixPath
               =<< T.replace
                 "# config.android_sdk.accept_license = false;"
@@ -249,7 +249,7 @@ main = do
 
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
-testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
+testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe FilePath -> HTTP.Manager -> Sh ()
 testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
@@ -264,7 +264,7 @@ testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure ();
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
 
-testThunkPack :: Shelly.FilePath -> Sh ()
+testThunkPack :: FilePath -> Sh ()
 testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
   let pack' = readProcessWithExitCode "ob" ["thunk", "pack", T.unpack $ toTextIgnore path'] ""
       ensureThunkPackFails q = liftIO $ pack' >>= \case
