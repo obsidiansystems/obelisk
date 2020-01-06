@@ -896,7 +896,12 @@ uriToThunkSource (GitUri u)
         fmap (\(x, _, _)->x)
         . readCreateProcessWithExitCode
         . isolateGitProc . gitProcNoRepo $
-          ["ls-remote", "--exit-code", "--symref", show u]
+          ["ls-remote"
+          , "--exit-code"
+          , "--symref"
+          , show $ u
+            { URI.uriScheme=URI.mkScheme "https"
+            , URI.uriAuthority=Left True}]
       pure . ThunkSource_GitHub $ GitHubSource
         { _gitHubSource_owner = N $ URI.unRText owner
         , _gitHubSource_repo = N $ let
