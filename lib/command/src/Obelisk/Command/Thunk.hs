@@ -69,6 +69,7 @@ import GitHub
 import GitHub.Data.Name
 import Obelisk.Command.Nix
 import System.Directory
+import System.Exit
 import System.FilePath
 import System.IO.Error
 import System.IO.Temp
@@ -188,7 +189,6 @@ getNixSha256ForUriUnpacked
   => GitUri
   -> m NixSha256
 getNixSha256ForUriUnpacked uri =
-  --FIXME: this should be curled instead, and then added to the nix store
   withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> gitUriToText uri) $ do
     [hash] <- fmap T.lines $ readProcessAndLogOutput (Debug, Debug) $
       proc "nix-prefetch-url" ["--unpack", "--type", "sha256", T.unpack $ gitUriToText uri]
@@ -852,7 +852,7 @@ getLatestRev os = do
 uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Text -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mbranch mcommit = do
   commit <- case mcommit of
-    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd --perhaps do io here instead of making uriToTHunkSource effectful ?
+    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd -- return . (\(_, y, _)->y) --perhaps do io here instead of making uriToTHunkSource effectful ?
     (Just c) -> return c
   (src, rev) <- uriToThunkSource uri mbranch >>= \case
     ThunkSource_GitHub s -> do
@@ -863,7 +863,6 @@ uriThunkPtr uri mbranch mcommit = do
           putLog Warning "\
 \Failed to fetch archive from GitHub. This is probably a private repo. \
 \Falling back on normal fetchgit. Original failure:"
-          --FIXME: right here is where we want to add the error handling
           errorToWarning e
           let s' = forgetGithub True s
           (,) (ThunkSource_Git s') <$> gitThunkRev s' commit
@@ -891,21 +890,35 @@ uriToThunkSource (GitUri u)
       s -> s `L.elem` [ "git", "https", "http" ] -- "http:" just redirects to "https:"
         && URI.unRText (URI.authHost uriAuth) == "github.com"
   , Just (_, owner :| [repoish]) <- URI.uriPath u
-  = \mbranch -> pure . ThunkSource_GitHub $ GitHubSource
-    { _gitHubSource_owner = N $ URI.unRText owner
-    , _gitHubSource_repo = N $ let
-        repoish' = URI.unRText repoish
-      in fromMaybe repoish' $ T.stripSuffix ".git" repoish'
-    , _gitHubSource_branch = N <$> mbranch
-    , _gitHubSource_private = False -- TODO: Can we try something to infer this?
-    }
+  = \mbranch ->
+    do
+      unAuthenticatedExitCode <-
+        fmap (\(x, _, _)->x)
+        . readCreateProcessWithExitCode
+        . isolateGitProc . gitProcNoRepo $
+          ["ls-remote", "--exit-code", "--symref", show u]
+      pure . ThunkSource_GitHub $ GitHubSource
+        { _gitHubSource_owner = N $ URI.unRText owner
+        , _gitHubSource_repo = N $ let
+            repoish' = URI.unRText repoish
+          in fromMaybe repoish' $ T.stripSuffix ".git" repoish'
+        , _gitHubSource_branch = N <$> mbranch
+        , _gitHubSource_private = unAuthenticatedExitCode /= ExitSuccess
+        }
 
-  | otherwise = \mbranch -> pure . ThunkSource_Git $ GitSource
-    { _gitSource_url = GitUri u
-    , _gitSource_branch = N <$> mbranch
-    , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
-    , _gitSource_private = False -- TODO: Can we try something to infer this?
-    }
+  | otherwise = \mbranch ->
+    do
+      unAuthenticatedExitCode <-
+        fmap (\(x, _, _)->x)
+        . readCreateProcessWithExitCode
+        . isolateGitProc . gitProcNoRepo $
+          ["ls-remote", "--exit-code", "--symref", show u]
+      pure . ThunkSource_Git $ GitSource
+        { _gitSource_url = GitUri u
+        , _gitSource_branch = N <$> mbranch
+        , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
+        , _gitSource_private = unAuthenticatedExitCode /= ExitSuccess
+        }
 
 -- Funny signature indicates no effects depend on the optional branch name.
 githubThunkRev
@@ -966,16 +979,13 @@ gitThunkRev s commit = do
 -- If the branch name is passed in, it is returned exactly as-is. If it is not
 -- passed it, the default branch of the repo is used instead.
 
-gitGetCommitBranch --FIXME:definitely encode the check to see if repo exists here
-  :: MonadObelisk m => GitUri -> Maybe Text -> m (Text, CommitId, Bool)
+gitGetCommitBranch
+  :: MonadObelisk m => GitUri -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
   (_, bothMaps) <- gitLsRemote
     (T.unpack $ gitUriToText uri)
     (GitRef_Branch <$> mbranch)
     Nothing
-  unAuthenticatedExitCode <-
-    readCreateProcessWithExitCode . isolateGitProc . gitProcNoRepo $
-      ["ls-remote", "--exit-code", "--symref", repository]
   branch <- case mbranch of
     Nothing -> withExitFailMessage "Failed to find default branch" $ do
       b <- rethrowE $ gitLookupDefaultBranch bothMaps
@@ -986,7 +996,7 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
   putLog Informational $ "Latest commit in branch " <> branch
     <> " from remote repo " <> uriMsg
     <> " is " <> commit
-  pure (branch, commit )-- , exitCode == ExitSuccess)
+  pure (branch, commit)
   where
     rethrowE = either failWith pure
     uriMsg = gitUriToText uri
