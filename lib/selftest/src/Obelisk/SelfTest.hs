@@ -86,18 +86,23 @@ main = do
           run_ "cp" ["-rT", toTextIgnore obeliskImplRaw, toTextIgnore obeliskImpl]
           run_ "chown" ["-R", user, toTextIgnore obeliskImpl]
           run_ "chmod" ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
+        f obeliskImpl
 
-        withSystemTempDirectory "init Cache λ" $ \initCache -> do
-          -- Setup the ob init cache
-          void . shellyOb verbosity $ chdir (fromString initCache) $ do
-            run_ "ob" ["init", "--symlink", toTextIgnore obeliskImpl]
-            run_ "git" ["init"]
+    withInit f obeliskImpl =
+      withSystemTempDirectory "init Cache λ" $ \initCache -> do
+        -- Setup the ob init cache
+        void . shellyOb verbosity $ chdir initCache $ do
+          run_ "ob" ["init", "--symlink", toTextIgnore obeliskImpl]
+          run_ "git" ["init"]
 
-          f obeliskImpl initCache
+        f initCache
+
+    withObeliskImplAndInitCache f =
+      withObeliskImpl $ \impl -> withInit (f impl) impl
 
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
 
-  withObeliskImpl $ \obeliskImpl initCache ->
+  withObeliskImplAndInitCache $ \obeliskImpl initCache ->
     hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
@@ -109,6 +114,13 @@ main = do
           inTmpObInit f = inTmp $ \dir -> do
             run_ "cp" ["-rT", fromString initCache, toTextIgnore dir]
             f dir
+
+          -- To be used in tests that change the obelisk impl directory
+          inTmpObInitWithImplCopy f = inTmpObInit $ \dir ->
+            withObeliskImpl $ \(fromString -> implCopy) -> do
+              run_ "rm" [thunk]
+              run_ "ln" ["-s", implCopy, thunk]
+              f dir
 
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
           assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
@@ -167,16 +179,16 @@ main = do
         it "can build ghc.backend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghc.backend"]
         it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghcjs.frontend"]
 
-        if System.Info.os == "darwin"
-          then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
-          else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
-            let defaultNixPath = dir </> ("default.nix" :: FilePath)
-            writefile defaultNixPath
-              =<< T.replace
-                "# config.android_sdk.accept_license = false;"
-                "config.android_sdk.accept_license = true;"
-              <$> readfile defaultNixPath
-            nixBuild ["-A", "android.frontend"]
+        -- if System.Info.os == "darwin"
+        --   then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
+        --   else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
+        --     let defaultNixPath = dir </> ("default.nix" :: FilePath)
+        --     writefile defaultNixPath
+        --       =<< T.replace
+        --         "# config.android_sdk.accept_license = false;"
+        --         "config.android_sdk.accept_license = true;"
+        --       <$> readfile defaultNixPath
+        --     nixBuild ["-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
@@ -185,14 +197,14 @@ main = do
           it ("can enter "    <> shellName) $ inTmpObInit $ \_ -> inShell "exit"
           it ("can build in " <> shellName) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
 
-        it "has idempotent thunk update" $ inTmpObInit $ \_ -> do
+        it "has idempotent thunk update" $ inTmpObInitWithImplCopy $ \_ -> do
           _  <- pack
           u  <- update
           uu <- update
           assertRevEQ u uu
 
       describe "ob thunk pack/unpack" $ parallel $ do
-        it "has thunk pack and unpack inverses" $ inTmpObInit $ \_ -> do
+        it "has thunk pack and unpack inverses" $ inTmpObInitWithImplCopy $ \_ -> do
 
           _    <- pack
           e    <- commitAll
