@@ -88,7 +88,7 @@ main = do
           run_ "chmod" ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
         f obeliskImpl
 
-    withInit f obeliskImpl =
+    withInitCache f obeliskImpl =
       withSystemTempDirectory "init Cache λ" $ \initCache -> do
         -- Setup the ob init cache
         void . shellyOb verbosity $ chdir initCache $ do
@@ -98,7 +98,7 @@ main = do
         f initCache
 
     withObeliskImplAndInitCache f =
-      withObeliskImpl $ \impl -> withInit (f impl) impl
+      withObeliskImpl $ \impl -> withInitCache (f impl) impl
 
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
 
