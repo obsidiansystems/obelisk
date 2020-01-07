@@ -110,6 +110,7 @@ let
 
 in rec {
   inherit reflex-platform;
+  inherit pkgs;
   inherit (reflex-platform) nixpkgs pinBuildInputs;
   inherit (nixpkgs) lib;
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
@@ -122,20 +123,6 @@ in rec {
   selftest = pkgs.writeScript "selftest" ''
     #!${pkgs.runtimeShell}
     set -euo pipefail
-
-    export NIX_PATH="nixpkgs=${pkgs.path}";
-    datadir="${pkgs.nix}/share"
-    export TEST_ROOT=$(pwd)/test-tmp
-    export NIX_BUILD_HOOK=
-    export NIX_CONF_DIR=$TEST_ROOT/etc
-    export NIX_DB_DIR=$TEST_ROOT/db
-    export NIX_LOCALSTATE_DIR=$TEST_ROOT/var
-    export NIX_LOG_DIR=$TEST_ROOT/var/log/nix
-    export NIX_STATE_DIR=$TEST_ROOT/var/nix
-    export NIX_STORE_DIR=$TEST_ROOT/store
-    export PAGER=cat
-    cacheDir=$TEST_ROOT/binary-cache
-    nix-store --init
 
     PATH="${command}/bin:$PATH"
     export OBELISK_IMPL="$(mktemp -d)"

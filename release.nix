@@ -65,9 +65,7 @@ let
       (lib.optional reflex-platform.iosSupport iosSkeleton)
       [ command serverSkeletonExe serverSkeletonShell ]
     ];
-    command = local-self.nixpkgs.lib.overrideDerivation obelisk.command ( attrs: {
-       checkPhase = ''${obelisk.selftest} -v''; 
-     });
+    command = obelisk.command;
     skeleton = import ./skeleton { inherit obelisk; };
     serverSkeletonExe = skeleton.exe;
     # TODO fix nixpkgs so it doesn't try to run the result of haskell shells as setup hooks.

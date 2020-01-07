@@ -21,7 +21,7 @@ let
     enableemail = false;
     emailoverride = "";
     nixexprinput = "obelisk";
-    nixexprpath = "release.nix";
+    nixexprpath = "test.nix";
     inputs = jobs.inputs // {
       nixpkgs = {
         type = "git";
