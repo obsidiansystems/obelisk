@@ -157,7 +157,7 @@ main = do
         it "works with master branch impl" $ inTmp $ \_ -> runOb ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> runOb ["init", "--symlink", toTextIgnore obeliskImpl]
         it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init λ" $ \dir -> do
-          let p force = (System.Process.proc ob $ "--no-handoff" : "init" : ["--force"|force]) { cwd = Just dir }
+          let p force = (System.Process.proc ob $ "--no-handoff" : "-v" : "init" : ["--force"|force]) { cwd = Just dir }
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitFailure _, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p True) ""
