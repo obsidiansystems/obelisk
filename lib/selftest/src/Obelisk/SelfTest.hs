@@ -69,6 +69,15 @@ tshow = T.pack . show
 shellyOb :: MonadIO m => (Sh a -> Sh a) -> Sh a -> m a
 shellyOb f obTest = shelly $ f obTest
 
+-- Set "ob" in a single place so it can be replaced with a
+-- link to obelisk in the nix store in the future,
+-- and avoid PATH hacking before calling this script.
+ob :: FilePath
+ob = "ob"
+
+convertRunner :: (String -> [Text] -> a) -> String -> Bool -> [Text] -> a
+convertRunner runner command isVerbose args = runner command $ (if isVerbose then ("-v" :) else id) args
+
 main :: IO ()
 main = do
   -- Note: you can pass hspec arguments as well, eg: `-m <pattern>`
@@ -78,6 +87,10 @@ main = do
   let verbosity = bool silently verbosely isVerbose
       nixBuild args = run "nix-build" ("--no-out-link" : args)
   obeliskImplRaw <- fromString <$> getEnv "OBELISK_IMPL"
+  let runOb_ = convertRunner run_ ob isVerbose
+  let runOb = convertRunner run ob isVerbose
+  let testObRunInDir' = convertRunner testObRunInDir ob isVerbose ["run"]
+  let testThunkPack' = convertRunner testThunkPack ob isVerbose []
   let
     withObeliskImpl f =
       withSystemTempDirectory "obelisk-impl-copy" $ \(fromString -> obeliskImpl) -> do
@@ -92,7 +105,7 @@ main = do
       withSystemTempDirectory "init Cache λ" $ \initCache -> do
         -- Setup the ob init cache
         void . shellyOb verbosity $ chdir initCache $ do
-          run_ "ob" ["init", "--symlink", toTextIgnore obeliskImpl]
+          runOb_ ["init", "--symlink", toTextIgnore obeliskImpl]
           run_ "git" ["init"]
 
         f initCache
@@ -133,25 +146,25 @@ main = do
             revParseHead
 
           thunk  = ".obelisk/impl"
-          update = run "ob" ["thunk", "update", thunk] >> commitAll
-          pack   = run "ob" ["thunk", "pack",   thunk] >> commitAll
-          unpack = run "ob" ["thunk", "unpack", thunk] >> commitAll
+          update = runOb ["thunk", "update", thunk] >> commitAll
+          pack   = runOb ["thunk", "pack",   thunk] >> commitAll
+          unpack = runOb ["thunk", "unpack", thunk] >> commitAll
 
           diff a b = run "git" ["diff", a, b]
 
       describe "ob init" $ parallel $ do
-        it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
-        it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
-        it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", toTextIgnore obeliskImpl]
+        it "works with default impl"       $ inTmp $ \_ -> runOb ["init"]
+        it "works with master branch impl" $ inTmp $ \_ -> runOb ["init", "--branch", "master"]
+        it "works with symlink"            $ inTmp $ \_ -> runOb ["init", "--symlink", toTextIgnore obeliskImpl]
         it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init λ" $ \dir -> do
-          let p force = (System.Process.proc "ob" $ "--no-handoff" : "init" : ["--force"|force]) { cwd = Just dir }
+          let p force = (System.Process.proc ob $ "--no-handoff" : "init" : ["--force"|force]) { cwd = Just dir }
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitFailure _, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p True) ""
           pure ()
 
         it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
-          void $ errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
+          void $ errExit False $ runOb ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
         it "produces a valid route config" $ inTmpObInit $ \tmp -> liftIO $
@@ -162,11 +175,11 @@ main = do
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'
       describe "ob run" $ {- NOT parallel $ -} do
-        it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir Nothing httpManager
-        it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir (Just "frontend") httpManager
+        it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir' Nothing httpManager
+        it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir' (Just "frontend") httpManager
         it "works with differently named cabal files" $ inTmpObInit $ \_ -> do
           changeCabalPackageName "backend/backend.cabal" "new-backend"
-          testObRunInDir Nothing httpManager
+          testObRunInDir' Nothing httpManager
 
       describe "obelisk project" $ parallel $ do
         it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImpl]
@@ -220,8 +233,8 @@ main = do
         it "unpacks the correct branch" $ withTmp $ \dir -> do
           let branch = "master"
           run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
-          run_ "ob" ["thunk", "pack", toTextIgnore dir]
-          run_ "ob" ["thunk", "unpack", toTextIgnore dir]
+          runOb_ ["thunk", "pack", toTextIgnore dir]
+          runOb_ ["thunk", "unpack", toTextIgnore dir]
           branch' <- chdir dir $ run "git" ["rev-parse", "--abbrev-ref", "HEAD"]
           liftIO $ assertEqual "" branch (T.strip branch')
 
@@ -231,45 +244,45 @@ main = do
             run_ "git" ["clone", "https://github.com/haskell/process.git", repo]
             origHash <- chdir (fromText repo) revParseHead
 
-            run_ "ob" ["thunk", "pack", repo]
+            runOb_ ["thunk", "pack", repo]
             packedFiles <- Set.fromList <$> ls (fromText repo)
             liftIO $ assertEqual "" packedFiles $ Set.fromList $ (repo </>) <$>
               ["default.nix", "github.json", ".attr-cache" :: String]
 
-            run_ "ob" ["thunk", "unpack", repo]
+            runOb_ ["thunk", "unpack", repo]
             chdir (fromText repo) $ do
               unpackHash <- revParseHead
               assertRevEQ origHash unpackHash
 
-            testThunkPack $ fromText repo
+            testThunkPack' $ fromText repo
 
         it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
-          testThunkPack (dir </> thunk)
+          testThunkPack' (dir </> thunk)
 
       describe "ob thunk update --branch" $ parallel $ do
         it "can change a thunk to the latest version of a desired branch" $ withTmp $ \dir -> do
           let branch1 = "master"
               branch2 = "develop"
           run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch1]
-          run_ "ob" ["thunk" , "pack", toTextIgnore dir]
-          run_ "ob" ["thunk", "update", toTextIgnore dir, "--branch", branch2]
+          runOb_ ["thunk" , "pack", toTextIgnore dir]
+          runOb_ ["thunk", "update", toTextIgnore dir, "--branch", branch2]
 
         it "doesn't create anything when given an invalid branch" $ withTmp $ \dir -> do
           let checkDir dir' = liftIO $ getDirectoryContents $ T.unpack $ toTextIgnore dir'
           run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", "master"]
-          run_ "ob" ["thunk" , "pack", toTextIgnore dir]
+          runOb_ ["thunk" , "pack", toTextIgnore dir]
           startingContents <- checkDir dir
-          void $ errExit False $ run "ob" ["thunk", "update", toTextIgnore dir, "--branch", "dumble-palooza"]
+          void $ errExit False $ runOb ["thunk", "update", toTextIgnore dir, "--branch", "dumble-palooza"]
           checkDir dir >>= liftIO . assertEqual "" startingContents
 
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
-testObRunInDir :: Maybe FilePath -> HTTP.Manager -> Sh ()
-testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+testObRunInDir :: String -> [Text] -> Maybe FilePath -> HTTP.Manager -> Sh ()
+testObRunInDir cmd extraArgs mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
   [p0, p1] <- liftIO $ getFreePorts 2
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
-  maybe id chdir mdir $ runHandle "ob" ["run", "-v"] $ \stdout -> do
+  maybe id chdir mdir $ runHandle cmd extraArgs $ \stdout -> do
     firstUri <- handleObRunStdout httpManager stdout
     let newUri = uri p1
     when (firstUri == newUri) $ errorExit $
@@ -280,9 +293,9 @@ testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> 
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
 
-testThunkPack :: FilePath -> Sh ()
-testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
-  let pack' = readProcessWithExitCode "ob" ["thunk", "pack", T.unpack $ toTextIgnore path'] ""
+testThunkPack :: String -> [Text] -> FilePath -> Sh ()
+testThunkPack command args path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
+  let pack' = readProcessWithExitCode command ["thunk", "pack", T.unpack $ toTextIgnore path'] ""
       ensureThunkPackFails q = liftIO $ pack' >>= \case
         (code, out, err)
           | code == ExitSuccess -> fail "ob thunk pack succeeded when it should have failed"
