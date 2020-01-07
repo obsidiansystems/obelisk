@@ -49,9 +49,6 @@ data ObRunState
 cp :: FilePath
 cp = $(staticWhich "cp")
 
-doubleQuotes :: (IsString a, Semigroup a) => a -> a
-doubleQuotes s = "\"" <> s <> "\""
-
 commit :: Text -> Sh ()
 commit msg = void $ run "git"
   [ "-c"
