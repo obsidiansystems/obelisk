@@ -81,8 +81,8 @@ shellyOb f obTest = shelly $ f obTest
 ob :: FilePath
 ob = "ob"
 
-convertRunner :: (String -> [Text] -> a) -> String -> Bool -> [Text] -> a
-convertRunner runner command isVerbose args = runner command $ (if isVerbose then ("-v" :) else id) args
+augmentWithVerbosity :: (String -> [Text] -> a) -> String -> Bool -> [Text] -> a
+augmentWithVerbosity runner executable isVerbose args = runner executable $ (if isVerbose then ("-v" :) else id) args
 
 main :: IO ()
 main = do
@@ -93,10 +93,10 @@ main = do
   let verbosity = bool silently verbosely isVerbose
       nixBuild args = run "nix-build" ("--no-out-link" : args)
   obeliskImplRaw <- fromString <$> getEnv "OBELISK_IMPL"
-  let runOb_ = convertRunner run_ ob isVerbose
-  let runOb = convertRunner run ob isVerbose
-  let testObRunInDir' = convertRunner testObRunInDir ob isVerbose ["run"]
-  let testThunkPack' = convertRunner testThunkPack ob isVerbose []
+  let runOb_ = augmentWithVerbosity run_ ob isVerbose
+  let runOb = augmentWithVerbosity run ob isVerbose
+  let testObRunInDir' = augmentWithVerbosity testObRunInDir ob isVerbose ["run"]
+  let testThunkPack' = augmentWithVerbosity testThunkPack ob isVerbose []
   let
     withObeliskImpl f =
       withSystemTempDirectory "obelisk-impl-copy" $ \(fromString -> obeliskImpl) -> do
@@ -284,11 +284,11 @@ main = do
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
 testObRunInDir :: String -> [Text] -> Maybe FilePath -> HTTP.Manager -> Sh ()
-testObRunInDir cmd extraArgs mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+testObRunInDir executable extraArgs mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
   [p0, p1] <- liftIO $ getFreePorts 2
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
-  maybe id chdir mdir $ runHandle cmd extraArgs $ \stdout -> do
+  maybe id chdir mdir $ runHandle executable extraArgs $ \stdout -> do
     firstUri <- handleObRunStdout httpManager stdout
     let newUri = uri p1
     when (firstUri == newUri) $ errorExit $
@@ -300,8 +300,8 @@ testObRunInDir cmd extraArgs mdir httpManager = handle_sh (\case ExitSuccess -> 
       else exit 0
 
 testThunkPack :: String -> [Text] -> FilePath -> Sh ()
-testThunkPack command args path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
-  let pack' = readProcessWithExitCode command (T.unpack <$> ["thunk", "pack", toTextIgnore path'] ++ args) ""
+testThunkPack executable args path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
+  let pack' = readProcessWithExitCode executable (T.unpack <$> ["thunk", "pack", toTextIgnore path'] ++ args) ""
       ensureThunkPackFails q = liftIO $ pack' >>= \case
         (code, out, err)
           | code == ExitSuccess -> fail "ob thunk pack succeeded when it should have failed"
