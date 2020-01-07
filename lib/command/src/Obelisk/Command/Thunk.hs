@@ -635,13 +635,13 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
       Right (ThunkData_Packed _) -> do
         let tmpThunk = tmpDir </> "thunk"
         callProcessAndLogOutput (Notice, Error) $
-          proc "cp" ["-r", "-T", thunkDir, tmpThunk]
+          proc cp ["-r", "-T", thunkDir, tmpThunk]
         return tmpThunk
       Right _ -> failWith "Thunk is not packed"
     updateThunkFromTmp p' = do
       _ <- packThunk' True (ThunkPackConfig False (ThunkConfig Nothing)) p'
       callProcessAndLogOutput (Notice, Error) $
-        proc "cp" ["-r", "-T", p', p]
+        proc cp ["-r", "-T", p', p]
 
 finalMsg :: Bool -> (a -> Text) -> Maybe (a -> Text)
 finalMsg noTrail s = if noTrail then Nothing else Just s
@@ -682,7 +682,7 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from with
 
         liftIO $ createDirectory obGitDir
         callProcessAndLogOutput (Notice, Error) $
-          proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
+          proc cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
         callProcessAndLogOutput (Notice, Error) $
           proc "rm" ["-r", thunkDir]
         callProcessAndLogOutput (Notice, Error) $

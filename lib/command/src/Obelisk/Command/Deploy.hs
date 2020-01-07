@@ -41,6 +41,7 @@ import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
+
 deployInit
   :: MonadObelisk m
   => ThunkPtr
@@ -57,7 +58,7 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
       False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
       True -> pure $ deployDir </> "ssh_key"
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp" [sshKeyPath, localKey]
+      proc cp [sshKeyPath, localKey]
     liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
     return localKey
   withSpinner "Validating configuration" $ do
