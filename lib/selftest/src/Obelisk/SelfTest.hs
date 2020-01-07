@@ -49,16 +49,17 @@ data ObRunState
 cp :: FilePath
 cp = $(staticWhich "cp")
 
-doubleQuotes :: (IsString a, Semigroup a) => a -> a
-doubleQuotes s = "\"" <> s <> "\""
-
 commit :: Text -> Sh ()
 commit msg = void $ run "git"
-  [ "commit"
+  [ "-c"
+  , "user.name=Obelisk Selftest"
+  , "-c"
+  , "user.email=noreply@example.com"
+  , "commit"
   , "--no-gpg-sign"
   , "--allow-empty"
   , "-m"
-  , doubleQuotes msg
+  , msg
   ]
 
 -- TODO replace Void and stop using loosely typed synchronous exceptions
