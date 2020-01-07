@@ -4,6 +4,7 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TemplateHaskell  #-}
 module Obelisk.SelfTest where
 
 import Control.Exception (bracket, throw)
@@ -21,11 +22,12 @@ import qualified Data.Text.IO as T
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.Socket as Socket
-import Shelly
+import Shelly hiding (cp)
 import System.Directory (withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.FilePath (replaceBaseName, takeBaseName)
+import System.Which (staticWhich)
 import qualified System.Info
 import System.IO (Handle, hClose)
 import System.IO.Temp
@@ -43,6 +45,9 @@ data ObRunState
   | ObRunState_Startup
   | ObRunState_BackendStarted
   deriving (Eq, Show)
+
+cp :: FilePath
+cp = $(staticWhich "cp")
 
 doubleQuotes :: (IsString a, Semigroup a) => a -> a
 doubleQuotes s = "\"" <> s <> "\""
@@ -69,6 +74,7 @@ tshow = T.pack . show
 shellyOb :: MonadIO m => (Sh a -> Sh a) -> Sh a -> m a
 shellyOb f obTest = shelly $ f obTest
 
+
 main :: IO ()
 main = do
   -- Note: you can pass hspec arguments as well, eg: `-m <pattern>`
@@ -83,7 +89,7 @@ main = do
       withSystemTempDirectory "obelisk-impl-copy" $ \(fromString -> obeliskImpl) -> do
         void . shellyOb verbosity $ chdir obeliskImpl $ do
           user <- T.strip <$> run "whoami" []
-          run_ "cp" ["-rT", toTextIgnore obeliskImplRaw, toTextIgnore obeliskImpl]
+          run_ cp ["-rT", toTextIgnore obeliskImplRaw, toTextIgnore obeliskImpl]
           run_ "chown" ["-R", user, toTextIgnore obeliskImpl]
           run_ "chmod" ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
         f obeliskImpl
@@ -112,7 +118,7 @@ main = do
           withTmp f = shelly_ . withSystemTempDirectory "test λ" $ f . fromString
 
           inTmpObInit f = inTmp $ \dir -> do
-            run_ "cp" ["-rT", fromString initCache, toTextIgnore dir]
+            run_ cp ["-rT", fromString initCache, toTextIgnore dir]
             f dir
 
           -- To be used in tests that change the obelisk impl directory

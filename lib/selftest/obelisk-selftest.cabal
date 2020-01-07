@@ -20,6 +20,7 @@ library
     , obelisk-cliapp
     , obelisk-executable-config-lookup
     , obelisk-run
+    , which
     , process
     , shelly >= 1.9.0
     , temporary
