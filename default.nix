@@ -120,12 +120,26 @@ in rec {
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs);
 
   selftest = pkgs.writeScript "selftest" ''
-    #!/usr/bin/env bash
+    #!${pkgs.runtimeShell}
     set -euo pipefail
+
+    export NIX_PATH="nixpkgs=${pkgs.path}";
+    datadir="${pkgs.nix}/share"
+    export TEST_ROOT=$(pwd)/test-tmp
+    export NIX_BUILD_HOOK=
+    export NIX_CONF_DIR=$TEST_ROOT/etc
+    export NIX_DB_DIR=$TEST_ROOT/db
+    export NIX_LOCALSTATE_DIR=$TEST_ROOT/var
+    export NIX_LOG_DIR=$TEST_ROOT/var/log/nix
+    export NIX_STATE_DIR=$TEST_ROOT/var/nix
+    export NIX_STORE_DIR=$TEST_ROOT/store
+    export PAGER=cat
+    cacheDir=$TEST_ROOT/binary-cache
+    nix-store --init
 
     PATH="${command}/bin:$PATH"
     export OBELISK_IMPL="$(mktemp -d)"
-    git clone file://${pathGit} $OBELISK_IMPL
+    ${pkgs.git}/bin/git clone file://${pathGit} $OBELISK_IMPL
     "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
   '';
   skeleton = pkgs.runCommand "skeleton" {
