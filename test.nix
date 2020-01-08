@@ -52,9 +52,10 @@ in
             User=root
         '';
       in ''
+      start_all()
       githost.wait_for_open_port("22")
+      
       with subtest("test the client can access the server via ssh"):
-          start_all()
           client.succeed("mkdir -p ~/.ssh/")
           client.succeed(
               "cp ${privateKeyFile}  ~/.ssh/id_rsa"
@@ -81,7 +82,7 @@ in
           client.succeed('git config --global user.name "Your Name"')
           client.succeed('cd ~/code/myapp && git commit -m "Initial"')
           client.succeed(
-              "cd ~/code/myapp && git remote add origin githost:/root/myorg/myapp.git"
+              "cd ~/code/myapp && git remote add origin root@githost:/root/myorg/myapp.git"
           )
       
       with subtest("test pushing code to the remote"):
@@ -90,10 +91,10 @@ in
       
       with subtest("test obelisk is installed"):
           client.succeed("ob --help")
-    '';
-    failingTests = ''
-      # failure: Alert: obelisk currently only supports file, https, ssh, git protocols for plain Git remotes
+      
       with subtest("test obelisk can pack"):
           client.succeed("ob thunk pack ~/code/myapp")
+          client.succeed("grep -qF 'git' ~/code/myapp/default.nix")
+          client.succeed("grep -qF 'myorg' ~/code/myapp/git.json")
     '';
   })
