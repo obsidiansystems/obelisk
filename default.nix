@@ -2,7 +2,7 @@
 , profiling ? false
 , iosSdkVersion ? "10.2"
 , config ? {}
-, reflex-platform ? import ./dep/reflex-platform
+, reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -17,7 +17,7 @@ let
     openssh
   ];
 
-  getReflexPlatform = sys: reflex-platform {
+  getReflexPlatform = sys: reflex-platform-func {
     inherit iosSdkVersion config;
     system = sys;
     enableLibraryProfiling = profiling;
