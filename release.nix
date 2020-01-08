@@ -1,96 +1,104 @@
-{ self-args ? {
-    config.android_sdk.accept_license = true;
-    iosSdkVersion = "10.2";
-  }
-, local-self ? import ./. self-args
-, cacheBuildSystems ? [ "x86_64-linux" "x86_64-darwin" ]
-}:
-
-let
-  inherit (local-self.nixpkgs) lib runCommand nix;
-
-  obeliskPackagesCommon = [
-    "obelisk-frontend"
-    "obelisk-route"
-    "obelisk-executable-config-lookup"
-  ];
-
-  obeliskPackagesBackend = obeliskPackagesCommon ++ [
-    "obelisk-asset-manifest"
-    "obelisk-asset-serve-snap"
-    "obelisk-backend"
-    "obelisk-cliapp"
-    "obelisk-command"
-    "obelisk-executable-config-inject"
-    "obelisk-frontend"
-    "obelisk-run"
-    "obelisk-route"
-    "obelisk-selftest"
-    "obelisk-snap-extras"
-  ];
-
-  pnameToAttrs = pkgsSet: pnames:
-    lib.listToAttrs (map
-      (name: { inherit name; value = pkgsSet.${name}; })
-      pnames);
-
-  concatDepends = let
-    extractDeps = x: (x.override {
-      mkDerivation = drv: {
-        out = builtins.concatLists [
-          (drv.buildDepends or [])
-          (drv.libraryHaskellDepends or [])
-          (drv.executableHaskellDepends or [])
+let 
+  nginxRoot = "/run/nginx";
+  obelisk = import ./default.nix {};
+  # Get NixOS a pre-release 20.03 that contains the python based tests and recursive nix
+  pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266.tar.gz) {};
+  sshKeys = import (pkgs.path + /nixos/tests/ssh-keys.nix) pkgs;
+  make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
+  supportedPlatforms = [ "x86_64-linux" "x86_64-darwin" ];
+  obelisk-everywhere = (import ./everywhere.nix { cacheBuildSystems = supportedPlatforms; }).metaCache;
+  snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
+  snakeOilPublicKey = sshKeys.snakeOilPublicKey;
+in
+  make-test ({...}: {
+    name  = "obelisk";
+    nodes = {
+      githost = {
+        networking.firewall.allowedTCPPorts = [ 22 80 ];
+        services.openssh = {
+          enable = true;
+        };
+        environment.systemPackages = [
+          pkgs.git 
+        ];
+        users.users.root.openssh.authorizedKeys.keys = [
+          snakeOilPublicKey
         ];
       };
-    }).out;
-  in pkgAttrs: builtins.concatLists (map extractDeps (builtins.attrValues pkgAttrs));
 
-  perPlatform = lib.genAttrs cacheBuildSystems (system: let
-    obelisk = import ./. (self-args // { inherit system; });
-    reflex-platform = obelisk.reflex-platform;
-    ghc = pnameToAttrs
-      obelisk.haskellPackageSets.ghc
-      obeliskPackagesBackend;
-    ghcjs = pnameToAttrs
-      obelisk.haskellPackageSets.ghcjs
-      obeliskPackagesCommon;
-    cachePackages = builtins.concatLists [
-      (builtins.attrValues ghc)
-      (builtins.attrValues ghcjs)
-      (concatDepends ghc)
-      (concatDepends ghcjs)
-      (lib.optional reflex-platform.androidSupport androidSkeleton)
-      (lib.optional reflex-platform.iosSupport iosSkeleton)
-      [ command serverSkeletonExe serverSkeletonShell ]
-    ];
-    command = obelisk.command;
-    skeleton = import ./skeleton { inherit obelisk; };
-    serverSkeletonExe = skeleton.exe;
-    # TODO fix nixpkgs so it doesn't try to run the result of haskell shells as setup hooks.
-    serverSkeletonShell = local-self.nixpkgs.runCommand "shell-safe-for-dep" {} ''
-      touch "$out"
-      echo "return" >> "$out"
-      cat "${skeleton.shells.ghc}" >> "$out"
+      client = {
+        imports = [
+          (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix)
+        ];
+        nix.useSandbox = false;
+        nix.binaryCaches = [];
+        environment.systemPackages = [
+          obelisk.command
+          obelisk.shell
+          obelisk-everywhere
+          pkgs.git 
+          pkgs.jq
+        ];
+      };
+    };
+
+    testScript =
+      let
+        privateKeyFile = pkgs.writeText "id_rsa" ''${snakeOilPrivateKey}'';
+        sshConfigFile = pkgs.writeText "ssh_config" ''
+          Host *
+            StrictHostKeyChecking no
+            UserKnownHostsFile=/dev/null
+            ConnectionAttempts=1
+            ConnectTimeout=1
+            IdentityFile=~/.ssh/id_rsa
+            User=root
+        '';
+      in ''
+      start_all()
+      githost.wait_for_open_port("22")
+      
+      with subtest("test obelisk is installed"):
+          client.succeed("ob --help")
+      
+      with subtest("test the client can access the server via ssh"):
+          client.succeed("mkdir -p ~/.ssh/")
+          client.succeed(
+              "cp ${privateKeyFile}  ~/.ssh/id_rsa"
+          )
+          client.succeed("chmod 600 ~/.ssh/id_rsa")
+          client.wait_until_succeeds(
+              "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa githost true"
+          )
+          client.succeed(
+              "cp ${sshConfigFile} ~/.ssh/config"
+          )
+          client.wait_until_succeeds("ssh githost true")
+      
+      with subtest("test a remote bare repo can be started"):
+          githost.succeed("mkdir -p ~/myorg/myapp.git")
+          githost.succeed("cd ~/myorg/myapp.git && git init --bare")
+      
+      with subtest("test a git project can be configured with a remote using ssh"):
+          client.succeed("mkdir -p ~/code/myapp")
+          client.succeed("cd ~/code/myapp && git init")
+          client.succeed("cd ~/code/myapp && touch README")
+          client.succeed("cd ~/code/myapp && git add .")
+          client.succeed('git config --global user.email "you@example.com"')
+          client.succeed('git config --global user.name "Your Name"')
+          client.succeed('cd ~/code/myapp && git commit -m "Initial"')
+          client.succeed(
+              "cd ~/code/myapp && git remote add origin root@githost:/root/myorg/myapp.git"
+          )
+      
+      with subtest("test pushing code to the remote"):
+          client.succeed("cd ~/code/myapp && git push -u origin master")
+          client.succeed("cd ~/code/myapp && git status")
+      
+      with subtest("test obelisk can pack"):
+          client.succeed("ob thunk pack ~/code/myapp")
+          client.succeed("grep -qF 'git' ~/code/myapp/default.nix")
+          client.succeed("grep -qF 'myorg' ~/code/myapp/git.json")
+          client.succeed('[ "$(jq .private < ~/code/myapp/git.json)" == "false" ] ')
     '';
-    androidSkeleton = (import ./skeleton { inherit obelisk; }).android.frontend;
-    iosSkeleton = (import ./skeleton { inherit obelisk; }).ios.frontend;
-  in {
-    inherit
-      command
-      ghc ghcjs
-      serverSkeletonExe
-      serverSkeletonShell
-      ;
-    cache = reflex-platform.pinBuildInputs "obelisk-${system}" cachePackages;
-  } // lib.optionalAttrs reflex-platform.androidSupport {
-    inherit androidSkeleton;
-  } // lib.optionalAttrs reflex-platform.iosSupport {
-    inherit iosSkeleton;
-  });
-
-  metaCache = local-self.reflex-platform.pinBuildInputs
-    "obelisk-everywhere"
-    (map (a: a.cache) (builtins.attrValues perPlatform));
-
-in perPlatform // { inherit metaCache; }
+  })
