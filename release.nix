@@ -8,11 +8,12 @@ let
   pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266.tar.gz) {};
   sshKeys = import (pkgs.path + /nixos/tests/ssh-keys.nix) pkgs;
   make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
-  #supportedPlatforms = [ "x86_64-linux" ];
   obelisk-everywhere = (import ./everywhere.nix { cacheBuildSystems = supportedPlatforms; }).metaCache;
   snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
   snakeOilPublicKey = sshKeys.snakeOilPublicKey;
-in obelisk-everywhere // {
+in {
+  recurseForDerivations = true;
+  build = obelisk-everywhere;
   test = make-test ({...}: {
     name  = "obelisk";
     nodes = {
