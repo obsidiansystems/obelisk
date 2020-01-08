@@ -1,11 +1,12 @@
 let 
   nginxRoot = "/run/nginx";
+  pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266.tar.gz) {};
   obelisk = import ./default.nix {};
   # Get NixOS a pre-release 20.03 that contains the python based tests and recursive nix
-  pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266.tar.gz) {};
   sshKeys = import (pkgs.path + /nixos/tests/ssh-keys.nix) pkgs;
   make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
-  obelisk-everything = (import ./release.nix {}).metaCache.x86_64-linux;
+  supportedPlatforms = [ "x86_64-linux" "x86_64-darwin" ];
+  obelisk-everything = (import ./release.nix { cacheBuildSystems = supportedPlatforms; }).metaCache;
   snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
   snakeOilPublicKey = sshKeys.snakeOilPublicKey;
 in
@@ -34,6 +35,7 @@ in
         environment.systemPackages = [
           obelisk.command
           obelisk.shell
+          obelisk-everything
           pkgs.git 
         ];
       };
