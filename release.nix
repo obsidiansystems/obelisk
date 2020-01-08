@@ -5,7 +5,8 @@ let
   pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266.tar.gz) {};
   sshKeys = import (pkgs.path + /nixos/tests/ssh-keys.nix) pkgs;
   make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
-  supportedPlatforms = [ "x86_64-linux" "x86_64-darwin" ];
+  #supportedPlatforms = [ "x86_64-linux" "x86_64-darwin" ];
+  supportedPlatforms = [ "x86_64-linux" ];
   obelisk-everywhere = (import ./everywhere.nix { cacheBuildSystems = supportedPlatforms; }).metaCache;
   snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
   snakeOilPublicKey = sshKeys.snakeOilPublicKey;
@@ -99,6 +100,8 @@ in
           client.succeed("ob thunk pack ~/code/myapp")
           client.succeed("grep -qF 'git' ~/code/myapp/default.nix")
           client.succeed("grep -qF 'myorg' ~/code/myapp/git.json")
-          client.succeed('[ "$(jq .private < ~/code/myapp/git.json)" == "false" ] ')
+      
+      with subtest("test obelisk can detect private repos"):
+          client.succeed("""grep -qF '"private": false' ~/code/myapp/git.json""")
     '';
   })
