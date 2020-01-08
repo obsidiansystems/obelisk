@@ -1,17 +1,19 @@
+{
+  supportedPlatforms ? [ "x86_64-linux" "x86_64-darwin" ]
+}:
 let 
   nginxRoot = "/run/nginx";
   obelisk = import ./default.nix {};
   # Get NixOS a pre-release 20.03 that contains the python based tests and recursive nix
   pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266.tar.gz) {};
-  supportedPlatforms = [ "x86_64-linux" "x86_64-darwin" ];
   sshKeys = import (pkgs.path + /nixos/tests/ssh-keys.nix) pkgs;
   make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
   #supportedPlatforms = [ "x86_64-linux" ];
   obelisk-everywhere = (import ./everywhere.nix { cacheBuildSystems = supportedPlatforms; }).metaCache;
   snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
   snakeOilPublicKey = sshKeys.snakeOilPublicKey;
-in
-  make-test ({...}: {
+in obelisk-everywhere // {
+  test = make-test ({...}: {
     name  = "obelisk";
     nodes = {
       githost = {
@@ -38,7 +40,6 @@ in
           obelisk.shell
           obelisk-everywhere
           pkgs.git 
-          pkgs.jq
         ];
       };
     };
@@ -104,4 +105,5 @@ in
       with subtest("test obelisk can detect private repos"):
           client.succeed("""grep -qF '"private": false' ~/code/myapp/git.json""")
     '';
-  })
+  }) {};
+}
