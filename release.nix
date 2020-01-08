@@ -3,10 +3,10 @@ let
   obelisk = import ./default.nix {};
   # Get NixOS a pre-release 20.03 that contains the python based tests and recursive nix
   pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266.tar.gz) {};
+  supportedPlatforms = [ "x86_64-linux" "x86_64-darwin" ];
   sshKeys = import (pkgs.path + /nixos/tests/ssh-keys.nix) pkgs;
   make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
-  #supportedPlatforms = [ "x86_64-linux" "x86_64-darwin" ];
-  supportedPlatforms = [ "x86_64-linux" ];
+  #supportedPlatforms = [ "x86_64-linux" ];
   obelisk-everywhere = (import ./everywhere.nix { cacheBuildSystems = supportedPlatforms; }).metaCache;
   snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
   snakeOilPublicKey = sshKeys.snakeOilPublicKey;
