@@ -2,6 +2,7 @@
 , profiling ? false
 , iosSdkVersion ? "10.2"
 , config ? {}
+, reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -16,7 +17,7 @@ let
     openssh
   ];
 
-  getReflexPlatform = sys: import ./dep/reflex-platform {
+  getReflexPlatform = sys: reflex-platform-func {
     inherit iosSdkVersion config;
     system = sys;
     enableLibraryProfiling = profiling;
@@ -34,10 +35,7 @@ let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         haskellLib = pkgs.haskell.lib;
       in {
-        hnix = haskellLib.overrideCabal (self.callHackage "hnix" "0.6.1" { these = self.these_0_8; }) (_: {
-          jailbreak = true;
-          doCheck = false;
-        });
+        hnix = haskellLib.dontCheck (haskellLib.doJailbreak (self.callCabal2nix "hnix" (hackGet dep/hnix) {}));
         hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
 
         ghcid = self.callCabal2nix "ghcid" (hackGet ./dep/ghcid) {};
@@ -50,6 +48,8 @@ let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         onLinux = pkg: f: if pkgs.stdenv.isLinux then f pkg else pkg;
       in {
+        shelly = self.callHackage "shelly" "1.9.0" {};
+
         obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
 
         obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (cleanSource ./lib/asset/manifest) {};
@@ -116,7 +116,7 @@ in rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  obeliskEnvs = ghcObeliskEnvs;
+  obeliskEnvs = pkgs.lib.filterAttrs (k: _: pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs);
 
@@ -125,10 +125,10 @@ in rec {
     set -euo pipefail
 
     PATH="${command}/bin:$PATH"
-    export OBELISK_IMPL="${hackGet ./.}"
+    export OBELISK_IMPL="$(mktemp -d)"
+    git clone file://${pathGit} $OBELISK_IMPL
     "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
   '';
-  #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
   skeleton = pkgs.runCommand "skeleton" {
     dir = builtins.filterSource (path: type: builtins.trace path (baseNameOf path != ".obelisk")) ./skeleton;
   } ''
@@ -248,17 +248,6 @@ in rec {
         imports = [
           (serverModules.mkBaseEc2 args)
           (serverModules.mkObeliskApp args)
-          ./acme.nix
-        ];
-        disabledModules = [
-          (pkgs.path + /nixos/modules/security/acme.nix)
-        ];
-        nixpkgs.overlays = [
-          (self: super: let
-            nixos1909 = import (hackGet ./dep/nixpkgs-19.09) {};
-          in {
-            inherit (nixos1909) simp_le;
-          })
         ];
       };
     };

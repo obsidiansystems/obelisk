@@ -3,15 +3,15 @@
     iosSdkVersion = "10.2";
   }
 , local-self ? import ./. self-args
+, supportedSystems ? [
+    "x86_64-linux"
+    "x86_64-darwin"
+  ]
 }:
 
 let
   inherit (local-self.nixpkgs) lib runCommand nix;
-
-  cacheBuildSystems = [
-    "x86_64-linux"
-    "x86_64-darwin"
-  ];
+  cacheBuildSystems = supportedSystems;
 
   obeliskPackagesCommon = [
     "obelisk-frontend"
