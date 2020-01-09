@@ -12,7 +12,6 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.Bool (bool)
 import Data.Function (fix)
-import Data.Semigroup (Semigroup, (<>))
 import qualified Data.Set as Set
 import Data.String
 import Data.Text (Text)
@@ -49,13 +48,11 @@ data ObRunState
 cp :: FilePath
 cp = $(staticWhich "cp")
 
+gitUserConfig :: [Text]
+gitUserConfig = ["-c", "user.name=Obelisk Selftest", "-c", "user.email=noreply@example.com" ]
+
 commit :: Text -> Sh ()
-commit msg = void $ run "git"
-  [ "-c"
-  , "user.name=Obelisk Selftest"
-  , "-c"
-  , "user.email=noreply@example.com"
-  , "commit"
+commit msg = void $ run "git" $ gitUserConfig <> [ "commit"
   , "--no-gpg-sign"
   , "--allow-empty"
   , "-m"
@@ -308,7 +305,7 @@ testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $
   liftIO $ T.hPutStrLn handle "test file" >> hClose handle
   ensureThunkPackFails "modified"
   -- Existing stashes
-  void $ git ["stash"]
+  void $ git $ gitUserConfig <> [ "stash" ]
   ensureThunkPackFails "has stashes"
 
 -- | Blocks until a non-empty line is available
