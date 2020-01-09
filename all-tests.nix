@@ -102,6 +102,6 @@ in
           client.succeed("grep -qF 'myorg' ~/code/myapp/git.json")
 
       with subtest("test obelisk can detect private repos"):
-          client.succeed("""grep -qF '"private": false' ~/code/myapp/git.json""")
+          client.succeed("""grep -qF '"private": true' ~/code/myapp/git.json""")
     '';
   }) {}
