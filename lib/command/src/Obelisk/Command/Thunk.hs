@@ -47,6 +47,7 @@ import qualified Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.Aeson.Types as Aeson
 import qualified Data.ByteString.Lazy as LBS
+import Data.Containers.ListUtils (nubOrd)
 import Data.Default
 import Data.Either.Combinators (fromRight', rightToMaybe)
 import Data.Git.Ref (Ref)
@@ -923,7 +924,7 @@ guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
         (ExitSuccess, _, _) -> pure False -- Must be a public repo
         _ -> loop xs
   where
-    urisToTry = [uri, changeScheme "https" uri, changeScheme "http" uri, changeScheme "git" uri]
+    urisToTry = nubOrd [uri, changeScheme "https" uri, changeScheme "http" uri, changeScheme "git" uri]
     changeScheme scheme (GitUri u) = GitUri $ u
       { URI.uriScheme = URI.mkScheme scheme
       , URI.uriAuthority = Left True
