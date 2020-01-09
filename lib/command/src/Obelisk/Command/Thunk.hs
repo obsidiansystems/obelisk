@@ -890,40 +890,44 @@ uriToThunkSource (GitUri u)
       s -> s `L.elem` [ "git", "https", "http" ] -- "http:" just redirects to "https:"
         && URI.unRText (URI.authHost uriAuth) == "github.com"
   , Just (_, owner :| [repoish]) <- URI.uriPath u
-  = \mbranch ->
-    do
-      unAuthenticatedExitCode <-
-        fmap (\(x, _, _)->x)
-        . readCreateProcessWithExitCode
-        . isolateGitProc . gitProcNoRepo $
-          ["ls-remote"
-          , "--exit-code"
-          , "--symref"
-          , show $ u
-            { URI.uriScheme=URI.mkScheme "https"
-            , URI.uriAuthority=Left True}]
-      pure . ThunkSource_GitHub $ GitHubSource
+  = \mbranch -> do
+      isPrivate <- guessGitRepoIsPrivate $ GitUri u
+      pure $ ThunkSource_GitHub $ GitHubSource
         { _gitHubSource_owner = N $ URI.unRText owner
         , _gitHubSource_repo = N $ let
             repoish' = URI.unRText repoish
           in fromMaybe repoish' $ T.stripSuffix ".git" repoish'
         , _gitHubSource_branch = N <$> mbranch
-        , _gitHubSource_private = unAuthenticatedExitCode /= ExitSuccess
+        , _gitHubSource_private = isPrivate
         }
 
-  | otherwise = \mbranch ->
-    do
-      unAuthenticatedExitCode <-
-        fmap (\(x, _, _)->x)
-        . readCreateProcessWithExitCode
-        . isolateGitProc . gitProcNoRepo $
-          ["ls-remote", "--exit-code", "--symref", show u]
-      pure . ThunkSource_Git $ GitSource
+  | otherwise = \mbranch -> do
+      isPrivate <- guessGitRepoIsPrivate $ GitUri u
+      pure $ ThunkSource_Git $ GitSource
         { _gitSource_url = GitUri u
         , _gitSource_branch = N <$> mbranch
         , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
-        , _gitSource_private = unAuthenticatedExitCode /= ExitSuccess
+        , _gitSource_private = isPrivate
         }
+
+guessGitRepoIsPrivate :: MonadObelisk m => GitUri -> m Bool
+guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
+  [] -> pure True
+  uriAttempt:xs -> do
+    readCreateProcessWithExitCode (isolateGitProc $ gitProcNoRepo
+      [ "ls-remote"
+      , "--exit-code"
+      , "--symref"
+      , T.unpack $ gitUriToText uriAttempt
+      ]) >>= \case
+        (ExitSuccess, _, _) -> pure False -- Must be a public repo
+        _ -> loop xs
+  where
+    urisToTry = [uri, changeScheme "https" uri, changeScheme "http" uri, changeScheme "git" uri]
+    changeScheme scheme (GitUri u) = GitUri $ u
+      { URI.uriScheme = URI.mkScheme scheme
+      , URI.uriAuthority = Left True
+      }
 
 -- Funny signature indicates no effects depend on the optional branch name.
 githubThunkRev
