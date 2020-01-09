@@ -1,5 +1,5 @@
 {
-  supportedPlatforms ? [ builtins.currentSystem ]
+  supportedSystems ? [ builtins.currentSystem ]
 }:
 let 
   nginxRoot = "/run/nginx";
@@ -8,7 +8,7 @@ let
   pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266.tar.gz) {};
   sshKeys = import (pkgs.path + /nixos/tests/ssh-keys.nix) pkgs;
   make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
-  obelisk-everywhere = (import ./everywhere.nix { cacheBuildSystems = supportedPlatforms; }).metaCache;
+  obelisk-everywhere = (import ./all-builds.nix { inherit supportedSystems; }).x86_64-linux.cache;
   snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
   snakeOilPublicKey = sshKeys.snakeOilPublicKey;
 in

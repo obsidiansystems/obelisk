@@ -1,8 +1,8 @@
 {
-  supportedPlatforms ? [ "x86_64-linux" "x86_64-darwin" ]
+  supportedSystems ? [ "x86_64-linux" "x86_64-darwin" ]
 }:
-let 
-  obelisk-everywhere = import ./everywhere.nix { cacheBuildSystems = supportedPlatforms; };
-in obelisk-everywhere // {
-  test = import ./test.nix;
+{ 
+  recurseForDerivations = true;
+  build = import ./all-builds.nix { inherit supportedSystems; };
+  test = import ./all-tests.nix { inherit supportedSystems; };
 }
