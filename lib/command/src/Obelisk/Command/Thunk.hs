@@ -121,7 +121,7 @@ data GitHubSource = GitHubSource
   }
   deriving (Show, Eq, Ord)
 
-newtype GitUri = GitUri URI.URI deriving (Eq, Ord, Show)
+newtype GitUri = GitUri { unGitUri :: URI.URI } deriving (Eq, Ord, Show)
 
 gitUriToText :: GitUri -> Text
 gitUriToText (GitUri uri)
@@ -915,19 +915,26 @@ guessGitRepoIsPrivate :: MonadObelisk m => GitUri -> m Bool
 guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
   [] -> pure True
   uriAttempt:xs -> do
-    readCreateProcessWithExitCode (isolateGitProc $ gitProcNoRepo
-      [ "ls-remote"
-      , "--exit-code"
-      , "--symref"
-      , T.unpack $ gitUriToText uriAttempt
-      ]) >>= \case
-        (ExitSuccess, _, _) -> pure False -- Must be a public repo
-        _ -> loop xs
+    result <- readCreateProcessWithExitCode $
+      isolateGitProc $
+        gitProcNoRepo
+          [ "ls-remote"
+          , "--quiet"
+          , "--exit-code"
+          , "--symref"
+          , T.unpack $ gitUriToText uriAttempt
+          ]
+    case result of
+      (ExitSuccess, _, _) -> pure False -- Must be a public repo
+      _ -> loop xs
   where
-    urisToTry = nubOrd [uri, changeScheme "https" uri, changeScheme "http" uri, changeScheme "git" uri]
+    urisToTry = nubOrd $
+      -- Include the original URI if it isn't using SSH because SSH will certainly fail.
+      [uri | fmap URI.unRText (URI.uriScheme (unGitUri uri)) /= Just "ssh"] <>
+      [changeScheme "https" uri, changeScheme "http" uri, changeScheme "git" uri]
     changeScheme scheme (GitUri u) = GitUri $ u
       { URI.uriScheme = URI.mkScheme scheme
-      , URI.uriAuthority = Left True
+      , URI.uriAuthority = (\x -> x { URI.authUserInfo = Nothing }) <$> URI.uriAuthority u
       }
 
 -- Funny signature indicates no effects depend on the optional branch name.
