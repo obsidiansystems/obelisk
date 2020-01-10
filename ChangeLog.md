@@ -2,7 +2,7 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
 
-## Unreleased
+## v0.4.0.0 - 2020-01-10
 
 * Bump reflex-platform which, notably, bumps nixpkgs to 19.09. ([#585](https://github.com/obsidiansystems/obelisk/pull/585))
 * Add new thunk loader for Git repositories that supports `file://` Git remotes and supports private repositories via `builtins.fetchGit` for private repositories (when the `git.json` file specifies `"private": true`). ([#594](https://github.com/obsidiansystems/obelisk/pull/594))
