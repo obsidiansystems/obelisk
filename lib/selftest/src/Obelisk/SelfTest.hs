@@ -12,7 +12,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.Bool (bool)
 import Data.Function (fix)
-import Data.Semigroup (Semigroup, (<>))
+import Data.Semigroup ((<>))
 import qualified Data.Set as Set
 import Data.String
 import Data.Text (Text)
@@ -49,13 +49,14 @@ data ObRunState
 cp :: FilePath
 cp = $(staticWhich "cp")
 
+cabalPath :: FilePath
+cabalPath = $(staticWhich "cabal")
+
+gitUserConfig :: [Text]
+gitUserConfig = ["-c", "user.name=Obelisk Selftest", "-c", "user.email=noreply@example.com"]
+
 commit :: Text -> Sh ()
-commit msg = void $ run "git"
-  [ "-c"
-  , "user.name=Obelisk Selftest"
-  , "-c"
-  , "user.email=noreply@example.com"
-  , "commit"
+commit msg = void $ run "git" $ gitUserConfig <> [ "commit"
   , "--no-gpg-sign"
   , "--allow-empty"
   , "-m"
@@ -113,14 +114,19 @@ main = do
     hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
-          inTmp :: (FilePath -> Sh a) -> IO ()
-          inTmp f = withTmp (chdir <*> f)
+          defaultTmpDirName = "test λ"
 
-          withTmp f = shelly_ . withSystemTempDirectory "test λ" $ f . fromString
+          inTmp' :: FilePath -> (FilePath -> Sh a) -> IO ()
+          inTmp' dirname f = withTmp' dirname (chdir <*> f)
+          inTmp = inTmp' defaultTmpDirName
 
-          inTmpObInit f = inTmp $ \dir -> do
+          withTmp' dirname f = shelly_ . withSystemTempDirectory dirname $ f . fromString
+          withTmp = withTmp' defaultTmpDirName
+
+          inTmpObInit' dirname f = inTmp' dirname $ \dir -> do
             run_ cp ["-rT", fromString initCache, toTextIgnore dir]
             f dir
+          inTmpObInit = inTmpObInit' defaultTmpDirName
 
           -- To be used in tests that change the obelisk impl directory
           inTmpObInitWithImplCopy f = inTmpObInit $ \dir ->
@@ -200,9 +206,12 @@ main = do
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
             shellName = "shells." <> compiler
-            inShell cmd' = run "nix-shell" ["default.nix", "-A", fromString shellName, "--run", cmd']
+            inShell cmd' = run_ "nix-shell" ["default.nix", "-A", fromString shellName, "--run", cmd']
           it ("can enter "    <> shellName) $ inTmpObInit $ \_ -> inShell "exit"
-          it ("can build in " <> shellName) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
+          -- NOTE: We override the temporary directory name because cabal has a bug preventing new-build from working
+          -- in a path that has unicode characters.
+          it ("can build in " <> shellName) $ inTmpObInit' "test" $ \_ -> inShell $
+              T.pack cabalPath <> " --version; " <> T.pack cabalPath <> " new-build --" <> T.pack compiler <> " all"
 
         it "has idempotent thunk update" $ inTmpObInitWithImplCopy $ \_ -> do
           _  <- pack
@@ -308,7 +317,7 @@ testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $
   liftIO $ T.hPutStrLn handle "test file" >> hClose handle
   ensureThunkPackFails "modified"
   -- Existing stashes
-  void $ git ["stash"]
+  void $ git $ gitUserConfig <> [ "stash" ]
   ensureThunkPackFails "has stashes"
 
 -- | Blocks until a non-empty line is available
