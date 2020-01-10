@@ -332,7 +332,10 @@ in rec {
                     commonName
                     frontendName
                     "desktop"
-                    ] ++ lib.optionals pkgs.stdenv.isDarwin ["mac"]);
+                  ]
+                  ++ lib.optionals pkgs.stdenv.isLinux ["linux"]
+                  ++ lib.optionals pkgs.stdenv.isDarwin ["mac"]
+                  );
                   ghcjs = lib.filter (x: lib.hasAttr x combinedPackages) [
                     frontendName
                     commonName
