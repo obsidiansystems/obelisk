@@ -11,6 +11,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Improve error messaging when a dependency doesn't have the expected `.cabal` or `package.yaml` file. ([#597](https://github.com/obsidiansystems/obelisk/pull/597))
 * Improve the skeleton in small ways. ([#593](https://github.com/obsidiansystems/obelisk/pull/593), [#589](https://github.com/obsidiansystems/obelisk/pull/589))
 * Fix `ob` commands to again support running from any subdirectory of an obelisk project ([#591](https://github.com/obsidiansystems/obelisk/pull/591))
+* Add `reflex-platform-func` argument to Obelisk's `default.nix`. It defaults to it's prior behavior of using the reflex-platform in in `dep`. ([#612](https://github.com/obsidiansystems/obelisk/pull/612))
 
 ## v0.3.0.0 - 2019-12-20
 
