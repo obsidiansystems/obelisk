@@ -881,7 +881,7 @@ instance (GCompare br, GCompare fr) => GCompare (FullRoute br fr) where
   gcompare (FullRoute_Frontend x) (FullRoute_Frontend y) = gcompare x y
 
 instance (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) where
-  universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome] 
+  universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome]
               ++ [Some (FullRoute_Frontend x) | Some x <- universeSome]
 
 -- | Build the typical top level application route encoder from a route for handling 404's,
