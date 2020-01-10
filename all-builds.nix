@@ -62,12 +62,16 @@ let
         obeliskPackagesCommon;
       cachePackages = builtins.concatLists [
         (builtins.attrValues ghc)
-        (builtins.attrValues ghcjs)
+        (lib.optionals (!profiling) (builtins.attrValues ghcjs))
         (concatDepends ghc)
-        (concatDepends ghcjs)
+        (lib.optionals (!profiling) (concatDepends ghcjs))
         (lib.optional reflex-platform.androidSupport androidSkeleton)
         (lib.optional reflex-platform.iosSupport iosSkeleton)
-        [ command serverSkeletonExe serverSkeletonShell ]
+        (lib.optionals (!profiling) [
+          command
+          serverSkeletonExe
+          serverSkeletonShell
+        ])
       ];
       command = obelisk.command;
       skeleton = import ./skeleton { inherit obelisk; };
@@ -83,12 +87,16 @@ let
       nameSuffix = if profiling then "profiled" else "unprofiled";
     in {
       inherit
+        ghc
+        ;
+      cache = reflex-platform.pinBuildInputs "obelisk-${system}-${nameSuffix}" cachePackages;
+    } // lib.optionalAttrs (!profiling) {
+      inherit
         command
-        ghc ghcjs
+        ghcjs
         serverSkeletonExe
         serverSkeletonShell
         ;
-      cache = reflex-platform.pinBuildInputs "obelisk-${system}-${nameSuffix}" cachePackages;
     } // lib.optionalAttrs reflex-platform.androidSupport {
       inherit androidSkeleton;
     } // lib.optionalAttrs reflex-platform.iosSupport {
