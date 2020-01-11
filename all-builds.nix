@@ -3,7 +3,10 @@
     iosSdkVersion = "10.2";
   }
 , local-self ? import ./. self-args
-, supportedSystems ? [ "x86_64-linux" "x86_64-darwin" ]
+, supportedSystems ? [
+    "x86_64-linux"
+    "x86_64-darwin"
+  ]
 }:
 
 let
@@ -48,46 +51,63 @@ let
   in pkgAttrs: builtins.concatLists (map extractDeps (builtins.attrValues pkgAttrs));
 
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
-    obelisk = import ./. (self-args // { inherit system; });
-    reflex-platform = obelisk.reflex-platform;
-    ghc = pnameToAttrs
-      obelisk.haskellPackageSets.ghc
-      obeliskPackagesBackend;
-    ghcjs = pnameToAttrs
-      obelisk.haskellPackageSets.ghcjs
-      obeliskPackagesCommon;
-    cachePackages = builtins.concatLists [
-      (builtins.attrValues ghc)
-      (builtins.attrValues ghcjs)
-      (concatDepends ghc)
-      (concatDepends ghcjs)
-      (lib.optional reflex-platform.androidSupport androidSkeleton)
-      (lib.optional reflex-platform.iosSupport iosSkeleton)
-      [ command serverSkeletonExe serverSkeletonShell ]
-    ];
-    command = obelisk.command;
-    skeleton = import ./skeleton { inherit obelisk; };
-    serverSkeletonExe = skeleton.exe;
-    # TODO fix nixpkgs so it doesn't try to run the result of haskell shells as setup hooks.
-    serverSkeletonShell = local-self.nixpkgs.runCommand "shell-safe-for-dep" {} ''
-      touch "$out"
-      echo "return" >> "$out"
-      cat "${skeleton.shells.ghc}" >> "$out"
-    '';
-    androidSkeleton = (import ./skeleton { inherit obelisk; }).android.frontend;
-    iosSkeleton = (import ./skeleton { inherit obelisk; }).ios.frontend;
+    reflex-platform = import ./dep/reflex-platform { inherit system; };
+    perProfiling = profiling: let
+      obelisk = import ./. (self-args // { inherit system profiling; });
+      ghc = pnameToAttrs
+        obelisk.haskellPackageSets.ghc
+        obeliskPackagesBackend;
+      ghcjs = pnameToAttrs
+        obelisk.haskellPackageSets.ghcjs
+        obeliskPackagesCommon;
+      cachePackages = builtins.concatLists [
+        (builtins.attrValues ghc)
+        (lib.optionals (!profiling) (builtins.attrValues ghcjs))
+        (concatDepends ghc)
+        (lib.optionals (!profiling) (concatDepends ghcjs))
+        (lib.optional reflex-platform.androidSupport androidSkeleton)
+        (lib.optional reflex-platform.iosSupport iosSkeleton)
+        (lib.optionals (!profiling) [
+          command
+          serverSkeletonExe
+          serverSkeletonShell
+        ])
+      ];
+      command = obelisk.command;
+      skeleton = import ./skeleton { inherit obelisk; };
+      serverSkeletonExe = skeleton.exe;
+      # TODO fix nixpkgs so it doesn't try to run the result of haskell shells as setup hooks.
+      serverSkeletonShell = local-self.nixpkgs.runCommand "shell-safe-for-dep" {} ''
+        touch "$out"
+        echo "return" >> "$out"
+        cat "${skeleton.shells.ghc}" >> "$out"
+      '';
+      androidSkeleton = (import ./skeleton { inherit obelisk; }).android.frontend;
+      iosSkeleton = (import ./skeleton { inherit obelisk; }).ios.frontend;
+      nameSuffix = if profiling then "profiled" else "unprofiled";
+    in {
+      inherit
+        ghc
+        ;
+      cache = reflex-platform.pinBuildInputs "obelisk-${system}-${nameSuffix}" cachePackages;
+    } // lib.optionalAttrs (!profiling) {
+      inherit
+        command
+        ghcjs
+        serverSkeletonExe
+        serverSkeletonShell
+        ;
+    } // lib.optionalAttrs reflex-platform.androidSupport {
+      inherit androidSkeleton;
+    } // lib.optionalAttrs reflex-platform.iosSupport {
+      inherit iosSkeleton;
+    };
+    profiled = perProfiling true;
+    unprofiled = perProfiling false;
+    cachePackages = map (p: p.cache) [ profiled unprofiled ];
   in {
-    inherit
-      command
-      ghc ghcjs
-      serverSkeletonExe
-      serverSkeletonShell
-      ;
+    inherit profiled unprofiled;
     cache = reflex-platform.pinBuildInputs "obelisk-${system}" cachePackages;
-  } // lib.optionalAttrs reflex-platform.androidSupport {
-    inherit androidSkeleton;
-  } // lib.optionalAttrs reflex-platform.iosSupport {
-    inherit iosSkeleton;
   });
 
   metaCache = local-self.reflex-platform.pinBuildInputs

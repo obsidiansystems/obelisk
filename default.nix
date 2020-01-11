@@ -155,6 +155,7 @@ in rec {
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
     mkdir $out
     cd $out
+    # TODO profiling + static shouldn't break and need an ad-hoc workaround like that
     ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
     ${if optimizationLevel == null then ''
       ln -s all.unminified.js all.js
@@ -237,7 +238,7 @@ in rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
+      ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
       echo ${version} > $out/version
@@ -335,18 +336,19 @@ in rec {
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __iosWithConfig __androidWithConfig; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: version: serverExe
-        (projectOut sys).ghc.backend
-        (projectOut system).ghcjs.frontend
-        (projectOut sys).passthru.staticFiles
-        (projectOut sys).passthru.__closureCompilerOptimizationLevel
+      mainProjectOut = projectOut system;
+      serverOn = projectInst: version: serverExe
+        projectInst.ghc.backend
+        mainProjectOut.ghcjs.frontend
+        projectInst.passthru.staticFiles
+        projectInst.passthru.__closureCompilerOptimizationLevel
         version;
-      linuxExe = serverOn "x86_64-linux";
+      linuxExe = serverOn (projectOut "x86_64-linux");
       dummyVersion = "Version number is only available for deployments";
-    in projectOut system // {
+    in mainProjectOut // {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
-      exe = serverOn system dummyVersion;
+      exe = serverOn mainProjectOut dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};
