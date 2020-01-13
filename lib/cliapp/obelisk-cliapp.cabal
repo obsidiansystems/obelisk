@@ -10,6 +10,7 @@ library
       ansi-terminal
     , base
     , bytestring
+    , containers
     , exceptions
     , io-streams
     , lens
