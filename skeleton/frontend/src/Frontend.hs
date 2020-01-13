@@ -47,7 +47,7 @@ helloResponse
   => Event t ()
   -> m ()
 helloResponse sendHello = do
-  ws <- textWebSocket ("ws" <> appRoute <> "/hello") $ def
+  ws <- textWebSocket ("ws" <> appRoute <> renderBackendRoute checkedFullRouteEncoder (BackendRoute_Hello :/ ())) $ def
     & webSocketConfig_send .~ (["hi" :: T.Text] <$ sendHello)
   widgetHold_ (text initialHelloText) (text . ("The backend says '" <>) . (<> "'") <$> ws ^. webSocket_recv)
 
