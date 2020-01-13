@@ -16,8 +16,8 @@ import Prelude hiding (id, (.))
 import Control.Category
 -}
 
-import qualified Data.Text as T
 import Data.Functor.Identity
+import qualified Data.Text as T
 
 import Obelisk.Route
 import Obelisk.Route.TH

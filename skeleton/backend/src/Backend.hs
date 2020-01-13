@@ -8,10 +8,10 @@ module Backend where
 
 import Common.Route
 import qualified Data.Aeson as A
-import qualified Network.WebSockets      as WS
-import qualified Network.WebSockets.Snap as WS
 import Data.ByteString.Lazy (toStrict)
 import qualified Data.Text as T
+import qualified Network.WebSockets      as WS
+import qualified Network.WebSockets.Snap as WS
 import Obelisk.Route (pattern (:/))
 import Obelisk.Backend
 import qualified Snap.Core as S
