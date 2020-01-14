@@ -153,7 +153,7 @@ For further information see [the Haskell section](https://nixos.org/nixpkgs/manu
 
 ### Running over https
 
-To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal. 
+To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
 
 Since Obelisk generates a self-signed certificate for running https, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
 
