@@ -3,7 +3,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TemplateHaskell  #-}
 module Obelisk.SelfTest where
 
 import Control.Exception (bracket, throw)
@@ -11,7 +12,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.Bool (bool)
 import Data.Function (fix)
-import Data.Semigroup (Semigroup, (<>))
+import Data.Semigroup ((<>))
 import qualified Data.Set as Set
 import Data.String
 import Data.Text (Text)
@@ -21,11 +22,13 @@ import qualified Data.Text.IO as T
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.Socket as Socket
-import Shelly
+import Shelly hiding (cp)
 import System.Directory (withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
-import System.Info
+import System.FilePath (replaceBaseName, takeBaseName)
+import System.Which (staticWhich)
+import qualified System.Info
 import System.IO (Handle, hClose)
 import System.IO.Temp
 import System.Process (readProcessWithExitCode, CreateProcess(cwd), readCreateProcessWithExitCode, proc)
@@ -43,16 +46,21 @@ data ObRunState
   | ObRunState_BackendStarted
   deriving (Eq, Show)
 
-doubleQuotes :: (IsString a, Semigroup a) => a -> a
-doubleQuotes s = "\"" <> s <> "\""
+cp :: FilePath
+cp = $(staticWhich "cp")
+
+cabalPath :: FilePath
+cabalPath = $(staticWhich "cabal")
+
+gitUserConfig :: [Text]
+gitUserConfig = ["-c", "user.name=Obelisk Selftest", "-c", "user.email=noreply@example.com"]
 
 commit :: Text -> Sh ()
-commit msg = void $ run "git"
-  [ "commit"
+commit msg = void $ run "git" $ gitUserConfig <> [ "commit"
   , "--no-gpg-sign"
   , "--allow-empty"
   , "-m"
-  , doubleQuotes msg
+  , msg
   ]
 
 -- TODO replace Void and stop using loosely typed synchronous exceptions
@@ -68,33 +76,64 @@ tshow = T.pack . show
 shellyOb :: MonadIO m => (Sh a -> Sh a) -> Sh a -> m a
 shellyOb f obTest = shelly $ f obTest
 
+
 main :: IO ()
 main = do
   -- Note: you can pass hspec arguments as well, eg: `-m <pattern>`
-  isVerbose <- (elem "-v") <$> getArgs
+  isVerbose <- elem "-v" <$> getArgs
   unless isVerbose $
     putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output"
   let verbosity = bool silently verbosely isVerbose
       nixBuild args = run "nix-build" ("--no-out-link" : args)
-  obeliskImpl <- fromString <$> getEnv "OBELISK_IMPL"
+  obeliskImplRaw <- fromString <$> getEnv "OBELISK_IMPL"
+  let
+    withObeliskImpl f =
+      withSystemTempDirectory "obelisk-impl-copy" $ \(fromString -> obeliskImpl) -> do
+        void . shellyOb verbosity $ chdir obeliskImpl $ do
+          user <- T.strip <$> run "whoami" []
+          run_ cp ["-rT", toTextIgnore obeliskImplRaw, toTextIgnore obeliskImpl]
+          run_ "chown" ["-R", user, toTextIgnore obeliskImpl]
+          run_ "chmod" ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
+        f obeliskImpl
+
+    withInitCache f obeliskImpl =
+      withSystemTempDirectory "init Cache λ" $ \initCache -> do
+        -- Setup the ob init cache
+        void . shellyOb verbosity $ chdir initCache $ do
+          run_ "ob" ["init", "--symlink", toTextIgnore obeliskImpl]
+          run_ "git" ["init"]
+
+        f initCache
+
+    withObeliskImplAndInitCache f =
+      withObeliskImpl $ \impl -> withInitCache (f impl) impl
+
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
-  [p0, p1, p2, p3] <- liftIO $ getFreePorts 4
-  withSystemTempDirectory "initCache" $ \initCache -> do
-    -- Setup the ob init cache
-    void . shellyOb verbosity $ chdir (fromString initCache) $ do
-      run_ "ob" ["init"]
-      run_ "git" ["init"]
+
+  withObeliskImplAndInitCache $ \obeliskImpl initCache ->
     hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
-          inTmp :: (Shelly.FilePath -> Sh a) -> IO ()
-          inTmp f = withTmp (chdir <*> f)
+          defaultTmpDirName = "test λ"
 
-          withTmp f = shelly_ . withSystemTempDirectory "test" $ f . fromString
+          inTmp' :: FilePath -> (FilePath -> Sh a) -> IO ()
+          inTmp' dirname f = withTmp' dirname (chdir <*> f)
+          inTmp = inTmp' defaultTmpDirName
 
-          inTmpObInit f = inTmp $ \dir -> do
-            run_ "cp" ["-a", fromString $ initCache <> "/.", toTextIgnore dir]
+          withTmp' dirname f = shelly_ . withSystemTempDirectory dirname $ f . fromString
+          withTmp = withTmp' defaultTmpDirName
+
+          inTmpObInit' dirname f = inTmp' dirname $ \dir -> do
+            run_ cp ["-rT", fromString initCache, toTextIgnore dir]
             f dir
+          inTmpObInit = inTmpObInit' defaultTmpDirName
+
+          -- To be used in tests that change the obelisk impl directory
+          inTmpObInitWithImplCopy f = inTmpObInit $ \dir ->
+            withObeliskImpl $ \(fromString -> implCopy) -> do
+              run_ "rm" [thunk]
+              run_ "ln" ["-s", implCopy, thunk]
+              f dir
 
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
           assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
@@ -116,9 +155,9 @@ main = do
       describe "ob init" $ parallel $ do
         it "works with default impl"       $ inTmp $ \_ -> run "ob" ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> run "ob" ["init", "--branch", "master"]
-        it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", obeliskImpl]
-        it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init" $ \dir -> do
-          let p force = (proc "ob" $ "--no-handoff" : "init" : if force then ["--force"] else []) { cwd = Just dir }
+        it "works with symlink"            $ inTmp $ \_ -> run "ob" ["init", "--symlink", toTextIgnore obeliskImpl]
+        it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init λ" $ \dir -> do
+          let p force = (System.Process.proc "ob" $ "--no-handoff" : "init" : ["--force"|force]) { cwd = Just dir }
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitFailure _, _, _) <- readCreateProcessWithExitCode (p False) ""
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p True) ""
@@ -128,51 +167,62 @@ main = do
           void $ errExit False $ run "ob" ["init", "--symlink", "/dev/null"]
           ls tmp >>= liftIO . assertEqual "" []
 
-        it "produces a valid route config" $ inTmpObInit $ \tmp -> liftIO $ do
+        it "produces a valid route config" $ inTmpObInit $ \tmp -> liftIO $
           withCurrentDirectory (T.unpack $ toTextIgnore tmp) $ do
             configs <- getConfigs
             return (either (const Nothing) Just $ getConfigRoute configs) `shouldNotReturn` Nothing
 
       -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
       -- when not run by 'nix-build --attr selftest'
-      describe "ob run" $ parallel $ do
-        it "works in root directory" $ inTmpObInit $ \_ -> do
-          testObRunInDir p0 p1 Nothing httpManager
-        it "works in sub directory" $ inTmpObInit $ \_ -> do
-          testObRunInDir p2 p3 (Just "frontend") httpManager
+      describe "ob run" $ {- NOT parallel $ -} do
+        it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir Nothing httpManager
+        it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir (Just "frontend") httpManager
+        it "works with differently named cabal files" $ inTmpObInit $ \_ -> do
+          changeCabalPackageName "backend/backend.cabal" "new-backend"
+          testObRunInDir Nothing httpManager
 
       describe "obelisk project" $ parallel $ do
-        it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , obeliskImpl]
-        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", obeliskImpl]
-        it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    obeliskImpl]
-        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [obeliskImpl]
+        it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImpl]
+        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", toTextIgnore obeliskImpl]
+        it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    toTextIgnore obeliskImpl]
+        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [toTextIgnore obeliskImpl]
 
       describe "blank initialized project" $ parallel $ do
 
-        it "can build ghc.backend" $ inTmpObInit $ \_ -> do
-          nixBuild ["-A", "ghc.backend"]
-        it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> do
-          nixBuild ["-A", "ghcjs.frontend"]
+        it "can build ghc.backend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghc.backend"]
+        it "can build ghcjs.frontend" $ inTmpObInit $ \_ -> nixBuild ["-A", "ghcjs.frontend"]
 
-        if os == "darwin"
-          then it "can build ios"     $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
-          else it "can build android" $ inTmpObInit $ \_ -> nixBuild ["-A", "android.frontend"]
+        if System.Info.os == "darwin"
+          then it "can build ios" $ inTmpObInit $ \_ -> nixBuild ["-A", "ios.frontend"]
+          else it "can build android after accepting license" $ inTmpObInit $ \dir -> do
+            let defaultNixPath = dir </> ("default.nix" :: FilePath)
+            writefile defaultNixPath
+              =<< T.replace
+                "# config.android_sdk.accept_license = false;"
+                "config.android_sdk.accept_license = true;"
+              <$> readfile defaultNixPath
+          nixBuild ["-A", "android.frontend"]
 
         forM_ ["ghc", "ghcjs"] $ \compiler -> do
           let
-            shell = "shells." <> compiler
-            inShell cmd' = run "nix-shell" ["default.nix", "-A", fromString shell, "--run", cmd']
-          it ("can enter "    <> shell) $ inTmpObInit $ \_ -> inShell "exit"
-          it ("can build in " <> shell) $ inTmpObInit $ \_ -> inShell $ "cabal new-build --" <> fromString compiler <> " all"
+            shellName = "shells." <> compiler
+            inShell cmd' = run_ "nix-shell" ["default.nix", "-A", fromString shellName, "--run", cmd']
+          it ("can enter "    <> shellName) $ inTmpObInit $ \_ -> inShell "exit"
+          -- NOTE: We override the temporary directory name because cabal has a bug preventing new-build from working
+          -- in a path that has unicode characters.
+          it ("can build in " <> shellName) $ inTmpObInit' "test" $ \_ -> inShell $
+              T.pack cabalPath <> " --version; " <> T.pack cabalPath <> " new-build --" <> T.pack compiler <> " all"
 
-        it "has idempotent thunk update" $ inTmpObInit $ \_ -> do
+        it "has idempotent thunk update" $ inTmpObInitWithImplCopy $ \_ -> do
+          _  <- pack
           u  <- update
           uu <- update
           assertRevEQ u uu
 
       describe "ob thunk pack/unpack" $ parallel $ do
-        it "has thunk pack and unpack inverses" $ inTmpObInit $ \_ -> do
+        it "has thunk pack and unpack inverses" $ inTmpObInitWithImplCopy $ \_ -> do
 
+          _    <- pack
           e    <- commitAll
           eu   <- unpack
           eup  <- pack
@@ -191,7 +241,7 @@ main = do
           branch' <- chdir dir $ run "git" ["rev-parse", "--abbrev-ref", "HEAD"]
           liftIO $ assertEqual "" branch (T.strip branch')
 
-        it "can pack and unpack plain git repos" $ do
+        it "can pack and unpack plain git repos" $
           shelly_ $ withSystemTempDirectory "git-repo" $ \dir -> do
             let repo = toTextIgnore $ dir </> ("repo" :: String)
             run_ "git" ["clone", "https://github.com/haskell/process.git", repo]
@@ -210,7 +260,6 @@ main = do
             testThunkPack $ fromText repo
 
         it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
-          void $ unpack
           testThunkPack (dir </> thunk)
 
       describe "ob thunk update --branch" $ parallel $ do
@@ -231,11 +280,12 @@ main = do
 
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
-testObRunInDir :: Socket.PortNumber -> Socket.PortNumber -> Maybe Shelly.FilePath -> HTTP.Manager -> Sh ()
-testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+testObRunInDir :: Maybe FilePath -> HTTP.Manager -> Sh ()
+testObRunInDir mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+  [p0, p1] <- liftIO $ getFreePorts 2
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
-  maybe id chdir mdir $ runHandle "ob" ["run"] $ \stdout -> do
+  maybe id chdir mdir $ runHandle "ob" ["run", "-v"] $ \stdout -> do
     firstUri <- handleObRunStdout httpManager stdout
     let newUri = uri p1
     when (firstUri == newUri) $ errorExit $
@@ -246,7 +296,7 @@ testObRunInDir p0 p1 mdir httpManager = handle_sh (\case ExitSuccess -> pure ();
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
 
-testThunkPack :: Shelly.FilePath -> Sh ()
+testThunkPack :: FilePath -> Sh ()
 testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
   let pack' = readProcessWithExitCode "ob" ["thunk", "pack", T.unpack $ toTextIgnore path'] ""
       ensureThunkPackFails q = liftIO $ pack' >>= \case
@@ -267,7 +317,7 @@ testThunkPack path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $
   liftIO $ T.hPutStrLn handle "test file" >> hClose handle
   ensureThunkPackFails "modified"
   -- Existing stashes
-  void $ git ["stash"]
+  void $ git $ gitUserConfig <> [ "stash" ]
   ensureThunkPackFails "has stashes"
 
 -- | Blocks until a non-empty line is available
@@ -289,7 +339,7 @@ alterRouteTo uri stdout = do
 
 -- | Handle stdout of `ob run`: check that the frontend and backend servers are started correctly
 handleObRunStdout :: HTTP.Manager -> Handle -> Sh Text
-handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (state, msgs) -> do
+handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (state, msgs) ->
   liftIO (T.hGetLine stdout) >>= \t -> case state of
     ObRunState_Init
       | "Running test..." `T.isPrefixOf` t -> loop (ObRunState_BackendStarted, msgs)
@@ -311,6 +361,14 @@ obRunCheck httpManager _stdout frontendUri = do
   let req uri = liftIO $ HTTP.parseRequest (T.unpack uri) >>= flip HTTP.httpLbs httpManager
   req frontendUri >>= \r -> when (HTTP.responseStatus r /= HTTP.ok200) $ errorExit $
     "Request to frontend server failed: " <> T.pack (show r)
+
+-- | Rename a cabal file and do a really dumb, brittle search/replace in its content to update the name.
+changeCabalPackageName :: FilePath -> Text -> Sh ()
+changeCabalPackageName cabalFile newName = do
+  contents <- readfile cabalFile
+  writefile (replaceBaseName cabalFile (T.unpack newName)) $
+    T.replace (" " <> T.pack (takeBaseName cabalFile)) (" " <> newName) contents -- WARNING: Super brittle
+  rm cabalFile
 
 getFreePorts :: Int -> IO [Socket.PortNumber]
 getFreePorts 0 = pure []

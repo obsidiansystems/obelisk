@@ -9,9 +9,6 @@ library
                , obelisk-route
                , mtl
                , text
-  default-extensions:
-    TypeFamilies
-    PolyKinds
   exposed-modules:
     Common.Api
     Common.Route

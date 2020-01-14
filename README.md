@@ -7,6 +7,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
   - [Hoogle](#hoogle)
   - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
+  - [Running over https](#running-over-https)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
@@ -68,8 +69,8 @@ nix-env -f /path/to/obelisk -iA command
 Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
 
 ```shell
-ob thunk unpack ./obelisk/impl
-cd ./obelisk/impl
+ob thunk unpack ./.obelisk/impl
+cd ./.obelisk/impl
 # apply your changes
 ```
 
@@ -105,7 +106,8 @@ Obelisk leverages ghcid to provide a live-reloading server that handles both fro
 ob run
 ```
 
-Now go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Now, with an appropriate browser, go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Firefox will not be able to properly run the development website due to [issue 460](https://github.com/obsidiansystems/obelisk/issues/460). Fortunately, this problem does not occur on a fully built website.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
 
@@ -147,6 +149,12 @@ project ./. ({ pkgs, ... }: {
 ```
 
 For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
+
+### Running over https
+
+To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+
+Since Obelisk generates a self-signed certificate for running https, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
 
 ## Deploying
 
