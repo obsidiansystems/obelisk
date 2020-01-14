@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Command.Utils where
 
 import Control.Applicative hiding (many)
@@ -23,6 +24,7 @@ import Data.Void (Void)
 import System.Directory (canonicalizePath)
 import System.Environment (getExecutablePath)
 import System.Exit (ExitCode)
+import System.Which (staticWhich)
 import Text.Megaparsec as MP
 import Text.Megaparsec.Char as MP
 
@@ -31,6 +33,9 @@ import Obelisk.CliApp
 
 getObeliskExe :: IO FilePath
 getObeliskExe = getExecutablePath >>= canonicalizePath
+
+cp :: FilePath
+cp = $(staticWhich "cp")
 
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> Bool -> m Bool
@@ -83,7 +88,7 @@ isolateGitProc = setEnvOverride (overrides <>)
 -- | Recursively copy a directory using `cp -a` -- TODO: Should use -rT instead of -a
 copyDir :: FilePath -> FilePath -> ProcessSpec
 copyDir src dest =
-  setCwd (Just src) $ proc "cp" ["-a", ".", dest] -- TODO: This will break if dest is relative since we change cwd
+  setCwd (Just src) $ proc cp ["-a", ".", dest] -- TODO: This will break if dest is relative since we change cwd
 
 readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
 readGitProcess repo = readProcessAndLogOutput (Debug, Notice) . gitProc repo
