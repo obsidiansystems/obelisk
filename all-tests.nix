@@ -47,10 +47,10 @@ in
       let
         privateKeyFile = pkgs.writeText "id_rsa" ''${snakeOilPrivateKey}'';
         thunkableSample = pkgs.writeText "default.nix" ''
-        let pkgs = import <nixpkgs> {}; in pkgs.git
+          let pkgs = import <nixpkgs> {}; in pkgs.git
         '';
         invalidThunkableSample = pkgs.writeText "default.nix" ''
-        let pkgs = import <nixpkgs> {}; in pkgtypo.git
+          let pkgs = import <nixpkgs> {}; in pkgtypo.git
         '';
         sshConfigFile = pkgs.writeText "ssh_config" ''
           Host *
