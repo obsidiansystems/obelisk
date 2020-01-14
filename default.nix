@@ -2,6 +2,7 @@
 , profiling ? false
 , iosSdkVersion ? "10.2"
 , config ? {}
+, reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -16,7 +17,7 @@ let
     openssh
   ];
 
-  getReflexPlatform = sys: import ./dep/reflex-platform {
+  getReflexPlatform = sys: reflex-platform-func {
     inherit iosSdkVersion config;
     system = sys;
     enableLibraryProfiling = profiling;
@@ -34,11 +35,10 @@ let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         haskellLib = pkgs.haskell.lib;
       in {
-        hnix = haskellLib.overrideCabal (self.callHackage "hnix" "0.6.1" { these = self.these_0_8; }) (_: {
-          jailbreak = true;
-          doCheck = false;
-        });
+        hnix = haskellLib.dontCheck (haskellLib.doJailbreak (self.callCabal2nix "hnix" (hackGet dep/hnix) {}));
         hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
+
+        ghcid = self.callCabal2nix "ghcid" (hackGet ./dep/ghcid) {};
       })
 
       pkgs.obeliskExecutableConfig.haskellOverlay
@@ -46,18 +46,33 @@ let
       # Add obelisk packages
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
+        onLinux = pkg: f: if pkgs.stdenv.isLinux then f pkg else pkg;
       in {
+        shelly = self.callHackage "shelly" "1.9.0" {};
+
         obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
 
-        obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (hackGet ./lib/asset + "/manifest") {};
-        obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (hackGet ./lib/asset + "/serve-snap") {};
+        obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (cleanSource ./lib/asset/manifest) {};
+        obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (cleanSource ./lib/asset/serve-snap) {};
         obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-        obelisk-command = self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {};
+        obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) {
+          librarySystemDepends = [
+            pkgs.nix
+            (haskellLib.justStaticExecutables self.ghcid)
+          ];
+        };
         obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
-        obelisk-run = self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {};
+        obelisk-run = onLinux (self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {}) (pkg:
+          haskellLib.overrideCabal pkg (drv: { librarySystemDepends = [ pkgs.iproute ]; })
+        );
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
-        obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
+        obelisk-selftest = haskellLib.overrideCabal (self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {}) {
+          librarySystemDepends = [
+            pkgs.cabal-install
+            pkgs.coreutils
+          ];
+        };
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
         tabulation = self.callCabal2nix "tabulation" (cleanSource ./lib/tabulation) {};
       })
@@ -65,31 +80,11 @@ let
       (self: super: let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         haskellLib = pkgs.haskell.lib;
-        #TODO: Upstream
-        # Modify a Haskell package to add completion scripts for the given
-        # executable produced by it.  These completion scripts will be picked up
-        # automatically if the resulting derivation is installed, e.g. by
-        # `nix-env -i`.
-        addOptparseApplicativeCompletionScripts = exeName: pkg: haskellLib.overrideCabal pkg (drv: {
-          postInstall = (drv.postInstall or "") + ''
-            BASH_COMP_DIR="$out/share/bash-completion/completions"
-            mkdir -p "$BASH_COMP_DIR"
-            "$out/bin/${exeName}" --bash-completion-script "$out/bin/${exeName}" >"$BASH_COMP_DIR/ob"
-
-            ZSH_COMP_DIR="$out/share/zsh/vendor-completions"
-            mkdir -p "$ZSH_COMP_DIR"
-            "$out/bin/${exeName}" --zsh-completion-script "$out/bin/${exeName}" >"$ZSH_COMP_DIR/_ob"
-
-            FISH_COMP_DIR="$out/share/fish/vendor_completions.d"
-            mkdir -p "$FISH_COMP_DIR"
-            "$out/bin/${exeName}" --fish-completion-script "$out/bin/${exeName}" >"$FISH_COMP_DIR/ob.fish"
-          '';
-        });
       in {
         # Dynamic linking with split objects dramatically increases startup time (about
         # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.
         obelisk-command = haskellLib.overrideCabal
-          (addOptparseApplicativeCompletionScripts "ob"
+          (haskellLib.generateOptparseApplicativeCompletion "ob"
             (haskellLib.justStaticExecutables super.obelisk-command))
           (drv: {
             buildTools = (drv.buildTools or []) ++ [ pkgs.buildPackages.makeWrapper ];
@@ -126,7 +121,7 @@ in rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  obeliskEnvs = ghcObeliskEnvs;
+  obeliskEnvs = pkgs.lib.filterAttrs (k: _: pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs);
 
@@ -135,10 +130,10 @@ in rec {
     set -euo pipefail
 
     PATH="${command}/bin:$PATH"
-    export OBELISK_IMPL="${hackGet ./.}"
+    export OBELISK_IMPL="$(mktemp -d)"
+    git clone file://${pathGit} $OBELISK_IMPL
     "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
   '';
-  #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
   skeleton = pkgs.runCommand "skeleton" {
     dir = builtins.filterSource (path: type: builtins.trace path (baseNameOf path != ".obelisk")) ./skeleton;
   } ''
@@ -160,6 +155,7 @@ in rec {
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
     mkdir $out
     cd $out
+    # TODO profiling + static shouldn't break and need an ad-hoc workaround like that
     ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
     ${if optimizationLevel == null then ''
       ln -s all.unminified.js all.js
@@ -242,7 +238,7 @@ in rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
+      ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
       echo ${version} > $out/version
@@ -340,18 +336,19 @@ in rec {
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __iosWithConfig __androidWithConfig; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: version: serverExe
-        (projectOut sys).ghc.backend
-        (projectOut system).ghcjs.frontend
-        (projectOut sys).passthru.staticFiles
-        (projectOut sys).passthru.__closureCompilerOptimizationLevel
+      mainProjectOut = projectOut system;
+      serverOn = projectInst: version: serverExe
+        projectInst.ghc.backend
+        mainProjectOut.ghcjs.frontend
+        projectInst.passthru.staticFiles
+        projectInst.passthru.__closureCompilerOptimizationLevel
         version;
-      linuxExe = serverOn "x86_64-linux";
+      linuxExe = serverOn (projectOut "x86_64-linux");
       dummyVersion = "Version number is only available for deployments";
-    in projectOut system // {
+    in mainProjectOut // {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
-      exe = serverOn system dummyVersion;
+      exe = serverOn mainProjectOut dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};

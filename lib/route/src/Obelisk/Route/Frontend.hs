@@ -35,6 +35,8 @@ module Obelisk.Route.Frontend
   , mapRoutedT
   , subRoute
   , subRoute_
+  , subPairRoute
+  , subPairRoute_
   , maybeRoute
   , maybeRoute_
   , maybeRouted
@@ -51,6 +53,7 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , routeLinkDynAttr
   , dynRouteLink
   , adaptedUriPath
   , setAdaptedUriPath
@@ -72,11 +75,13 @@ import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
+import Data.Map (Map)
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Functor.Compose
+import Data.Functor.Misc
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PostBuild.Class
@@ -202,9 +207,17 @@ subRoute_ :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r 
 subRoute_ f = factorRouted $ strictDynWidget_ $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute_ :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m ()) -> RoutedT t (a, b) m ()
+subPairRoute_ f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute_ (\(Const2 a) -> f a)
+
 subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m b) -> RoutedT t (R r) m (Dynamic t b)
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
+
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m c) -> RoutedT t (a, b) m (Dynamic t c)
+subPairRoute f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute (\(Const2 a) -> f a)
 
 maybeRoute_ :: (MonadFix m, MonadHold t m, Adjustable t m) => m () -> RoutedT t r m () -> RoutedT t (Maybe r) m ()
 maybeRoute_ n j = maybeRouted $ strictDynWidget_ $ \case
@@ -500,10 +513,10 @@ runRouteViewT routeEncoder switchover useHash a = do
 routeLink
   :: forall t m a route.
      ( DomBuilder t m
-     , RouteToUrl (R route) m
-     , SetRoute t (R route) m
+     , RouteToUrl route m
+     , SetRoute t route m
      )
-  => R route -- ^ Target route
+  => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
 routeLink r w = do
@@ -515,9 +528,7 @@ routeLink r w = do
   setRoute $ r <$ domEvent Click e
   return a
 
--- | A link widget that, when clicked, sets the route to current value of the
--- provided dynamic route. In non-javascript contexts the value of the dynamic post
--- build is used so the link still works like 'routeLink'.
+-- | Like 'routeLinkDynAttr' but without custom attributes.
 dynRouteLink
   :: forall t m a route.
      ( DomBuilder t m
@@ -526,11 +537,27 @@ dynRouteLink
      , SetRoute t (R route) m
      )
   => Dynamic t (R route) -- ^ Target route
-  -> m a -- ^ Child widget
+  -> m a -- ^ Child widget of the @a@ element
   -> m a
-dynRouteLink dr w = do
+dynRouteLink = routeLinkDynAttr mempty
+
+-- | An @a@-tag link widget that, when clicked, sets the route to current value of the
+-- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
+-- build is used so the link still works like 'routeLink'.
+routeLinkDynAttr
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
+  -> Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget of the @a@ element
+  -> m a
+routeLinkDynAttr dAttr dr w = do
   enc <- askRouteToUrl
-  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+  er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_modifyAttributes .~ er

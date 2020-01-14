@@ -15,6 +15,7 @@ module Obelisk.Configs
   , ConfigsT
   , runConfigsT
   , mapConfigsT
+  , getTextConfig
   ) where
 
 import Control.Applicative

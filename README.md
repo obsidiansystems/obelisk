@@ -7,6 +7,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
   - [Hoogle](#hoogle)
   - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
+  - [Running over https](#running-over-https)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
@@ -68,8 +69,8 @@ nix-env -f /path/to/obelisk -iA command
 Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
 
 ```shell
-ob thunk unpack ./obelisk/impl
-cd ./obelisk/impl
+ob thunk unpack ./.obelisk/impl
+cd ./.obelisk/impl
 # apply your changes
 ```
 
@@ -105,7 +106,8 @@ Obelisk leverages ghcid to provide a live-reloading server that handles both fro
 ob run
 ```
 
-Now go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Now, with an appropriate browser, go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Firefox will not be able to properly run the development website due to [issue 460](https://github.com/obsidiansystems/obelisk/issues/460). Fortunately, this problem does not occur on a fully built website.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
 
@@ -164,6 +166,12 @@ project ./. ({ pkgs, ... }: {
   };
 # ...
 ```
+
+### Running over https
+
+To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+
+Since Obelisk generates a self-signed certificate for running https, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
 
 ## Deploying
 
@@ -343,9 +351,9 @@ This command will accomplish the following:
 1. Build a Signed Android apk for your application
 1. Deploy the Signed apk to your connected Android device
 
-In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`
+In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`.
 
-Additional documentation on java key stores can be found [here] (https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html)
+Additional documentation on Java key stores can be found [here](https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html).
 
 This should copy over and install the application on your device (if you see a  "*signatures do not match*" error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 
