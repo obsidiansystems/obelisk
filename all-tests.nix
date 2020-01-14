@@ -97,23 +97,23 @@ in
           client.succeed("cd ~/code/myapp && git status")
       
       with subtest("test obelisk can pack"):
-          client.succeed("ob thunk pack ~/code/myapp")
+          client.succeed("ob -v thunk pack ~/code/myapp")
           client.succeed("grep -qF 'git' ~/code/myapp/default.nix")
           client.succeed("grep -qF 'myorg' ~/code/myapp/git.json")
-          client.succeed("ob thunk unpack ~/code/myapp")
+          client.succeed("ob -v thunk unpack ~/code/myapp")
       
       with subtest("test obelisk can set the public / private flag"):
-          client.succeed("ob thunk pack ~/code/myapp --private")
+          client.succeed("ob -v thunk pack ~/code/myapp --private")
           client.fail("""grep -qF '"private": practice' ~/code/myapp/git.json""")
           client.succeed("""grep -qF '"private": true' ~/code/myapp/git.json""")
-          client.succeed("ob thunk unpack ~/code/myapp")
-          client.succeed("ob thunk pack ~/code/myapp --public")
+          client.succeed("ob -v thunk unpack ~/code/myapp")
+          client.succeed("ob -v thunk pack ~/code/myapp --public")
           client.succeed("""grep -qF '"private": false' ~/code/myapp/git.json""")
-          client.succeed("ob thunk unpack ~/code/myapp")
+          client.succeed("ob -v thunk unpack ~/code/myapp")
  
       with subtest("test obelisk can detect private repos"):
-          client.succeed("ob thunk pack ~/code/myapp")
+          client.succeed("ob -v thunk pack ~/code/myapp")
           client.succeed("""grep -qF '"private": false' ~/code/myapp/git.json""")
-          client.succeed("ob thunk unpack ~/code/myapp")
+          client.succeed("ob -v thunk unpack ~/code/myapp")
       '';
   }) {}
