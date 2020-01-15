@@ -26,26 +26,29 @@ main = do
 
   args@(origPath:inPath:outPath:packagePaths) <- getArgs
 
+  outFile <- hOpen outPath WriteMode
+  let hPutTextBuilder h = BL.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
+
   putStr "--------------------------------------------------------------------------------\n"
   print args
   putStr "--------------------------------------------------------------------------------\n"
 
   -- Thus we must select among the packagePaths for the file we are going to parse.
 
-  let packageDirs = sortOn (negate . length) $ map (splitPath . normalise) packagePaths
+  let takeDirs = takeWhile hasTrailingPathSeperator
+      packageDirs = sortOn (negate . length . takeDirs) $ map (splitPath . normalise) packagePaths
       origDir = splitPath $ normalise $ origPath
-      matches = [ d | d@(_:_) <- packageDirs, takeWhile hasTrailingPathSeperator d `isPrefixOf` origDir ]
+      matches = [ d | d <- packageDirs, takeDirs d `isPrefixOf` origDir ]
 
   -- So the first element of matches is going to be the deepest path to a package spec that contains
   -- our file as a subdirectory.
 
-  let hPutTextBuilder outFile = BL.hPutBuilder outFile . TL.encodeUtf8Builder . TL.toLazyText
   case matches of
-    [] -> hPutTextBuilder (lineNumberPragma origPath) -- TODO: probably should produce a warning
+    [] -> hPutTextBuilder outFile (lineNumberPragma origPath) -- TODO: probably should produce a warning
     (packagePath:_) -> do
        runObelisk (ObeliskT mempty) (parseCabalPackage packagePath) >>= \case
          Just packageInfo -> do
-           hPutTextBuilder (generateHeader origPath packageInfo)
+           hPutTextBuilder outFile (generateHeader origPath packageInfo)
 
   BL.readFile inPath >>= BL.hPut outFile
   hClose outFile
