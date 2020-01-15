@@ -161,7 +161,7 @@ data ThunkData
 -- | Whether or not to override the scheme when packing/unpacking a thunk.
 data ThunkScheme
   = ThunkScheme_Keep
-  -- ^ Keep the protocol https/ssh as it was.
+  -- ^ Keep the protocol as it was.
   | ThunkScheme_Https
   -- ^ Switch to https://host/.... like uri.
   | ThunkScheme_Ssh
