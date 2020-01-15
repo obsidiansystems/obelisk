@@ -58,10 +58,16 @@ library
     Obelisk.Command.Thunk
     Obelisk.Command.Utils
     Obelisk.Command.VmBuilder
+    Obelisk.Command.Preprocessor
   -- -fobject-code is so that the StaticPointers extension can work in ghci
   ghc-options: -Wall -fobject-code
 
 executable ob
   main-is: src-bin/ob.hs
+  build-depends: base, obelisk-command
+  ghc-options: -Wall -O2 -threaded
+
+executable ob-preprocessor
+  main-is: src-bin/ob-preprocessor
   build-depends: base, obelisk-command
   ghc-options: -Wall -O2 -threaded
