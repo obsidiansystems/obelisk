@@ -46,6 +46,12 @@ in
     testScript =
       let
         privateKeyFile = pkgs.writeText "id_rsa" ''${snakeOilPrivateKey}'';
+        thunkableSample = pkgs.writeText "default.nix" ''
+          let pkgs = import <nixpkgs> {}; in pkgs.git
+        '';
+        invalidThunkableSample = pkgs.writeText "default.nix" ''
+          let pkgs = import <nixpkgs> {}; in pkgtypo.git
+        '';
         sshConfigFile = pkgs.writeText "ssh_config" ''
           Host *
             StrictHostKeyChecking no
@@ -83,7 +89,9 @@ in
       with subtest("test a git project can be configured with a remote using ssh"):
           client.succeed("mkdir -p ~/code/myapp")
           client.succeed("cd ~/code/myapp && git init")
-          client.succeed("cd ~/code/myapp && touch README")
+          client.succeed(
+              "cp ${thunkableSample} ~/code/myapp/default.nix"
+          )
           client.succeed("cd ~/code/myapp && git add .")
           client.succeed('git config --global user.email "you@example.com"')
           client.succeed('git config --global user.name "Your Name"')
@@ -92,16 +100,46 @@ in
               "cd ~/code/myapp && git remote add origin root@githost:/root/myorg/myapp.git"
           )
       
+ 
       with subtest("test pushing code to the remote"):
           client.succeed("cd ~/code/myapp && git push -u origin master")
           client.succeed("cd ~/code/myapp && git status")
       
       with subtest("test obelisk can pack"):
-          client.succeed("ob thunk pack ~/code/myapp")
+          client.succeed("ob -v thunk pack ~/code/myapp")
           client.succeed("grep -qF 'git' ~/code/myapp/default.nix")
           client.succeed("grep -qF 'myorg' ~/code/myapp/git.json")
+          client.succeed("ob -v thunk unpack ~/code/myapp")
       
-      with subtest("test obelisk can detect private repos"):
+      with subtest("test obelisk can set the public / private flag"):
+          client.succeed("ob -v thunk pack ~/code/myapp --private")
+          client.fail("""grep -qF '"private": practice' ~/code/myapp/git.json""")
+          client.succeed("""grep -qF '"private": true' ~/code/myapp/git.json""")
+          client.succeed("nix-build ~/code/myapp")
+          client.succeed("ob -v thunk unpack ~/code/myapp")
+          client.succeed("ob -v thunk pack ~/code/myapp --public")
           client.succeed("""grep -qF '"private": false' ~/code/myapp/git.json""")
-    '';
+          client.succeed("nix-build ~/code/myapp")
+          client.succeed("ob -v thunk unpack ~/code/myapp")
+
+      with subtest("test building an invalid thunk fails"):
+          client.succeed("cd ~/code/myapp && git checkout -b bad")
+          client.succeed(
+              "cp ${invalidThunkableSample} ~/code/myapp/default.nix"
+          )
+          client.succeed("cd ~/code/myapp && git add .")
+          client.succeed('git config --global user.email "you@example.com"')
+          client.succeed('git config --global user.name "Your Name"')
+          client.succeed('cd ~/code/myapp && git commit -m "Bad commit"')
+          client.succeed("cd ~/code/myapp && git push -u origin bad")
+          client.succeed("ob -v thunk pack ~/code/myapp --public")
+          client.fail("nix-build  ~/code/myapp")
+          client.succeed("ob -v thunk unpack ~/code/myapp")
+          client.succeed("cd ~/code/myapp && git checkout master")
+
+      with subtest("test obelisk can detect private repos"):
+          client.succeed("ob -v thunk pack ~/code/myapp")
+          client.succeed("""grep -qF '"private": false' ~/code/myapp/git.json""")
+          client.succeed("ob -v thunk unpack ~/code/myapp")
+      '';
   }) {}
