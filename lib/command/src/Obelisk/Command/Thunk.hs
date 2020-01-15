@@ -8,25 +8,30 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Thunk
-  ( ThunkPtr (..)
+  ( GitHubSource (..)
+  , GitUri (..)
+  , ReadThunkError (..)
+  , ThunkConfig (..)
+  , ThunkData (..)
+  , ThunkPackConfig (..)
+  , ThunkPtr (..)
   , ThunkRev (..)
   , ThunkSource (..)
-  , ThunkData (..)
-  , ReadThunkError (..)
-  , GitHubSource (..)
-  , getThunkGitBranch
-  , getLatestRev
-  , updateThunkToLatest
+  , ThunkUpdateConfig (..)
   , createThunk
   , createThunkWithLatest
+  , getLatestRev
+  , getThunkGitBranch
+  , getThunkPtr
+  , gitUriToText
   , nixBuildAttrWithCache
   , nixBuildThunkAttrWithCache
-  , unpackThunk
   , packThunk
-  , readThunk
-  , updateThunk
-  , getThunkPtr
   , parseGitUri
+  , readThunk
+  , unpackThunk
+  , updateThunk
+  , updateThunkToLatest
   , uriThunkPtr
   ) where
 
@@ -68,8 +73,7 @@ import System.FilePath
 import System.IO.Error
 import System.IO.Temp
 import System.Posix (getSymbolicLinkStatus, modificationTime)
-import System.Process (proc)
-import Text.URI
+import qualified Text.URI as URI
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
@@ -94,7 +98,7 @@ type NixSha256 = Text --TODO: Use a smart constructor and make this actually ver
 
 -- | A specific revision of data; it may be available from multiple sources
 data ThunkRev = ThunkRev
-  { _thunkRev_commit :: Ref
+  { _thunkRev_commit :: Ref Ref.SHA1
   , _thunkRev_nixSha256 :: NixSha256
   }
   deriving (Show, Eq, Ord)
@@ -111,37 +115,63 @@ data GitHubSource = GitHubSource
   { _gitHubSource_owner :: Name Owner
   , _gitHubSource_repo :: Name Repo
   , _gitHubSource_branch :: Maybe (Name Branch)
+  , _gitHubSource_private :: Bool
   }
   deriving (Show, Eq, Ord)
 
+newtype GitUri = GitUri URI.URI deriving (Eq, Ord, Show)
+
+gitUriToText :: GitUri -> Text
+gitUriToText (GitUri uri)
+  | (T.toLower . URI.unRText <$> URI.uriScheme uri) == Just "file"
+  , Just (_, path) <- URI.uriPath uri
+  = "/" <> T.intercalate "/" (map URI.unRText $ NonEmpty.toList path)
+  | otherwise = URI.render uri
+
 data GitSource = GitSource
-  { _gitSource_url :: URI
+  { _gitSource_url :: GitUri
   , _gitSource_branch :: Maybe (Name Branch)
   , _gitSource_fetchSubmodules :: Bool
+  , _gitSource_private :: Bool
   }
   deriving (Show, Eq, Ord)
+
+newtype ThunkConfig = ThunkConfig
+  { _thunkConfig_private :: Maybe Bool
+  } deriving Show
+
+data ThunkUpdateConfig = ThunkUpdateConfig
+  { _thunkUpdateConfig_branch :: Maybe String
+  , _thunkUpdateConfig_config :: ThunkConfig
+  } deriving Show
+
+data ThunkPackConfig = ThunkPackConfig
+  { _thunkPackConfig_force :: Bool
+  , _thunkPackConfig_config :: ThunkConfig
+  } deriving Show
 
 -- | Convert a GitHub source to a regular Git source. Assumes no submodules.
 forgetGithub :: Bool -> GitHubSource -> GitSource
 forgetGithub useSsh s = GitSource
-  { _gitSource_url = URI
-    { uriScheme = Just $ fromRight' $ mkScheme $ if useSsh then "ssh" else "https"
-    , uriAuthority = Right $ Authority
-        { authUserInfo = UserInfo (fromRight' $ mkUsername "git") Nothing
+  { _gitSource_url = GitUri $ URI.URI
+    { URI.uriScheme = Just $ fromRight' $ URI.mkScheme $ if useSsh then "ssh" else "https"
+    , URI.uriAuthority = Right $ URI.Authority
+        { URI.authUserInfo = URI.UserInfo (fromRight' $ URI.mkUsername "git") Nothing
           <$ guard useSsh
-        , authHost = fromRight' $ mkHost "github.com"
-        , authPort = Nothing
+        , URI.authHost = fromRight' $ URI.mkHost "github.com"
+        , URI.authPort = Nothing
         }
-    , uriPath = Just ( False
-                     , fromRight' . mkPathPiece <$>
+    , URI.uriPath = Just ( False
+                     , fromRight' . URI.mkPathPiece <$>
                        untagName (_gitHubSource_owner s)
                        :| [ untagName (_gitHubSource_repo s) <> ".git" ]
                      )
-    , uriQuery = []
-    , uriFragment = Nothing
+    , URI.uriQuery = []
+    , URI.uriFragment = Nothing
     }
   , _gitSource_branch = _gitHubSource_branch s
   , _gitSource_fetchSubmodules = False
+  , _gitSource_private = _gitHubSource_private s
   }
 
 getThunkGitBranch :: ThunkPtr -> Maybe Text
@@ -149,26 +179,26 @@ getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
   ThunkSource_GitHub s -> _gitHubSource_branch s
   ThunkSource_Git s -> _gitSource_branch s
 
-commitNameToRef :: Name Commit -> Ref
+commitNameToRef :: Name Commit -> Ref Ref.SHA1
 commitNameToRef (N c) = Ref.fromHex $ encodeUtf8 c
 
 -- TODO: Use spinner here.
 getNixSha256ForUriUnpacked
   :: MonadObelisk m
-  => URI
+  => GitUri
   -> m NixSha256
 getNixSha256ForUriUnpacked uri =
-  withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> render uri) $ do
+  withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> gitUriToText uri) $ do
     [hash] <- fmap T.lines $ readProcessAndLogOutput (Debug, Debug) $
-      proc "nix-prefetch-url" ["--unpack" , "--type" , "sha256" , T.unpack $ render uri]
+      proc "nix-prefetch-url" ["--unpack", "--type", "sha256", T.unpack $ gitUriToText uri]
     pure hash
 
-nixPrefetchGit :: MonadObelisk m => URI -> Text -> Bool -> m NixSha256
+nixPrefetchGit :: MonadObelisk m => GitUri -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
-  withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> render uri <> " at " <> rev) $ do
+  withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> gitUriToText uri <> " at " <> rev) $ do
     out <- readProcessAndLogStderr Debug $
       proc "nix-prefetch-git" $ filter (/="")
-        [ "--url", T.unpack $ render uri
+        [ "--url", T.unpack $ gitUriToText uri
         , "--rev", T.unpack rev
         , if fetchSubmodules then "--fetch-submodules" else ""
         , "--quiet"
@@ -286,10 +316,12 @@ parseGitHubSource v = do
   owner <- v Aeson..: "owner"
   repo <- v Aeson..: "repo"
   branch <- v Aeson..:! "branch"
+  private <- v Aeson..:? "private"
   pure $ GitHubSource
     { _gitHubSource_owner = owner
     , _gitHubSource_repo = repo
     , _gitHubSource_branch = branch
+    , _gitHubSource_private = fromMaybe False private
     }
 
 parseGitSource :: Aeson.Object -> Aeson.Parser GitSource
@@ -297,10 +329,12 @@ parseGitSource v = do
   Just url <- parseGitUri <$> v Aeson..: "url"
   branch <- v Aeson..:! "branch"
   fetchSubmodules <- v Aeson..:! "fetchSubmodules"
+  private <- v Aeson..:? "private"
   pure $ GitSource
     { _gitSource_url = url
     , _gitSource_branch = branch
     , _gitSource_fetchSubmodules = fromMaybe False fetchSubmodules
+    , _gitSource_private = fromMaybe False private
     }
 
 overwriteThunk :: MonadObelisk m => FilePath -> ThunkPtr -> m ()
@@ -327,13 +361,15 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     , ("branch" .=) <$> _gitHubSource_branch s
     , Just $ "rev" .= Ref.toHexString (_thunkRev_commit rev)
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
+    , Just $ "private" .= _gitHubSource_private s
     ]
   ThunkSource_Git s -> encodePretty' plainGitCfg $ Aeson.object $ catMaybes
-    [ Just $ "url" .= render (_gitSource_url s)
+    [ Just $ "url" .= gitUriToText (_gitSource_url s)
     , Just $ "rev" .= Ref.toHexString (_thunkRev_commit rev)
     , ("branch" .=) <$> _gitSource_branch s
     , Just $ "sha256" .= _thunkRev_nixSha256 rev
     , Just $ "fetchSubmodules" .= _gitSource_fetchSubmodules s
+    , Just $ "private" .= _gitSource_private s
     ]
  where
   githubCfg = defConfig
@@ -354,6 +390,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
         [ "url"
         , "rev"
         , "sha256"
+        , "private"
         , "fetchSubmodules"
         ] <> compare
     , confTrailingNewline = True
@@ -377,8 +414,8 @@ createThunkWithLatest target s = do
     , _thunkPtr_rev = rev
     }
 
-updateThunkToLatest :: MonadObelisk m => FilePath -> Maybe String -> m ()
-updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
+updateThunkToLatest :: MonadObelisk m => ThunkUpdateConfig -> FilePath -> m ()
+updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
   checkThunkDirectory "ob thunk update directory cannot be '.'" target
   -- check to see if thunk should be updated to a specific branch or just update it's current branch
   case mBranch of
@@ -390,7 +427,7 @@ updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack t
           ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
       let src = _thunkPtr_source ptr
       rev <- getLatestRev src
-      overwriteThunk overwrite $ ThunkPtr
+      overwriteThunk overwrite $ modifyThunkPtrByConfig thunkConfig $ ThunkPtr
         { _thunkPtr_source = src
         , _thunkPtr_rev = rev
         }
@@ -398,24 +435,25 @@ updateThunkToLatest target mBranch = withSpinner' ("Updating thunk " <> T.pack t
       Left err -> failWith $ T.pack $ "thunk update: " <> show err
       Right c -> case c of
         ThunkData_Packed t -> case _thunkPtr_source t of
-          ThunkSource_Git tsg -> setThunk target tsg branch
+          ThunkSource_Git tsg -> setThunk thunkConfig target tsg branch
           ThunkSource_GitHub tsgh -> do
             let tsg = forgetGithub False tsgh
-            setThunk target tsg branch
-        ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> (show target) <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
+            setThunk thunkConfig target tsg branch
+        ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> show target <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
 
-setThunk :: MonadObelisk m => FilePath -> GitSource -> String -> m ()
-setThunk target gs branch = do
+setThunk :: MonadObelisk m => ThunkConfig -> FilePath -> GitSource -> String -> m ()
+setThunk thunkConfig target gs branch = do
   newThunkPtr <- uriThunkPtr (_gitSource_url gs) (Just $ T.pack branch) Nothing
   overwriteThunk target newThunkPtr
-  updateThunkToLatest target Nothing
+  updateThunkToLatest (ThunkUpdateConfig Nothing thunkConfig) target
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
 gitHubStandaloneLoaders :: NonEmpty Text
 gitHubStandaloneLoaders =
-  gitHubStandaloneLoaderV2 :|
+  gitHubStandaloneLoaderV4 :|
   [ gitHubStandaloneLoaderV3
+  , gitHubStandaloneLoaderV2
   , gitHubStandaloneLoaderV1
   ]
 
@@ -455,10 +493,23 @@ gitHubStandaloneLoaderV3 = T.unlines
   , "in import (fetch (builtins.fromJSON (builtins.readFile ./github.json)))"
   ]
 
+gitHubStandaloneLoaderV4 :: Text
+gitHubStandaloneLoaderV4 = T.unlines
+  [ "# DO NOT HAND-EDIT THIS FILE"
+  , "let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:"
+  , "  if !fetchSubmodules && !private then builtins.fetchTarball {"
+  , "    url = \"https://github.com/${owner}/${repo}/archive/${rev}.tar.gz\"; inherit sha256;"
+  , "  } else (import <nixpkgs> {}).fetchFromGitHub {"
+  , "    inherit owner repo rev sha256 fetchSubmodules private;"
+  , "  };"
+  , "in import (fetch (builtins.fromJSON (builtins.readFile ./github.json)))"
+  ]
+
 plainGitStandaloneLoaders :: NonEmpty Text
 plainGitStandaloneLoaders =
-  plainGitStandaloneLoaderV1 :|
-  [ plainGitStandaloneLoaderV2
+  plainGitStandaloneLoaderV3 :|
+  [ plainGitStandaloneLoaderV1
+  , plainGitStandaloneLoaderV2
   ]
 
 plainGitStandaloneLoaderV1 :: Text
@@ -477,6 +528,22 @@ plainGitStandaloneLoaderV2 = T.unlines
   , "    then builtins.fetchGit ({ inherit url rev; } // (if branch == null then {} else { ref = branch; }))"
   , "    else abort \"Plain Git repositories are only supported on nix 2.0 or higher.\";"
   , "in import (fetchGit (builtins.fromJSON (builtins.readFile ./git.json)))"
+  ]
+
+plainGitStandaloneLoaderV3 :: Text
+plainGitStandaloneLoaderV3 = T.unlines
+  [ "# DO NOT HAND-EDIT THIS FILE"
+  , "let fetch = {url, rev, ref ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:"
+  , "  let realUrl = let firstChar = builtins.substring 0 1 url; in"
+  , "    if firstChar == \"/\" then /. + url"
+  , "    else if firstChar == \".\" then ./. + url"
+  , "    else url;"
+  , "  in if !fetchSubmodules && private then builtins.fetchGit {"
+  , "    url = realUrl; inherit rev;"
+  , "  } else (import <nixpkgs> {}).fetchgit {"
+  , "    url = realUrl; inherit rev sha256;"
+  , "  };"
+  , "in import (fetch (builtins.fromJSON (builtins.readFile ./git.json)))"
   ]
 
 thunkFileNames :: [FilePath]
@@ -520,7 +587,7 @@ nixBuildThunkAttrWithCache thunkDir attr = do
     Just c -> return c
     Nothing -> do
       putLog Warning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
-      _ <- nixCmd $ NixCmd_Build$ def
+      _ <- nixCmd $ NixCmd_Build $ def
         Lens.& nixBuildConfig_outLink Lens..~ OutLink_IndirectRoot cachePath
         Lens.& nixCmdConfig_target Lens..~ Target
           { _target_path = Just thunkDir
@@ -568,13 +635,13 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
       Right (ThunkData_Packed _) -> do
         let tmpThunk = tmpDir </> "thunk"
         callProcessAndLogOutput (Notice, Error) $
-          proc "cp" ["-r", "-T", thunkDir, tmpThunk]
+          proc cp ["-r", "-T", thunkDir, tmpThunk]
         return tmpThunk
-      Right _ -> failWith $ "Thunk is not packed"
+      Right _ -> failWith "Thunk is not packed"
     updateThunkFromTmp p' = do
-      _ <- packThunk' True False p'
+      _ <- packThunk' True (ThunkPackConfig False (ThunkConfig Nothing)) p'
       callProcessAndLogOutput (Notice, Error) $
-        proc "cp" ["-r", "-T", p', p]
+        proc cp ["-r", "-T", p', p]
 
 finalMsg :: Bool -> (a -> Text) -> Maybe (a -> Text)
 finalMsg noTrail s = if noTrail then Nothing else Just s
@@ -606,7 +673,7 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from with
         let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
         git $ [ "clone" ]
           ++  ("--recursive" <$ guard (_gitSource_fetchSubmodules s))
-          ++  [ T.unpack $ render $ _gitSource_url s ]
+          ++  [ T.unpack $ gitUriToText $ _gitSource_url s ]
           ++  do branch <- maybeToList $ _gitSource_branch s
                  [ "--branch", T.unpack $ untagName branch ]
         git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
@@ -615,31 +682,39 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from with
 
         liftIO $ createDirectory obGitDir
         callProcessAndLogOutput (Notice, Error) $
-          proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
+          proc cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
         callProcessAndLogOutput (Notice, Error) $
           proc "rm" ["-r", thunkDir]
         callProcessAndLogOutput (Notice, Error) $
           proc "mv" ["-T", tmpRepo, thunkDir]
 
 --TODO: add a rollback mode to pack to the original thunk
-packThunk :: MonadObelisk m => Bool -> FilePath -> m ThunkPtr
+packThunk :: MonadObelisk m => ThunkPackConfig -> FilePath -> m ThunkPtr
 packThunk = packThunk' False
 
-packThunk' :: MonadObelisk m => Bool -> Bool -> FilePath -> m ThunkPtr
-packThunk' noTrail force thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
+packThunk' :: MonadObelisk m => Bool -> ThunkPackConfig -> FilePath -> m ThunkPtr
+packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
   Left err -> failWith $ T.pack $ "thunk pack: " <> show err
   Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
   Right (ThunkData_Checkout _) -> do
     withSpinner' ("Packing thunk " <> T.pack thunkDir)
                  (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
-      thunkPtr <- getThunkPtr (not force) thunkDir
+      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
       pure thunkPtr
 
+modifyThunkPtrByConfig :: ThunkConfig -> ThunkPtr -> ThunkPtr
+modifyThunkPtrByConfig (ThunkConfig markPrivate') ptr = case markPrivate' of
+  Nothing -> ptr
+  Just markPrivate -> ptr { _thunkPtr_source = case _thunkPtr_source ptr of
+      ThunkSource_Git s -> ThunkSource_Git $ s { _gitSource_private = markPrivate }
+      ThunkSource_GitHub s -> ThunkSource_GitHub $ s { _gitHubSource_private = markPrivate }
+    }
+
 getThunkPtr :: forall m. MonadObelisk m => Bool -> FilePath -> m ThunkPtr
 getThunkPtr checkClean thunkDir = do
-  when checkClean $ ensureCleanGitRepo thunkDir True $
+  when checkClean $ ensureCleanGitRepo thunkDir True
     "thunk pack: thunk checkout contains unsaved modifications"
 
   -- Check whether there are any stashes
@@ -661,7 +736,7 @@ getThunkPtr checkClean thunkDir = do
       <$> T.lines
       <$> readGitProcess thunkDir ["rev-parse", "HEAD"]
     case b of
-      (Just "HEAD") -> failWith $ T.unlines $
+      (Just "HEAD") -> failWith $ T.unlines
         [ "thunk pack: You are in 'detached HEAD' state."
         , "If you want to pack at the current ref \
           \then please create a new branch with 'git checkout -b <new-branch-name>' and push this upstream."
@@ -733,7 +808,7 @@ getThunkPtr checkClean thunkDir = do
       [ "thunk pack: Certain branches in the thunk have commits not yet pushed upstream:"
       , ""
       ] ++
-      (flip map (Map.toList nonGood) $ \(branch, (upstream, (ahead, behind))) -> mconcat
+      flip map (Map.toList nonGood) (\(branch, (upstream, (ahead, behind))) -> mconcat
         ["  ", branch, " ahead: ", T.pack (show ahead), " behind: ", T.pack (show behind), " remote branch ", upstream]) ++
       [ ""
       , "Please push these upstream and try again. (Or just fetch, if they are somehow \
@@ -741,7 +816,7 @@ getThunkPtr checkClean thunkDir = do
       ]
 
   -- We assume it's safe to pack the thunk at this point
-  putLog Informational $ "All changes safe in git remotes. OK to pack thunk."
+  putLog Informational "All changes safe in git remotes. OK to pack thunk."
 
   let remote = maybe "origin" snd $ flip Map.lookup headUpstream =<< mCurrentBranch
 
@@ -773,7 +848,7 @@ getLatestRev os = do
 -- performance. If that doesn't work (e.g. authentication issue), we fall back
 -- on just doing things the normal way for git repos in general, and save it as
 -- a regular git thunk.
-uriThunkPtr :: MonadObelisk m => URI -> Maybe Text -> Maybe Text -> m ThunkPtr
+uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Text -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mbranch mcommit = do
   commit <- case mcommit of
     Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
@@ -784,7 +859,7 @@ uriThunkPtr uri mbranch mcommit = do
       case rev of
         Right r -> pure (ThunkSource_GitHub s, r)
         Left e -> do
-          putLog Warning $ "\
+          putLog Warning "\
 \Failed to fetch archive from GitHub. This is probably a private repo. \
 \Falling back on normal fetchgit. Original failure:"
           errorToWarning e
@@ -801,33 +876,33 @@ uriThunkPtr uri mbranch mcommit = do
 -- If the thunk is a GitHub thunk and fails, we do *not* fall back like with
 -- `uriThunkPtr`. Unlike a plain URL, a thunk src explicitly states which method
 -- should be employed, and so we respect that.
-uriToThunkSource :: URI -> Maybe Text -> ThunkSource
-uriToThunkSource u
-  | Right uriAuth <- uriAuthority u
-  , Just scheme <- unRText <$> uriScheme u
+uriToThunkSource :: GitUri -> Maybe Text -> ThunkSource
+uriToThunkSource (GitUri u)
+  | Right uriAuth <- URI.uriAuthority u
+  , Just scheme <- URI.unRText <$> URI.uriScheme u
   , case scheme of
-      "ssh" -> uriAuth == Authority
-        { authUserInfo = Just $ UserInfo (fromRight' $ mkUsername "git") Nothing
-        , authHost = fromRight' $ mkHost "github.com"
-        , authPort = Nothing
+      "ssh" -> uriAuth == URI.Authority
+        { URI.authUserInfo = Just $ URI.UserInfo (fromRight' $ URI.mkUsername "git") Nothing
+        , URI.authHost = fromRight' $ URI.mkHost "github.com"
+        , URI.authPort = Nothing
         }
       s -> s `L.elem` [ "git", "https", "http" ] -- "http:" just redirects to "https:"
-        && unRText (authHost uriAuth) == "github.com"
-  , Just (_, owner :| [repoish]) <- uriPath u
+        && URI.unRText (URI.authHost uriAuth) == "github.com"
+  , Just (_, owner :| [repoish]) <- URI.uriPath u
   = \mbranch -> ThunkSource_GitHub $ GitHubSource
-    { _gitHubSource_owner = N $ unRText owner
+    { _gitHubSource_owner = N $ URI.unRText owner
     , _gitHubSource_repo = N $ let
-        repoish' = unRText repoish
-      in case T.stripSuffix ".git" repoish' of
-        Just repo -> repo
-        Nothing -> repoish'
+        repoish' = URI.unRText repoish
+      in fromMaybe repoish' $ T.stripSuffix ".git" repoish'
     , _gitHubSource_branch = N <$> mbranch
+    , _gitHubSource_private = False -- TODO: Can we try something to infer this?
     }
 
   | otherwise = \mbranch -> ThunkSource_Git $ GitSource
-    { _gitSource_url = u
+    { _gitSource_url = GitUri u
     , _gitSource_branch = N <$> mbranch
     , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
+    , _gitSource_private = False -- TODO: Can we try something to infer this?
     }
 
 -- Funny signature indicates no effects depend on the optional branch name.
@@ -840,19 +915,19 @@ githubThunkRev
 githubThunkRev s commit = do
   owner <- forcePP $ _gitHubSource_owner s
   repo <- forcePP $ _gitHubSource_repo s
-  revTarball <- mkPathPiece $ commit <> ".tar.gz"
-  let archiveUri =  URI
-        { uriScheme = Just $ fromRight' $ mkScheme "https"
-        , uriAuthority = Right $ Authority
-          { authUserInfo = Nothing
-          , authHost = fromRight' $ mkHost "github.com"
-          , authPort = Nothing
+  revTarball <- URI.mkPathPiece $ commit <> ".tar.gz"
+  let archiveUri = GitUri $ URI.URI
+        { URI.uriScheme = Just $ fromRight' $ URI.mkScheme "https"
+        , URI.uriAuthority = Right $ URI.Authority
+          { URI.authUserInfo = Nothing
+          , URI.authHost = fromRight' $ URI.mkHost "github.com"
+          , URI.authPort = Nothing
           }
-        , uriPath = Just ( False
-                         , owner :| [ repo, fromRight' $ mkPathPiece "archive", revTarball ]
+        , URI.uriPath = Just ( False
+                         , owner :| [ repo, fromRight' $ URI.mkPathPiece "archive", revTarball ]
                      )
-    , uriQuery = []
-    , uriFragment = Nothing
+    , URI.uriQuery = []
+    , URI.uriFragment = Nothing
     }
   hash <- getNixSha256ForUriUnpacked archiveUri
   putLog Debug $ "Nix sha256 is " <> hash
@@ -861,8 +936,8 @@ githubThunkRev s commit = do
     , _thunkRev_nixSha256 = hash
     }
   where
-    forcePP :: Name entity -> m (RText 'PathPiece)
-    forcePP = mkPathPiece . untagName
+    forcePP :: Name entity -> m (URI.RText 'URI.PathPiece)
+    forcePP = URI.mkPathPiece . untagName
 
 gitThunkRev
   :: MonadObelisk m
@@ -871,11 +946,11 @@ gitThunkRev
   -> m ThunkRev
 gitThunkRev s commit = do
   let u = _gitSource_url s
-      protocols = ["https", "ssh", "git"]
-  Just scheme <- pure $ unRText <$> uriScheme u
+      protocols = ["file", "https", "ssh", "git"]
+      scheme = maybe "file" URI.unRText $ URI.uriScheme $ (\(GitUri x) -> x) u
   unless (T.toLower scheme `elem` protocols) $
     failWith $ "obelisk currently only supports "
-      <> T.intercalate ", " protocols <> " protocols for non-GitHub remotes"
+      <> T.intercalate ", " protocols <> " protocols for plain Git remotes"
   hash <- nixPrefetchGit u commit $ _gitSource_fetchSubmodules s
   putLog Informational $ "Nix sha256 is " <> hash
   pure $ ThunkRev
@@ -889,10 +964,10 @@ gitThunkRev s commit = do
 -- If the branch name is passed in, it is returned exactly as-is. If it is not
 -- passed it, the default branch of the repo is used instead.
 gitGetCommitBranch
-  :: MonadObelisk m => URI -> Maybe Text -> m (Text, CommitId)
+  :: MonadObelisk m => GitUri -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do
   (_, bothMaps) <- gitLsRemote
-    (T.unpack $ render uri)
+    (T.unpack $ gitUriToText uri)
     (GitRef_Branch <$> mbranch)
     Nothing
   branch <- case mbranch of
@@ -908,18 +983,21 @@ gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " 
   pure (branch, commit)
   where
     rethrowE = either failWith pure
-    uriMsg = render uri
+    uriMsg = gitUriToText uri
 
-parseGitUri :: Text -> Maybe URI
-parseGitUri x = parseAbsoluteURI x <|> parseSshShorthand x
+parseGitUri :: Text -> Maybe GitUri
+parseGitUri x = GitUri <$> (parseFileURI x <|> parseAbsoluteURI x <|> parseSshShorthand x)
 
-parseAbsoluteURI :: Text -> Maybe URI
+parseFileURI :: Text -> Maybe URI.URI
+parseFileURI uri = if "/" `T.isPrefixOf` uri then parseAbsoluteURI ("file://" <> uri) else Nothing
+
+parseAbsoluteURI :: Text -> Maybe URI.URI
 parseAbsoluteURI uri = do
-  parsedUri <- mkURI uri
-  guard $ isPathAbsolute parsedUri
-  pure $ parsedUri
+  parsedUri <- URI.mkURI uri
+  guard $ URI.isPathAbsolute parsedUri
+  pure parsedUri
 
-parseSshShorthand :: Text -> Maybe URI
+parseSshShorthand :: Text -> Maybe URI.URI
 parseSshShorthand uri = do
   -- This is what git does to check that the remote
   -- is not a local file path when parsing shorthand.
@@ -932,4 +1010,4 @@ parseSshShorthand uri = do
   -- This check is used to disambiguate a filepath containing a colon from shorthand
   guard $ isNothing (T.findIndex (=='/') authAndHostname)
         && not (T.null colonAndPath)
-  mkURI properUri
+  URI.mkURI properUri

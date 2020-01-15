@@ -4,7 +4,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Deploy where
 
 import Control.Lens
@@ -22,25 +21,26 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.Generics
-import Nix.Convert
 import Nix.Pretty
+import Nix.String (principledMakeNixStringWithoutContext)
 import Nix.Value
 import System.Directory
-import System.Environment (getEnvironment)
 import System.FilePath
 import System.IO
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc, cwd)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
+import Obelisk.CliApp (
+  Severity (..), callProcessAndLogOutput, failWith, proc, putLog,
+  setCwd, setDelegateCtlc, setEnvOverride, withSpinner)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
+
 
 deployInit
   :: MonadObelisk m
@@ -58,7 +58,7 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
       False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
       True -> pure $ deployDir </> "ssh_key"
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp" [sshKeyPath, localKey]
+      proc cp [sshKeyPath, localKey]
     liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
     return localKey
   withSpinner "Validating configuration" $ do
@@ -83,7 +83,7 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
     writeDeployConfig deployDir "enable_https" $ show enableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
-    writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
+    writeDeployConfig deployDir ("config" </> "common" </> "route") route
   withSpinner "Creating source thunk (./src)" $ liftIO $ do
     createThunk (deployDir </> "src") thunkPtr
     setupObeliskImpl deployDir
@@ -108,7 +108,7 @@ deployPush deployPath getNixBuilders = do
     Right (ThunkData_Packed ptr) -> return ptr
     Right (ThunkData_Checkout _) -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> packThunk False srcPath
+        True -> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
@@ -158,7 +158,7 @@ deployPush deployPath getNixBuilders = do
         ]
   isClean <- checkGitCleanStatus deployPath True
   when (not isClean) $ do
-    withSpinner "Commiting changes to Git" $ do
+    withSpinner "Committing changes to Git" $ do
       callProcessAndLogOutput (Debug, Error) $ proc "git"
         ["-C", deployPath, "add", "."]
       callProcessAndLogOutput (Debug, Error) $ proc "git"
@@ -166,20 +166,20 @@ deployPush deployPath getNixBuilders = do
   putLog Notice $ "Deployed => " <> T.pack route
   where
     callProcess' envMap cmd args = do
-      processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
-      let p = (proc cmd args) { delegate_ctlc = True, env = Just processEnv }
+      let p = setEnvOverride (envMap <>) $ setDelegateCtlc True $ proc cmd args
       callProcessAndLogOutput (Notice, Notice) p
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
-deployUpdate deployPath = updateThunkToLatest (deployPath </> "src") Nothing
+deployUpdate deployPath = updateThunkToLatest (ThunkUpdateConfig Nothing (ThunkConfig Nothing)) (deployPath </> "src")
 
-keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValueNF Identity)
-keytoolToAndroidConfig conf = runIdentity $ do
-  path <- toValue $ Path $ _keytoolConfig_keystore conf
-  storepass <- toValue $ T.pack $ _keytoolConfig_storepass conf
-  alias <- toValue $ T.pack $ _keytoolConfig_alias conf
-  keypass <- toValue $ T.pack $ _keytoolConfig_keypass conf
-  return $ HM.fromList
+keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValue  t Identity m)
+keytoolToAndroidConfig conf =
+  let path = nvPath $ _keytoolConfig_keystore conf
+      fromStr = nvStr . principledMakeNixStringWithoutContext . T.pack
+      storepass = fromStr $ _keytoolConfig_storepass conf
+      alias = fromStr $ _keytoolConfig_alias conf
+      keypass = fromStr $ _keytoolConfig_keypass conf
+  in HM.fromList
     [ ("storeFile", path)
     , ("storePassword", storepass)
     , ("keyAlias", alias)
@@ -194,7 +194,7 @@ renderPlatformDeployment = \case
   Android -> "android"
   IOS -> "ios"
 
-deployMobile :: MonadObelisk m => PlatformDeployment -> [String] -> m ()
+deployMobile :: forall m. MonadObelisk m => PlatformDeployment -> [String] -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
       configDir = root </> "config"
@@ -219,17 +219,17 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
               , _keytoolConfig_storepass = keyStorePassword
               , _keytoolConfig_keypass = keyStorePassword
               }
-        createKeystore root $ keyToolConf
+        createKeystore root keyToolConf
         liftIO $ BSL.writeFile keytoolConfPath $ encode keyToolConf
       checkKeytoolConfExist <- liftIO $ doesFileExist keytoolConfPath
       unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"
       keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
-      liftIO $ putStrLn $ show keytoolConfContents
-      releaseKey <- case eitherDecode keytoolConfContents of
+      liftIO $ print keytoolConfContents
+      releaseKey :: String <- case eitherDecode keytoolConfContents :: Either String KeytoolConfig of
         Left err -> failWith $ T.pack err
-        Right conf -> do
-          let nvset = toValue @(HM.HashMap Text (NValueNF Identity)) @Identity @(NValueNF Identity) $ keytoolToAndroidConfig conf
-          return $ printNix $ runIdentity nvset
+        Right conf -> return $
+          (printNix :: MonadObelisk m => NValue t Identity m -> String) $
+            nvSet (keytoolToAndroidConfig conf) HM.empty
       let expr = mconcat
             [ "with (import ", srcDir, " {});"
             , "android.frontend.override (drv: { "
@@ -255,7 +255,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   result <- nixCmd $ NixCmd_Build $ def
     & nixBuildConfig_outLink .~ OutLink_None
     & nixCmdConfig_target .~ nixBuildTarget
-  putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> (show result)
+  putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> show result
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
   where
     withEcho showEcho f = do
@@ -275,13 +275,13 @@ instance ToJSON KeytoolConfig
 createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
 createKeystore root config = do
   let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
-  callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
+  callProcessAndLogOutput (Notice,Notice) $ setCwd (Just root) $ proc "nix-shell" ["default.nix", "-E" , expr, "--run" , keytoolCmd]
   where
     keytoolCmd = processToShellString "keytool"
       [ "-genkeypair", "-noprompt"
       , "-keystore", _keytoolConfig_keystore config
       , "-keyalg", "RSA", "-keysize", "2048"
-      , "-validity", "1000000000"
+      , "-validity", "1000000"
       , "-storepass", _keytoolConfig_storepass config
       , "-alias", _keytoolConfig_alias config
       , "-keypass", _keytoolConfig_keypass config

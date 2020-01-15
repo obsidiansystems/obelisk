@@ -13,6 +13,7 @@ import qualified Data.Binary as Binary
 import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
+import Data.Foldable (for_)
 import Data.List
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
@@ -20,6 +21,7 @@ import Data.Text.Encoding
 import Data.Text.Encoding.Error (lenientDecode)
 import GHC.StaticPtr
 import Options.Applicative
+import Options.Applicative.Help.Pretty (text, (<$$>))
 import System.Directory
 import System.Environment
 import System.FilePath
@@ -93,6 +95,7 @@ data ObCommand
    | ObCommand_Repl
    | ObCommand_Watch
    | ObCommand_Shell ShellOpts
+   | ObCommand_Doc String [String] -- shell and list of packages
    | ObCommand_Internal ObInternal
    deriving Show
 
@@ -104,7 +107,7 @@ data ObInternal
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
 inNixShell' p = withProjectRoot "." $ \root -> do
   cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
-  projectShell root False "ghc" (Just cmd)
+  projectShell root True "ghc" (Just cmd)
   where
     mkCmd = do
       argsCfg <- getArgsConfig
@@ -129,12 +132,20 @@ obCommand cfg = hsubparser
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
       , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
       , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
+      , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
+          progDesc "List paths to haddock documentation for specified packages"
+          <> footerDoc (Just $
+               text "Hint: To open the documentation you can pipe the output of this command like"
+               <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
       ])
   <|> subparser
     (mconcat
       [ internal
       , command "internal" (info (ObCommand_Internal <$> internalCommand) mempty)
       ])
+
+packageNames :: Parser [String]
+packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
 
 deployCommand :: ArgsConfig -> Parser DeployCommand
 deployCommand cfg = hsubparser $ mconcat
@@ -210,20 +221,35 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   , help "Path to directory containing thunk data"
   ]
 
-data ThunkCommand
-   = ThunkCommand_Update [FilePath] (Maybe String)
-   | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack   [FilePath] Bool
-  deriving Show
+thunkConfig :: Parser ThunkConfig
+thunkConfig = ThunkConfig
+  <$>
+    (   flag' (Just True) (long "private" <> help "Mark thunks as pointing to a private repository")
+    <|> flag' (Just False) (long "public" <> help "Mark thunks as pointing to a public repository")
+    <|> pure Nothing
+    )
 
-forceFlag :: Parser Bool
-forceFlag = switch $ long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care."
+thunkUpdateConfig :: Parser ThunkUpdateConfig
+thunkUpdateConfig = ThunkUpdateConfig
+  <$> optional (strOption (long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
+  <*> thunkConfig
+
+thunkPackConfig :: Parser ThunkPackConfig
+thunkPackConfig = ThunkPackConfig
+  <$> switch (long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care.")
+  <*> thunkConfig
+
+data ThunkCommand
+   = ThunkCommand_Update [FilePath] ThunkUpdateConfig
+   | ThunkCommand_Unpack [FilePath]
+   | ThunkCommand_Pack   [FilePath] ThunkPackConfig
+  deriving Show
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> optional (strOption (long "branch" <> metavar "BRANCH"))) $ progDesc "Update thunk to latest revision available"
+  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> thunkUpdateConfig) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> forceFlag) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> thunkPackConfig) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
 
 data ShellOpts
@@ -233,12 +259,15 @@ data ShellOpts
     }
   deriving Show
 
+shellFlags :: Parser String
+shellFlags =
+  flag' "ghc" (long "ghc" <> help "Enter a shell environment having ghc (default)")
+  <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
+  <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
+
 shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
-  <$> (    flag' "ghc" (long "ghc" <> help "Enter a shell environment having ghc (default)")
-       <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
-       <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
-      )
+  <$> shellFlags
   <*> optional (strArgument (metavar "COMMAND"))
 
 parserPrefs :: ParserPrefs
@@ -254,7 +283,8 @@ mkObeliskConfig :: IO Obelisk
 mkObeliskConfig = do
   cliArgs <- getArgs
   -- This function should not use argument parser (full argument parsing happens post handoff)
-  let logLevel = toLogLevel $ "-v" `elem` cliArgs
+  -- TODO: See if we can use the argument parser with a subset of the parsers to get logging level out.
+  let logLevel = toLogLevel $ any (`elem` ["-v", "--verbose"]) cliArgs
   notInteractive <- not <$> isInteractiveTerm
   cliConf <- newCliConfig logLevel notInteractive notInteractive $ \case
     ObeliskError_ProcessError (ProcessFailure p code) ann ->
@@ -360,15 +390,16 @@ ob = \case
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run -> inNixShell' $ static run
-    -- inNixShell ($(mkClosure 'ghcidAction) ())
   ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
-    ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
-    ThunkCommand_Pack thunks force -> forM_ thunks (packThunk force)
+    ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
+    ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
+    ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> inNixShell' $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
+  ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
+    projectShell root False shell' (Just $ haddockCommand pkgs)
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
@@ -376,6 +407,14 @@ ob = \case
         c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
     ObInternal_CLIDemo -> cliDemo
+
+haddockCommand :: [String] -> String
+haddockCommand pkgs = unwords
+  [ "for p in"
+  , unwords [getHaddockPath p ++ "/index.html" | p <- pkgs]
+  , "; do echo $p; done"
+  ]
+  where getHaddockPath p = "$(ghc-pkg field " ++ p ++ " haddock-html --simple-output)"
 
 --TODO: Clean up all the magic strings throughout this codebase
 

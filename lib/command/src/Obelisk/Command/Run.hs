@@ -3,17 +3,23 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 module Obelisk.Command.Run where
 
-import Control.Exception (bracket)
+import Control.Applicative (liftA2)
+import Control.Exception (Exception, bracket)
 import Control.Monad
+import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
 import Data.Either
+import Data.Foldable (for_)
 import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import qualified Data.Text as T
+import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
 import Distribution.Pretty
@@ -22,22 +28,18 @@ import Distribution.Types.CondTree
 import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Library
 import Distribution.Utils.Generic
-import Hpack.Config
-import Hpack.Render
-import Hpack.Yaml
+import qualified Hpack.Config as Hpack
+import qualified Hpack.Render as Hpack
+import qualified Hpack.Yaml as Hpack
 import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
 import System.Directory
 import System.FilePath
-import System.Process (proc)
 import System.IO.Temp (withSystemTempDirectory)
-import Data.ByteString (ByteString)
+import System.Which (staticWhich)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
-import Obelisk.CliApp
-  ( CliT (..), HasCliConfig, Severity (..)
-  , callCommand, failWith, getCliConfig, putLog
-  , readProcessAndLogStderr, runCli)
+import Obelisk.CliApp (Severity (..) , callCommand, failWith, putLog, proc, readProcessAndLogStderr)
 import Obelisk.Command.Project (inProjectShell, withProjectRoot)
 
 data CabalPackageInfo = CabalPackageInfo
@@ -48,11 +50,15 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of globally enable extensions of the library component
   , _cabalPackageInfo_defaultLanguage :: Maybe Language
     -- ^ List of globally set languages of the library component
+  , _cabalPackageInfo_compilerOptions :: [(CompilerFlavor, [String])]
+    -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
   }
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
 run :: ObeliskT IO ()
 run = do
+  let nixPath = $(staticWhich "nix")
+      nixBuildPath = $(staticWhich "nix-build")
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
@@ -61,7 +67,7 @@ run = do
             then root
             else "./" <> root
       isDerivation <- readProcessAndLogStderr Debug $
-        proc "nix"
+        proc nixPath
           [ "eval"
           , "-f"
           , root
@@ -73,9 +79,12 @@ run = do
       -- Check whether the impure static files are a derivation (and so must be built)
       if isDerivation == "1"
         then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc "nix-build" ["-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"]
+          proc nixBuildPath
+            [ "--no-out-link"
+            , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
+            ]
         else readProcessAndLogStderr Debug $
-          proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+          proc nixPath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
     runGhcid dotGhciPath $ Just $ unwords
       [ "Obelisk.Run.run"
@@ -96,6 +105,27 @@ runWatch = do
   pkgs <- getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath Nothing
 
+data GuessPackageFileError = GuessPackageFileError_Ambiguous [FilePath] | GuessPackageFileError_NotFound
+  deriving (Eq, Ord, Show)
+instance Exception GuessPackageFileError
+
+-- | Given a directory, try to guess what the appropriate @.cabal@ or @package.yaml@ file is for the package.
+guessCabalPackageFile
+  :: MonadIO m
+  => FilePath -- ^ Directory to search for cabal package
+  -> m (Either GuessPackageFileError (Either FilePath FilePath))
+  -- ^ 'Right' 'Left' for hpack package, 'Right' 'Right' for cabal package; 'FilePath' is relative to given directory.
+guessCabalPackageFile dir = do
+  candidates <- liftIO $
+        filterM (doesFileExist . (dir </>))
+    =<< filter (liftA2 (||) (== Hpack.packageConfig) (".cabal" `L.isSuffixOf`))
+    <$> listDirectory dir
+  pure $ case L.partition (== Hpack.packageConfig) candidates of
+    ([hpack], _) -> Right $ Left hpack
+    ([], [cabal]) -> Right $ Right cabal
+    ([], []) -> Left GuessPackageFileError_NotFound
+    (hpacks, cabals) -> Left $ GuessPackageFileError_Ambiguous $ hpacks <> cabals
+
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
 getLocalPkgs :: Applicative f => f [FilePath]
@@ -105,66 +135,53 @@ parseCabalPackage
   :: (MonadObelisk m)
   => FilePath -- ^ package directory
   -> m (Maybe CabalPackageInfo)
-parseCabalPackage dir = do
-  let cabalFp = dir </> (takeBaseName dir <> ".cabal")
-      hpackFp = dir </> "package.yaml"
-  hasCabal <- liftIO $ doesFileExist cabalFp
-  hasHpack <- liftIO $ doesFileExist hpackFp
+parseCabalPackage dir = either ((Nothing <$) . putLog Error) (pure . Just) <=< runExceptT $ do
+  (cabalContents, packageFile) <- guessCabalPackageFile dir >>= \case
+    Left GuessPackageFileError_NotFound -> throwError $ "No .cabal or package.yaml file found in " <> T.pack dir
+    Left (GuessPackageFileError_Ambiguous _) -> throwError $ "Unable to determine which .cabal file to use in " <> T.pack dir
+    Right (Right cabalFileName) -> let file = dir </> cabalFileName in (, file) <$> liftIO (readUTF8File file)
+    Right (Left hpackFileName) -> do
+      let
+        file = dir </> hpackFileName
+        decodeOptions = Hpack.DecodeOptions (Hpack.ProgramName "ob") file Nothing Hpack.decodeYaml
+      liftIO (Hpack.readPackageConfig decodeOptions) >>= \case
+        Left err -> throwError $ T.pack $ "Failed to parse " <> file <> ": " <> err
+        Right (Hpack.DecodeResult hpackPackage _ _ _) -> pure (Hpack.renderPackage [] hpackPackage, file)
 
-  mCabalContents <- if hasCabal
-    then Just <$> liftIO (readUTF8File cabalFp)
-    else if hasHpack
-      then do
-        let decodeOptions = DecodeOptions hpackFp Nothing decodeYaml
-        liftIO (readPackageConfig decodeOptions) >>= \case
-          Left err -> do
-            putLog Error $ T.pack $ "Failed to parse " <> hpackFp <> ": " <> err
-            return Nothing
-          Right (DecodeResult hpackPackage _ _) -> do
-            return $ Just $ renderPackage [] hpackPackage
-      else return Nothing
-
-  fmap join $ forM mCabalContents $ \cabalContents -> do
-    let (warnings, result) = runParseResult $ parseGenericPackageDescription $
-          toUTF8BS $ cabalContents
-    mapM_ (putLog Warning) $ fmap (T.pack . show) warnings
-    case result of
-      Right gpkg -> do
-        return $ do
-          (_, lib) <- simplifyCondTree (const $ pure True) <$> condLibrary gpkg
-          pure $ CabalPackageInfo
-            { _cabalPackageInfo_packageRoot = takeDirectory cabalFp
-            , _cabalPackageInfo_sourceDirs =
-                fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
-            , _cabalPackageInfo_defaultExtensions =
-                defaultExtensions $ libBuildInfo lib
-            , _cabalPackageInfo_defaultLanguage =
-                defaultLanguage $ libBuildInfo lib
-            }
-      Left (_, errors) -> do
-        putLog Error $ T.pack $ "Failed to parse " <> cabalFp <> ":"
-        mapM_ (putLog Error) $ fmap (T.pack . show) errors
-        return Nothing
-
-withUTF8FileContentsM :: (MonadIO m, HasCliConfig e m) => FilePath -> (ByteString -> CliT e IO a) -> m a
-withUTF8FileContentsM fp f = do
-  c <- getCliConfig
-  liftIO $ withUTF8FileContents fp $ runCli c . f . toUTF8BS
+  let (warnings, result) = runParseResult $ parseGenericPackageDescription $
+        toUTF8BS cabalContents
+  for_ warnings $ putLog Warning . T.pack . show
+  case condLibrary <$> result of
+    Right (Just condLib) -> do
+      let (_, lib) = simplifyCondTree (const $ pure True) condLib
+      pure $ CabalPackageInfo
+        { _cabalPackageInfo_packageRoot = dir
+        , _cabalPackageInfo_sourceDirs =
+            fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
+        , _cabalPackageInfo_defaultExtensions =
+            defaultExtensions $ libBuildInfo lib
+        , _cabalPackageInfo_defaultLanguage =
+            defaultLanguage $ libBuildInfo lib
+        , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
+        }
+    Right Nothing -> throwError "Haskell package has no library component"
+    Left (_, errors) ->
+      throwError $ T.pack $ "Failed to parse " <> packageFile <> ":\n" <> unlines (map show errors)
 
 -- | Create ghci configuration to load the given packages
 withGhciScript
   :: MonadObelisk m
   => [FilePath] -- ^ List of packages to load into ghci
-  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporory .ghci
+  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
   -> m ()
-withGhciScript pkgs f = do
-  (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM pkgs $ \pkg -> do
-    flip fmap (parseCabalPackage pkg) $ \case
-      Nothing -> Left pkg
+withGhciScript dirs f = do
+  (pkgDirErrs, packageInfos) <- fmap partitionEithers $ forM dirs $ \dir -> do
+    flip fmap (parseCabalPackage dir) $ \case
+      Nothing -> Left dir
       Just packageInfo -> Right packageInfo
 
   when (null packageInfos) $
-    failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " pkgs
+    failWith $ T.pack $ "No valid pkgs found in " <> intercalate ", " dirs
   unless (null pkgDirErrs) $
     putLog Warning $ T.pack $ "Failed to find pkgs in " <> intercalate ", " pkgDirErrs
 
@@ -174,11 +191,16 @@ withGhciScript pkgs f = do
       language = NE.toList $ fromMaybe (Haskell98 NE.:| []) $ NE.nonEmpty languageFromPkgs
       extensionsLine = if extensions == mempty
         then ""
-        else ":set " <> intercalate " " ((("-X" <>) . prettyShow) <$> extensions)
-      dotGhci = unlines $
+        else ":set " <> unwords (("-X" <>) . prettyShow <$> extensions)
+      ghcOptions = concat $ mapMaybe (\case (GHC, xs) -> Just xs; _ -> Nothing) $
+        packageInfos >>= _cabalPackageInfo_compilerOptions
+      dotGhci = unlines
         [ ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
+        , case ghcOptions of
+            [] -> ""
+            xs -> ":set " <> unwords xs
         , extensionsLine
-        , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
+        , ":set " <> unwords (("-X" <>) . prettyShow <$> language)
         , ":load Backend Frontend"
         , "import Obelisk.Run"
         , "import qualified Frontend"
@@ -203,7 +225,7 @@ runGhciRepl
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
   -> m ()
-runGhciRepl dotGhci = inProjectShell "ghc" $ unwords $ "ghci" : ["-no-user-package-db", "-ghci-script", dotGhci]
+runGhciRepl dotGhci = inProjectShell "ghc" $ "ghci " <> makeBaseGhciOptions dotGhci
 
 -- | Run ghcid
 runGhcid
@@ -211,16 +233,24 @@ runGhcid
   => FilePath -- ^ Path to .ghci
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid dotGhci mcmd = callCommand $ unwords $ "ghcid" : opts
+runGhcid dotGhci mcmd = callCommand $ unwords $ $(staticWhich "ghcid") : opts
   where
     opts =
       [ "-W"
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints -no-user-package-db -ghci-script " <> dotGhci <> "' "
+      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> makeBaseGhciOptions dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd
     testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'")
+
+makeBaseGhciOptions :: FilePath -> String
+makeBaseGhciOptions dotGhci =
+  unwords
+    [ "-no-user-package-db"
+    , "-package-env -"
+    , "-ghci-script " <> dotGhci
+    ]
 
 getFreePort :: MonadIO m => m PortNumber
 getFreePort = liftIO $ withSocketsDo $ do

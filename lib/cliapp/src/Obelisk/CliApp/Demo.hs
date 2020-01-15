@@ -4,17 +4,17 @@
 module Obelisk.CliApp.Demo where
 
 import Control.Concurrent (threadDelay)
+import Control.Monad.Fail
 import Control.Monad.IO.Class
 import Data.Semigroup ((<>))
 import qualified Data.Text as T
-import System.Process (proc)
 
 import Control.Monad.Catch (MonadMask)
 
 import Obelisk.CliApp
 
 cliDemo
-  :: ( MonadIO m, MonadMask m
+  :: ( MonadIO m, MonadMask m, MonadFail m
      , CliLog m, HasCliConfig e m, CliThrow e m, AsProcessFailure e, AsUnstructuredError e)
   => m ()
 cliDemo = withSpinner "CLI Demo" $ do
