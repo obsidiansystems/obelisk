@@ -68,6 +68,6 @@ executable ob
   ghc-options: -Wall -O2 -threaded
 
 executable ob-preprocessor
-  main-is: src-bin/ob-preprocessor
+  main-is: src-bin/ob-preprocessor.hs
   build-depends: base, obelisk-command
   ghc-options: -Wall -O2 -threaded

@@ -1,12 +1,16 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Obelisk.Command.Preprocessor where
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Builder as BU
 import Data.List
+import Data.Maybe
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Builder as TL
+import qualified Data.Text.Lazy.Encoding as TL
 import Distribution.Compiler
 import Language.Haskell.Extension
 import System.Environment
@@ -14,6 +18,7 @@ import System.IO
 import System.FilePath
 
 import Obelisk.App
+import Obelisk.Command (mkObeliskConfig)
 import Obelisk.Command.Run
 
 main :: IO ()
@@ -26,8 +31,8 @@ main = do
 
   args@(origPath:inPath:outPath:packagePaths) <- getArgs
 
-  outFile <- hOpen outPath WriteMode
-  let hPutTextBuilder h = BL.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
+  outFile <- openFile outPath WriteMode
+  let hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
 
   putStr "--------------------------------------------------------------------------------\n"
   print args
@@ -35,18 +40,20 @@ main = do
 
   -- Thus we must select among the packagePaths for the file we are going to parse.
 
-  let takeDirs = takeWhile hasTrailingPathSeperator
+  let takeDirs = takeWhile hasTrailingPathSeparator
       packageDirs = sortOn (negate . length . takeDirs) $ map (splitPath . normalise) packagePaths
       origDir = splitPath $ normalise $ origPath
-      matches = [ d | d <- packageDirs, takeDirs d `isPrefixOf` origDir ]
+      matches = [ joinPath d | d <- packageDirs, takeDirs d `isPrefixOf` origDir ]
 
   -- So the first element of matches is going to be the deepest path to a package spec that contains
   -- our file as a subdirectory.
 
+  config <- mkObeliskConfig
+
   case matches of
     [] -> hPutTextBuilder outFile (lineNumberPragma origPath) -- TODO: probably should produce a warning
     (packagePath:_) -> do
-       runObelisk (ObeliskT mempty) (parseCabalPackage packagePath) >>= \case
+       runObelisk config (parseCabalPackage packagePath) >>= \case
          Just packageInfo -> do
            hPutTextBuilder outFile (generateHeader origPath packageInfo)
 
@@ -74,7 +81,7 @@ generateHeader origPath packageInfo =
 
     ghcOptions =
       if not (null optList)
-      then TL.fromText "{-# OPTIONS_GHC " <>
+      then TL.fromText "{-# OPTIONS_GHC "
         <> mconcat (intersperse (TL.fromText " ") optList)
         <> TL.fromText " #-}\n"
       else mempty
