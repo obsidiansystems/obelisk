@@ -3,23 +3,19 @@
 
 module Obelisk.Command.Preprocessor where
 
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Builder as BU
-import Data.List
-import Data.Maybe
-import qualified Data.Text.Lazy as TL
+import Data.List (intersperse, isPrefixOf, sortOn)
+import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy.Builder as TL
 import qualified Data.Text.Lazy.Encoding as TL
-import Distribution.Compiler
-import Language.Haskell.Extension
-import System.Environment
-import System.IO
-import System.FilePath
+import Distribution.Compiler (CompilerFlavor (..))
+import Language.Haskell.Extension (Extension (..))
+import System.Environment (getArgs)
+import System.IO (IOMode (..), hClose, hPutStrLn, openFile, stderr)
+import System.FilePath (hasTrailingPathSeparator, joinPath, normalise, splitPath)
 
-import Obelisk.App
-import Obelisk.Command (mkObeliskConfig)
-import Obelisk.Command.Run
+import Obelisk.Command.Run (CabalPackageInfo (..), parseCabalPackage')
 
 main :: IO ()
 main = do
@@ -42,20 +38,20 @@ main = do
 
   let takeDirs = takeWhile hasTrailingPathSeparator
       packageDirs = sortOn (negate . length . takeDirs) $ map (splitPath . normalise) packagePaths
-      origDir = splitPath $ normalise $ origPath
+      origDir = splitPath $ normalise origPath
       matches = [ joinPath d | d <- packageDirs, takeDirs d `isPrefixOf` origDir ]
 
   -- So the first element of matches is going to be the deepest path to a package spec that contains
   -- our file as a subdirectory.
 
-  config <- mkObeliskConfig
-
   case matches of
     [] -> hPutTextBuilder outFile (lineNumberPragma origPath) -- TODO: probably should produce a warning
     (packagePath:_) -> do
-       runObelisk config (parseCabalPackage packagePath) >>= \case
-         Just packageInfo -> do
-           hPutTextBuilder outFile (generateHeader origPath packageInfo)
+      parseCabalPackage' packagePath >>= \case
+        Left err ->
+          hPutStrLn stderr $ "Error: Unable to parse cabal package " <> packagePath <> "; Skipping preprocessor on " <> origPath <> ". Error was " <> show err
+        Right (_warnings, packageInfo) ->
+          hPutTextBuilder outFile (generateHeader origPath packageInfo)
 
   BL.readFile inPath >>= BL.hPut outFile
   hClose outFile
