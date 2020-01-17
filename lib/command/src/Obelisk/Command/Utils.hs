@@ -37,6 +37,18 @@ getObeliskExe = getExecutablePath >>= canonicalizePath
 cp :: FilePath
 cp = $(staticWhich "cp")
 
+ghcidExePath :: FilePath
+ghcidExePath = $(staticWhich "ghcid")
+
+findExePath :: FilePath
+findExePath = $(staticWhich "find")
+
+nixExePath :: FilePath
+nixExePath = $(staticWhich "nix")
+
+nixBuildExePath :: FilePath
+nixBuildExePath = $(staticWhich "nix-build")
+
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> Bool -> m Bool
 checkGitCleanStatus repo withIgnored = do

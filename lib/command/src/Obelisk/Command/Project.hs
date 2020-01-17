@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Command.Project
   ( InitSource (..)
   , initProject
@@ -31,7 +30,6 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process (waitForProcess)
-import System.Which (staticWhich)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -39,6 +37,7 @@ import GitHub.Data.Name (Name)
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Thunk
+import Obelisk.Command.Utils (nixExePath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -245,8 +244,7 @@ inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
-  let nixPath = $(staticWhich "nix")
-  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ proc nixPath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
      [ "default.nix"] <>

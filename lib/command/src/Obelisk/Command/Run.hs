@@ -41,11 +41,11 @@ import System.Directory
 import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
-import System.Which (staticWhich)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp (Severity (..) , callCommand, failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr)
 import Obelisk.Command.Project (inProjectShell, withProjectRoot)
+import Obelisk.Command.Utils (findExePath, ghcidExePath, nixBuildExePath, nixExePath)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -72,7 +72,7 @@ run = withProjectRoot "." $ \root -> do
     assets <- do
       let importableRoot = toNixPath root
       isDerivation <- readProcessAndLogStderr Debug $
-        proc nixPath
+        proc nixExePath
           [ "eval"
           , "-f"
           , root
@@ -84,12 +84,12 @@ run = withProjectRoot "." $ \root -> do
       -- Check whether the impure static files are a derivation (and so must be built)
       if isDerivation == "1"
         then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc nixBuildPath
+          proc nixBuildExePath
             [ "--no-out-link"
             , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
             ]
         else readProcessAndLogStderr Debug $
-          proc nixPath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+          proc nixExePath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
     runGhcid dotGhciPath $ Just $ unwords
       [ "Obelisk.Run.run"
@@ -125,12 +125,8 @@ runWatch = do
 getLocalPkgs :: (MonadObelisk m, MonadIO m) => FilePath -> m [FilePath]
 getLocalPkgs root = do
   rootAbs <- liftIO $ makeAbsolute root
-  let findPath = $(staticWhich "find")
-  (_exitCode, out, err') <- readCreateProcessWithExitCode $
-    proc findPath ["-L", rootAbs, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
-  case T.strip $ T.pack err' of
-    err | T.null err -> pure ()
-        | otherwise -> putLog Debug err
+    proc findExePath ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
+  putLog Debug $ T.strip $ T.pack err
 
   let packagePaths = filter (not . isIgnored) $ T.lines $ T.strip $ T.pack out
       obeliskImplDir = ".obelisk/impl/"
