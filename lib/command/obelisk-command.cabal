@@ -7,35 +7,36 @@ library
   hs-source-dirs: src
   build-depends:
       aeson
-    , ansi-terminal
-    , Cabal
     , aeson-pretty
+    , ansi-terminal
     , base
     , base16-bytestring
     , binary
     , bytestring
-    , obelisk-cliapp
+    , Cabal
     , containers
     , data-default
     , directory
     , either
     , errors
+    , exceptions
+    , extra
     , filepath
+    , git
     , github
     , here
-    , git
     , hnix
     , hpack
     , io-streams
-    , exceptions
-    , logging-effect
     , lens
+    , logging-effect
+    , megaparsec
     , modern-uri
     , monad-loops
     , mtl
-    , megaparsec
     , network
     , network-uri
+    , obelisk-cliapp
     , optparse-applicative
     , placeholders
     , process

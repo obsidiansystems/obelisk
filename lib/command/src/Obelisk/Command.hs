@@ -15,7 +15,6 @@ import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (for_)
 import Data.List
-import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Text.Encoding.Error (lenientDecode)
@@ -36,7 +35,6 @@ import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils
 import qualified Obelisk.Command.VmBuilder as VmBuilder
 import qualified Obelisk.Command.Preprocessor as Preprocessor
 
@@ -103,28 +101,10 @@ data ObCommand
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
    | ObInternal_CLIDemo
-   -- the "apply-packages" preprocessor argument syntax is also handled outside
+   -- the preprocessor argument syntax is also handled outside
    -- optparse-applicative, but it shouldn't ever conflict with another syntax
    | ObInternal_ApplyPackages String String String [String]
    deriving Show
-
-inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
-inNixShell' p = withProjectRoot "." $ \root -> do
-  cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
-  projectShell root True "ghc" (Just cmd)
-  where
-    mkCmd = do
-      argsCfg <- getArgsConfig
-      myArgs <- getArgs
-      obArgs <- parseCLIArgs argsCfg myArgs
-      progName <- getObeliskExe
-      return $ progName : catMaybes
-        [ Just "--no-handoff"
-        , bool Nothing (Just "--verbose") $ _args_verbose obArgs
-        , Just "internal"
-        , Just "run-static-io"
-        , Just $ encodeStaticKey $ staticKey p
-        ]
 
 obCommand :: ArgsConfig -> Parser ObCommand
 obCommand cfg = hsubparser
@@ -280,11 +260,7 @@ parserPrefs = defaultPrefs
   }
 
 parseCLIArgs :: ArgsConfig -> [String] -> IO Args
-parseCLIArgs cfg = \case
-  (origPath:inPath:outPath:"apply-packages":packagePaths)
-    | any (\c -> c == '.' || c == '/') origPath ->
-      pure $ Args False False $ ObCommand_Internal $ ObInternal_ApplyPackages origPath inPath outPath packagePaths
-  as -> pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
+parseCLIArgs cfg = handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
 -- | Create an Obelisk config for the current process.
 mkObeliskConfig :: IO Obelisk
@@ -357,6 +333,9 @@ main' argsCfg = do
           liftIO $ executeFile impl False ("--no-handoff" : myArgs) Nothing
   case myArgs of
     "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
+    origPath:inPath:outPath:preprocessorName:packagePaths
+      | preprocessorName == preprocessorIdentifier && any (\c -> c == '.' || c == pathSeparator) origPath ->
+        ob $ ObCommand_Internal $ ObInternal_ApplyPackages origPath inPath outPath packagePaths
     a:as -- Otherwise bash completion would always hand-off even if the user isn't trying to
       | "--bash-completion" `isPrefixOf` a
       && "--no-handoff" `elem` as -> go (a:as)
@@ -397,24 +376,24 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> inNixShell' $ static run
+  ObCommand_Run -> run
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
     ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
   ObCommand_Repl -> runRepl
-  ObCommand_Watch -> inNixShell' $ static runWatch
+  ObCommand_Watch -> runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
   ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
     projectShell root False shell' (Just $ haddockCommand pkgs)
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
+    ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case -- TODO: DELETE
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
       Just p -> do
         c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
-    ObInternal_CLIDemo -> cliDemo
+    ObInternal_CLIDemo -> cliDemo -- TODO: DELETE
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
 

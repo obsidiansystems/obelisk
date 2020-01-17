@@ -3,7 +3,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 module Obelisk.Command.Run where
 
@@ -15,7 +14,7 @@ import Control.Monad.Reader (MonadIO)
 import Data.Coerce (coerce)
 import Data.Either
 import Data.Foldable (for_)
-import qualified Data.List as L
+import Data.List.Extra (dropPrefix)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import qualified Data.Text as T
@@ -24,7 +23,6 @@ import Debug.Trace (trace)
 import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
-import Distribution.Pretty
 import qualified Distribution.System as Dist
 import Distribution.Types.BuildInfo
 import Distribution.Types.CondTree
@@ -38,13 +36,14 @@ import qualified Hpack.Yaml as Hpack
 import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
 import System.Directory
+import System.Environment (getExecutablePath)
 import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
 
-import Obelisk.App (MonadObelisk, ObeliskT)
-import Obelisk.CliApp (Severity (..) , callCommand, failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr)
-import Obelisk.Command.Project (inProjectShell, withProjectRoot)
+import Obelisk.App (MonadObelisk)
+import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr)
+import Obelisk.Command.Project (inProjectShell, obeliskDirName, toObeliskDir, withProjectRoot)
 import Obelisk.Command.Utils (findExePath, ghcidExePath, nixBuildExePath, nixExePath)
 
 data CabalPackageInfo = CabalPackageInfo
@@ -61,11 +60,12 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
   }
 
--- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
-run :: ObeliskT IO ()
+-- | Used to signal to obelisk that it's being invoked as a preprocessor
+preprocessorIdentifier :: String
+preprocessorIdentifier = "__preprocessor-apply-packages"
+
+run :: MonadObelisk m => m ()
 run = withProjectRoot "." $ \root -> do
-  let nixPath = $(staticWhich "nix")
-      nixBuildPath = $(staticWhich "nix-build")
   pkgs <- getLocalPkgs root
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
@@ -124,20 +124,15 @@ runWatch = do
 -- to the Nix @project@ function.
 getLocalPkgs :: (MonadObelisk m, MonadIO m) => FilePath -> m [FilePath]
 getLocalPkgs root = do
-  rootAbs <- liftIO $ makeAbsolute root
+  (_exitCode, out, err) <- readCreateProcessWithExitCode $
     proc findExePath ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
   putLog Debug $ T.strip $ T.pack err
 
-  let packagePaths = filter (not . isIgnored) $ T.lines $ T.strip $ T.pack out
-      obeliskImplDir = ".obelisk/impl/"
-      rootObelisk = T.pack (rootAbs </> T.unpack obeliskImplDir)
-      isIgnored path =
-        obeliskImplDir `T.isInfixOf` path
-        && case T.stripPrefix rootObelisk path of
-             Nothing -> True
-             Just pathSuffix -> obeliskImplDir `T.isInfixOf` pathSuffix
-
-  pure $ map T.unpack packagePaths
+  let
+    -- We ignore any path that has ".obelisk" in it, but keep the root ".obelisk" paths
+    packagePaths = filter (not . isIgnored) $ map T.unpack $ T.lines $ T.strip $ T.pack out
+    isIgnored path = obeliskDirName `elem` dropPrefix (splitPath $ toObeliskDir root) (splitPath path)
+  pure packagePaths
 
 data GuessPackageFileError = GuessPackageFileError_Ambiguous [FilePath] | GuessPackageFileError_NotFound
   deriving (Eq, Ord, Show)
@@ -255,15 +250,13 @@ withGhciScript dirs f = do
   unless (null pkgDirErrs) $
     putLog Warning $ T.pack $ "Failed to find packages in " <> intercalate ", " pkgDirErrs
 
+  selfExe <- liftIO getExecutablePath
   let
     packageNames = map _cabalPackageInfo_packageName packageInfos
-    languageFromPkgs = L.nub $ mapMaybe _cabalPackageInfo_defaultLanguage packageInfos
-    -- NOTE when no default-language is present cabal sets Haskell98
-    language = NE.toList $ fromMaybe (Haskell98 NE.:| []) $ NE.nonEmpty languageFromPkgs
     dotGhci = unlines
-      [ ":set -pgmF ob -optF apply-packages " <> unwords (map (("-optF " <>) . _cabalPackageInfo_packageRoot) packageInfos)
+      -- TODO: Shell escape
+      [ ":set -pgmF " <> selfExe <> " -optF " <> preprocessorIdentifier <> " " <> unwords (map (("-optF " <>) . _cabalPackageInfo_packageRoot) packageInfos)
       , ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
-      , ":set " <> unwords (("-X" <>) . prettyShow <$> language)
       , ":load Backend Frontend"
           -- We need to also load 'Obelisk.Run' if it's part of our ghci session.
           <> if "obelisk-run" `elem` packageNames then " Obelisk.Run" else ""
@@ -271,7 +264,6 @@ withGhciScript dirs f = do
       , "import qualified Frontend"
       , "import qualified Backend"
       ]
-  warnDifferentLanguages language
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
     liftIO $ writeFile dotGhciPath dotGhci
@@ -281,16 +273,15 @@ withGhciScript dirs f = do
     rootedSourceDirs pkg = NE.toList $
       (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
 
-warnDifferentLanguages :: MonadObelisk m => [Language] -> m ()
-warnDifferentLanguages (_:_:_) = putLog Warning "Different languages detected across packages which may result in errors when loading the repl"
-warnDifferentLanguages _ = return ()
-
 -- | Run ghci repl
 runGhciRepl
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
   -> m ()
-runGhciRepl dotGhci = inProjectShell "ghc" $ "ghci " <> makeBaseGhciOptions dotGhci
+runGhciRepl dotGhci =
+  -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
+  -- ghc that is provided by the shell in the user's project.
+  inProjectShell "ghc" $ "ghci " <> makeBaseGhciOptions dotGhci
 
 -- | Run ghcid
 runGhcid
@@ -298,7 +289,7 @@ runGhcid
   => FilePath -- ^ Path to .ghci
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid dotGhci mcmd = callCommand $ unwords $ $(staticWhich "ghcid") : opts
+runGhcid dotGhci mcmd = inProjectShell "ghc" $ unwords $ ghcidExePath : opts -- TODO: Shell escape
   where
     opts =
       [ "-W"
@@ -307,7 +298,7 @@ runGhcid dotGhci mcmd = callCommand $ unwords $ $(staticWhich "ghcid") : opts
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd
-    testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'")
+    testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
 
 makeBaseGhciOptions :: FilePath -> String
 makeBaseGhciOptions dotGhci =
