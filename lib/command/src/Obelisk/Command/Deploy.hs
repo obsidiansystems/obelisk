@@ -14,16 +14,11 @@ import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
-import Data.Text (Text)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.Generics
-import Nix.Pretty
-import Nix.String (principledMakeNixStringWithoutContext)
-import Nix.Value
 import System.Directory
 import System.FilePath
 import System.IO
@@ -172,20 +167,6 @@ deployPush deployPath getNixBuilders = do
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest (ThunkUpdateConfig Nothing (ThunkConfig Nothing)) (deployPath </> "src")
 
-keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValue  t Identity m)
-keytoolToAndroidConfig conf =
-  let path = nvPath $ _keytoolConfig_keystore conf
-      fromStr = nvStr . principledMakeNixStringWithoutContext . T.pack
-      storepass = fromStr $ _keytoolConfig_storepass conf
-      alias = fromStr $ _keytoolConfig_alias conf
-      keypass = fromStr $ _keytoolConfig_keypass conf
-  in HM.fromList
-    [ ("storeFile", path)
-    , ("storePassword", storepass)
-    , ("keyAlias", alias)
-    , ("keyPassword", keypass)
-    ]
-
 data PlatformDeployment = Android | IOS
   deriving (Show, Eq)
 
@@ -200,7 +181,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
       configDir = root </> "config"
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
-  nixBuildTarget <- case platform of
+  (nixBuildTarget, extraArgs) <- case platform of
     Android -> do
       let keystorePath = root </> "android_keystore.jks"
           keytoolConfPath = root </> "android_keytool_config.json"
@@ -225,38 +206,43 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
       unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"
       keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
       liftIO $ print keytoolConfContents
-      releaseKey :: String <- case eitherDecode keytoolConfContents :: Either String KeytoolConfig of
+      keyArgs <- case eitherDecode keytoolConfContents :: Either String KeytoolConfig of
         Left err -> failWith $ T.pack err
-        Right conf -> return $
-          (printNix :: MonadObelisk m => NValue t Identity m -> String) $
-            nvSet (keytoolToAndroidConfig conf) HM.empty
-      let expr = mconcat
+        Right conf -> pure [ "--sign"
+                           , "--store-file", _keytoolConfig_keystore conf
+                           , "--store-password", _keytoolConfig_storepass conf
+                           , "--key-alias", _keytoolConfig_alias conf
+                           , "--key-password", _keytoolConfig_keypass conf ]
+      let expr = unlines
             [ "with (import ", srcDir, " {});"
-            , "android.frontend.override (drv: { "
-            , "releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; "
-            , "staticSrc = (passthru.__androidWithConfig ", configDir, ").frontend.staticSrc;"
+            , "android.frontend.override (drv: {"
+            , "  isRelease = true;"
+            , "  staticSrc = (passthru.__androidWithConfig ", configDir, ").frontend.staticSrc;"
             , "})"
             ]
-      return $ Target
+      return (Target
         { _target_path = Nothing
         , _target_attr = Nothing
         , _target_expr = Just expr
-        }
+        }, keyArgs)
     IOS -> do
       let expr = mconcat
             [ "with (import ", srcDir, " {});"
             , "ios.frontend.override (_: { staticSrc = (passthru.__iosWithConfig ", configDir, ").frontend.staticSrc; })"
             ]
-      return $ Target
+      return (Target
         { _target_path = Nothing
         , _target_attr = Nothing
         , _target_expr = Just expr
-        }
+        }, [])
   result <- nixCmd $ NixCmd_Build $ def
     & nixBuildConfig_outLink .~ OutLink_None
     & nixCmdConfig_target .~ nixBuildTarget
-  putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> show result
-  callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
+  let mobileArtifact = case platform of
+                         IOS -> "iOS App"
+                         Android -> "Android APK"
+  putLog Notice $ T.pack $ unwords ["Your recently built", mobileArtifact, "can be found at the following path:", show result]
+  callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") (mobileArgs ++ extraArgs)
   where
     withEcho showEcho f = do
       prevEcho <- hGetEcho stdin

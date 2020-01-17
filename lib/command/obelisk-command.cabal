@@ -24,7 +24,6 @@ library
     , github
     , here
     , git
-    , hnix
     , hpack
     , io-streams
     , exceptions
