@@ -10,7 +10,7 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy.Builder as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import Distribution.Compiler (CompilerFlavor (..))
-import Language.Haskell.Extension (Extension (..))
+import Language.Haskell.Extension (Extension (..), Language(..))
 import System.IO (IOMode (..), hClose, hPutStrLn, openFile, stderr)
 import System.FilePath (hasTrailingPathSeparator, joinPath, normalise, splitPath)
 
@@ -68,7 +68,13 @@ generateHeader origPath packageInfo =
         <> mconcat (intersperse (TL.fromText ", ") extList)
         <> TL.fromText " #-}\n"
       else mempty
-    extList = concatMap showExt (_cabalPackageInfo_defaultExtensions packageInfo)
+    extList = addDefaultLanguage $ concatMap showExt $ _cabalPackageInfo_defaultExtensions packageInfo
+    addDefaultLanguage =
+      case _cabalPackageInfo_defaultLanguage packageInfo of
+        Nothing -> id
+        Just x -> case x of
+          UnknownLanguage ext -> ( TL.fromString ext :)
+          ext -> ( TL.fromString (show ext) :)
     showExt = \case
       EnableExtension ext -> [TL.fromString (show ext)]
       DisableExtension _ -> []
