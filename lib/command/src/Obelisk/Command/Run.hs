@@ -12,7 +12,6 @@ import Control.Monad (filterM, unless, when)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
-import Data.Containers.ListUtils (nubOrd)
 import Data.Coerce (coerce)
 import Data.Either
 import Data.Foldable (for_)
@@ -125,15 +124,24 @@ runWatch = do
 -- to the Nix @project@ function.
 getLocalPkgs :: (MonadObelisk m, MonadIO m) => FilePath -> m [FilePath]
 getLocalPkgs root = do
+  rootAbs <- liftIO $ makeAbsolute root
   let findPath = $(staticWhich "find")
   (_exitCode, out, err') <- readCreateProcessWithExitCode $
-    proc findPath ["-L", root, "-name", "*.cabal", "-o", "-name", Hpack.packageConfig]
+    proc findPath ["-L", rootAbs, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
   case T.strip $ T.pack err' of
     err | T.null err -> pure ()
         | otherwise -> putLog Debug err
-  let unpackedPackagesRelative = lines . T.unpack $ T.strip $ T.pack out
-  rootAbs <- liftIO $ makeAbsolute root
-  pure $ nubOrd $ flip map unpackedPackagesRelative (rootAbs </>)
+
+  let packagePaths = filter (not . isIgnored) $ T.lines $ T.strip $ T.pack out
+      obeliskImplDir = ".obelisk/impl/"
+      rootObelisk = T.pack (rootAbs </> T.unpack obeliskImplDir)
+      isIgnored path =
+        obeliskImplDir `T.isInfixOf` path
+        && case T.stripPrefix rootObelisk path of
+             Nothing -> True
+             Just pathSuffix -> obeliskImplDir `T.isInfixOf` pathSuffix
+
+  pure $ map T.unpack packagePaths
 
 data GuessPackageFileError = GuessPackageFileError_Ambiguous [FilePath] | GuessPackageFileError_NotFound
   deriving (Eq, Ord, Show)
