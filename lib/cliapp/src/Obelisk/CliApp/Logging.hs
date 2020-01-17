@@ -178,14 +178,16 @@ withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
 
 -- | Write log to stdout, with colors (unless `noColor`)
 writeLog :: (MonadIO m, MonadMask m) => Bool -> Bool -> WithSeverity Text -> m ()
-writeLog withNewLine noColor (WithSeverity severity s)
-  | noColor && severity <= Warning = liftIO $ putFn $ T.pack (show severity) <> ": " <> s
-  | not noColor && severity <= Error = TS.putStrWithSGR errorColors h withNewLine s
-  | not noColor && severity <= Warning = TS.putStrWithSGR warningColors h withNewLine s
-  | not noColor && severity >= Debug = TS.putStrWithSGR debugColors h withNewLine s
-  | otherwise = liftIO $ putFn s
+writeLog withNewLine noColor (WithSeverity severity s) = if T.null s then pure () else write
   where
-    putFn = if withNewLine then (T.hPutStrLn h) else (T.hPutStr h)
+    write
+      | noColor && severity <= Warning = liftIO $ putFn $ T.pack (show severity) <> ": " <> s
+      | not noColor && severity <= Error = TS.putStrWithSGR errorColors h withNewLine s
+      | not noColor && severity <= Warning = TS.putStrWithSGR warningColors h withNewLine s
+      | not noColor && severity >= Debug = TS.putStrWithSGR debugColors h withNewLine s
+      | otherwise = liftIO $ putFn s
+
+    putFn = if withNewLine then T.hPutStrLn h else T.hPutStr h
     h = if severity <= Error then stderr else stdout
     errorColors = [SetColor Foreground Vivid Red]
     warningColors = [SetColor Foreground Vivid Yellow]
