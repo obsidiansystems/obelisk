@@ -39,7 +39,6 @@ import Control.Monad.Log (Severity (..), WithSeverity (..), logMessage, runLoggi
 import Control.Monad.Loops (iterateUntil)
 import Control.Monad.Reader (MonadIO, ReaderT (..))
 import Data.IORef (atomicModifyIORef', newIORef, readIORef, writeIORef)
-import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -67,7 +66,7 @@ newCliConfig sev noColor noSpinner errorLogExitCode = do
   tipDisplayed <- newIORef False
   stack <- newIORef ([], [])
   textEncoding <- hGetEncoding stdout
-  let theme = if fromMaybe False $ supportsUnicode <$> textEncoding
+  let theme = if maybe False supportsUnicode textEncoding
         then unicodeTheme
         else noUnicodeTheme
   return $ CliConfig level noColor noSpinner lock tipDisplayed stack errorLogExitCode theme
@@ -133,7 +132,7 @@ handleLog' noColor output = do
       hFlush stdout
     Output_Overwrite ts -> liftIO $ do
       width <- TS.getTerminalWidth
-      T.putStr $ "\r" <> (TS.render (not noColor) width ts)
+      T.putStr $ "\r" <> TS.render (not noColor) width ts
       hFlush stdout
     Output_ClearLine -> liftIO $ do
       -- Go to the first column and clear the whole line
