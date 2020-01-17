@@ -38,6 +38,7 @@ import Obelisk.Command.Run
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 import qualified Obelisk.Command.VmBuilder as VmBuilder
+import qualified Obelisk.Command.Preprocessor as Preprocessor
 
 
 data Args = Args
@@ -102,6 +103,9 @@ data ObCommand
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
    | ObInternal_CLIDemo
+   -- the "apply-packages" preprocessor argument syntax is also handled outside
+   -- optparse-applicative, but it shouldn't ever conflict with another syntax
+   | ObInternal_ApplyPackages String String String [String]
    deriving Show
 
 inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
@@ -276,7 +280,11 @@ parserPrefs = defaultPrefs
   }
 
 parseCLIArgs :: ArgsConfig -> [String] -> IO Args
-parseCLIArgs cfg as = pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
+parseCLIArgs cfg = \case
+  (origPath:inPath:outPath:"apply-packages":packagePaths)
+    | any (\c -> c == '.' || c == '/') origPath ->
+      pure $ Args False False $ ObCommand_Internal $ ObInternal_ApplyPackages origPath inPath outPath packagePaths
+  as -> pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
 -- | Create an Obelisk config for the current process.
 mkObeliskConfig :: IO Obelisk
@@ -407,6 +415,8 @@ ob = \case
         c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
     ObInternal_CLIDemo -> cliDemo
+    ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
+      liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
 
 haddockCommand :: [String] -> String
 haddockCommand pkgs = unwords

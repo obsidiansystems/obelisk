@@ -257,7 +257,7 @@ withGhciScript dirs f = do
     -- NOTE when no default-language is present cabal sets Haskell98
     language = NE.toList $ fromMaybe (Haskell98 NE.:| []) $ NE.nonEmpty languageFromPkgs
     dotGhci = unlines
-      [ ":set -pgmF ob-preprocessor " <> unwords (map (("-optF " <>) . _cabalPackageInfo_packageRoot) packageInfos)
+      [ ":set -pgmF ob -optF apply-packages " <> unwords (map (("-optF " <>) . _cabalPackageInfo_packageRoot) packageInfos)
       , ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
       , ":set " <> unwords (("-X" <>) . prettyShow <$> language)
       , ":load Backend Frontend"

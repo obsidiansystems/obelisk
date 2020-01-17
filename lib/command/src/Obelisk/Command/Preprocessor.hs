@@ -11,28 +11,27 @@ import qualified Data.Text.Lazy.Builder as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import Distribution.Compiler (CompilerFlavor (..))
 import Language.Haskell.Extension (Extension (..))
-import System.Environment (getArgs)
 import System.IO (IOMode (..), hClose, hPutStrLn, openFile, stderr)
 import System.FilePath (hasTrailingPathSeparator, joinPath, normalise, splitPath)
 
 import Obelisk.Command.Run (CabalPackageInfo (..), parseCabalPackage')
 
-main :: IO ()
-main = do
-  -- The command line argumens are passed in via ghci.
-  -- ghci dictates the first three options and meanings
-  -- TODO: perform some validation and print a nice error/help message, if we don't see something plausible.
+applyPackages :: FilePath -> FilePath -> FilePath -> [FilePath] -> IO ()
+applyPackages origPath inPath outPath packagePaths = do
+  -- This code is intended to be executed via ghci's -pgmF preprocessor option
+  -- The command line arguments are passed in via ghc, which dictates the first three options and meanings
+  -- In order for this code to execute,  origPath must contain either a '.' character or a '/' character.
+  -- (This is to avoid the possibility of the command line syntax conflicting with another ob command)
   -- We do have control over the remaining arguments, but they must be the same for all files.
+  -- Thus, the fourth command line argument must be "apply-packages",  which has already been handled.
   -- We assume all the remaining arguments passed in are paths to cabal or hpack package specifications.
-
-  args@(origPath:inPath:outPath:packagePaths) <- getArgs
 
   outFile <- openFile outPath WriteMode
   let hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
 
-  putStr "--------------------------------------------------------------------------------\n"
-  print args
-  putStr "--------------------------------------------------------------------------------\n"
+  -- putStr "--------------------------------------------------------------------------------\n"
+  -- print args
+  -- putStr "--------------------------------------------------------------------------------\n"
 
   -- Thus we must select among the packagePaths for the file we are going to parse.
 
