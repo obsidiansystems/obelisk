@@ -11,6 +11,7 @@ module Obelisk.Command.Project
   , inImpureProjectShell
   , projectShell
 
+  , obeliskDirName
   , toObeliskDir
   , toImplDir
   ) where
@@ -61,9 +62,12 @@ data InitSource
   | InitSource_Symlink FilePath
   deriving Show
 
+obeliskDirName :: FilePath
+obeliskDirName = ".obelisk"
+
 -- | Path to obelisk directory in given path
 toObeliskDir :: FilePath -> FilePath
-toObeliskDir p = p </> ".obelisk"
+toObeliskDir p = p </> obeliskDirName
 
 -- | Path to impl file in given path
 toImplDir :: FilePath -> FilePath
