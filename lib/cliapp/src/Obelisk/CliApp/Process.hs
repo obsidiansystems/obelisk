@@ -11,7 +11,6 @@
 module Obelisk.CliApp.Process
   ( AsProcessFailure (..)
   , ProcessFailure (..)
-  , ProcessFailure (..)
   , ProcessSpec (..)
   , callCommand
   , callProcess
