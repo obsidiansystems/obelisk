@@ -38,21 +38,16 @@ let
       (name: { inherit name; value = pkgsSet.${name}; })
       pnames);
 
-  concatDepends = let
-    extractDeps = x: (x.override {
-      mkDerivation = drv: {
-        out = builtins.concatLists [
-          (drv.buildDepends or [])
-          (drv.libraryHaskellDepends or [])
-          (drv.executableHaskellDepends or [])
-        ];
-      };
-    }).out;
-  in pkgAttrs: builtins.concatLists (map extractDeps (builtins.attrValues pkgAttrs));
+  collect = v:
+    if lib.isDerivation v then [v]
+    else if lib.isAttrs v then lib.concatMap collect (builtins.attrValues v)
+    else if lib.isList v then lib.concatMap collect v
+    else [];
 
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
     reflex-platform = import ./dep/reflex-platform { inherit system; };
-    perProfiling = profiling: let
+
+    mkPerProfiling = profiling: let
       obelisk = import ./. (self-args // { inherit system profiling; });
       ghc = pnameToAttrs
         obelisk.haskellPackageSets.ghc
@@ -60,19 +55,6 @@ let
       ghcjs = pnameToAttrs
         obelisk.haskellPackageSets.ghcjs
         obeliskPackagesCommon;
-      cachePackages = builtins.concatLists [
-        (builtins.attrValues ghc)
-        (lib.optionals (!profiling) (builtins.attrValues ghcjs))
-        (concatDepends ghc)
-        (lib.optionals (!profiling) (concatDepends ghcjs))
-        (lib.optional reflex-platform.androidSupport androidSkeleton)
-        (lib.optional reflex-platform.iosSupport iosSkeleton)
-        (lib.optionals (!profiling) [
-          command
-          serverSkeletonExe
-          serverSkeletonShell
-        ])
-      ];
       command = obelisk.command;
       skeleton = import ./skeleton { inherit obelisk; };
       serverSkeletonExe = skeleton.exe;
@@ -85,29 +67,36 @@ let
       androidSkeleton = (import ./skeleton { inherit obelisk; }).android.frontend;
       iosSkeleton = (import ./skeleton { inherit obelisk; }).ios.frontend;
       nameSuffix = if profiling then "profiled" else "unprofiled";
-    in {
-      inherit
-        ghc
-        ;
-      cache = reflex-platform.pinBuildInputs "obelisk-${system}-${nameSuffix}" cachePackages;
-    } // lib.optionalAttrs (!profiling) {
-      inherit
-        command
-        ghcjs
-        serverSkeletonExe
-        serverSkeletonShell
-        ;
-    } // lib.optionalAttrs reflex-platform.androidSupport {
-      inherit androidSkeleton;
-    } // lib.optionalAttrs reflex-platform.iosSupport {
-      inherit iosSkeleton;
+      packages = {
+        inherit
+          command
+          serverSkeletonShell
+          ghc
+          ;
+      } // lib.optionalAttrs (!profiling) {
+        inherit
+          ghcjs
+          serverSkeletonExe
+          ;
+      } // lib.optionalAttrs reflex-platform.androidSupport {
+        inherit androidSkeleton;
+      } // lib.optionalAttrs reflex-platform.iosSupport {
+        inherit iosSkeleton;
+      };
+    in packages // {
+      cache = reflex-platform.pinBuildInputs
+        "obelisk-${system}-${nameSuffix}"
+        (collect packages);
     };
-    profiled = perProfiling true;
-    unprofiled = perProfiling false;
-    cachePackages = map (p: p.cache) [ profiled unprofiled ];
-  in {
-    inherit profiled unprofiled;
-    cache = reflex-platform.pinBuildInputs "obelisk-${system}" cachePackages;
+
+    perProfiling = {
+      profiled = mkPerProfiling true;
+      unprofiled = mkPerProfiling false;
+    };
+  in perProfiling // {
+    cache = reflex-platform.pinBuildInputs
+      "obelisk-${system}"
+      (map (p: p.cache) (builtins.attrValues perProfiling));
   });
 
   metaCache = local-self.reflex-platform.pinBuildInputs
