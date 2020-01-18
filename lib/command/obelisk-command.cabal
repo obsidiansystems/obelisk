@@ -39,6 +39,10 @@ library
     , optparse-applicative
     , placeholders
     , process
+    , reflex
+    , reflex-ghci
+    , reflex-process
+    , reflex-vty
     , temporary
     , terminal-size
     , text
@@ -46,6 +50,7 @@ library
     , transformers
     , unix
     , unordered-containers
+    , vty
     , which
     , yaml
   exposed-modules:

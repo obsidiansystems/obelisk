@@ -19,6 +19,7 @@ import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
@@ -28,15 +29,23 @@ import Distribution.Types.CondTree
 import Distribution.Types.GenericPackageDescription
 import Distribution.Types.Library
 import Distribution.Utils.Generic
+import qualified Graphics.Vty as V
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
 import qualified Hpack.Yaml as Hpack
 import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
+import Reflex.Process (Process(..))
+import Reflex.Process.GHCi (ghciWatch, Ghci(..))
+import Reflex.Vty hiding (mapMaybe)
+import Reflex.Vty.GHCi (ghciPanes)
 import System.Directory
 import System.FilePath
 import System.IO.Temp (withSystemTempDirectory)
+import qualified System.Process as P (proc, terminateProcess)
 import System.Which (staticWhich)
+
+
 
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp (Severity (..) , callCommand, failWith, putLog, proc, readProcessAndLogStderr)
@@ -86,7 +95,7 @@ run = do
         else readProcessAndLogStderr Debug $
           proc nixPath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
-    runGhcid dotGhciPath $ Just $ unwords
+    runReflexGhci dotGhciPath $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
       , "(runServeAsset " ++ show assets ++ ")"
@@ -226,6 +235,29 @@ runGhciRepl
   => FilePath -- ^ Path to .ghci
   -> m ()
 runGhciRepl dotGhci = inProjectShell "ghc" $ "ghci " <> makeBaseGhciOptions dotGhci
+
+-- | Run a repl using reflex-ghci
+runReflexGhci
+  :: MonadObelisk m
+  => FilePath
+  -> Maybe String
+  -> m ()
+runReflexGhci dotGhci mcmd = do
+  let ghciCmd = P.proc "ghci"
+        [ "-Wall"
+        , "-ignore-dot-ghci"
+        , "-fwarn-redundant-constraints"
+        , "-no-user-package-db"
+        , "-package-env -"
+        , "-ghci-script " <> dotGhci
+        ]
+  liftIO $ mainWidget $ do
+    exitReq <- keyCombo (V.KChar 'c', [V.MCtrl])
+    g <- ghciWatch ghciCmd $ T.encodeUtf8 . T.pack <$> mcmd
+    ghciPanes g
+    exit <- performEvent $ liftIO (P.terminateProcess $ _process_handle $ _ghci_process g) <$ exitReq
+    pure $ () <$ exit
+  return ()
 
 -- | Run ghcid
 runGhcid
