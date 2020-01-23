@@ -3,25 +3,27 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Command.Project
   ( InitSource (..)
-  , initProject
   , findProjectObeliskCommand
   , findProjectRoot
-  , withProjectRoot
-  , inProjectShell
-  , inImpureProjectShell
-  , projectShell
-
+  , initProject
+  , nixShellWithPkgs
   , obeliskDirName
-  , toObeliskDir
+  , projectShell
   , toImplDir
+  , toNixPath
+  , toObeliskDir
+  , withProjectRoot
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
+import Control.Lens ((.~), (?~), (<&>))
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
 import Data.Bits
-import Data.Function (on)
+import Data.Default (def)
+import Data.Function ((&), on)
+import Data.List (isInfixOf)
 import qualified Data.Text as T
 import System.Directory
 import System.Environment (lookupEnv)
@@ -37,6 +39,7 @@ import GitHub.Data.Name (Name)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
+import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils (nixExePath)
 
@@ -237,14 +240,35 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
     fileGroupWritable = fileMode s .&. 0o020 == 0o020
     umaskGroupWritable = umask .&. 0o020 == 0
 
--- | Run a command in the given shell for the current project
-inProjectShell :: MonadObelisk m => String -> String -> m ()
-inProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root True shellName (Just command)
+-- nix-shell -E '{ root, shell-pkgs }: ((import root {}).passthru.self.extend (self: super: { shells-ghc = shell-pkgs; })).project.shells.ghc' --arg root ./. --arg shell-pkgs '["backend"]'
 
-inImpureProjectShell :: MonadObelisk m => String -> String -> m ()
-inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root False shellName (Just command)
+-- | Nix syntax requires relative paths to be prefixed by @./@ or
+-- @../@. This will make a 'FilePath' that can be embedded in a Nix
+-- expression.
+toNixPath :: FilePath -> FilePath
+toNixPath root | "/" `isInfixOf` root = root
+               | otherwise = "./" <> root
+
+
+nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> [String] -> Maybe String -> m ()
+nixShellWithPkgs root isPure packageNames command = do
+  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+    proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
+    runNixShellConfig $ def
+      & nixShellConfig_pure .~ isPure
+      & nixShellConfig_common . nixCmdConfig_target .~ (def
+        & target_path .~ Nothing
+        & target_expr ?~ "{ root, shell-pkgs }: ((import root {}).passthru.self.extend (self: super: { shells-ghc = shell-pkgs; })).project.shells.ghc"
+        )
+      & nixShellConfig_common . nixCmdConfig_args .~ [rawArg "root" $ toNixPath root, rawArg "shell-pkgs" ("[" <> unwords (map show packageNames) <> "]")]
+      & nixShellConfig_run .~ (command <&> \c -> mconcat
+        [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
+        , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
+        , c
+        ])
+  void $ liftIO $ waitForProcess ph
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do

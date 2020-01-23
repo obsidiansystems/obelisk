@@ -7,16 +7,17 @@
 module Obelisk.Command.Run where
 
 import Control.Exception (Exception, bracket)
-import Control.Monad (filterM, unless, when)
+import Control.Monad (filterM, unless)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
 import Data.Coerce (coerce)
 import Data.Either
-import Data.Foldable (for_)
+import Data.Foldable (for_, toList)
 import Data.List.Extra (dropPrefix)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import Data.Traversable (for)
 import Debug.Trace (trace)
@@ -43,7 +44,7 @@ import System.IO.Temp (withSystemTempDirectory)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr)
-import Obelisk.Command.Project (inProjectShell, obeliskDirName, toObeliskDir, withProjectRoot)
+import Obelisk.Command.Project (obeliskDirName, toObeliskDir, withProjectRoot, nixShellWithPkgs, toNixPath)
 import Obelisk.Command.Utils (findExePath, ghcidExePath, nixBuildExePath, nixExePath)
 
 data CabalPackageInfo = CabalPackageInfo
@@ -66,7 +67,7 @@ preprocessorIdentifier = "__preprocessor-apply-packages"
 
 run :: MonadObelisk m => m ()
 run = withProjectRoot "." $ \root -> do
-  pkgs <- getLocalPkgs root
+  pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
   withGhciScript pkgs $ \dotGhciPath -> do
     freePort <- getFreePort
     assets <- do
@@ -91,7 +92,7 @@ run = withProjectRoot "." $ \root -> do
         else readProcessAndLogStderr Debug $
           proc nixExePath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
-    runGhcid dotGhciPath $ Just $ unwords
+    runGhcid dotGhciPath pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
@@ -99,30 +100,23 @@ run = withProjectRoot "." $ \root -> do
       , "Frontend.frontend"
       ]
 
--- | Nix syntax requires relative paths to be prefixed by @./@ or
--- @../@. This will make a 'FilePath' that can be embedded in a Nix
--- expression.
-toNixPath :: FilePath -> FilePath
-toNixPath root | "/" `isInfixOf` root = root
-               | otherwise = "./" <> root
-
 runRepl :: MonadObelisk m => m ()
 runRepl = do
-  pkgs <- withProjectRoot "." getLocalPkgs
+  pkgs <- fmap toList . parsePackagesOrFail =<< withProjectRoot "." getLocalPkgs
   withGhciScript pkgs $ \dotGhciPath -> do
-    runGhciRepl dotGhciPath
+    runGhciRepl pkgs dotGhciPath
 
 runWatch :: MonadObelisk m => m ()
 runWatch = do
-  pkgs <- withProjectRoot "." getLocalPkgs
-  withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath Nothing
+  pkgs <- fmap toList . parsePackagesOrFail =<< withProjectRoot "." getLocalPkgs
+  withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath pkgs Nothing
 
 -- | Relative paths to local packages of an obelisk project.
 --
 -- These are a combination of the obelisk predefined local packages,
 -- and any packages that the user has set with the @packages@ argument
 -- to the Nix @project@ function.
-getLocalPkgs :: (MonadObelisk m, MonadIO m) => FilePath -> m [FilePath]
+getLocalPkgs :: MonadObelisk m => FilePath -> m [FilePath]
 getLocalPkgs root = do
   (_exitCode, out, err) <- readCreateProcessWithExitCode $
     proc findExePath ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
@@ -233,33 +227,42 @@ parseCabalPackage' pkg = runExceptT $ do
     Left (_, errors) ->
       throwError $ T.pack $ "Failed to parse " <> packageFile <> ":\n" <> unlines (map show errors)
 
--- | Create ghci configuration to load the given packages
-withGhciScript
-  :: MonadObelisk m
-  => [FilePath] -- ^ List of packages to load into ghci
-  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
-  -> m ()
-withGhciScript dirs f = do
-  (pkgDirErrs, packageInfos) <- fmap partitionEithers $ for dirs $ \dir -> do
+parsePackagesOrFail :: MonadObelisk m => [FilePath] -> m (NE.NonEmpty CabalPackageInfo)
+parsePackagesOrFail dirs = do
+  (pkgDirErrs, packageInfos') <- fmap partitionEithers $ for dirs $ \dir -> do
     flip fmap (parseCabalPackage dir) $ \case
       Nothing -> Left dir
       Just packageInfo -> Right packageInfo
 
-  when (null packageInfos) $
-    failWith $ T.pack $ "No valid packages found in " <> intercalate ", " dirs
+  packageInfos <- case NE.nonEmpty packageInfos' of
+    Nothing -> failWith $ T.pack $ "No valid packages found in " <> intercalate ", " dirs
+    Just xs -> pure xs
+
   unless (null pkgDirErrs) $
     putLog Warning $ T.pack $ "Failed to find packages in " <> intercalate ", " pkgDirErrs
 
+  pure packageInfos
+
+-- | Create ghci configuration to load the given packages
+withGhciScript
+  :: MonadObelisk m
+  => [CabalPackageInfo] -- ^ List of packages to load into ghci
+  -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
+  -> m ()
+withGhciScript packageInfos f = do
   selfExe <- liftIO getExecutablePath
   let
-    packageNames = map _cabalPackageInfo_packageName packageInfos
+    packageNames = Set.fromList $ map _cabalPackageInfo_packageName packageInfos
+    modulesToLoad = mconcat
+      [ [ "Obelisk.Run" | "obelisk-run" `Set.member` packageNames ]
+      , [ "Backend" | "backend" `Set.member` packageNames ]
+      , [ "Frontend" | "frontend" `Set.member` packageNames ]
+      ]
     dotGhci = unlines
       -- TODO: Shell escape
       [ ":set -pgmF " <> selfExe <> " -optF " <> preprocessorIdentifier <> " " <> unwords (map (("-optF " <>) . _cabalPackageInfo_packageRoot) packageInfos)
       , ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
-      , ":load Backend Frontend"
-          -- We need to also load 'Obelisk.Run' if it's part of our ghci session.
-          <> if "obelisk-run" `elem` packageNames then " Obelisk.Run" else ""
+      , if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
       , "import qualified Obelisk.Run"
       , "import qualified Frontend"
       , "import qualified Backend"
@@ -276,21 +279,27 @@ withGhciScript dirs f = do
 -- | Run ghci repl
 runGhciRepl
   :: MonadObelisk m
-  => FilePath -- ^ Path to .ghci
+  => [CabalPackageInfo]
+  -> FilePath -- ^ Path to .ghci
   -> m ()
-runGhciRepl dotGhci =
+runGhciRepl packages dotGhci = withProjectRoot "." $ \root ->
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
-  inProjectShell "ghc" $ "ghci " <> makeBaseGhciOptions dotGhci
+  nixShellWithPkgs root True packageNames $ Just $ "ghci " <> makeBaseGhciOptions dotGhci -- TODO: Shell escape
+  where
+    packageNames = map (T.unpack . _cabalPackageInfo_packageName) packages
 
 -- | Run ghcid
 runGhcid
   :: MonadObelisk m
   => FilePath -- ^ Path to .ghci
+  -> [CabalPackageInfo]
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid dotGhci mcmd = inProjectShell "ghc" $ unwords $ ghcidExePath : opts -- TODO: Shell escape
+runGhcid dotGhci packages mcmd = withProjectRoot "." $ \root ->
+  nixShellWithPkgs root True packageNames (Just $ unwords $ ghcidExePath : opts) -- TODO: Shell escape
   where
+    packageNames = map (T.unpack . _cabalPackageInfo_packageName) packages
     opts =
       [ "-W"
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
