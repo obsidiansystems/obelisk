@@ -260,9 +260,9 @@ in rec {
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base': projectDefinition:
     let
-      projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
+      projectOut = sys: let reflexPlatformProject = (getReflexPlatform sys).project; in reflexPlatformProject (args@{ nixpkgs, ... }:
         let
-          projectArgs = projectDefinition args;
+          inherit (lib.strings) hasPrefix;
           mkProject =
             { android ? null #TODO: Better error when missing
             , ios ? null #TODO: Better error when missing
@@ -275,9 +275,9 @@ in rec {
             , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
             }:
             let
-              inherit (lib.strings) hasPrefix;
-              configTree = nixpkgs.lib.makeExtensible (self: {
+              allConfig = nixpkgs.lib.makeExtensible (self: {
                 base = base';
+                inherit args;
                 userSettings = {
                   inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel;
                   staticFiles = if staticFiles == null then self.base + /static else staticFiles;
@@ -322,29 +322,39 @@ in rec {
                         self.processedStatic.symlinked;
                   } // self.userSettings.ios;
                 };
+
+                shells-ghc = [
+                  self.backendName
+                  self.commonName
+                  self.frontendName
+                ];
+
+                shells-ghcjs = [
+                  self.frontendName
+                  self.commonName
+                ];
+
+                shells-ghcSavedSplices = [
+                  self.commonName
+                  self.frontendName
+                ];
+
+                project = reflexPlatformProject ({...}: self.projectConfig);
                 projectConfig = {
                   inherit (self.userSettings) shellToolOverrides tools withHoogle;
                   overrides = self.totalOverrides;
                   packages = self.combinedPackages;
                   shells = {
-                    ${if self.userSettings.android == null && self.userSettings.ios == null then null else "ghcSavedSplices"} = (lib.filter (x: lib.hasAttr x self.combinedPackages) [
-                      self.commonName
-                      self.frontendName
-                    ]);
-                    ghc = (lib.filter (x: lib.hasAttr x self.combinedPackages) [
-                      self.backendName
-                      self.commonName
-                      self.frontendName
-                    ]) ++ lib.attrNames packages;
-                    ghcjs = (lib.filter (x: lib.hasAttr x self.combinedPackages) [
-                      self.frontendName
-                      self.commonName
-                    ]) ++ lib.attrNames packages;
+                    ${if self.userSettings.android == null && self.userSettings.ios == null then null else "ghcSavedSplices"} =
+                      lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
+                    ghc = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghc;
+                    ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
                   };
                   android = self.__androidWithConfig (self.base + "/config");
                   ios = self.__iosWithConfig (self.base + "/config");
 
                   passthru = {
+                    self = allConfig;
                     inherit (self)
                       staticFilesImpure processedStatic
                       __iosWithConfig __androidWithConfig
@@ -356,8 +366,8 @@ in rec {
                   };
                 };
               });
-            in configTree.projectConfig;
-        in mkProject projectArgs);
+            in allConfig;
+        in (mkProject (projectDefinition args)).projectConfig);
       mainProjectOut = projectOut system;
       serverOn = projectInst: version: serverExe
         projectInst.ghc.backend
