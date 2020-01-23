@@ -219,7 +219,9 @@ hoistR f (x :=> Identity y) = f x :/ y
 infixr 5 :.
 type (:.) = (,)
 
-{-# COMPLETE (:.) #-}
+-- This is COMPLETE but triggers https://gitlab.haskell.org/ghc/ghc/issues/17729
+-- TODO: Re-enable once our GHC has the fix.
+-- {-# COMPLETE (:.) #-}
 pattern (:.) :: a -> b -> a :. b
 pattern a :. b = (a, b)
 
