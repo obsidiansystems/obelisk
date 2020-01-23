@@ -62,10 +62,10 @@ data Arg
   deriving (Eq, Show)
 
 strArg :: String -> String -> Arg
-strArg k = Arg_Str k
+strArg = Arg_Str
 
 rawArg :: String -> String -> Arg
-rawArg k = Arg_Expr k
+rawArg = Arg_Expr
 
 boolArg :: String -> Bool -> Arg
 boolArg k = Arg_Expr k . bool "false" "true"
@@ -85,7 +85,7 @@ makeClassy ''NixCommonConfig
 instance Default NixCommonConfig where
   def = NixCommonConfig def mempty mempty
 
-runNixCommonConfig :: NixCommonConfig -> [FilePath]
+runNixCommonConfig :: NixCommonConfig -> [String]
 runNixCommonConfig cfg = mconcat [maybeToList path, attrArg, exprArg, args, buildersArg]
   where
     path = _target_path $ _nixCmdConfig_target cfg
@@ -123,7 +123,7 @@ instance HasNixCommonConfig NixBuildConfig where
 instance Default NixBuildConfig where
   def = NixBuildConfig def def
 
-runNixBuildConfig :: NixBuildConfig -> [FilePath]
+runNixBuildConfig :: NixBuildConfig -> [String]
 runNixBuildConfig cfg = mconcat
   [ runNixCommonConfig $ cfg ^. nixCommonConfig
   , case _nixBuildConfig_outLink cfg of
@@ -144,7 +144,7 @@ instance HasNixCommonConfig NixInstantiateConfig where
 instance Default NixInstantiateConfig where
   def = NixInstantiateConfig def False
 
-runNixInstantiateConfig :: NixInstantiateConfig -> [FilePath]
+runNixInstantiateConfig :: NixInstantiateConfig -> [String]
 runNixInstantiateConfig cfg = mconcat
   [ runNixCommonConfig $ cfg ^. nixCommonConfig
   , "--eval" <$ guard (_nixInstantiateConfig_eval cfg)
