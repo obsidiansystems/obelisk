@@ -9,22 +9,31 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Nix
-  ( nixCmd
-  , NixCmd (..)
-  , nixCmdConfig_target
-  , nixCmdConfig_args
-  , nixCmdConfig_builders
+  ( Arg (..)
   , NixBuildConfig (..)
   , nixBuildConfig_common
   , nixBuildConfig_outLink
+  , NixCmd (..)
+  , nixCmdConfig_args
+  , nixCmdConfig_builders
+  , nixCmdConfig_target
+  , NixCommonConfig (..)
   , NixInstantiateConfig (..)
   , nixInstantiateConfig_eval
-  , NixCommonConfig (..)
-  , Target (..)
+  , NixShellConfig (..)
+  , nixShellConfig_common
+  , nixShellConfig_pure
+  , nixShellConfig_run
   , OutLink (..)
-  , Arg (..)
+  , Target (..)
+  , target_attr
+  , target_expr
+  , target_path
+
   , boolArg
+  , nixCmd
   , rawArg
+  , runNixShellConfig
   , strArg
   ) where
 
@@ -150,12 +159,34 @@ runNixInstantiateConfig cfg = mconcat
   , "--eval" <$ guard (_nixInstantiateConfig_eval cfg)
   ]
 
+data NixShellConfig = NixShellConfig
+  { _nixShellConfig_common :: NixCommonConfig
+  , _nixShellConfig_pure :: Bool
+  , _nixShellConfig_run :: Maybe String
+  }
+
+makeLenses ''NixShellConfig
+
+instance HasNixCommonConfig NixShellConfig where
+  nixCommonConfig = nixShellConfig_common
+
+instance Default NixShellConfig where
+  def = NixShellConfig def False Nothing
+
 data NixCmd
   = NixCmd_Build NixBuildConfig
   | NixCmd_Instantiate NixInstantiateConfig
 
 instance Default NixCmd where
   def = NixCmd_Build def
+
+runNixShellConfig :: NixShellConfig -> [String]
+runNixShellConfig cfg = mconcat
+  [ runNixCommonConfig $ cfg ^. nixCommonConfig
+  , [ "--pure" | cfg ^. nixShellConfig_pure ]
+  ] ++ mconcat [
+    ["--run", run] | run <- maybeToList $ cfg ^. nixShellConfig_run
+  ]
 
 nixCmd :: MonadObelisk m => NixCmd -> m FilePath
 nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built " <> desc) $ do
