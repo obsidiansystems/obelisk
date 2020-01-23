@@ -307,7 +307,7 @@ in rec {
                 __androidWithConfig = configPath: {
                   ${if self.userSettings.android == null then null else self.frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticFiles then "assets" else null} =
+                    ${if builtins.pathExists self.userSettings.staticFiles then "assets" else null} =
                       nixpkgs.obeliskExecutableConfig.platforms.android.inject
                         (self.injectableConfig configPath)
                         self.processedStatic.symlinked;
@@ -316,7 +316,7 @@ in rec {
                 __iosWithConfig = configPath: {
                   ${if self.userSettings.ios == null then null else self.frontendName} = {
                     executableName = "frontend";
-                    ${if builtins.pathExists staticFiles then "staticSrc" else null} =
+                    ${if builtins.pathExists self.userSettings.staticFiles then "staticSrc" else null} =
                       nixpkgs.obeliskExecutableConfig.platforms.ios.inject
                         (self.injectableConfig configPath)
                         self.processedStatic.symlinked;
