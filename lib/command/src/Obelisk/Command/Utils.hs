@@ -21,8 +21,6 @@ import Data.Maybe (maybeToList)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import System.Directory (canonicalizePath)
-import System.Environment (getExecutablePath)
 import System.Exit (ExitCode)
 import System.Which (staticWhich)
 import Text.Megaparsec as MP
@@ -31,11 +29,20 @@ import Text.Megaparsec.Char as MP
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 
-getObeliskExe :: IO FilePath
-getObeliskExe = getExecutablePath >>= canonicalizePath
-
 cp :: FilePath
 cp = $(staticWhich "cp")
+
+ghcidExePath :: FilePath
+ghcidExePath = $(staticWhich "ghcid")
+
+findExePath :: FilePath
+findExePath = $(staticWhich "find")
+
+nixExePath :: FilePath
+nixExePath = $(staticWhich "nix")
+
+nixBuildExePath :: FilePath
+nixBuildExePath = $(staticWhich "nix-build")
 
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> Bool -> m Bool

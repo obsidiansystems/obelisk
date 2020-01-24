@@ -1,28 +1,36 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Command.Project
   ( InitSource (..)
-  , initProject
   , findProjectObeliskCommand
   , findProjectRoot
-  , withProjectRoot
-  , inProjectShell
-  , inImpureProjectShell
+  , initProject
+  , nixShellWithPkgs
+  , obeliskDirName
   , projectShell
-
-  , toObeliskDir
   , toImplDir
+  , toNixPath
+  , toObeliskDir
+  , withProjectRoot
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
+import Control.Lens ((.~), (?~), (<&>))
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
+import qualified Data.Aeson as Json
 import Data.Bits
-import Data.Function (on)
+import qualified Data.ByteString.Lazy as BSL
+import Data.Default (def)
+import Data.Function ((&), on)
+import Data.List (isInfixOf)
+import Data.Map (Map)
+import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8)
+import Data.Traversable (for)
 import System.Directory
 import System.Environment (lookupEnv)
 import System.FilePath
@@ -31,14 +39,15 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
 import System.Process (waitForProcess)
-import System.Which (staticWhich)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
+import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
+import Obelisk.Command.Utils (nixExePath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -62,9 +71,12 @@ data InitSource
   | InitSource_Symlink FilePath
   deriving Show
 
+obeliskDirName :: FilePath
+obeliskDirName = ".obelisk"
+
 -- | Path to obelisk directory in given path
 toObeliskDir :: FilePath -> FilePath
-toObeliskDir p = p </> ".obelisk"
+toObeliskDir p = p </> obeliskDirName
 
 -- | Path to impl file in given path
 toImplDir :: FilePath -> FilePath
@@ -234,19 +246,43 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
     fileGroupWritable = fileMode s .&. 0o020 == 0o020
     umaskGroupWritable = umask .&. 0o020 == 0
 
--- | Run a command in the given shell for the current project
-inProjectShell :: MonadObelisk m => String -> String -> m ()
-inProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root True shellName (Just command)
+-- | Nix syntax requires relative paths to be prefixed by @./@ or
+-- @../@. This will make a 'FilePath' that can be embedded in a Nix
+-- expression.
+toNixPath :: FilePath -> FilePath
+toNixPath root | "/" `isInfixOf` root = root
+               | otherwise = "./" <> root
 
-inImpureProjectShell :: MonadObelisk m => String -> String -> m ()
-inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root False shellName (Just command)
+nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Map Text FilePath -> Maybe String -> m ()
+nixShellWithPkgs root isPure packageNamesAndPaths command = do
+  packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
+  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+    proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
+    runNixShellConfig $ def
+      & nixShellConfig_pure .~ isPure
+      & nixShellConfig_common . nixCmdConfig_target .~ (def
+        & target_path .~ Nothing
+        & target_expr ?~
+            "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (self: super: {\
+              \shellPackages = builtins.fromJSON pkgs; })\
+            \).project.shells.ghc"
+        )
+      & nixShellConfig_common . nixCmdConfig_args .~
+          [ rawArg "root" $ toNixPath root
+          , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
+          ]
+      & nixShellConfig_run .~ (command <&> \c -> mconcat
+        [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
+        , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
+        , c
+        ])
+  void $ liftIO $ waitForProcess ph
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
-  let nixPath = $(staticWhich "nix")
-  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ proc nixPath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
      [ "default.nix"] <>

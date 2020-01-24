@@ -45,6 +45,7 @@ module Obelisk.CliApp
   , readCreateProcessWithExitCode
   , readProcessAndLogOutput
   , readProcessAndLogStderr
+  , readProcessJSONAndLogStderr
   , reconstructCommand
   , setCwd
   , setDelegateCtlc
