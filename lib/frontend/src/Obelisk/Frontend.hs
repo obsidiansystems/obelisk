@@ -198,7 +198,6 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , PrimMonad m
            , MonadSample DomTimeline (Performable m)
            , DOM.MonadJSM m
-           , Monad (Performable (Client (HydrationDomBuilderT s DomTimeline m)))
            , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
            , MonadFix (Performable m)
            , MonadFix m
