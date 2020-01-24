@@ -294,7 +294,8 @@ in rec {
                   ${self.commonName} = nullIfAbsent (self.base + "/common");
                   ${self.backendName} = nullIfAbsent (self.base + "/backend");
                 };
-                combinedPackages = self.predefinedPackages // self.userSettings.packages;
+                shellPackages = {};
+                combinedPackages = self.predefinedPackages // self.userSettings.packages // self.shellPackages;
                 projectOverrides = self': super': {
                   ${self.staticName} = haskellLib.dontHaddock (self'.callCabal2nix self.staticName self.processedStatic.haskellManifest {});
                   ${self.backendName} = haskellLib.addBuildDepend super'.${self.backendName} self'.obelisk-run;
@@ -323,11 +324,7 @@ in rec {
                   } // self.userSettings.ios;
                 };
 
-                shells-ghc = [
-                  self.backendName
-                  self.commonName
-                  self.frontendName
-                ];
+                shells-ghc = builtins.attrNames self.shellPackages;
 
                 shells-ghcjs = [
                   self.frontendName
