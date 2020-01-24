@@ -6,6 +6,7 @@
 {-# LANGUAGE TupleSections #-}
 module Obelisk.Command.Run where
 
+import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
 import Control.Monad (filterM, unless)
 import Control.Monad.Except (runExceptT, throwError)
@@ -16,8 +17,11 @@ import Data.Either
 import Data.Foldable (for_, toList)
 import Data.List.Extra (dropPrefix)
 import qualified Data.List.NonEmpty as NE
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe
 import qualified Data.Set as Set
+import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Traversable (for)
 import Debug.Trace (trace)
@@ -243,6 +247,9 @@ parsePackagesOrFail dirs = do
 
   pure packageInfos
 
+packageInfoToNamePathMap :: [CabalPackageInfo] -> Map Text FilePath
+packageInfoToNamePathMap = Map.fromList . map (_cabalPackageInfo_packageName &&& _cabalPackageInfo_packageRoot)
+
 -- | Create ghci configuration to load the given packages
 withGhciScript
   :: MonadObelisk m
@@ -285,9 +292,7 @@ runGhciRepl
 runGhciRepl packages dotGhci = withProjectRoot "." $ \root ->
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
-  nixShellWithPkgs root True packageNames $ Just $ "ghci " <> makeBaseGhciOptions dotGhci -- TODO: Shell escape
-  where
-    packageNames = map (T.unpack . _cabalPackageInfo_packageName) packages
+  nixShellWithPkgs root True (packageInfoToNamePathMap packages) $ Just $ "ghci " <> makeBaseGhciOptions dotGhci -- TODO: Shell escape
 
 -- | Run ghcid
 runGhcid
@@ -297,9 +302,8 @@ runGhcid
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
 runGhcid dotGhci packages mcmd = withProjectRoot "." $ \root ->
-  nixShellWithPkgs root True packageNames (Just $ unwords $ ghcidExePath : opts) -- TODO: Shell escape
+  nixShellWithPkgs root True (packageInfoToNamePathMap packages) (Just $ unwords $ ghcidExePath : opts) -- TODO: Shell escape
   where
-    packageNames = map (T.unpack . _cabalPackageInfo_packageName) packages
     opts =
       [ "-W"
       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user

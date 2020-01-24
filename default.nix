@@ -351,7 +351,7 @@ in rec {
                   ios = self.__iosWithConfig (self.base + "/config");
 
                   passthru = {
-                    self = allConfig;
+                    __unstable__.self = allConfig;
                     inherit (self)
                       staticFilesImpure processedStatic
                       __iosWithConfig __androidWithConfig

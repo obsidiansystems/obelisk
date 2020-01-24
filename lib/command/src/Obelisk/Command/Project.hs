@@ -20,11 +20,17 @@ import Control.Lens ((.~), (?~), (<&>))
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
+import qualified Data.Aeson as Json
 import Data.Bits
+import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
 import Data.Function ((&), on)
 import Data.List (isInfixOf)
+import Data.Map (Map)
+import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8)
+import Data.Traversable (for)
 import System.Directory
 import System.Environment (lookupEnv)
 import System.FilePath
@@ -240,8 +246,6 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
     fileGroupWritable = fileMode s .&. 0o020 == 0o020
     umaskGroupWritable = umask .&. 0o020 == 0
 
--- nix-shell -E '{ root, shell-pkgs }: ((import root {}).passthru.self.extend (self: super: { shells-ghc = shell-pkgs; })).project.shells.ghc' --arg root ./. --arg shell-pkgs '["backend"]'
-
 -- | Nix syntax requires relative paths to be prefixed by @./@ or
 -- @../@. This will make a 'FilePath' that can be embedded in a Nix
 -- expression.
@@ -249,9 +253,9 @@ toNixPath :: FilePath -> FilePath
 toNixPath root | "/" `isInfixOf` root = root
                | otherwise = "./" <> root
 
-
-nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> [String] -> Maybe String -> m ()
-nixShellWithPkgs root isPure packageNames command = do
+nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Map Text FilePath -> Maybe String -> m ()
+nixShellWithPkgs root isPure packageNamesAndPaths command = do
+  packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
@@ -260,9 +264,15 @@ nixShellWithPkgs root isPure packageNames command = do
       & nixShellConfig_pure .~ isPure
       & nixShellConfig_common . nixCmdConfig_target .~ (def
         & target_path .~ Nothing
-        & target_expr ?~ "{ root, shell-pkgs }: ((import root {}).passthru.self.extend (self: super: { shells-ghc = shell-pkgs; })).project.shells.ghc"
+        & target_expr ?~
+            "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (self: super: {\
+              \shellPackages = builtins.fromJSON pkgs; })\
+            \).project.shells.ghc"
         )
-      & nixShellConfig_common . nixCmdConfig_args .~ [rawArg "root" $ toNixPath root, rawArg "shell-pkgs" ("[" <> unwords (map show packageNames) <> "]")]
+      & nixShellConfig_common . nixCmdConfig_args .~
+          [ rawArg "root" $ toNixPath root
+          , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
+          ]
       & nixShellConfig_run .~ (command <&> \c -> mconcat
         [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
         , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
