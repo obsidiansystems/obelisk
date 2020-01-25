@@ -16,6 +16,7 @@ project ./. ({ pkgs, hackGet, ... }: {
 
   packages = {
     reflex-dom-core = (hackGet ./dep/reflex-dom) + /reflex-dom-core;
+    reflex-dom = (hackGet ./dep/reflex-dom) + /reflex-dom;
   };
 
   overrides = self: super: {
