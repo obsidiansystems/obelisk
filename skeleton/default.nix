@@ -8,9 +8,20 @@
   }
 }:
 with obelisk;
-project ./. ({ ... }: {
+project ./. ({ pkgs, hackGet, ... }: {
   android.applicationId = "systems.obsidian.obelisk.examples.minimal";
   android.displayName = "Obelisk Minimal Example";
   ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";
   ios.bundleName = "Obelisk Minimal Example";
+
+  packages = {
+    reflex-dom-core = (hackGet ./dep/reflex-dom) + /reflex-dom-core;
+  };
+
+  overrides = self: super: {
+    ghcjs-dom = pkgs.haskell.lib.overrideCabal (super.ghcjs-dom) (drv: {
+      configureFlags = [ "-fdebug" ];
+    });
+    reflex-dom-core = pkgs.haskell.lib.dontCheck super.reflex-dom-core;
+  };
 })
