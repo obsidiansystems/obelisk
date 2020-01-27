@@ -51,8 +51,7 @@ git clone https://github.com/obsidiansystems/obelisk -b qa "$WORKDIR/obelisk"
 Once you have an obelisk check out, you can build it using Nix. And make a shortcut (alias) for the rest of the terminal session. With this, you will be able to type `ob` anywhere else in the system as long as you do not close the terminal.
 
 ~~~
-nix-build $WORKDIR/obelisk -A command
-alias ob=$WORKDIR/obelisk/result/bin/ob
+alias ob=$(nix-build $WORKDIR/obelisk -A command --no-out-link)/bin/ob
 ~~~
 
 In order to start an obelisk project, we need to create an empty directory, let's call it `myapp`:
