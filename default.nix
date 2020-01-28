@@ -324,7 +324,7 @@ in rec {
                   } // self.userSettings.ios;
                 };
 
-                shells-ghc = builtins.attrNames self.shellPackages;
+                shells-ghc = builtins.attrNames (self.predefinedPackages // self.shellPackages);
 
                 shells-ghcjs = [
                   self.frontendName
