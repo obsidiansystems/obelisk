@@ -5,7 +5,7 @@ This project's release branch is `master`. This log is written from the perspect
 ## Unreleased
 
 * Add `Obelisk.Route.(?/)`, a convenience function for constructing routes nested in `Maybe`. ([#457](https://github.com/obsidiansystems/obelisk/pull/457))
-* Add local packages from the Nix `project { packages }` option to the GHCi config, so that they are auto-reloaded with `ob run`. ([#489](https://github.com/obsidiansystems/obelisk/pull/489))
+* Add local unpacked packages to the `ob run` and `ob repl` sessions. Any `.cabal` or hpack package inside the current obelisk project will be loaded into the session. For `ob run` this means the test server will automatically reload when you save a source file in any of those packages. For `ob repl` it means that `:r` will reload changes to any of those packages. There are some edge cases where this integration is still rough. Report any issues you encounter. ([#489](https://github.com/obsidiansystems/obelisk/pull/489))
 * Add `ob hoogle` command to start a local [Hoogle](https://hoogle.haskell.org/) server for the project. ([#628](https://github.com/obsidiansystems/obelisk/pull/628))
 
 ## v0.4.0.0 - 2020-01-10
