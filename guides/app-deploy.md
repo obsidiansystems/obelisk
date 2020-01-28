@@ -183,6 +183,7 @@ environment.systemPackages = with pkgs; [
 
 and then do another: `nixos-rebuild switch`.
 
+Enter into root direcory from your host terminal by entering `sudo -i`
 ```bash
 git init --bare ~/myapp.git
 ```
