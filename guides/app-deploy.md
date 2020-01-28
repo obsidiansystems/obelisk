@@ -183,14 +183,14 @@ environment.systemPackages = with pkgs; [
 
 and then do another: `nixos-rebuild switch`.
 
+As the remote `root` user:
 ```bash
 git init --bare ~/myapp.git
 ```
 
-Go back to your project folder and set it up as the `origin` remote:
-
+Now go back to your local project folder and set it up as the `origin` remote:
 ```bash
-git remote add origin ssh://root@10.1.0.118:/root/myapp.git
+git remote add origin ssh://root@10.1.0.118/root/myapp.git
 ```
 
 and push all the code to it:
