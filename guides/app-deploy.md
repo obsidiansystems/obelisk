@@ -156,7 +156,7 @@ Create a new SSH key with ssh-keygen called obtest and leave it on the local fol
 ssh-keygen -t ed25519 -f obtest -P ""
 ```
 
-Now copy your local SSH key to the server to enable passwordless login:
+Now copy your local SSH key to the local server to enable passwordless login:
 
 ```bash
 ssh-copy-id -i obtest.pub root@192.168.5.185
