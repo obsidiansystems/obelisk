@@ -304,20 +304,8 @@ nixShellWithHoogle root isPure shell' command = do
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
-  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
-  nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
-     [ "default.nix"] <>
-     ["--pure" | isPure] <>
-     [ "-A"
-     , "shells." <> shellName
-     ] <> case command of
-       Nothing -> []
-       Just c ->
-        -- TODO: Escape nixpkgsPath and nixRemote
-        [ "--run"
-        , "export NIX_PATH=nixpkgs=" <> T.unpack nixpkgsPath <> "; " <>
-          maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote <>
-          c
-        ]
+  defShellConfig <- nixShellRunConfig root isPure command
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ nixShellRunProc root $ defShellConfig
+    & nixShellConfig_common . nixCmdConfig_target . target_path ?~ "default.nix"
+    & nixShellConfig_common . nixCmdConfig_target . target_attr ?~ ("shells." <> shellName)
   void $ liftIO $ waitForProcess ph
