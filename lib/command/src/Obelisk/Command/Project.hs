@@ -6,6 +6,9 @@ module Obelisk.Command.Project
   , findProjectObeliskCommand
   , findProjectRoot
   , initProject
+  , nixShellRunConfig
+  , nixShellRunProc
+  , nixShellWithHoogle
   , nixShellWithPkgs
   , obeliskDirName
   , projectShell
@@ -253,31 +256,50 @@ toNixPath :: FilePath -> FilePath
 toNixPath root | "/" `isInfixOf` root = root
                | otherwise = "./" <> root
 
-nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Map Text FilePath -> Maybe String -> m ()
-nixShellWithPkgs root isPure packageNamesAndPaths command = do
-  packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
+nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
+nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
-    runNixShellConfig $ def
-      & nixShellConfig_pure .~ isPure
-      & nixShellConfig_common . nixCmdConfig_target .~ (def
-        & target_path .~ Nothing
-        & target_expr ?~
-            "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (self: super: {\
-              \shellPackages = builtins.fromJSON pkgs; })\
-            \).project.shells.ghc"
-        )
-      & nixShellConfig_common . nixCmdConfig_args .~
-          [ rawArg "root" $ toNixPath root
-          , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
-          ]
-      & nixShellConfig_run .~ (command <&> \c -> mconcat
-        [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
-        , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
-        , c
-        ])
+  pure $ def
+    & nixShellConfig_pure .~ isPure
+    & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
+    & nixShellConfig_run .~ (command <&> \c -> mconcat
+      [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
+      , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
+      , c
+      ])
+
+nixShellRunProc :: FilePath -> NixShellConfig -> ProcessSpec
+nixShellRunProc root cfg = setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $ runNixShellConfig cfg
+
+nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Map Text FilePath -> Maybe String -> m ()
+nixShellWithPkgs root isPure packageNamesAndPaths command = do
+  packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
+  defShellConfig <- nixShellRunConfig root isPure command
+  (_, _, _, ph) <- createProcess_ "nixShellWithPkgs" $ nixShellRunProc root $ defShellConfig
+    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
+        "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
+          \shellPackages = builtins.fromJSON pkgs;\
+        \})).project.shells.ghc"
+    & nixShellConfig_common . nixCmdConfig_args .~
+        [ rawArg "root" $ toNixPath root
+        , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
+        ]
+  void $ liftIO $ waitForProcess ph
+
+nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
+nixShellWithHoogle root isPure shell' command = do
+  defShellConfig <- nixShellRunConfig root isPure command
+  (_, _, _, ph) <- createProcess_ "nixShellWithHoogle" $ nixShellRunProc root $ defShellConfig
+    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
+        "{root, shell}: ((import root {}).passthru.__unstable__.self.extend (_: super: {\
+          \userSettings = super.userSettings // { withHoogle = true; };\
+        \})).project.shells.${shell}"
+    & nixShellConfig_common . nixCmdConfig_args .~
+        [ rawArg "root" $ toNixPath root
+        , strArg "shell" shell'
+        ]
   void $ liftIO $ waitForProcess ph
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()

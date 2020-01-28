@@ -95,6 +95,7 @@ data ObCommand
    | ObCommand_Watch
    | ObCommand_Shell ShellOpts
    | ObCommand_Doc String [String] -- shell and list of packages
+   | ObCommand_Hoogle String Int -- shell and port
    | ObCommand_Internal ObInternal
    deriving Show
 
@@ -121,6 +122,7 @@ obCommand cfg = hsubparser
           <> footerDoc (Just $
                text "Hint: To open the documentation you can pipe the output of this command like"
                <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
+      , command "hoogle" $ info (ObCommand_Hoogle <$> shellFlags <*> portOpt 8080) $ progDesc "Run a hoogle server locally for your project's dependency tree"
       ])
   <|> subparser
     (mconcat
@@ -253,6 +255,9 @@ shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
   <$> shellFlags
   <*> optional (strArgument (metavar "COMMAND"))
+
+portOpt :: Int -> Parser Int
+portOpt dfault = option auto (long "port" <> short 'p' <> help "Port number for server" <> showDefault <> value dfault <> metavar "INT")
 
 parserPrefs :: ParserPrefs
 parserPrefs = defaultPrefs
@@ -387,6 +392,8 @@ ob = \case
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
   ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
     projectShell root False shell' (Just $ haddockCommand pkgs)
+  ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
+    nixShellWithHoogle root True shell' $ Just $ "hoogle server -p " <> show port <> " --local"
   ObCommand_Internal icmd -> case icmd of
     ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case -- TODO: DELETE
       Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
