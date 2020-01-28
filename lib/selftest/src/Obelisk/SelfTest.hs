@@ -23,7 +23,7 @@ import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.Socket as Socket
 import Shelly hiding (cp)
-import System.Directory (withCurrentDirectory, getDirectoryContents)
+import System.Directory (getCurrentDirectory, withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.FilePath (replaceBaseName, takeBaseName)
@@ -93,17 +93,23 @@ main = do
     putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output"
   let verbosity = bool silently verbosely isVerbose
       nixBuild args = run "nix-build" ("--no-out-link" : args)
-  obeliskImplRaw <- fromString <$> getEnv "OBELISK_IMPL"
+  obeliskImplDirtyReadOnly <- fromString <$> getCurrentDirectory
   let runOb_ = augmentWithVerbosity run_ ob isVerbose
   let runOb = augmentWithVerbosity run ob isVerbose
   let testObRunInDir' = augmentWithVerbosity testObRunInDir ob isVerbose ["run"]
   let testThunkPack' = augmentWithVerbosity testThunkPack ob isVerbose []
   let
-    withObeliskImpl f =
+    withObeliskImplClean f =
+      withSystemTempDirectory "obelisk-impl-clean" $ \(fromString -> obeliskImpl) -> do
+        void . shellyOb verbosity $ chdir obeliskImpl $ do
+          run_ "git" ["clone", "file://" <> toTextIgnore obeliskImplDirtyReadOnly, toTextIgnore obeliskImpl]
+        f obeliskImpl
+
+    withObeliskImplDirty f =
       withSystemTempDirectory "obelisk-impl-copy" $ \(fromString -> obeliskImpl) -> do
         void . shellyOb verbosity $ chdir obeliskImpl $ do
           user <- T.strip <$> run "whoami" []
-          run_ cp ["-rT", toTextIgnore obeliskImplRaw, toTextIgnore obeliskImpl]
+          run_ cp ["-rT", "--no-preserve=mode", toTextIgnore obeliskImplDirtyReadOnly, toTextIgnore obeliskImpl]
           run_ "chown" ["-R", user, toTextIgnore obeliskImpl]
           run_ "chmod" ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
         f obeliskImpl
@@ -117,12 +123,12 @@ main = do
 
         f initCache
 
-    withObeliskImplAndInitCache f =
-      withObeliskImpl $ \impl -> withInitCache (f impl) impl
+    withObeliskImplDirtyAndInitCache f =
+      withObeliskImplDirty $ \impl -> withInitCache (f impl) impl
 
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
 
-  withObeliskImplAndInitCache $ \obeliskImpl initCache ->
+  withObeliskImplDirtyAndInitCache $ \obeliskImplDirty initCache ->
     hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
@@ -142,9 +148,9 @@ main = do
 
           -- To be used in tests that change the obelisk impl directory
           inTmpObInitWithImplCopy f = inTmpObInit $ \dir ->
-            withObeliskImpl $ \(fromString -> implCopy) -> do
+            withObeliskImplClean $ \(fromString -> implClean) -> do
               run_ "rm" [thunk]
-              run_ "ln" ["-s", implCopy, thunk]
+              run_ "ln" ["-s", implClean, thunk]
               f dir
 
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
@@ -167,7 +173,7 @@ main = do
       describe "ob init" $ parallel $ do
         it "works with default impl"       $ inTmp $ \_ -> runOb ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> runOb ["init", "--branch", "master"]
-        it "works with symlink"            $ inTmp $ \_ -> runOb ["init", "--symlink", toTextIgnore obeliskImpl]
+        it "works with symlink"            $ inTmp $ \_ -> runOb ["init", "--symlink", toTextIgnore obeliskImplDirty]
         it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init λ" $ \dir -> do
           let p force = (System.Process.proc ob $ "--no-handoff" : "-v" : "init" : ["--force"|force]) { cwd = Just dir }
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
@@ -194,10 +200,10 @@ main = do
           testObRunInDir' Nothing httpManager
 
       describe "obelisk project" $ parallel $ do
-        it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImpl]
-        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", toTextIgnore obeliskImpl]
-        it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    toTextIgnore obeliskImpl]
-        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [toTextIgnore obeliskImpl]
+        it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImplDirty]
+        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", toTextIgnore obeliskImplDirty]
+        it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    toTextIgnore obeliskImplDirty]
+        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [toTextIgnore obeliskImplDirty]
 
       describe "blank initialized project" $ parallel $ do
 
@@ -271,7 +277,7 @@ main = do
 
             testThunkPack' $ fromText repo
 
-        it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
+        it "aborts thunk pack when there are uncommitted files" $ inTmpObInitWithImplCopy $ \dir -> do
           testThunkPack' (dir </> thunk)
 
       describe "ob thunk update --branch" $ parallel $ do
@@ -313,9 +319,9 @@ testThunkPack executable args path' = withTempFile (T.unpack $ toTextIgnore path
   let pack' = readProcessWithExitCode executable (T.unpack <$> ["thunk", "pack", toTextIgnore path'] ++ args) ""
       ensureThunkPackFails q = liftIO $ pack' >>= \case
         (code, out, err)
-          | code == ExitSuccess -> fail "ob thunk pack succeeded when it should have failed"
+          | code == ExitSuccess -> fail $ "ob thunk pack succeeded when it should have failed with error '" <> show q <> "'"
           | q `T.isInfixOf` T.pack (out <> err) -> pure ()
-          | otherwise -> fail $ "ob thunk pack failed for an unexpected reason: " <> show out <> "\nstderr: " <> err
+          | otherwise -> fail $ "ob thunk pack failed for an unexpected reason, expecting '" <> show q <> "', received: " <> show out <> "\nstderr: " <> err
       git = chdir path' . run "git"
   -- Untracked files
   ensureThunkPackFails "Untracked files"

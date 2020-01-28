@@ -130,8 +130,7 @@ in rec {
     set -euo pipefail
 
     PATH="${command}/bin:$PATH"
-    export OBELISK_IMPL="$(mktemp -d)"
-    ${pkgs.git}/bin/git clone file://${pathGit} $OBELISK_IMPL
+    cd ${./.}
     "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
   '';
   skeleton = pkgs.runCommand "skeleton" {
