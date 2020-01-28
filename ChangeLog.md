@@ -6,6 +6,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 * Add `Obelisk.Route.(?/)`, a convenience function for constructing routes nested in `Maybe`. ([#457](https://github.com/obsidiansystems/obelisk/pull/457))
 * Add local packages from the Nix `project { packages }` option to the GHCi config, so that they are auto-reloaded with `ob run`. ([#489](https://github.com/obsidiansystems/obelisk/pull/489))
+* Add `ob hoogle` command to start a local [Hoogle](https://hoogle.haskell.org/) server for the project. ([#628](https://github.com/obsidiansystems/obelisk/pull/628))
 
 ## v0.4.0.0 - 2020-01-10
 
