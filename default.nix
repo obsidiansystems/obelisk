@@ -72,6 +72,7 @@ let
             pkgs.cabal-install
             pkgs.coreutils
             pkgs.git
+            pkgs.nix
           ];
         };
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};

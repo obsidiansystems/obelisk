@@ -55,6 +55,24 @@ cabalPath = $(staticWhich "cabal")
 gitPath :: FilePath
 gitPath = $(staticWhich "git")
 
+chownPath :: FilePath
+chownPath = $(staticWhich "chown")
+
+chmodPath :: FilePath
+chmodPath = $(staticWhich "chmod")
+
+whoamiPath :: FilePath
+whoamiPath = $(staticWhich "whoami")
+
+nixBuildPath :: FilePath
+nixBuildPath = $(staticWhich "nix-build")
+
+lnPath :: FilePath
+lnPath = $(staticWhich "ln")
+
+rmPath :: FilePath
+rmPath = $(staticWhich "rm")
+
 gitUserConfig :: [Text]
 gitUserConfig = ["-c", "user.name=Obelisk Selftest", "-c", "user.email=noreply@example.com"]
 
@@ -95,7 +113,7 @@ main = do
   unless isVerbose $
     putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output"
   let verbosity = bool silently verbosely isVerbose
-      nixBuild args = run "nix-build" ("--no-out-link" : args)
+      nixBuild args = run nixBuildPath ("--no-out-link" : args)
   obeliskImplDirtyReadOnly <- fromString <$> getCurrentDirectory
   let runOb_ = augmentWithVerbosity run_ ob isVerbose
   let runOb = augmentWithVerbosity run ob isVerbose
@@ -111,10 +129,10 @@ main = do
     withObeliskImplDirty f =
       withSystemTempDirectory "obelisk-impl-copy" $ \(fromString -> obeliskImpl) -> do
         void . shellyOb verbosity $ chdir obeliskImpl $ do
-          user <- T.strip <$> run "whoami" []
+          user <- T.strip <$> run whoamiPath []
           run_ cp ["-rT", "--no-preserve=mode", toTextIgnore obeliskImplDirtyReadOnly, toTextIgnore obeliskImpl]
-          run_ "chown" ["-R", user, toTextIgnore obeliskImpl]
-          run_ "chmod" ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
+          run_ chownPath ["-R", user, toTextIgnore obeliskImpl]
+          run_ chmodPath ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
         f obeliskImpl
 
     withInitCache f obeliskImpl =
@@ -152,8 +170,8 @@ main = do
           -- To be used in tests that change the obelisk impl directory
           inTmpObInitWithImplCopy f = inTmpObInit $ \dir ->
             withObeliskImplClean $ \(fromString -> implClean) -> do
-              run_ "rm" [thunk]
-              run_ "ln" ["-s", implClean, thunk]
+              run_ rmPath [thunk]
+              run_ lnPath ["-s", implClean, thunk]
               f dir
 
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
