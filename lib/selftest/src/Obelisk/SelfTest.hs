@@ -52,11 +52,14 @@ cp = $(staticWhich "cp")
 cabalPath :: FilePath
 cabalPath = $(staticWhich "cabal")
 
+gitPath :: FilePath
+gitPath = $(staticWhich "git")
+
 gitUserConfig :: [Text]
 gitUserConfig = ["-c", "user.name=Obelisk Selftest", "-c", "user.email=noreply@example.com"]
 
 commit :: Text -> Sh ()
-commit msg = void $ run "git" $ gitUserConfig <> [ "commit"
+commit msg = void $ run gitPath $ gitUserConfig <> [ "commit"
   , "--no-gpg-sign"
   , "--allow-empty"
   , "-m"
@@ -102,7 +105,7 @@ main = do
     withObeliskImplClean f =
       withSystemTempDirectory "obelisk-impl-clean" $ \(fromString -> obeliskImpl) -> do
         void . shellyOb verbosity $ chdir obeliskImpl $ do
-          run_ "git" ["clone", "file://" <> toTextIgnore obeliskImplDirtyReadOnly, toTextIgnore obeliskImpl]
+          run_ gitPath ["clone", "file://" <> toTextIgnore obeliskImplDirtyReadOnly, toTextIgnore obeliskImpl]
         f obeliskImpl
 
     withObeliskImplDirty f =
@@ -119,7 +122,7 @@ main = do
         -- Setup the ob init cache
         void . shellyOb verbosity $ chdir initCache $ do
           runOb_ ["init", "--symlink", toTextIgnore obeliskImpl]
-          run_ "git" ["init"]
+          run_ gitPath ["init"]
 
         f initCache
 
@@ -156,10 +159,10 @@ main = do
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
           assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
 
-          revParseHead = T.strip <$> run "git" ["rev-parse", "HEAD"]
+          revParseHead = T.strip <$> run gitPath ["rev-parse", "HEAD"]
 
           commitAll = do
-            run_ "git" ["add", "."]
+            run_ gitPath ["add", "."]
             commit "checkpoint"
             revParseHead
 
@@ -168,7 +171,7 @@ main = do
           pack   = runOb ["thunk", "pack",   thunk] >> commitAll
           unpack = runOb ["thunk", "unpack", thunk] >> commitAll
 
-          diff a b = run "git" ["diff", a, b]
+          diff a b = run gitPath ["diff", a, b]
 
       describe "ob init" $ parallel $ do
         it "works with default impl"       $ inTmp $ \_ -> runOb ["init"]
@@ -253,16 +256,16 @@ main = do
 
         it "unpacks the correct branch" $ withTmp $ \dir -> do
           let branch = "master"
-          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
+          run_ gitPath ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
           runOb_ ["thunk", "pack", toTextIgnore dir]
           runOb_ ["thunk", "unpack", toTextIgnore dir]
-          branch' <- chdir dir $ run "git" ["rev-parse", "--abbrev-ref", "HEAD"]
+          branch' <- chdir dir $ run gitPath ["rev-parse", "--abbrev-ref", "HEAD"]
           liftIO $ assertEqual "" branch (T.strip branch')
 
         it "can pack and unpack plain git repos" $
           shelly_ $ withSystemTempDirectory "git-repo" $ \dir -> do
             let repo = toTextIgnore $ dir </> ("repo" :: String)
-            run_ "git" ["clone", "https://github.com/haskell/process.git", repo]
+            run_ gitPath ["clone", "https://github.com/haskell/process.git", repo]
             origHash <- chdir (fromText repo) revParseHead
 
             runOb_ ["thunk", "pack", repo]
@@ -284,13 +287,13 @@ main = do
         it "can change a thunk to the latest version of a desired branch" $ withTmp $ \dir -> do
           let branch1 = "master"
               branch2 = "develop"
-          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch1]
+          run_ gitPath ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch1]
           runOb_ ["thunk" , "pack", toTextIgnore dir]
           runOb_ ["thunk", "update", toTextIgnore dir, "--branch", branch2]
 
         it "doesn't create anything when given an invalid branch" $ withTmp $ \dir -> do
           let checkDir dir' = liftIO $ getDirectoryContents $ T.unpack $ toTextIgnore dir'
-          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", "master"]
+          run_ gitPath ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", "master"]
           runOb_ ["thunk" , "pack", toTextIgnore dir]
           startingContents <- checkDir dir
           void $ errExit False $ runOb ["thunk", "update", toTextIgnore dir, "--branch", "dumble-palooza"]
@@ -322,7 +325,7 @@ testThunkPack executable args path' = withTempFile (T.unpack $ toTextIgnore path
           | code == ExitSuccess -> fail $ "ob thunk pack succeeded when it should have failed with error '" <> show q <> "'"
           | q `T.isInfixOf` T.pack (out <> err) -> pure ()
           | otherwise -> fail $ "ob thunk pack failed for an unexpected reason, expecting '" <> show q <> "', received: " <> show out <> "\nstderr: " <> err
-      git = chdir path' . run "git"
+      git = chdir path' . run gitPath
   -- Untracked files
   ensureThunkPackFails "Untracked files"
   void $ git ["add", T.pack file]

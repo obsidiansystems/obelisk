@@ -71,6 +71,7 @@ let
           librarySystemDepends = [
             pkgs.cabal-install
             pkgs.coreutils
+            pkgs.git
           ];
         };
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
