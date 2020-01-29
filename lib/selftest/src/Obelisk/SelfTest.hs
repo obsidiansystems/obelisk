@@ -400,7 +400,7 @@ handleObRunStdout httpManager stdout stderr = flip fix (ObRunState_Init, []) $ \
   where
     handleObRunError msgs = do
       stderrContent <- liftIO $ hGetContents stderr
-      errorExit $ "ob run failed: " <> T.unlines msgs <> " stderr: " <> T.pack stderrContent
+      errorExit $ "ob run failed: " <> T.unlines (reverse msgs) <> " stderr: " <> T.pack stderrContent
 
 -- | Make requests to frontend/backend servers to check they are working properly
 obRunCheck :: HTTP.Manager -> Handle -> Text -> Sh ()
