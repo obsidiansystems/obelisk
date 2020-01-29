@@ -166,14 +166,14 @@ Before the project can be deployed, it needs to be a valid git repository. This 
 
 ```bash
 cd $WORKDIR/myapp
-git init .
-git add *
+git init
+git add --all
 git commit -m "initial commit"
 ```
 
 In the remote machine, set up a bare git repo:
 
-Change `/etc/nixos/configuration` using `nano` to have:
+Change `/etc/nixos/configuration.nix` using `nano` to have:
 
 ```bash
 environment.systemPackages = with pkgs; [
