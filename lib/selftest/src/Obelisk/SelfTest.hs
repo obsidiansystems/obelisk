@@ -1,3 +1,4 @@
+{-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -29,7 +30,7 @@ import System.Exit (ExitCode (..))
 import System.FilePath (replaceBaseName, takeBaseName)
 import System.Which (staticWhich)
 import qualified System.Info
-import System.IO (Handle, hClose)
+import System.IO (Handle, hClose, hIsEOF, hGetContents)
 import System.IO.Temp
 import System.Process (readProcessWithExitCode, CreateProcess(cwd), readCreateProcessWithExitCode, proc)
 import Test.Hspec
@@ -324,13 +325,13 @@ testObRunInDir executable extraArgs mdir httpManager = handle_sh (\case ExitSucc
   [p0, p1] <- liftIO $ getFreePorts 2
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
-  maybe id chdir mdir $ runHandle executable extraArgs $ \stdout -> do
-    firstUri <- handleObRunStdout httpManager stdout
+  maybe id chdir mdir $ runHandles executable extraArgs [] $ \_stdin stdout stderr -> do
+    firstUri <- handleObRunStdout httpManager stdout stderr
     let newUri = uri p1
     when (firstUri == newUri) $ errorExit $
       "Startup URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
     maybe id (\_ -> chdir "..") mdir $ alterRouteTo newUri stdout
-    runningUri <- handleObRunStdout httpManager stdout
+    runningUri <- handleObRunStdout httpManager stdout stderr
     if runningUri /= newUri
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
@@ -377,9 +378,12 @@ alterRouteTo uri stdout = do
     "Reloading failed: " <> T.pack (show t)
 
 -- | Handle stdout of `ob run`: check that the frontend and backend servers are started correctly
-handleObRunStdout :: HTTP.Manager -> Handle -> Sh Text
-handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (state, msgs) ->
-  liftIO (T.hGetLine stdout) >>= \t -> case state of
+handleObRunStdout :: HTTP.Manager -> Handle -> Handle -> Sh Text
+handleObRunStdout httpManager stdout stderr = flip fix (ObRunState_Init, []) $ \loop (state, msgs) -> do
+  isEOF <- liftIO $ hIsEOF stdout
+  if isEOF
+  then handleObRunError msgs
+  else liftIO (T.hGetLine stdout) >>= \t -> case state of
     ObRunState_Init
       | "Running test..." `T.isPrefixOf` t -> loop (ObRunState_BackendStarted, msgs)
     ObRunState_Startup
@@ -391,8 +395,12 @@ handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (s
         obRunCheck httpManager stdout uri
         pure uri
       | not (T.null t) -> errorExit $ "Started: " <> t -- If theres any other output here, startup failed
-    _ | "Failed" `T.isPrefixOf` t -> errorExit $ "ob run failed: " <> T.unlines (reverse $ t : msgs)
+    _ | "Failed" `T.isPrefixOf` t -> handleObRunError (t : msgs)
       | otherwise -> loop (state, t : msgs)
+  where
+    handleObRunError msgs = do
+      stderrContent <- liftIO $ hGetContents stderr
+      errorExit $ "ob run failed: " <> T.unlines msgs <> " stderr: " <> T.pack stderrContent
 
 -- | Make requests to frontend/backend servers to check they are working properly
 obRunCheck :: HTTP.Manager -> Handle -> Text -> Sh ()
