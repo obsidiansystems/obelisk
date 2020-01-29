@@ -289,9 +289,10 @@ runGhciRepl
   => [CabalPackageInfo]
   -> FilePath -- ^ Path to .ghci
   -> m ()
-runGhciRepl packages dotGhci = withProjectRoot "." $ \root ->
+runGhciRepl packages dotGhci = withProjectRoot "." $ \root -> do
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
+  rootAbs <- liftIO $ makeAbsolute root
   nixShellWithPkgs root True (packageInfoToNamePathMap packages) $ Just $ "ghci " <> makeBaseGhciOptions dotGhci -- TODO: Shell escape
 
 -- | Run ghcid
@@ -301,8 +302,9 @@ runGhcid
   -> [CabalPackageInfo]
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid dotGhci packages mcmd = withProjectRoot "." $ \root ->
-  nixShellWithPkgs root True (packageInfoToNamePathMap packages) (Just $ unwords $ ghcidExePath : opts) -- TODO: Shell escape
+runGhcid dotGhci packages mcmd = withProjectRoot "." $ \root -> do
+  rootAbs <- liftIO $ makeAbsolute root
+  nixShellWithPkgs rootAbs True (packageInfoToNamePathMap packages) (Just $ unwords $ ghcidExePath : opts) -- TODO: Shell escape
   where
     opts =
       [ "-W"
