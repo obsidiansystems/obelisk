@@ -1,3 +1,4 @@
+{-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -23,13 +24,13 @@ import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.Socket as Socket
 import Shelly hiding (cp)
-import System.Directory (withCurrentDirectory, getDirectoryContents)
+import System.Directory (getCurrentDirectory, withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
 import System.FilePath (replaceBaseName, takeBaseName)
 import System.Which (staticWhich)
 import qualified System.Info
-import System.IO (Handle, hClose)
+import System.IO (Handle, hClose, hIsEOF, hGetContents)
 import System.IO.Temp
 import System.Process (readProcessWithExitCode, CreateProcess(cwd), readCreateProcessWithExitCode, proc)
 import Test.Hspec
@@ -52,11 +53,32 @@ cp = $(staticWhich "cp")
 cabalPath :: FilePath
 cabalPath = $(staticWhich "cabal")
 
+gitPath :: FilePath
+gitPath = $(staticWhich "git")
+
+chownPath :: FilePath
+chownPath = $(staticWhich "chown")
+
+chmodPath :: FilePath
+chmodPath = $(staticWhich "chmod")
+
+whoamiPath :: FilePath
+whoamiPath = $(staticWhich "whoami")
+
+nixBuildPath :: FilePath
+nixBuildPath = $(staticWhich "nix-build")
+
+lnPath :: FilePath
+lnPath = $(staticWhich "ln")
+
+rmPath :: FilePath
+rmPath = $(staticWhich "rm")
+
 gitUserConfig :: [Text]
 gitUserConfig = ["-c", "user.name=Obelisk Selftest", "-c", "user.email=noreply@example.com"]
 
 commit :: Text -> Sh ()
-commit msg = void $ run "git" $ gitUserConfig <> [ "commit"
+commit msg = void $ run gitPath $ gitUserConfig <> [ "commit"
   , "--no-gpg-sign"
   , "--allow-empty"
   , "-m"
@@ -92,20 +114,26 @@ main = do
   unless isVerbose $
     putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output"
   let verbosity = bool silently verbosely isVerbose
-      nixBuild args = run "nix-build" ("--no-out-link" : args)
-  obeliskImplRaw <- fromString <$> getEnv "OBELISK_IMPL"
+      nixBuild args = run nixBuildPath ("--no-out-link" : args)
+  obeliskImplDirtyReadOnly <- fromString <$> getCurrentDirectory
   let runOb_ = augmentWithVerbosity run_ ob isVerbose
   let runOb = augmentWithVerbosity run ob isVerbose
   let testObRunInDir' = augmentWithVerbosity testObRunInDir ob isVerbose ["run"]
   let testThunkPack' = augmentWithVerbosity testThunkPack ob isVerbose []
   let
-    withObeliskImpl f =
+    withObeliskImplClean f =
+      withSystemTempDirectory "obelisk-impl-clean" $ \(fromString -> obeliskImpl) -> do
+        void . shellyOb verbosity $ chdir obeliskImpl $ do
+          run_ gitPath ["clone", "file://" <> toTextIgnore obeliskImplDirtyReadOnly, toTextIgnore obeliskImpl]
+        f obeliskImpl
+
+    withObeliskImplDirty f =
       withSystemTempDirectory "obelisk-impl-copy" $ \(fromString -> obeliskImpl) -> do
         void . shellyOb verbosity $ chdir obeliskImpl $ do
-          user <- T.strip <$> run "whoami" []
-          run_ cp ["-rT", toTextIgnore obeliskImplRaw, toTextIgnore obeliskImpl]
-          run_ "chown" ["-R", user, toTextIgnore obeliskImpl]
-          run_ "chmod" ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
+          user <- T.strip <$> run whoamiPath []
+          run_ cp ["-rT", "--no-preserve=mode", toTextIgnore obeliskImplDirtyReadOnly, toTextIgnore obeliskImpl]
+          run_ chownPath ["-R", user, toTextIgnore obeliskImpl]
+          run_ chmodPath ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
         f obeliskImpl
 
     withInitCache f obeliskImpl =
@@ -113,16 +141,16 @@ main = do
         -- Setup the ob init cache
         void . shellyOb verbosity $ chdir initCache $ do
           runOb_ ["init", "--symlink", toTextIgnore obeliskImpl]
-          run_ "git" ["init"]
+          run_ gitPath ["init"]
 
         f initCache
 
-    withObeliskImplAndInitCache f =
-      withObeliskImpl $ \impl -> withInitCache (f impl) impl
+    withObeliskImplDirtyAndInitCache f =
+      withObeliskImplDirty $ \impl -> withInitCache (f impl) impl
 
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
 
-  withObeliskImplAndInitCache $ \obeliskImpl initCache ->
+  withObeliskImplDirtyAndInitCache $ \obeliskImplDirty initCache ->
     hspec $ parallel $ do
       let shelly_ = void . shellyOb verbosity
 
@@ -142,18 +170,18 @@ main = do
 
           -- To be used in tests that change the obelisk impl directory
           inTmpObInitWithImplCopy f = inTmpObInit $ \dir ->
-            withObeliskImpl $ \(fromString -> implCopy) -> do
-              run_ "rm" [thunk]
-              run_ "ln" ["-s", implCopy, thunk]
+            withObeliskImplClean $ \(fromString -> implClean) -> do
+              run_ rmPath [thunk]
+              run_ lnPath ["-s", implClean, thunk]
               f dir
 
           assertRevEQ a b = liftIO . assertEqual "" ""        =<< diff a b
           assertRevNE a b = liftIO . assertBool  "" . (/= "") =<< diff a b
 
-          revParseHead = T.strip <$> run "git" ["rev-parse", "HEAD"]
+          revParseHead = T.strip <$> run gitPath ["rev-parse", "HEAD"]
 
           commitAll = do
-            run_ "git" ["add", "."]
+            run_ gitPath ["add", "."]
             commit "checkpoint"
             revParseHead
 
@@ -162,12 +190,12 @@ main = do
           pack   = runOb ["thunk", "pack",   thunk] >> commitAll
           unpack = runOb ["thunk", "unpack", thunk] >> commitAll
 
-          diff a b = run "git" ["diff", a, b]
+          diff a b = run gitPath ["diff", a, b]
 
       describe "ob init" $ parallel $ do
         it "works with default impl"       $ inTmp $ \_ -> runOb ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> runOb ["init", "--branch", "master"]
-        it "works with symlink"            $ inTmp $ \_ -> runOb ["init", "--symlink", toTextIgnore obeliskImpl]
+        it "works with symlink"            $ inTmp $ \_ -> runOb ["init", "--symlink", toTextIgnore obeliskImplDirty]
         it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init λ" $ \dir -> do
           let p force = (System.Process.proc ob $ "--no-handoff" : "-v" : "init" : ["--force"|force]) { cwd = Just dir }
           (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
@@ -194,10 +222,10 @@ main = do
           testObRunInDir' Nothing httpManager
 
       describe "obelisk project" $ parallel $ do
-        it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImpl]
-        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", toTextIgnore obeliskImpl]
-        it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    toTextIgnore obeliskImpl]
-        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [toTextIgnore obeliskImpl]
+        it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImplDirty]
+        it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", toTextIgnore obeliskImplDirty]
+        it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    toTextIgnore obeliskImplDirty]
+        it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [toTextIgnore obeliskImplDirty]
 
       describe "blank initialized project" $ parallel $ do
 
@@ -247,16 +275,16 @@ main = do
 
         it "unpacks the correct branch" $ withTmp $ \dir -> do
           let branch = "master"
-          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
+          run_ gitPath ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
           runOb_ ["thunk", "pack", toTextIgnore dir]
           runOb_ ["thunk", "unpack", toTextIgnore dir]
-          branch' <- chdir dir $ run "git" ["rev-parse", "--abbrev-ref", "HEAD"]
+          branch' <- chdir dir $ run gitPath ["rev-parse", "--abbrev-ref", "HEAD"]
           liftIO $ assertEqual "" branch (T.strip branch')
 
         it "can pack and unpack plain git repos" $
           shelly_ $ withSystemTempDirectory "git-repo" $ \dir -> do
             let repo = toTextIgnore $ dir </> ("repo" :: String)
-            run_ "git" ["clone", "https://github.com/haskell/process.git", repo]
+            run_ gitPath ["clone", "https://github.com/haskell/process.git", repo]
             origHash <- chdir (fromText repo) revParseHead
 
             runOb_ ["thunk", "pack", repo]
@@ -271,20 +299,20 @@ main = do
 
             testThunkPack' $ fromText repo
 
-        it "aborts thunk pack when there are uncommitted files" $ inTmpObInit $ \dir -> do
+        it "aborts thunk pack when there are uncommitted files" $ inTmpObInitWithImplCopy $ \dir -> do
           testThunkPack' (dir </> thunk)
 
       describe "ob thunk update --branch" $ parallel $ do
         it "can change a thunk to the latest version of a desired branch" $ withTmp $ \dir -> do
           let branch1 = "master"
               branch2 = "develop"
-          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch1]
+          run_ gitPath ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch1]
           runOb_ ["thunk" , "pack", toTextIgnore dir]
           runOb_ ["thunk", "update", toTextIgnore dir, "--branch", branch2]
 
         it "doesn't create anything when given an invalid branch" $ withTmp $ \dir -> do
           let checkDir dir' = liftIO $ getDirectoryContents $ T.unpack $ toTextIgnore dir'
-          run_ "git" ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", "master"]
+          run_ gitPath ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", "master"]
           runOb_ ["thunk" , "pack", toTextIgnore dir]
           startingContents <- checkDir dir
           void $ errExit False $ runOb ["thunk", "update", toTextIgnore dir, "--branch", "dumble-palooza"]
@@ -297,13 +325,13 @@ testObRunInDir executable extraArgs mdir httpManager = handle_sh (\case ExitSucc
   [p0, p1] <- liftIO $ getFreePorts 2
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
-  maybe id chdir mdir $ runHandle executable extraArgs $ \stdout -> do
-    firstUri <- handleObRunStdout httpManager stdout
+  maybe id chdir mdir $ runHandles executable extraArgs [] $ \_stdin stdout stderr -> do
+    firstUri <- handleObRunStdout httpManager stdout stderr
     let newUri = uri p1
     when (firstUri == newUri) $ errorExit $
       "Startup URI (" <> firstUri <> ") is the same as test URI (" <> newUri <> ")"
     maybe id (\_ -> chdir "..") mdir $ alterRouteTo newUri stdout
-    runningUri <- handleObRunStdout httpManager stdout
+    runningUri <- handleObRunStdout httpManager stdout stderr
     if runningUri /= newUri
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
@@ -313,10 +341,10 @@ testThunkPack executable args path' = withTempFile (T.unpack $ toTextIgnore path
   let pack' = readProcessWithExitCode executable (T.unpack <$> ["thunk", "pack", toTextIgnore path'] ++ args) ""
       ensureThunkPackFails q = liftIO $ pack' >>= \case
         (code, out, err)
-          | code == ExitSuccess -> fail "ob thunk pack succeeded when it should have failed"
+          | code == ExitSuccess -> fail $ "ob thunk pack succeeded when it should have failed with error '" <> show q <> "'"
           | q `T.isInfixOf` T.pack (out <> err) -> pure ()
-          | otherwise -> fail $ "ob thunk pack failed for an unexpected reason: " <> show out <> "\nstderr: " <> err
-      git = chdir path' . run "git"
+          | otherwise -> fail $ "ob thunk pack failed for an unexpected reason, expecting '" <> show q <> "', received: " <> show out <> "\nstderr: " <> err
+      git = chdir path' . run gitPath
   -- Untracked files
   ensureThunkPackFails "Untracked files"
   void $ git ["add", T.pack file]
@@ -350,9 +378,12 @@ alterRouteTo uri stdout = do
     "Reloading failed: " <> T.pack (show t)
 
 -- | Handle stdout of `ob run`: check that the frontend and backend servers are started correctly
-handleObRunStdout :: HTTP.Manager -> Handle -> Sh Text
-handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (state, msgs) ->
-  liftIO (T.hGetLine stdout) >>= \t -> case state of
+handleObRunStdout :: HTTP.Manager -> Handle -> Handle -> Sh Text
+handleObRunStdout httpManager stdout stderr = flip fix (ObRunState_Init, []) $ \loop (state, msgs) -> do
+  isEOF <- liftIO $ hIsEOF stdout
+  if isEOF
+  then handleObRunError msgs
+  else liftIO (T.hGetLine stdout) >>= \t -> case state of
     ObRunState_Init
       | "Running test..." `T.isPrefixOf` t -> loop (ObRunState_BackendStarted, msgs)
     ObRunState_Startup
@@ -364,8 +395,12 @@ handleObRunStdout httpManager stdout = flip fix (ObRunState_Init, []) $ \loop (s
         obRunCheck httpManager stdout uri
         pure uri
       | not (T.null t) -> errorExit $ "Started: " <> t -- If theres any other output here, startup failed
-    _ | "Failed" `T.isPrefixOf` t -> errorExit $ "ob run failed: " <> T.unlines (reverse $ t : msgs)
+    _ | "Failed" `T.isPrefixOf` t -> handleObRunError (t : msgs)
       | otherwise -> loop (state, t : msgs)
+  where
+    handleObRunError msgs = do
+      stderrContent <- liftIO $ hGetContents stderr
+      errorExit $ "ob run failed: " <> T.unlines (reverse msgs) <> " stderr: " <> T.pack stderrContent
 
 -- | Make requests to frontend/backend servers to check they are working properly
 obRunCheck :: HTTP.Manager -> Handle -> Text -> Sh ()
