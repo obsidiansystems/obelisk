@@ -253,13 +253,14 @@ toNixPath :: FilePath -> FilePath
 toNixPath root | "/" `isInfixOf` root = root
                | otherwise = "./" <> root
 
-nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Map Text FilePath -> Maybe String -> m ()
-nixShellWithPkgs root isPure packageNamesAndPaths command = do
+nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Bool -> Map Text FilePath -> Maybe String -> m ()
+nixShellWithPkgs root isPure chdirToRoot packageNamesAndPaths command = do
   packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  let setCwd_ = if chdirToRoot then setCwd (Just root) else id
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd_ $ proc "nix-shell" $
     runNixShellConfig $ def
       & nixShellConfig_pure .~ isPure
       & nixShellConfig_common . nixCmdConfig_target .~ (def
@@ -270,7 +271,7 @@ nixShellWithPkgs root isPure packageNamesAndPaths command = do
             \).project.shells.ghc"
         )
       & nixShellConfig_common . nixCmdConfig_args .~
-          [ rawArg "root" $ toNixPath root
+          [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
           , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
           ]
       & nixShellConfig_run .~ (command <&> \c -> mconcat

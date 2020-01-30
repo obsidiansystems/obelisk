@@ -72,7 +72,7 @@ preprocessorIdentifier = "__preprocessor-apply-packages"
 run :: MonadObelisk m => m ()
 run = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
-  withGhciScript pkgs $ \dotGhciPath -> do
+  withGhciScript pkgs root $ \dotGhciPath -> do
     freePort <- getFreePort
     assets <- do
       let importableRoot = toNixPath root
@@ -96,7 +96,7 @@ run = withProjectRoot "." $ \root -> do
         else readProcessAndLogStderr Debug $
           proc nixExePath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
-    runGhcid dotGhciPath pkgs $ Just $ unwords
+    runGhcid root True dotGhciPath pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
@@ -105,15 +105,16 @@ run = withProjectRoot "." $ \root -> do
       ]
 
 runRepl :: MonadObelisk m => m ()
-runRepl = do
-  pkgs <- fmap toList . parsePackagesOrFail =<< withProjectRoot "." getLocalPkgs
-  withGhciScript pkgs $ \dotGhciPath -> do
-    runGhciRepl pkgs dotGhciPath
+runRepl = withProjectRoot "." $ \root -> do
+  pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
+  withGhciScript pkgs "." $ \dotGhciPath ->
+    runGhciRepl root pkgs dotGhciPath
 
 runWatch :: MonadObelisk m => m ()
-runWatch = do
-  pkgs <- fmap toList . parsePackagesOrFail =<< withProjectRoot "." getLocalPkgs
-  withGhciScript pkgs $ \dotGhciPath -> runGhcid dotGhciPath pkgs Nothing
+runWatch = withProjectRoot "." $ \root -> do
+  pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
+  withGhciScript pkgs root $ \dotGhciPath ->
+    runGhcid root True dotGhciPath pkgs Nothing
 
 -- | Relative paths to local packages of an obelisk project.
 --
@@ -254,9 +255,10 @@ packageInfoToNamePathMap = Map.fromList . map (_cabalPackageInfo_packageName &&&
 withGhciScript
   :: MonadObelisk m
   => [CabalPackageInfo] -- ^ List of packages to load into ghci
+  -> FilePath -- ^ All paths written to the .ghci file will be relative to this path
   -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
   -> m ()
-withGhciScript packageInfos f = do
+withGhciScript packageInfos pathBase f = do
   selfExe <- liftIO getExecutablePath
   let
     packageNames = Set.fromList $ map _cabalPackageInfo_packageName packageInfos
@@ -281,30 +283,31 @@ withGhciScript packageInfos f = do
 
   where
     rootedSourceDirs pkg = NE.toList $
-      (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
+      makeRelative pathBase . (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
 
 -- | Run ghci repl
 runGhciRepl
   :: MonadObelisk m
-  => [CabalPackageInfo]
+  => FilePath -- ^ Path to project root
+  -> [CabalPackageInfo]
   -> FilePath -- ^ Path to .ghci
   -> m ()
-runGhciRepl packages dotGhci = withProjectRoot "." $ \root -> do
+runGhciRepl root packages dotGhci =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
-  rootAbs <- liftIO $ makeAbsolute root
-  nixShellWithPkgs root True (packageInfoToNamePathMap packages) $ Just $ "ghci " <> makeBaseGhciOptions dotGhci -- TODO: Shell escape
+  nixShellWithPkgs root True False (packageInfoToNamePathMap packages) $ Just $ "ghci " <> makeBaseGhciOptions dotGhci -- TODO: Shell escape
 
 -- | Run ghcid
 runGhcid
   :: MonadObelisk m
-  => FilePath -- ^ Path to .ghci
+  => FilePath -- ^ Path to project root
+  -> Bool -- ^ Should we chdir to root when running this process?
+  -> FilePath -- ^ Path to .ghci
   -> [CabalPackageInfo]
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid dotGhci packages mcmd = withProjectRoot "." $ \root -> do
-  rootAbs <- liftIO $ makeAbsolute root
-  nixShellWithPkgs rootAbs True (packageInfoToNamePathMap packages) (Just $ unwords $ ghcidExePath : opts) -- TODO: Shell escape
+runGhcid root chdirToRoot dotGhci packages mcmd =
+  nixShellWithPkgs root True chdirToRoot (packageInfoToNamePathMap packages) (Just $ unwords $ ghcidExePath : opts) -- TODO: Shell escape
   where
     opts =
       [ "-W"
