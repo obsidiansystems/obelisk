@@ -18,6 +18,7 @@ module Obelisk.Command.Thunk
   , ThunkRev (..)
   , ThunkSource (..)
   , ThunkUpdateConfig (..)
+  , attrCacheFileName
   , createThunk
   , createThunkWithLatest
   , getLatestRev
@@ -231,6 +232,9 @@ readThunk thunkDir = do
         False -> return $ return Nothing
     False -> liftIO $ fmap ThunkData_Packed <$> readPackedThunk thunkDir
 
+attrCacheFileName :: FilePath
+attrCacheFileName = ".attr-cache"
+
 data ThunkType = ThunkType
   { _thunkType_loader :: FilePath
   , _thunkType_json :: FilePath
@@ -243,7 +247,7 @@ gitHubThunkType :: ThunkType
 gitHubThunkType = ThunkType
   { _thunkType_loader = "default.nix"
   , _thunkType_json = "github.json"
-  , _thunkType_optional = Set.fromList [".attr-cache"]
+  , _thunkType_optional = Set.fromList [attrCacheFileName]
   , _thunkType_loaderVersions = gitHubStandaloneLoaders
   , _thunkType_parser = parseThunkPtr $ \v ->
       ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v
@@ -253,7 +257,7 @@ gitThunkType :: ThunkType
 gitThunkType = ThunkType
   { _thunkType_loader = "default.nix"
   , _thunkType_json = "git.json"
-  , _thunkType_optional = Set.fromList [".attr-cache"]
+  , _thunkType_optional = Set.fromList [attrCacheFileName]
   , _thunkType_loaderVersions = plainGitStandaloneLoaders
   , _thunkType_parser = parseThunkPtr $ fmap ThunkSource_Git . parseGitSource
   }
@@ -400,7 +404,7 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
 
 createThunk :: MonadIO m => FilePath -> ThunkPtr -> m ()
 createThunk target thunk = liftIO $ do
-  createDirectoryIfMissing True (target </> ".attr-cache")
+  createDirectoryIfMissing True (target </> attrCacheFileName)
   T.writeFile (target </> "default.nix") (thunkPtrLoader thunk)
   let
     jsonFileName = case _thunkPtr_source thunk of
@@ -574,7 +578,7 @@ nixBuildThunkAttrWithCache thunkDir attr = do
   let cacheErrHandler e
         | isDoesNotExistError e = return Nothing -- expected from a cache miss
         | otherwise = putLog Error (T.pack $ displayException e) >> return Nothing
-      cacheDir = thunkDir </> ".attr-cache"
+      cacheDir = thunkDir </> attrCacheFileName
       cachePath = cacheDir </> attr <.> "out"
   latestChange <- liftIO $ do
     createDirectoryIfMissing False cacheDir
