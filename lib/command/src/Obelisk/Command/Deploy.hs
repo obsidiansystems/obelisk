@@ -234,7 +234,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
             [ "with (import ", srcDir, " {});"
             , "android.frontend.override (drv: { "
             , "releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; "
-            , "staticSrc = (passthru.__androidWithConfig ", configDir, ").frontend.staticSrc;"
+            , "assets = (passthru.__androidWithConfig ", configDir, ").frontend.assets;"
             , "})"
             ]
       return $ Target
