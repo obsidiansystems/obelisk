@@ -25,7 +25,6 @@ library
     , transformers
   exposed-modules:
     Obelisk.CliApp
-    Obelisk.CliApp.Demo
   other-modules:
     Obelisk.CliApp.Logging
     Obelisk.CliApp.Process

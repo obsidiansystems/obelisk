@@ -30,7 +30,6 @@ import System.Posix.Process (executeFile)
 
 import Obelisk.App
 import Obelisk.CliApp
-import Obelisk.CliApp.Demo (cliDemo)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
@@ -101,7 +100,6 @@ data ObCommand
 
 data ObInternal
    = ObInternal_RunStaticIO StaticKey
-   | ObInternal_CLIDemo
    -- the preprocessor argument syntax is also handled outside
    -- optparse-applicative, but it shouldn't ever conflict with another syntax
    | ObInternal_ApplyPackages String String String [String]
@@ -196,7 +194,6 @@ data DeployInitOpts = DeployInitOpts
 internalCommand :: Parser ObInternal
 internalCommand = subparser $ mconcat
   [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
-  , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
   ]
 
 --TODO: Result should provide normalised path and also original user input for error reporting.
@@ -400,7 +397,6 @@ ob = \case
       Just p -> do
         c <- getObelisk
         liftIO $ runObelisk c $ deRefStaticPtr p
-    ObInternal_CLIDemo -> cliDemo -- TODO: DELETE
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
 
