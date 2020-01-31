@@ -55,6 +55,7 @@ data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
   , _cabalPackageInfo_packageName :: T.Text
   , _cabalPackageInfo_packageRoot :: FilePath
+  , _cabalPackageInfo_buildable :: Bool
   , _cabalPackageInfo_sourceDirs :: NE.NonEmpty FilePath
     -- ^ List of hs src dirs of the library component
   , _cabalPackageInfo_defaultExtensions :: [Extension]
@@ -220,6 +221,7 @@ parseCabalPackage' pkg = runExceptT $ do
         { _cabalPackageInfo_packageName = T.pack packageName
         , _cabalPackageInfo_packageFile = packageFile
         , _cabalPackageInfo_packageRoot = takeDirectory packageFile
+        , _cabalPackageInfo_buildable = buildable $ libBuildInfo lib
         , _cabalPackageInfo_sourceDirs =
             fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
         , _cabalPackageInfo_defaultExtensions =
@@ -236,15 +238,16 @@ parsePackagesOrFail :: MonadObelisk m => [FilePath] -> m (NE.NonEmpty CabalPacka
 parsePackagesOrFail dirs = do
   (pkgDirErrs, packageInfos') <- fmap partitionEithers $ for dirs $ \dir -> do
     flip fmap (parseCabalPackage dir) $ \case
-      Nothing -> Left dir
-      Just packageInfo -> Right packageInfo
+      Just packageInfo
+        | _cabalPackageInfo_buildable packageInfo -> Right packageInfo
+      _ -> Left dir
 
   packageInfos <- case NE.nonEmpty packageInfos' of
-    Nothing -> failWith $ T.pack $ "No valid packages found in " <> intercalate ", " dirs
+    Nothing -> failWith $ T.pack $ "No valid, buildable packages found in " <> intercalate ", " dirs
     Just xs -> pure xs
 
   unless (null pkgDirErrs) $
-    putLog Warning $ T.pack $ "Failed to find packages in " <> intercalate ", " pkgDirErrs
+    putLog Warning $ T.pack $ "Failed to find buildable packages in " <> intercalate ", " pkgDirErrs
 
   pure packageInfos
 
