@@ -86,7 +86,10 @@ generateHeader origPath packageInfo =
         <> mconcat (intersperse (TL.fromText " ") optList)
         <> TL.fromText " #-}\n"
       else mempty
-    optList = map TL.fromString $ fromMaybe [] $ lookup GHC (_cabalPackageInfo_compilerOptions packageInfo)
+    optList = map TL.fromString
+                $ filter (\x -> not (isPrefixOf "-O" x))
+                $ fromMaybe []
+                $ lookup GHC (_cabalPackageInfo_compilerOptions packageInfo)
 
 lineNumberPragma :: FilePath -> TL.Builder
 lineNumberPragma origPath =
