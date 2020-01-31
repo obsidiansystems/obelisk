@@ -88,8 +88,9 @@ isolateGitProc = setEnvOverride (overrides <>)
     overrides = M.fromList
       [ ("HOME", "/dev/null")
       , ("GIT_CONFIG_NOSYSTEM", "1")
-      , ("GIT_TERMINAL_PROMPT", "0")
-      , ("GIT_SSH_COMMAND", "ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no -o GSSAPIAuthentication=no")
+      , ("GIT_TERMINAL_PROMPT", "0") -- git 2.3+
+      , ("GIT_ASKPASS", "echo") -- pre git 2.3 to just use empty password
+      , ("GIT_SSH_COMMAND", "ssh -o PreferredAuthentications password -o PubkeyAuthentication no -o GSSAPIAuthentication no")
       ]
 
 -- | Recursively copy a directory using `cp -a` -- TODO: Should use -rT instead of -a
