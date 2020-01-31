@@ -853,7 +853,7 @@ getLatestRev os = do
 uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Text -> Maybe Text -> m ThunkPtr
 uriThunkPtr uri mbranch mcommit = do
   commit <- case mcommit of
-    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd -- return . (\(_, y, _)->y) --perhaps do io here instead of making uriToTHunkSource effectful ?
+    Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
     (Just c) -> return c
   (src, rev) <- uriToThunkSource uri mbranch >>= \case
     ThunkSource_GitHub s -> do
