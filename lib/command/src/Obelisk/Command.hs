@@ -3,8 +3,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StaticPointers #-}
-{-# LANGUAGE TypeApplications #-}
 module Obelisk.Command where
 
 import Control.Monad
@@ -30,7 +28,6 @@ import System.Posix.Process (executeFile)
 
 import Obelisk.App
 import Obelisk.CliApp
-import Obelisk.CliApp.Demo (cliDemo)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
@@ -100,35 +97,28 @@ data ObCommand
    deriving Show
 
 data ObInternal
-   = ObInternal_RunStaticIO StaticKey
-   | ObInternal_CLIDemo
    -- the preprocessor argument syntax is also handled outside
    -- optparse-applicative, but it shouldn't ever conflict with another syntax
-   | ObInternal_ApplyPackages String String String [String]
+   = ObInternal_ApplyPackages String String String [String]
    deriving Show
 
 obCommand :: ArgsConfig -> Parser ObCommand
 obCommand cfg = hsubparser
-    (mconcat
-      [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
-      , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-      , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
-      , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-      , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-      , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
-      , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
-      , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
-          progDesc "List paths to haddock documentation for specified packages"
-          <> footerDoc (Just $
-               text "Hint: To open the documentation you can pipe the output of this command like"
-               <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
-      , command "hoogle" $ info (ObCommand_Hoogle <$> shellFlags <*> portOpt 8080) $ progDesc "Run a hoogle server locally for your project's dependency tree"
-      ])
-  <|> subparser
-    (mconcat
-      [ internal
-      , command "internal" (info (ObCommand_Internal <$> internalCommand) mempty)
-      ])
+  (mconcat
+    [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
+    , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
+    , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+    , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
+    , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
+    , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+    , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
+    , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
+        progDesc "List paths to haddock documentation for specified packages"
+        <> footerDoc (Just $
+              text "Hint: To open the documentation you can pipe the output of this command like"
+              <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
+    , command "hoogle" $ info (ObCommand_Hoogle <$> shellFlags <*> portOpt 8080) $ progDesc "Run a hoogle server locally for your project's dependency tree"
+    ])
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
@@ -192,12 +182,6 @@ data DeployInitOpts = DeployInitOpts
   , _deployInitOpts_enableHttps :: Bool
   }
   deriving Show
-
-internalCommand :: Parser ObInternal
-internalCommand = subparser $ mconcat
-  [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
-  , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
-  ]
 
 --TODO: Result should provide normalised path and also original user input for error reporting.
 thunkDirectoryParser :: Parser FilePath
@@ -395,12 +379,6 @@ ob = \case
   ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
     nixShellWithHoogle root True shell' $ Just $ "hoogle server -p " <> show port <> " --local"
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case -- TODO: DELETE
-      Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
-      Just p -> do
-        c <- getObelisk
-        liftIO $ runObelisk c $ deRefStaticPtr p
-    ObInternal_CLIDemo -> cliDemo -- TODO: DELETE
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
 
