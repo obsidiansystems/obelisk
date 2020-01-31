@@ -272,7 +272,7 @@ withGhciScript packageInfos pathBase f = do
       ]
     dotGhci = unlines
       -- TODO: Shell escape
-      [ ":set -pgmF " <> selfExe <> " -optF " <> preprocessorIdentifier <> " " <> unwords (map (("-optF " <>) . _cabalPackageInfo_packageRoot) packageInfos)
+      [ ":set -F -pgmF " <> selfExe <> " -optF " <> preprocessorIdentifier <> " " <> unwords (map (("-optF " <>) . makeRelative pathBase . _cabalPackageInfo_packageFile) packageInfos)
       , ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
       , if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
       , "import qualified Obelisk.Run"
@@ -314,8 +314,7 @@ runGhcid root chdirToRoot dotGhci packages mcmd =
   where
     opts =
       [ "-W"
-      --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , "--command='ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> makeBaseGhciOptions dotGhci <> "' "
+      , "--command='ghci -ignore-dot-ghci " <> makeBaseGhciOptions dotGhci <> "' "
       , "--reload=config"
       , "--outputfile=ghcid-output.txt"
       ] <> testCmd
