@@ -6,6 +6,9 @@ module Obelisk.Command.Project
   , findProjectObeliskCommand
   , findProjectRoot
   , initProject
+  , nixShellRunConfig
+  , nixShellRunProc
+  , nixShellWithHoogle
   , nixShellWithPkgs
   , obeliskDirName
   , projectShell
@@ -253,50 +256,54 @@ toNixPath :: FilePath -> FilePath
 toNixPath root | "/" `isInfixOf` root = root
                | otherwise = "./" <> root
 
+nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
+nixShellRunConfig root isPure command = do
+  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+    proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
+  pure $ def
+    & nixShellConfig_pure .~ isPure
+    & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
+    & nixShellConfig_run .~ (command <&> \c -> mconcat
+      [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
+      , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
+      , c
+      ])
+
+nixShellRunProc :: NixShellConfig -> ProcessSpec
+nixShellRunProc cfg = setDelegateCtlc True $ proc "nix-shell" $ runNixShellConfig cfg
+
 nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Bool -> Map Text FilePath -> Maybe String -> m ()
 nixShellWithPkgs root isPure chdirToRoot packageNamesAndPaths command = do
   packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
-  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
-    proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  defShellConfig <- nixShellRunConfig root isPure command
   let setCwd_ = if chdirToRoot then setCwd (Just root) else id
-  nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd_ $ proc "nix-shell" $
-    runNixShellConfig $ def
-      & nixShellConfig_pure .~ isPure
-      & nixShellConfig_common . nixCmdConfig_target .~ (def
-        & target_path .~ Nothing
-        & target_expr ?~
-            "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (self: super: {\
-              \shellPackages = builtins.fromJSON pkgs; })\
-            \).project.shells.ghc"
-        )
-      & nixShellConfig_common . nixCmdConfig_args .~
-          [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
-          , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
-          ]
-      & nixShellConfig_run .~ (command <&> \c -> mconcat
-        [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
-        , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
-        , c
-        ])
+  (_, _, _, ph) <- createProcess_ "nixShellWithPkgs" $ setCwd_ $ nixShellRunProc $ defShellConfig
+    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
+        "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
+          \shellPackages = builtins.fromJSON pkgs;\
+        \})).project.shells.ghc"
+    & nixShellConfig_common . nixCmdConfig_args .~
+        [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
+        , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
+        ]
+  void $ liftIO $ waitForProcess ph
+
+nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
+nixShellWithHoogle root isPure shell' command = do
+  defShellConfig <- nixShellRunConfig root isPure command
+  (_, _, _, ph) <- createProcess_ "nixShellWithHoogle" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
+    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
+        "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
+          \userSettings = super.userSettings // { withHoogle = true; };\
+        \})).project.shells.${shell}"
+    & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
   void $ liftIO $ waitForProcess ph
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
-  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
-  nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setDelegateCtlc True $ setCwd (Just root) $ proc "nix-shell" $
-     [ "default.nix"] <>
-     ["--pure" | isPure] <>
-     [ "-A"
-     , "shells." <> shellName
-     ] <> case command of
-       Nothing -> []
-       Just c ->
-        -- TODO: Escape nixpkgsPath and nixRemote
-        [ "--run"
-        , "export NIX_PATH=nixpkgs=" <> T.unpack nixpkgsPath <> "; " <>
-          maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote <>
-          c
-        ]
+  defShellConfig <- nixShellRunConfig root isPure command
+  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
+    & nixShellConfig_common . nixCmdConfig_target . target_path ?~ "default.nix"
+    & nixShellConfig_common . nixCmdConfig_target . target_attr ?~ ("shells." <> shellName)
   void $ liftIO $ waitForProcess ph

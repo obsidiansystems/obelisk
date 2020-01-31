@@ -318,10 +318,27 @@ main = do
           void $ errExit False $ runOb ["thunk", "update", toTextIgnore dir, "--branch", "dumble-palooza"]
           checkDir dir >>= liftIO . assertEqual "" startingContents
 
+      describe "ob hoogle" $ {- NOT parallel -} do
+        it "starts a hoogle server on the given port" $ inTmpObInit $ \_ -> do
+          [p0] <- liftIO $ getFreePorts 1
+          maskExitSuccess $ runHandle "ob" ["hoogle", "--port", T.pack (show p0)] $ \stdout -> fix $ \loop -> do
+            ln <- liftIO $ T.hGetLine stdout
+            echo ln
+            let search = "Server starting on port " <> T.pack (show p0)
+            case search `T.isInfixOf` ln of
+              False -> loop -- keep waiting
+              True -> do
+                let req uri = liftIO $ HTTP.parseRequest uri >>= flip HTTP.httpLbs httpManager
+                req ("http://127.0.0.1:" <> show p0) >>= \r -> case HTTP.responseStatus r == HTTP.ok200 of
+                  False -> errorExit $ "Request to hoogle server failed: " <> T.pack (show r)
+                  True -> exit 0
+
+maskExitSuccess :: Sh () -> Sh ()
+maskExitSuccess = handle_sh (\case ExitSuccess -> pure (); e -> throw e)
 
 -- | Run `ob run` in the given directory (maximum of one level deep)
 testObRunInDir :: String -> [Text] -> Maybe FilePath -> HTTP.Manager -> Sh ()
-testObRunInDir executable extraArgs mdir httpManager = handle_sh (\case ExitSuccess -> pure (); e -> throw e) $ do
+testObRunInDir executable extraArgs mdir httpManager = maskExitSuccess $ do
   [p0, p1] <- liftIO $ getFreePorts 2
   let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
   writefile "config/common/route" $ uri p0
