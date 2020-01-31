@@ -445,7 +445,7 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = withSpinner
 
 setThunk :: MonadObelisk m => ThunkConfig -> FilePath -> GitSource -> String -> m ()
 setThunk thunkConfig target gs branch = do
-  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (Just $ T.pack branch) Nothing
+  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (_thunkConfig_private thunkConfig) (Just $ T.pack branch) Nothing
   overwriteThunk target newThunkPtr
   updateThunkToLatest (ThunkUpdateConfig Nothing thunkConfig) target
 
@@ -701,7 +701,7 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
   Right (ThunkData_Checkout _) -> do
     withSpinner' ("Packing thunk " <> T.pack thunkDir)
                  (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
-      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir
+      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir (_thunkConfig_private thunkConfig)
       callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
       liftIO $ createThunk thunkDir thunkPtr
       pure thunkPtr
@@ -714,8 +714,8 @@ modifyThunkPtrByConfig (ThunkConfig markPrivate') ptr = case markPrivate' of
       ThunkSource_GitHub s -> ThunkSource_GitHub $ s { _gitHubSource_private = markPrivate }
     }
 
-getThunkPtr :: forall m. MonadObelisk m => Bool -> FilePath -> m ThunkPtr
-getThunkPtr checkClean thunkDir = do
+getThunkPtr :: forall m. MonadObelisk m => Bool -> FilePath -> Maybe Bool -> m ThunkPtr
+getThunkPtr checkClean thunkDir mPrivate = do
   when checkClean $ ensureCleanGitRepo thunkDir True
     "thunk pack: thunk checkout contains unsaved modifications"
 
@@ -729,7 +729,7 @@ getThunkPtr checkClean thunkDir = do
         ] ++ T.lines stashOutput
     True -> return ()
 
-  -- Get current branch ``
+  -- Get current branch
   (mCurrentBranch, mCurrentCommit) <- do
     b <- listToMaybe
       <$> T.lines
@@ -831,7 +831,7 @@ getThunkPtr checkClean thunkDir = do
   remoteUri <- case parseGitUri remoteUri' of
     Nothing -> failWith $ "Could not identify git remote: " <> remoteUri'
     Just uri -> pure uri
-  uriThunkPtr remoteUri mCurrentBranch mCurrentCommit
+  uriThunkPtr remoteUri mPrivate mCurrentBranch mCurrentCommit
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
@@ -850,12 +850,12 @@ getLatestRev os = do
 -- performance. If that doesn't work (e.g. authentication issue), we fall back
 -- on just doing things the normal way for git repos in general, and save it as
 -- a regular git thunk.
-uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Text -> Maybe Text -> m ThunkPtr
-uriThunkPtr uri mbranch mcommit = do
+uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Bool -> Maybe Text -> Maybe Text -> m ThunkPtr
+uriThunkPtr uri mPrivate mbranch mcommit = do
   commit <- case mcommit of
     Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
     (Just c) -> return c
-  (src, rev) <- uriToThunkSource uri mbranch >>= \case
+  (src, rev) <- uriToThunkSource uri mPrivate mbranch >>= \case
     ThunkSource_GitHub s -> do
       rev <- runExceptT $ githubThunkRev s commit
       case rev of
@@ -878,8 +878,8 @@ uriThunkPtr uri mbranch mcommit = do
 -- If the thunk is a GitHub thunk and fails, we do *not* fall back like with
 -- `uriThunkPtr`. Unlike a plain URL, a thunk src explicitly states which method
 -- should be employed, and so we respect that.
-uriToThunkSource :: MonadObelisk m => GitUri -> Maybe Text -> m ThunkSource
-uriToThunkSource (GitUri u)
+uriToThunkSource :: MonadObelisk m => GitUri -> Maybe Bool -> Maybe Text -> m ThunkSource
+uriToThunkSource (GitUri u) mPrivate
   | Right uriAuth <- URI.uriAuthority u
   , Just scheme <- URI.unRText <$> URI.uriScheme u
   , case scheme of
@@ -892,7 +892,7 @@ uriToThunkSource (GitUri u)
         && URI.unRText (URI.authHost uriAuth) == "github.com"
   , Just (_, owner :| [repoish]) <- URI.uriPath u
   = \mbranch -> do
-      isPrivate <- guessGitRepoIsPrivate $ GitUri u
+      isPrivate <- getIsPrivate
       pure $ ThunkSource_GitHub $ GitHubSource
         { _gitHubSource_owner = N $ URI.unRText owner
         , _gitHubSource_repo = N $ let
@@ -903,13 +903,15 @@ uriToThunkSource (GitUri u)
         }
 
   | otherwise = \mbranch -> do
-      isPrivate <- guessGitRepoIsPrivate $ GitUri u
+      isPrivate <- getIsPrivate
       pure $ ThunkSource_Git $ GitSource
         { _gitSource_url = GitUri u
         , _gitSource_branch = N <$> mbranch
         , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
         , _gitSource_private = isPrivate
         }
+  where
+    getIsPrivate = maybe (guessGitRepoIsPrivate $ GitUri u) pure mPrivate
 
 guessGitRepoIsPrivate :: MonadObelisk m => GitUri -> m Bool
 guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
