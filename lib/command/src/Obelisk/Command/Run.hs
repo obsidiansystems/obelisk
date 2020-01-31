@@ -315,10 +315,15 @@ runGhcid root chdirToRoot dotGhci packages mcmd =
     opts =
       [ "-W"
       , "--command='ghci -ignore-dot-ghci " <> makeBaseGhciOptions dotGhci <> "' "
-      , "--reload=config"
       , "--outputfile=ghcid-output.txt"
-      ] <> testCmd
+      ] <> map (\x -> "--reload='" <> x <> "'") reloadFiles
+        <> map (\x -> "--restart='" <> x <> "'") restartFiles
+        <> testCmd
     testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
+
+    adjustRoot x = if chdirToRoot then makeRelative root x else x
+    reloadFiles = map adjustRoot [root </> "config"]
+    restartFiles = map (adjustRoot . _cabalPackageInfo_packageFile) packages
 
 makeBaseGhciOptions :: FilePath -> String
 makeBaseGhciOptions dotGhci =
