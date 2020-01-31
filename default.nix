@@ -71,6 +71,8 @@ let
           librarySystemDepends = [
             pkgs.cabal-install
             pkgs.coreutils
+            pkgs.git
+            pkgs.nix
           ];
         };
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
@@ -130,8 +132,7 @@ in rec {
     set -euo pipefail
 
     PATH="${command}/bin:$PATH"
-    export OBELISK_IMPL="$(mktemp -d)"
-    ${pkgs.git}/bin/git clone file://${pathGit} $OBELISK_IMPL
+    cd ${./.}
     "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
   '';
   skeleton = pkgs.runCommand "skeleton" {
