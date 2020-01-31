@@ -49,6 +49,7 @@ import System.IO.Temp (withSystemTempDirectory)
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr)
 import Obelisk.Command.Project (obeliskDirName, toObeliskDir, withProjectRoot, nixShellWithPkgs, toNixPath)
+import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath, nixBuildExePath, nixExePath)
 
 data CabalPackageInfo = CabalPackageInfo
@@ -131,7 +132,12 @@ getLocalPkgs root = do
   let
     -- We ignore any path that has ".obelisk" in it, but keep the root ".obelisk" paths
     packagePaths = filter (not . isIgnored) $ map T.unpack $ T.lines $ T.strip $ T.pack out
-    isIgnored path = obeliskDirName `elem` dropPrefix (splitPath $ toObeliskDir root) (splitPath path)
+    isIgnored path =
+         obeliskDirName `elem` dropPrefix (splitPath $ toObeliskDir root) pathSegments
+      && attrCacheFileName `notElem` pathSegments
+      where
+        pathSegments = splitPath path
+
   pure packagePaths
 
 data GuessPackageFileError = GuessPackageFileError_Ambiguous [FilePath] | GuessPackageFileError_NotFound
