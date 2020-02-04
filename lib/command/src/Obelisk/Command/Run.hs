@@ -265,7 +265,7 @@ withGhciScript opts pkgs f = do
             xs -> ":set " <> intercalate " " xs
         , extensionsLine
         , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
-        , ":load " <> intercalate " " (["Frontend", "Backend"] <> runOptsModulesToLoad opts)
+        , ":load " <> intercalate " " ("Backend" : runOptsModulesToLoad opts)
         , "import Obelisk.Run"
         , "import Backend (backend, frontend)"
         ] ++ fmap ("import qualified " <>) (runOptsModulesToLoad opts)
