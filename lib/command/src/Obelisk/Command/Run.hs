@@ -102,8 +102,8 @@ run = withProjectRoot "." $ \root -> do
       [ "Obelisk.Run.run"
       , show freePort
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
-      , "Backend.backend"
-      , "Frontend.frontend"
+      , "backend"
+      , "frontend"
       ]
 
 runRepl :: MonadObelisk m => m ()
@@ -274,7 +274,6 @@ withGhciScript packageInfos pathBase f = do
     modulesToLoad = mconcat
       [ [ "Obelisk.Run" | "obelisk-run" `Set.member` packageNames ]
       , [ "Backend" | "backend" `Set.member` packageNames ]
-      , [ "Frontend" | "frontend" `Set.member` packageNames ]
       ]
     dotGhci = unlines
       -- TODO: Shell escape
@@ -282,8 +281,7 @@ withGhciScript packageInfos pathBase f = do
       , ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
       , if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
       , "import qualified Obelisk.Run"
-      , "import qualified Frontend"
-      , "import qualified Backend"
+      , "import Backend (backend, frontend)"
       ]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"

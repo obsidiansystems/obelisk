@@ -1,6 +1,7 @@
-module Backend where
+module Backend (backend, frontend) where
 
 import Common.Route
+import Frontend (frontend)
 import Obelisk.Backend
 
 backend :: Backend BackendRoute FrontendRoute
