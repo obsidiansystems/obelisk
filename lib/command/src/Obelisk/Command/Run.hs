@@ -117,10 +117,7 @@ runOptsBackend opts
   | otherwise = pure Nothing
 
 runOptsModulesToLoad :: RunOpts -> [String]
-runOptsModulesToLoad opts = mconcat
-  [ ["Frontend", "Backend"]
-  , snd <$> _replOpts_import (_runOpts_replOpts opts)
-  ]
+runOptsModulesToLoad opts = snd <$> _replOpts_import (_runOpts_replOpts opts)
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
 run :: RunOpts -> ObeliskT IO ()
@@ -160,8 +157,8 @@ run opts = do
       [ "Obelisk.Run.run"
       , show freePort
       , "(runServeAsset " ++ show assets ++ ")"
-      , fromMaybe "Backend.backend" mBackend
-      , fromMaybe "Frontend.frontend" mFrontend
+      , fromMaybe "backend" mBackend
+      , fromMaybe "frontend" mFrontend
       ]
 
 runRepl :: MonadObelisk m => RunOpts -> m ()
@@ -268,8 +265,9 @@ withGhciScript opts pkgs f = do
             xs -> ":set " <> intercalate " " xs
         , extensionsLine
         , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
-        , ":load " <> intercalate " " (runOptsModulesToLoad opts)
+        , ":load " <> intercalate " " (["Frontend", "Backend"] <> runOptsModulesToLoad opts)
         , "import Obelisk.Run"
+        , "import Backend (backend, frontend)"
         ] ++ fmap ("import qualified " <>) (runOptsModulesToLoad opts)
   warnDifferentLanguages language
   withSystemTempDirectory "ob-ghci" $ \fp -> do
