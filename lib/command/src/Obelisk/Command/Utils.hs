@@ -44,6 +44,9 @@ nixExePath = $(staticWhich "nix")
 nixBuildExePath :: FilePath
 nixBuildExePath = $(staticWhich "nix-build")
 
+nixShellExePath :: FilePath
+nixShellExePath = $(staticWhich "nix-shell")
+
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> Bool -> m Bool
 checkGitCleanStatus repo withIgnored = do

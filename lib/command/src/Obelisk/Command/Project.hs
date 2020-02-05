@@ -50,7 +50,7 @@ import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (nixExePath)
+import Obelisk.Command.Utils (nixExePath, nixShellExePath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -253,51 +253,48 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
 -- @../@. This will make a 'FilePath' that can be embedded in a Nix
 -- expression.
 toNixPath :: FilePath -> FilePath
-toNixPath root | "/" `isInfixOf` root = root
-               | otherwise = "./" <> root
+toNixPath p | "/" `isInfixOf` p = p
+            | otherwise = "./" <> p
 
 nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
 nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
-    proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+    proc nixExePath ["eval", "(import " <> toNixPath (makeRelative root (toImplDir root)) <> " {}).nixpkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   pure $ def
     & nixShellConfig_pure .~ isPure
-    & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
     & nixShellConfig_run .~ (command <&> \c -> mconcat
       [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
       , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
       , c
       ])
 
+-- TODO: Should we really be setting 'setDelegateCtlc' for every nix-shell?
 nixShellRunProc :: NixShellConfig -> ProcessSpec
-nixShellRunProc cfg = setDelegateCtlc True $ proc "nix-shell" $ runNixShellConfig cfg
+nixShellRunProc cfg = setDelegateCtlc True $ proc nixShellExePath $ runNixShellConfig cfg
 
 nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Bool -> Map Text FilePath -> Maybe String -> m ()
 nixShellWithPkgs root isPure chdirToRoot packageNamesAndPaths command = do
   packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
   defShellConfig <- nixShellRunConfig root isPure command
   let setCwd_ = if chdirToRoot then setCwd (Just root) else id
-  (_, _, _, ph) <- createProcess_ "nixShellWithPkgs" $ setCwd_ $ nixShellRunProc $ defShellConfig
-    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
-          \shellPackages = builtins.fromJSON pkgs;\
-        \})).project.shells.ghc"
-    & nixShellConfig_common . nixCmdConfig_args .~
-        [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
-        , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
-        ]
+  (_, _, _, ph) <- createProcess_ "nixShellWithPkgs" $ setCwd_ $ nixShellRunProc $ defShellConfig & setNixShellExpr
+    "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
+      \shellPackages = builtins.fromJSON pkgs;\
+    \})).project.shells.ghc"
+    [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
+    , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
+    ]
   void $ liftIO $ waitForProcess ph
 
 nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 nixShellWithHoogle root isPure shell' command = do
   defShellConfig <- nixShellRunConfig root isPure command
-  (_, _, _, ph) <- createProcess_ "nixShellWithHoogle" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
-    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
-          \userSettings = super.userSettings // { withHoogle = true; };\
-        \})).project.shells.${shell}"
-    & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
+  (_, _, _, ph) <- createProcess_ "nixShellWithHoogle" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig & setNixShellExpr
+    "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
+      \userSettings = super.userSettings // { withHoogle = true; };\
+    \})).project.shells.${shell}"
+    [strArg "shell" shell']
   void $ liftIO $ waitForProcess ph
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()

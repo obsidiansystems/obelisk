@@ -24,6 +24,7 @@ module Obelisk.Command.Nix
   , nixShellConfig_common
   , nixShellConfig_pure
   , nixShellConfig_run
+  , setNixShellExpr
   , OutLink (..)
   , Target (..)
   , target_attr
@@ -180,6 +181,13 @@ data NixCmd
 instance Default NixCmd where
   def = NixCmd_Build def
 
+-- | Configures a 'NixShellConfig' to use '-E' for a given expression along with any number of @--arg/--argstr@ argmuments.
+setNixShellExpr :: String -> [Arg] -> NixShellConfig -> NixShellConfig
+setNixShellExpr expr args x = x
+  & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing & target_expr ?~ expr)
+  & nixShellConfig_common . nixCmdConfig_args .~ args
+
+-- | Renders a 'NixShellConfig' to its list of arguments ready for forking a subprocess.
 runNixShellConfig :: NixShellConfig -> [String]
 runNixShellConfig cfg = mconcat
   [ runNixCommonConfig $ cfg ^. nixCommonConfig
