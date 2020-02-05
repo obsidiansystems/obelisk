@@ -8,6 +8,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Add local unpacked packages to the `ob run`, `ob watch`, and `ob repl` sessions. Any `.cabal` or hpack package inside the current obelisk project will be loaded into the session. For `ob run`/`ob watch` this means the session will automatically reload when you save a source file in any of those packages. For `ob repl` it means that `:r` will reload changes to any of those packages. There are some edge cases where this integration is still rough. Report any issues you encounter. ([#489](https://github.com/obsidiansystems/obelisk/pull/489))
 * Add `ob hoogle` command to start a local [Hoogle](https://hoogle.haskell.org/) server for the project. ([#628](https://github.com/obsidiansystems/obelisk/pull/628))
 * `ob thunk pack` will now attempt to automatically detect if the thunk is a private or public repo. To avoid this detection, specify `--private` or `--public` manually. ([#607](https://github.com/obsidiansystems/obelisk/pull/607))
+* Fixed a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave exactly like `<a href="...">` when run by JavaScript. These functions now scroll to the top of the page when the link is clicked. ([#540](https://github.com/obsidiansystems/obelisk/pull/540))
 
 ## v0.4.0.0 - 2020-01-10
 

@@ -7,15 +7,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -64,7 +60,7 @@ import Prelude hiding ((.), id)
 import Obelisk.Route
 
 import Control.Category (Category (..), (.))
-import Control.Category.Cartesian
+import Control.Category.Cartesian ((&&&))
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
 import Control.Monad ((<=<))
 import Control.Monad.Fix
@@ -94,7 +90,9 @@ import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
 import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
 import Reflex.Dom.Core
+import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
+import qualified GHCJS.DOM.Window as Window
 import Network.URI
 import Data.Maybe (fromMaybe)
 import qualified Data.List as L
@@ -511,6 +509,22 @@ runRouteViewT routeEncoder switchover useHash a = do
 -- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
 -- contexts, this widget falls back to using @href@s to control navigation
 routeLink
+  :: forall t m a route js.
+     ( DomBuilder t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender js t m
+     )
+  => route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+routeLink r w = do
+  (e, a) <- routeLinkImpl r w
+  scrollToTop e
+  return a
+
+-- | Raw implementation of 'routeLink'. Does not scroll to the top of the page on clicks.
+routeLinkImpl
   :: forall t m a route.
      ( DomBuilder t m
      , RouteToUrl route m
@@ -518,33 +532,82 @@ routeLink
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
-  -> m a
-routeLink r w = do
+  -> m (Event t (), a)
+routeLinkImpl r w = do
   enc <- askRouteToUrl
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
   setRoute $ r <$ domEvent Click e
-  return a
+  return (domEvent Click e, a)
+
+scrollToTop :: forall m t js. (Prerender js t m, Monad m) => Event t () -> m ()
+scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.currentWindow >>= \case
+  Nothing -> pure ()
+  Just win -> Window.scrollTo win 0 0
 
 -- | Like 'routeLinkDynAttr' but without custom attributes.
 dynRouteLink
+  :: forall t m a route js.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender js t m
+     )
+  => Dynamic t route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+dynRouteLink r w = do
+  (e, a) <- dynRouteLinkImpl r w
+  scrollToTop e
+  return a
+
+-- | Raw implementation of 'dynRouteLink'. Does not scroll to the top of the page on clicks.
+dynRouteLinkImpl
   :: forall t m a route.
      ( DomBuilder t m
      , PostBuild t m
-     , RouteToUrl (R route) m
-     , SetRoute t (R route) m
+     , RouteToUrl route m
+     , SetRoute t route m
      )
-  => Dynamic t (R route) -- ^ Target route
-  -> m a -- ^ Child widget of the @a@ element
-  -> m a
-dynRouteLink = routeLinkDynAttr mempty
+  => Dynamic t route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m (Event t (), a)
+dynRouteLinkImpl dr w = do
+  enc <- askRouteToUrl
+  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_modifyAttributes .~ er
+  (e, a) <- element "a" cfg w
+  let clk = domEvent Click e
+  setRoute $ tag (current dr) clk
+  return (clk, a)
 
 -- | An @a@-tag link widget that, when clicked, sets the route to current value of the
 -- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
 -- build is used so the link still works like 'routeLink'.
 routeLinkDynAttr
+  :: forall t m a route js.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     , Prerender js t m
+     )
+  => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
+  -> Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget of the @a@ element
+  -> m a
+routeLinkDynAttr dAttr dr w = do
+  (e, a) <- routeLinkDynAttrImpl dAttr dr w
+  scrollToTop e
+  return a
+
+-- | Raw implementation of 'routeLinkDynAttr'. Does not scroll to the top of the page on clicks.
+routeLinkDynAttrImpl
   :: forall t m a route.
      ( DomBuilder t m
      , PostBuild t m
@@ -554,16 +617,17 @@ routeLinkDynAttr
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route
   -> m a -- ^ Child widget of the @a@ element
-  -> m a
-routeLinkDynAttr dAttr dr w = do
+  -> m (Event t (), a)
+routeLinkDynAttrImpl dAttr dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  setRoute $ tag (current dr) $ domEvent Click e
-  return a
+  let clk = domEvent Click e
+  setRoute $ tag (current dr) clk
+  return (clk, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
