@@ -7,15 +7,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -53,10 +49,8 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
-  , routeLinkScrollToTop
   , routeLinkDynAttr
   , dynRouteLink
-  , dynRouteLinkScrollToTop
   , adaptedUriPath
   , setAdaptedUriPath
   ) where
@@ -515,19 +509,7 @@ runRouteViewT routeEncoder switchover useHash a = do
 -- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
 -- contexts, this widget falls back to using @href@s to control navigation
 routeLink
-  :: forall t m a route.
-     ( DomBuilder t m
-     , RouteToUrl route m
-     , SetRoute t route m
-     )
-  => route -- ^ Target route
-  -> m a -- ^ Child widget
-  -> m a
-routeLink r w = snd <$> routeLinkImpl r w
-
--- | Like 'routeLink' but scrolls to the top of the page.
-routeLinkScrollToTop
-  :: forall js t m a route.
+  :: forall t m a route js.
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
@@ -536,11 +518,12 @@ routeLinkScrollToTop
   => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-routeLinkScrollToTop r w = do
+routeLink r w = do
   (e, a) <- routeLinkImpl r w
   scrollToTop e
   return a
 
+-- | Raw implementation of 'routeLink'. Does not scroll to the top of the page on clicks.
 routeLinkImpl
   :: forall t m a route.
      ( DomBuilder t m
@@ -559,14 +542,14 @@ routeLinkImpl r w = do
   setRoute $ r <$ domEvent Click e
   return (domEvent Click e, a)
 
-scrollToTop :: (Prerender js t m, Monad m) => Event t () -> m ()
+scrollToTop :: forall m t js. (Prerender js t m, Monad m) => Event t () -> m ()
 scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.currentWindow >>= \case
-    Nothing -> pure ()
-    Just win -> Window.scrollTo win 0 0
+  Nothing -> pure ()
+  Just win -> Window.scrollTo win 0 0
 
--- | Like 'dynRouteLink' but scrolls to the top of the page.
-dynRouteLinkScrollToTop
-  :: forall js t m a route.
+-- | Like 'routeLinkDynAttr' but without custom attributes.
+dynRouteLink
+  :: forall t m a route js.
      ( DomBuilder t m
      , PostBuild t m
      , RouteToUrl route m
@@ -576,11 +559,12 @@ dynRouteLinkScrollToTop
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-dynRouteLinkScrollToTop r w = do
+dynRouteLink r w = do
   (e, a) <- dynRouteLinkImpl r w
   scrollToTop e
   return a
 
+-- | Raw implementation of 'dynRouteLink'. Does not scroll to the top of the page on clicks.
 dynRouteLinkImpl
   :: forall t m a route.
      ( DomBuilder t m
@@ -598,26 +582,32 @@ dynRouteLinkImpl dr w = do
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  setRoute $ tag (current dr) $ domEvent Click e
-  return (domEvent Click e, a)
-
--- | Like 'routeLinkDynAttr' but without custom attributes.
-dynRouteLink
-  :: forall t m a route.
-     ( DomBuilder t m
-     , PostBuild t m
-     , RouteToUrl (R route) m
-     , SetRoute t (R route) m
-     )
-  => Dynamic t (R route) -- ^ Target route
-  -> m a -- ^ Child widget of the @a@ element
-  -> m a
-dynRouteLink = routeLinkDynAttr mempty
+  let clk = domEvent Click e
+  setRoute $ tag (current dr) clk
+  return (clk, a)
 
 -- | An @a@-tag link widget that, when clicked, sets the route to current value of the
 -- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
 -- build is used so the link still works like 'routeLink'.
 routeLinkDynAttr
+  :: forall t m a route js.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     , Prerender js t m
+     )
+  => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
+  -> Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget of the @a@ element
+  -> m a
+routeLinkDynAttr dAttr dr w = do
+  (e, a) <- routeLinkDynAttrImpl dAttr dr w
+  scrollToTop e
+  return a
+
+-- | Raw implementation of 'routeLinkDynAttr'. Does not scroll to the top of the page on clicks.
+routeLinkDynAttrImpl
   :: forall t m a route.
      ( DomBuilder t m
      , PostBuild t m
@@ -627,16 +617,17 @@ routeLinkDynAttr
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route
   -> m a -- ^ Child widget of the @a@ element
-  -> m a
-routeLinkDynAttr dAttr dr w = do
+  -> m (Event t (), a)
+routeLinkDynAttrImpl dAttr dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  setRoute $ tag (current dr) $ domEvent Click e
-  return a
+  let clk = domEvent Click e
+  setRoute $ tag (current dr) clk
+  return (clk, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
