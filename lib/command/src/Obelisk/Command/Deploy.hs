@@ -275,7 +275,7 @@ instance ToJSON KeytoolConfig
 createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
 createKeystore root config = do
   let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
-  callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["default.nix", "-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
+  callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
   where
     keytoolCmd = processToShellString "keytool"
       [ "-genkeypair", "-noprompt"
