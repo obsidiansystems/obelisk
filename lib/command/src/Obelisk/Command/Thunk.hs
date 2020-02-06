@@ -937,7 +937,7 @@ guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
     urisToTry = nubOrd $
       -- Include the original URI if it isn't using SSH because SSH will certainly fail.
       [uri | fmap URI.unRText (URI.uriScheme (unGitUri uri)) /= Just "ssh"] <>
-      [changeScheme "https" uri, changeScheme "http" uri, changeScheme "git" uri]
+      [changeScheme "https" uri, changeScheme "http" uri]
     changeScheme scheme (GitUri u) = GitUri $ u
       { URI.uriScheme = URI.mkScheme scheme
       , URI.uriAuthority = (\x -> x { URI.authUserInfo = Nothing }) <$> URI.uriAuthority u
