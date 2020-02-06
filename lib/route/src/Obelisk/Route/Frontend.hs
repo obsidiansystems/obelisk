@@ -53,8 +53,11 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , routeLink'
   , routeLinkDynAttr
+  , routeLinkDynAttr'
   , dynRouteLink
+  , dynRouteLink'
   , adaptedUriPath
   , setAdaptedUriPath
   ) where
@@ -64,7 +67,7 @@ import Prelude hiding ((.), id)
 import Obelisk.Route
 
 import Control.Category (Category (..), (.))
-import Control.Category.Cartesian
+import Control.Category.Cartesian hiding (snd)
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
 import Control.Monad ((<=<))
 import Control.Monad.Fix
@@ -519,14 +522,26 @@ routeLink
   => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
-routeLink r w = do
+routeLink r w = snd <$> routeLink' r w
+
+-- | Like 'routeLink', but also returns the events associated with the link.
+routeLink'
+  :: forall t m a route.
+     ( DomBuilder t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     )
+  => route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m (Element EventResult (DomBuilderSpace m) t, a)
+routeLink' r w = do
   enc <- askRouteToUrl
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
   setRoute $ r <$ domEvent Click e
-  return a
+  return (e, a)
 
 -- | Like 'routeLinkDynAttr' but without custom attributes.
 dynRouteLink
@@ -540,6 +555,19 @@ dynRouteLink
   -> m a -- ^ Child widget of the @a@ element
   -> m a
 dynRouteLink = routeLinkDynAttr mempty
+
+-- | Like 'routeLinkDynAttr' but without custom attributes and also returns the events associated with the link.
+dynRouteLink'
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m (Element EventResult (DomBuilderSpace m) t, a)
+dynRouteLink' = routeLinkDynAttr' mempty
 
 -- | An @a@-tag link widget that, when clicked, sets the route to current value of the
 -- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
@@ -555,7 +583,21 @@ routeLinkDynAttr
   -> Dynamic t (R route) -- ^ Target route
   -> m a -- ^ Child widget of the @a@ element
   -> m a
-routeLinkDynAttr dAttr dr w = do
+routeLinkDynAttr dAttr dr w = snd <$> routeLinkDynAttr' dAttr dr w
+
+-- | Like 'routeLinkDynAttr' except that it also returns the event associated with the link
+routeLinkDynAttr'
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     )
+  => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
+  -> Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget of the @a@ element
+  -> m (Element EventResult (DomBuilderSpace m) t, a)
+routeLinkDynAttr' dAttr dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
@@ -563,7 +605,7 @@ routeLinkDynAttr dAttr dr w = do
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
   setRoute $ tag (current dr) $ domEvent Click e
-  return a
+  return (e, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
