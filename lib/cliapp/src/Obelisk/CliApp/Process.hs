@@ -22,6 +22,7 @@ module Obelisk.CliApp.Process
   , readCreateProcessWithExitCode
   , readProcessAndLogOutput
   , readProcessAndLogStderr
+  , readProcessJSONAndLogStderr
   , reconstructCommand
   , setCwd
   , setDelegateCtlc
@@ -52,6 +53,7 @@ import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
 import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), std_err, std_out, waitForProcess)
 import qualified System.Process as Process
+import qualified Data.Aeson as Aeson
 
 import Control.Monad.Log (Severity (..))
 import Obelisk.CliApp.Logging (putLog, putLogRaw)
@@ -100,6 +102,19 @@ readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
     streamToLog =<< liftIO (streamHandle sev err)
   liftIO $ T.decodeUtf8With lenientDecode <$> BS.hGetContents out
+
+readProcessJSONAndLogStderr
+  :: (Aeson.FromJSON a, MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
+  => Severity -> ProcessSpec -> m a
+readProcessJSONAndLogStderr sev process = do
+  (out, _err) <- withProcess process $ \_out err -> do
+    streamToLog =<< liftIO (streamHandle sev err)
+  json <- liftIO $ BS.hGetContents out
+  case Aeson.eitherDecodeStrict json of
+    Right a -> pure a
+    Left err -> do
+      putLog Error $ "Could not decode process output as JSON: " <> T.pack err
+      throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess process) 0
 
 readCreateProcessWithExitCode
   :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)

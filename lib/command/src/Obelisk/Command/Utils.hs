@@ -21,8 +21,6 @@ import Data.Maybe (maybeToList)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import System.Directory (canonicalizePath)
-import System.Environment (getExecutablePath)
 import System.Exit (ExitCode)
 import System.Which (staticWhich)
 import Text.Megaparsec as MP
@@ -31,11 +29,20 @@ import Text.Megaparsec.Char as MP
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 
-getObeliskExe :: IO FilePath
-getObeliskExe = getExecutablePath >>= canonicalizePath
-
 cp :: FilePath
 cp = $(staticWhich "cp")
+
+ghcidExePath :: FilePath
+ghcidExePath = $(staticWhich "ghcid")
+
+findExePath :: FilePath
+findExePath = $(staticWhich "find")
+
+nixExePath :: FilePath
+nixExePath = $(staticWhich "nix")
+
+nixBuildExePath :: FilePath
+nixBuildExePath = $(staticWhich "nix-build")
 
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> Bool -> m Bool
@@ -81,8 +88,9 @@ isolateGitProc = setEnvOverride (overrides <>)
     overrides = M.fromList
       [ ("HOME", "/dev/null")
       , ("GIT_CONFIG_NOSYSTEM", "1")
-      , ("GIT_TERMINAL_PROMPT", "0")
-      , ("GIT_SSH_COMMAND", "ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no -o GSSAPIAuthentication=no")
+      , ("GIT_TERMINAL_PROMPT", "0") -- git 2.3+
+      , ("GIT_ASKPASS", "echo") -- pre git 2.3 to just use empty password
+      , ("GIT_SSH_COMMAND", "ssh -o PreferredAuthentications password -o PubkeyAuthentication no -o GSSAPIAuthentication no")
       ]
 
 -- | Recursively copy a directory using `cp -a` -- TODO: Should use -rT instead of -a
