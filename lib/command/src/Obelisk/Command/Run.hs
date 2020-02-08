@@ -154,11 +154,11 @@ run opts = do
     mFrontend <- runOptsFrontend opts
     mBackend <- runOptsBackend opts
     runGhcid dotGhciPath $ Just $ unwords
-      [ "Obelisk.Run.run"
+      [ "obRunEntrypoint"
+      , "$"
+      , "Obelisk.Run.run"
       , show freePort
       , "(runServeAsset " ++ show assets ++ ")"
-      , fromMaybe "backend" mBackend
-      , fromMaybe "frontend" mFrontend
       ]
 
 runRepl :: MonadObelisk m => RunOpts -> m ()
@@ -267,7 +267,7 @@ withGhciScript opts pkgs f = do
         , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
         , ":load " <> intercalate " " ("Backend" : runOptsModulesToLoad opts)
         , "import Obelisk.Run"
-        , "import Backend (backend, frontend)"
+        , "import Backend (obRunEntrypoint)"
         ] ++ fmap ("import qualified " <>) (runOptsModulesToLoad opts)
   warnDifferentLanguages language
   withSystemTempDirectory "ob-ghci" $ \fp -> do
