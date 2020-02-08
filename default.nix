@@ -113,7 +113,6 @@ in rec {
   inherit reflex-platform;
   inherit (reflex-platform) nixpkgs pinBuildInputs;
   inherit (nixpkgs) lib;
-  inherit mkAssets;
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
@@ -355,11 +354,10 @@ in rec {
       linuxExe = serverOn "x86_64-linux";
       dummyVersion = "Version number is only available for deployments";
     in projectOut system // {
+      inherit mkAssets;
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn system dummyVersion;
-
-      mkAssets = mkAssets;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base + "/.obelisk/impl") {};
