@@ -79,7 +79,7 @@ import qualified System.Which
 run
   :: Int -- ^ Port to run the backend
   -> ([Text] -> Snap ()) -- ^ Static asset handler
-  -> Backend fullRoute frontendRoute -- ^ Backend
+  -> Backend backendRoute frontendRoute -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
 run port serveStaticAsset backend frontend = do
