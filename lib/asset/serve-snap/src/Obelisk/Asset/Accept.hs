@@ -136,16 +136,16 @@ qvalue = do
   skipMany lws
   q0 <|> q1
   where q0 = do
-          char '0'
+          _ <- char '0'
           decimals <- option [] $ do
-            char '.'
+            _ <- char '.'
             starRule (Just 0) (Just numAllowedDigits) digit
           return $ QValue $ MkFixed $ fromIntegral $ (read ('0' : decimals) :: Int) * 10 ^ (numAllowedDigits - length decimals)
         q1 = do
-          char '1'
+          _ <- char '1'
           option () $ do
-            char '.'
-            starRule (Just 0) (Just numAllowedDigits) $ char '0'
+            _ <- char '.'
+            _ <- starRule (Just 0) (Just numAllowedDigits) $ char '0'
             return ()
           return $ QValue 1
         numAllowedDigits :: Int
@@ -232,7 +232,7 @@ hashRule minNum maxNum element = do
 lws :: Parser ()
 lws = do
   option () $ cr >> lf
-  starRule (Just 1) Nothing $ sp <|> ht
+  _ <- starRule (Just 1) Nothing $ sp <|> ht
   return ()
 
 -- | See http://www.w3.org/Protocols/rfc2616/rfc2616-sec2.html#sec2.2

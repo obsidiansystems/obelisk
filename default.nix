@@ -2,6 +2,7 @@
 , profiling ? false
 , iosSdkVersion ? "10.2"
 , config ? {}
+, reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
   cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
@@ -16,7 +17,7 @@ let
     openssh
   ];
 
-  getReflexPlatform = sys: import ./dep/reflex-platform {
+  getReflexPlatform = sys: reflex-platform-func {
     inherit iosSdkVersion config;
     system = sys;
     enableLibraryProfiling = profiling;
@@ -34,10 +35,7 @@ let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         haskellLib = pkgs.haskell.lib;
       in {
-        hnix = haskellLib.overrideCabal (self.callHackage "hnix" "0.6.1" { these = self.these_0_8; }) (_: {
-          jailbreak = true;
-          doCheck = false;
-        });
+        hnix = haskellLib.dontCheck (haskellLib.doJailbreak (self.callCabal2nix "hnix" (hackGet dep/hnix) {}));
         hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
 
         ghcid = self.callCabal2nix "ghcid" (hackGet ./dep/ghcid) {};
@@ -50,6 +48,8 @@ let
         pkgs = self.callPackage ({ pkgs }: pkgs) {};
         onLinux = pkg: f: if pkgs.stdenv.isLinux then f pkg else pkg;
       in {
+        shelly = self.callHackage "shelly" "1.9.0" {};
+
         obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
 
         obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (cleanSource ./lib/asset/manifest) {};
@@ -68,7 +68,14 @@ let
           haskellLib.overrideCabal pkg (drv: { librarySystemDepends = [ pkgs.iproute ]; })
         );
         obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
-        obelisk-selftest = self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {};
+        obelisk-selftest = haskellLib.overrideCabal (self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {}) {
+          librarySystemDepends = [
+            pkgs.cabal-install
+            pkgs.coreutils
+            pkgs.git
+            pkgs.nix
+          ];
+        };
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
         tabulation = self.callCabal2nix "tabulation" (cleanSource ./lib/tabulation) {};
       })
@@ -117,19 +124,18 @@ in rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  obeliskEnvs = ghcObeliskEnvs;
+  obeliskEnvs = pkgs.lib.filterAttrs (k: _: pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs);
 
   selftest = pkgs.writeScript "selftest" ''
-    #!/usr/bin/env bash
+    #!${pkgs.runtimeShell}
     set -euo pipefail
 
     PATH="${command}/bin:$PATH"
-    export OBELISK_IMPL="${hackGet ./.}"
+    cd ${./.}
     "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
   '';
-  #TODO: Why can't I build ./skeleton directly as a derivation? `nix-build -E ./.` doesn't work
   skeleton = pkgs.runCommand "skeleton" {
     dir = builtins.filterSource (path: type: builtins.trace path (baseNameOf path != ".obelisk")) ./skeleton;
   } ''
@@ -151,6 +157,7 @@ in rec {
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
     mkdir $out
     cd $out
+    # TODO profiling + static shouldn't break and need an ad-hoc workaround like that
     ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
     ${if optimizationLevel == null then ''
       ln -s all.unminified.js all.js
@@ -233,7 +240,7 @@ in rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${haskellLib.justStaticExecutables backend}"/bin/* $out/
+      ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
       echo ${version} > $out/version
@@ -248,115 +255,134 @@ in rec {
         imports = [
           (serverModules.mkBaseEc2 args)
           (serverModules.mkObeliskApp args)
-          ./acme.nix
-        ];
-        disabledModules = [
-          (pkgs.path + /nixos/modules/security/acme.nix)
-        ];
-        nixpkgs.overlays = [
-          (self: super: let
-            nixos1909 = import (hackGet ./dep/nixpkgs-19.09) {};
-          in {
-            inherit (nixos1909) simp_le;
-          })
         ];
       };
     };
 
-
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
-  project = base: projectDefinition:
-    let projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
-          let mkProject = { android ? null #TODO: Better error when missing
-                          , ios ? null #TODO: Better error when missing
-                          , packages ? {}
-                          , overrides ? _: _: {}
-                          , staticFiles ? base + /static
-                          , tools ? _: []
-                          , shellToolOverrides ? _: _: {}
-                          , withHoogle ? false # Setting this to `true` makes shell reloading far slower
-                          , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
-                          }:
-              let frontendName = "frontend";
-                  backendName = "backend";
-                  commonName = "common";
-                  staticName = "obelisk-generated-static";
-                  staticFilesImpure = if lib.isDerivation staticFiles then staticFiles else toString staticFiles;
-                  processedStatic = processAssets { src = staticFiles; };
-                  # The packages whose names and roles are defined by this package
-                  predefinedPackages = lib.filterAttrs (_: x: x != null) {
-                    ${frontendName} = nullIfAbsent (base + "/frontend");
-                    ${commonName} = nullIfAbsent (base + "/common");
-                    ${backendName} = nullIfAbsent (base + "/backend");
-                  };
-                  combinedPackages = predefinedPackages // packages;
-                  projectOverrides = self: super: {
-                    ${staticName} = haskellLib.dontHaddock (self.callCabal2nix staticName processedStatic.haskellManifest {});
-                    ${backendName} = haskellLib.addBuildDepend super.${backendName} self.obelisk-run;
-                  };
-                  totalOverrides = lib.composeExtensions projectOverrides overrides;
-                  inherit (lib.strings) hasPrefix;
-                  privateConfigDirs = ["config/backend"];
-                  injectableConfig = builtins.filterSource (path: _:
-                    !(lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path)) privateConfigDirs)
-                  );
-                  __androidWithConfig = configPath: {
-                    ${if android == null then null else frontendName} = {
-                      executableName = "frontend";
-                      ${if builtins.pathExists staticFiles then "assets" else null} =
-                        nixpkgs.obeliskExecutableConfig.platforms.android.inject
-                          (injectableConfig configPath)
-                          processedStatic.symlinked;
-                    } // android;
-                  };
-                  __iosWithConfig = configPath: {
-                    ${if ios == null then null else frontendName} = {
-                      executableName = "frontend";
-                      ${if builtins.pathExists staticFiles then "staticSrc" else null} =
-                        nixpkgs.obeliskExecutableConfig.platforms.ios.inject
-                          (injectableConfig configPath)
-                          processedStatic.symlinked;
-                    } // ios;
-                  };
-              in {
-                inherit shellToolOverrides tools withHoogle;
-                overrides = totalOverrides;
-                packages = combinedPackages;
-                shells = {
-                  ${if android == null && ios == null then null else "ghcSavedSplices"} = (lib.filter (x: lib.hasAttr x combinedPackages) [
-                    commonName
-                    frontendName
-                  ]);
-                  ghc = (lib.filter (x: lib.hasAttr x combinedPackages) [
-                    backendName
-                    commonName
-                    frontendName
-                  ]);
-                  ghcjs = lib.filter (x: lib.hasAttr x combinedPackages) [
-                    frontendName
-                    commonName
-                  ];
+  project = base': projectDefinition:
+    let
+      projectOut = sys: let reflexPlatformProject = (getReflexPlatform sys).project; in reflexPlatformProject (args@{ nixpkgs, ... }:
+        let
+          inherit (lib.strings) hasPrefix;
+          mkProject =
+            { android ? null #TODO: Better error when missing
+            , ios ? null #TODO: Better error when missing
+            , packages ? {}
+            , overrides ? _: _: {}
+            , staticFiles ? null
+            , tools ? _: []
+            , shellToolOverrides ? _: _: {}
+            , withHoogle ? false # Setting this to `true` makes shell reloading far slower
+            , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
+            }:
+            let
+              allConfig = nixpkgs.lib.makeExtensible (self: {
+                base = base';
+                inherit args;
+                userSettings = {
+                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel;
+                  staticFiles = if staticFiles == null then self.base + /static else staticFiles;
                 };
-                android = __androidWithConfig (base + "/config");
-                ios = __iosWithConfig (base + "/config");
-                passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __iosWithConfig __androidWithConfig; };
-              };
-          in mkProject (projectDefinition args));
-      serverOn = sys: version: serverExe
-        (projectOut sys).ghc.backend
-        (projectOut system).ghcjs.frontend
-        (projectOut sys).passthru.staticFiles
-        (projectOut sys).passthru.__closureCompilerOptimizationLevel
+                frontendName = "frontend";
+                backendName = "backend";
+                commonName = "common";
+                staticName = "obelisk-generated-static";
+                staticFilesImpure = let fs = self.userSettings.staticFiles; in if lib.isDerivation fs then fs else toString fs;
+                processedStatic = processAssets { src = self.userSettings.staticFiles; };
+                # The packages whose names and roles are defined by this package
+                predefinedPackages = lib.filterAttrs (_: x: x != null) {
+                  ${self.frontendName} = nullIfAbsent (self.base + "/frontend");
+                  ${self.commonName} = nullIfAbsent (self.base + "/common");
+                  ${self.backendName} = nullIfAbsent (self.base + "/backend");
+                };
+                shellPackages = {};
+                combinedPackages = self.predefinedPackages // self.userSettings.packages // self.shellPackages;
+                projectOverrides = self': super': {
+                  ${self.staticName} = haskellLib.dontHaddock (self'.callCabal2nix self.staticName self.processedStatic.haskellManifest {});
+                  ${self.backendName} = haskellLib.addBuildDepend super'.${self.backendName} self'.obelisk-run;
+                };
+                totalOverrides = lib.composeExtensions self.projectOverrides self.userSettings.overrides;
+                privateConfigDirs = ["config/backend"];
+                injectableConfig = builtins.filterSource (path: _:
+                  !(lib.lists.any (x: hasPrefix (toString self.base + "/" + toString x) (toString path)) self.privateConfigDirs)
+                );
+                __androidWithConfig = configPath: {
+                  ${if self.userSettings.android == null then null else self.frontendName} = {
+                    executableName = "frontend";
+                    ${if builtins.pathExists self.userSettings.staticFiles then "assets" else null} =
+                      nixpkgs.obeliskExecutableConfig.platforms.android.inject
+                        (self.injectableConfig configPath)
+                        self.processedStatic.symlinked;
+                  } // self.userSettings.android;
+                };
+                __iosWithConfig = configPath: {
+                  ${if self.userSettings.ios == null then null else self.frontendName} = {
+                    executableName = "frontend";
+                    ${if builtins.pathExists self.userSettings.staticFiles then "staticSrc" else null} =
+                      nixpkgs.obeliskExecutableConfig.platforms.ios.inject
+                        (self.injectableConfig configPath)
+                        self.processedStatic.symlinked;
+                  } // self.userSettings.ios;
+                };
+
+                shells-ghc = builtins.attrNames (self.predefinedPackages // self.shellPackages);
+
+                shells-ghcjs = [
+                  self.frontendName
+                  self.commonName
+                ];
+
+                shells-ghcSavedSplices = [
+                  self.commonName
+                  self.frontendName
+                ];
+
+                project = reflexPlatformProject ({...}: self.projectConfig);
+                projectConfig = {
+                  inherit (self.userSettings) shellToolOverrides tools withHoogle;
+                  overrides = self.totalOverrides;
+                  packages = self.combinedPackages;
+                  shells = {
+                    ${if self.userSettings.android == null && self.userSettings.ios == null then null else "ghcSavedSplices"} =
+                      lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
+                    ghc = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghc;
+                    ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
+                  };
+                  android = self.__androidWithConfig (self.base + "/config");
+                  ios = self.__iosWithConfig (self.base + "/config");
+
+                  passthru = {
+                    __unstable__.self = allConfig;
+                    inherit (self)
+                      staticFilesImpure processedStatic
+                      __iosWithConfig __androidWithConfig
+                      ;
+                    inherit (self.userSettings)
+                      android ios overrides packages shellToolOverrides staticFiles tools withHoogle
+                      __closureCompilerOptimizationLevel
+                      ;
+                  };
+                };
+              });
+            in allConfig;
+        in (mkProject (projectDefinition args)).projectConfig);
+      mainProjectOut = projectOut system;
+      serverOn = projectInst: version: serverExe
+        projectInst.ghc.backend
+        mainProjectOut.ghcjs.frontend
+        projectInst.passthru.staticFiles
+        projectInst.passthru.__closureCompilerOptimizationLevel
         version;
-      linuxExe = serverOn "x86_64-linux";
+      linuxExe = serverOn (projectOut "x86_64-linux");
       dummyVersion = "Version number is only available for deployments";
-    in projectOut system // {
+    in mainProjectOut // {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
-      exe = serverOn system dummyVersion;
+      exe = serverOn mainProjectOut dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
         server (args // { exe = linuxExe version; });
-      obelisk = import (base + "/.obelisk/impl") {};
+      obelisk = import (base' + "/.obelisk/impl") {};
     };
   haskellPackageSets = {
     inherit (reflex-platform) ghc ghcjs;

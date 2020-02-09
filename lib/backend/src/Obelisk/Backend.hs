@@ -27,7 +27,6 @@ import Control.Category
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Fail (MonadFail)
-import Control.Categorical.Bifunctor
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
@@ -38,7 +37,6 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding
 import Obelisk.Asset.Serve.Snap (serveAsset)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
