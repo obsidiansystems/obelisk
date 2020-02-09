@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -8,13 +9,18 @@ module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
-import Control.Monad (filterM, unless)
+import Control.Monad (filterM, guard, unless)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
+import Data.Aeson (ToJSON, FromJSON)
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString.Lazy as LBS
 import Data.Coerce (coerce)
 import Data.Either
 import Data.Foldable (for_, toList)
+import Data.Functor (($>))
 import Data.List.Extra (dropPrefix)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
@@ -23,6 +29,7 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Data.Traversable (for)
 import Debug.Trace (trace)
 import Distribution.Compiler (CompilerFlavor(..))
@@ -39,6 +46,7 @@ import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
 import qualified Hpack.Yaml as Hpack
 import Language.Haskell.Extension
+import GHC.Generics (Generic)
 import Network.Socket hiding (Debug)
 import System.Directory
 import System.Environment (getExecutablePath)
@@ -50,7 +58,7 @@ import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr)
 import Obelisk.Command.Project (obeliskDirName, toObeliskDir, withProjectRoot, nixShellWithPkgs, toNixPath)
 import Obelisk.Command.Thunk (attrCacheFileName)
-import Obelisk.Command.Utils (findExePath, ghcidExePath, nixBuildExePath, nixExePath)
+import Obelisk.Command.Utils (findExePath, ghcidExePath, hlintExePath, nixBuildExePath, nixExePath)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -67,12 +75,27 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
   }
 
+-- | Decode from a base 16 bytestring
+decodeOpts :: FromJSON a => String -> Either String a
+decodeOpts = Aeson.eitherDecodeStrict . fst . B16.decode . T.encodeUtf8 . T.pack
+
+-- | Encode to a base 16 bytestring. This uses base 16 to avoid
+-- shell quoting issues with JSON
+encodeOpts :: ToJSON a => a -> String
+encodeOpts = T.unpack . T.decodeUtf8 . B16.encode . LBS.toStrict . Aeson.encode
+
+data LintOpts = LintOpts
+  { _lintOpts_hlint :: Bool
+  } deriving (Eq, Ord, Generic, Show)
+instance ToJSON LintOpts
+instance FromJSON LintOpts
+
 -- | Used to signal to obelisk that it's being invoked as a preprocessor
 preprocessorIdentifier :: String
 preprocessorIdentifier = "__preprocessor-apply-packages"
 
-run :: MonadObelisk m => m ()
-run = withProjectRoot "." $ \root -> do
+run :: MonadObelisk m => LintOpts -> m ()
+run lintOpts = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
   withGhciScript pkgs root $ \dotGhciPath -> do
     freePort <- getFreePort
@@ -98,7 +121,7 @@ run = withProjectRoot "." $ \root -> do
         else readProcessAndLogStderr Debug $
           proc nixExePath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
-    runGhcid root True dotGhciPath pkgs $ Just $ unwords
+    runGhcid root True dotGhciPath pkgs lintOpts $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
@@ -112,11 +135,11 @@ runRepl = withProjectRoot "." $ \root -> do
   withGhciScript pkgs "." $ \dotGhciPath ->
     runGhciRepl root pkgs dotGhciPath
 
-runWatch :: MonadObelisk m => m ()
-runWatch = withProjectRoot "." $ \root -> do
+runWatch :: MonadObelisk m => LintOpts -> m ()
+runWatch lintOpts = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
   withGhciScript pkgs root $ \dotGhciPath ->
-    runGhcid root True dotGhciPath pkgs Nothing
+    runGhcid root True dotGhciPath pkgs lintOpts Nothing
 
 -- | Relative paths to local packages of an obelisk project.
 --
@@ -313,19 +336,21 @@ runGhcid
   -> Bool -- ^ Should we chdir to root when running this process?
   -> FilePath -- ^ Path to .ghci
   -> [CabalPackageInfo]
+  -> LintOpts
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid root chdirToRoot dotGhci packages mcmd =
+runGhcid root chdirToRoot dotGhci packages (LintOpts hlint) mcmd =
   nixShellWithPkgs root True chdirToRoot (packageInfoToNamePathMap packages) (Just $ unwords $ ghcidExePath : opts) -- TODO: Shell escape
   where
     opts =
       [ "-W"
       , "--command='ghci -ignore-dot-ghci " <> makeBaseGhciOptions dotGhci <> "' "
       , "--outputfile=ghcid-output.txt"
+      ] <> catMaybes
+      [ guard hlint $> ("--lint=" <> hlintExePath)
+      , flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'" -- TODO: Shell escape
       ] <> map (\x -> "--reload='" <> x <> "'") reloadFiles
         <> map (\x -> "--restart='" <> x <> "'") restartFiles
-        <> testCmd
-    testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
 
     adjustRoot x = if chdirToRoot then makeRelative root x else x
     reloadFiles = map adjustRoot [root </> "config"]

@@ -86,10 +86,10 @@ initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run
+   | ObCommand_Run LintOpts
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
-   | ObCommand_Watch
+   | ObCommand_Watch LintOpts
    | ObCommand_Shell ShellOpts
    | ObCommand_Doc String [String] -- shell and list of packages
    | ObCommand_Hoogle String Int -- shell and port
@@ -107,10 +107,10 @@ obCommand cfg = hsubparser
   (mconcat
     [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-    , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+    , command "run" $ info (pure ObCommand_Run <*> lintCommand) $ progDesc "Run current project in development mode"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-    , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+    , command "watch" $ info (pure ObCommand_Watch <*> lintCommand) $ progDesc "Watch current project for errors and warnings"
     , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
     , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
         progDesc "List paths to haddock documentation for specified packages"
@@ -122,6 +122,12 @@ obCommand cfg = hsubparser
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
+
+lintCommand :: Parser LintOpts
+lintCommand = fmap (LintOpts . not) $ switch $ mconcat
+          [ long "no-hlint"
+          , help "Do not run HLint on reloaded modules"
+          ]
 
 deployCommand :: ArgsConfig -> Parser DeployCommand
 deployCommand cfg = hsubparser $ mconcat
@@ -365,13 +371,13 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> run
+  ObCommand_Run lintOpts -> run lintOpts
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
     ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
   ObCommand_Repl -> runRepl
-  ObCommand_Watch -> runWatch
+  ObCommand_Watch lintOpts -> runWatch lintOpts
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
   ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->

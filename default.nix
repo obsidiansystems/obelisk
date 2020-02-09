@@ -60,6 +60,7 @@ let
           librarySystemDepends = [
             pkgs.nix
             (haskellLib.justStaticExecutables self.ghcid)
+            self.hlint
           ];
         };
         obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
