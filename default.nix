@@ -17,10 +17,8 @@ let
     openssh
   ];
 
-  getReflexPlatform = sys: reflex-platform-func {
-    inherit iosSdkVersion config;
-    system = sys;
-    enableLibraryProfiling = profiling;
+  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: reflex-platform-func {
+    inherit iosSdkVersion config system enableLibraryProfiling;
 
     nixpkgsOverlays = [
       (self: super: {
@@ -102,7 +100,7 @@ let
     ];
   };
 
-  reflex-platform = getReflexPlatform system;
+  reflex-platform = getReflexPlatform { inherit system; };
   inherit (reflex-platform) hackGet nixpkgs;
   pkgs = nixpkgs;
 
@@ -261,7 +259,7 @@ in rec {
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base': projectDefinition:
     let
-      projectOut = sys: let reflexPlatformProject = (getReflexPlatform sys).project; in reflexPlatformProject (args@{ nixpkgs, ... }:
+      projectOut = { system, enableLibraryProfiling ? profiling }: let reflexPlatformProject = (getReflexPlatform { inherit system enableLibraryProfiling; }).project; in reflexPlatformProject (args@{ nixpkgs, ... }:
         let
           inherit (lib.strings) hasPrefix;
           mkProject =
@@ -366,7 +364,7 @@ in rec {
               });
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
-      mainProjectOut = projectOut system;
+      mainProjectOut = projectOut { inherit system; };
       serverOn = projectInst: version: serverExe
         projectInst.ghc.backend
         mainProjectOut.ghcjs.frontend
@@ -376,6 +374,7 @@ in rec {
       linuxExe = serverOn (projectOut "x86_64-linux");
       dummyVersion = "Version number is only available for deployments";
     in mainProjectOut // {
+      profiled = projectOut { inherit system; enableLibraryProfiling = true; };
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
