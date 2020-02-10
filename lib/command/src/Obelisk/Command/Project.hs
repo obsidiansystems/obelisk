@@ -5,6 +5,7 @@ module Obelisk.Command.Project
   ( InitSource (..)
   , findProjectObeliskCommand
   , findProjectRoot
+  , findProjectAssets
   , initProject
   , nixShellRunConfig
   , nixShellRunProc
@@ -50,7 +51,7 @@ import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (nixExePath)
+import Obelisk.Command.Utils (nixExePath, nixBuildExePath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -307,3 +308,26 @@ projectShell root isPure shellName command = do
     & nixShellConfig_common . nixCmdConfig_target . target_path ?~ "default.nix"
     & nixShellConfig_common . nixCmdConfig_target . target_attr ?~ ("shells." <> shellName)
   void $ liftIO $ waitForProcess ph
+
+findProjectAssets :: MonadObelisk m => FilePath -> m Text
+findProjectAssets root = do
+  let importableRoot = toNixPath root
+  isDerivation <- readProcessAndLogStderr Debug $
+    proc nixExePath
+      [ "eval"
+      , "-f"
+      , root
+      , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+      , "--raw"
+      -- `--raw` is not available with old nix-instantiate. It drops quotation
+      -- marks and trailing newline, so is very convenient for shelling out.
+      ]
+  -- Check whether the impure static files are a derivation (and so must be built)
+  if isDerivation == "1"
+    then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
+      proc nixBuildExePath
+        [ "--no-out-link"
+        , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
+        ]
+    else readProcessAndLogStderr Debug $
+      proc nixExePath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]

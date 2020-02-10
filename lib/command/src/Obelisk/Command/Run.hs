@@ -47,10 +47,10 @@ import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr)
-import Obelisk.Command.Project (obeliskDirName, toObeliskDir, withProjectRoot, nixShellWithPkgs, toNixPath)
+import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode)
+import Obelisk.Command.Project (obeliskDirName, toObeliskDir, withProjectRoot, nixShellWithPkgs, findProjectAssets)
 import Obelisk.Command.Thunk (attrCacheFileName)
-import Obelisk.Command.Utils (findExePath, ghcidExePath, nixBuildExePath, nixExePath)
+import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -76,27 +76,7 @@ run = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
   withGhciScript pkgs root $ \dotGhciPath -> do
     freePort <- getFreePort
-    assets <- do
-      let importableRoot = toNixPath root
-      isDerivation <- readProcessAndLogStderr Debug $
-        proc nixExePath
-          [ "eval"
-          , "-f"
-          , root
-          , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
-          , "--raw"
-          -- `--raw` is not available with old nix-instantiate. It drops quotation
-          -- marks and trailing newline, so is very convenient for shelling out.
-          ]
-      -- Check whether the impure static files are a derivation (and so must be built)
-      if isDerivation == "1"
-        then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc nixBuildExePath
-            [ "--no-out-link"
-            , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
-            ]
-        else readProcessAndLogStderr Debug $
-          proc nixExePath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+    assets <- findProjectAssets root
     putLog Debug $ "Assets impurely loaded from: " <> assets
     runGhcid root True dotGhciPath pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
