@@ -17,10 +17,8 @@ let
     openssh
   ];
 
-  getReflexPlatform = sys: import ./dep/reflex-platform {
-    inherit iosSdkVersion config;
-    system = sys;
-    enableLibraryProfiling = profiling;
+  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: import ./dep/reflex-platform {
+    inherit iosSdkVersion config system enableLibraryProfiling;
 
     nixpkgsOverlays = [
       (self: super: {
@@ -86,7 +84,7 @@ let
     ] ++ haskellOverlays;
   };
 
-  reflex-platform = getReflexPlatform system;
+  reflex-platform = getReflexPlatform { inherit system; };
   inherit (reflex-platform) hackGet nixpkgs;
   pkgs = nixpkgs;
 
@@ -272,7 +270,7 @@ in rec {
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base: projectDefinition:
-    let projectOut = sys: (getReflexPlatform sys).project (args@{ nixpkgs, ... }:
+    let projectOut = { system, enableLibraryProfiling ? profiling }: (getReflexPlatform { inherit system enableLibraryProfiling; }).project (args@{ nixpkgs, ... }:
           let mkProject = { android ? null #TODO: Better error when missing
                           , ios ? null #TODO: Better error when missing
                           , packages ? {}
@@ -348,15 +346,16 @@ in rec {
                 passthru = { inherit android ios packages overrides tools shellToolOverrides withHoogle staticFiles staticFilesImpure __closureCompilerOptimizationLevel processedStatic __iosWithConfig __androidWithConfig; };
               };
           in mkProject (projectDefinition args));
-      serverOn = sys: version: serverExe
-        (projectOut sys).ghc.backend
-        (projectOut system).ghcjs.frontend
-        (projectOut sys).passthru.staticFiles
-        (projectOut sys).passthru.__closureCompilerOptimizationLevel
+      serverOn = system: version: serverExe
+        (projectOut { inherit system; }).ghc.backend
+        (projectOut { inherit system; }).ghcjs.frontend
+        (projectOut { inherit system; }).passthru.staticFiles
+        (projectOut { inherit system; }).passthru.__closureCompilerOptimizationLevel
         version;
       linuxExe = serverOn "x86_64-linux";
       dummyVersion = "Version number is only available for deployments";
-    in projectOut system // {
+    in projectOut { inherit system; } // {
+      profiled = projectOut { inherit system; enableLibraryProfiling = true; };
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn system dummyVersion;
