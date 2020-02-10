@@ -15,7 +15,6 @@ import Control.Monad.Reader (MonadIO)
 import Data.Coerce (coerce)
 import Data.Either
 import Data.Foldable (for_, toList)
-import Data.List.Extra (dropPrefix)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -48,8 +47,7 @@ import System.IO.Temp (withSystemTempDirectory)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr)
-import Obelisk.Command.Project (obeliskDirName, toObeliskDir, withProjectRoot, nixShellWithPkgs, toNixPath)
-import Obelisk.Command.Thunk (attrCacheFileName)
+import Obelisk.Command.Project (withProjectRoot, nixShellWithPkgs, toNixPath)
 import Obelisk.Command.Utils (findExePath, ghcidExePath, nixBuildExePath, nixExePath)
 
 data CabalPackageInfo = CabalPackageInfo
@@ -125,20 +123,19 @@ runWatch = withProjectRoot "." $ \root -> do
 -- to the Nix @project@ function.
 getLocalPkgs :: MonadObelisk m => FilePath -> m [FilePath]
 getLocalPkgs root = do
-  (_exitCode, out, err) <- readCreateProcessWithExitCode $
-    proc findExePath ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
-  putLog Debug $ T.strip $ T.pack err
+  obeliskPaths <- runFind ["-L", root, "-name", ".obelisk", "-type", "d"]
 
-  let
-    -- We ignore any path that has ".obelisk" in it, but keep the root ".obelisk" paths
-    packagePaths = filter (not . isIgnored) $ map T.unpack $ T.lines $ T.strip $ T.pack out
-    isIgnored path =
-         obeliskDirName `elem` dropPrefix (splitPath $ toObeliskDir root) pathSegments
-      && attrCacheFileName `notElem` pathSegments
-      where
-        pathSegments = splitPath path
-
-  pure packagePaths
+  -- We do not want to find packages that are embedded inside other obelisk projects, unless that
+  -- obelisk project is our own.
+  let exclusions = filter (/= root) $ map takeDirectory obeliskPaths
+  runFind $
+    ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
+    <> concat [["-not", "-path", p </> "*"] | p <- exclusions]
+  where
+    runFind args = do
+      (_exitCode, out, err) <- readCreateProcessWithExitCode $ proc findExePath args
+      putLog Debug $ T.strip $ T.pack err
+      pure $ map T.unpack $ T.lines $ T.strip $ T.pack out
 
 data GuessPackageFileError = GuessPackageFileError_Ambiguous [FilePath] | GuessPackageFileError_NotFound
   deriving (Eq, Ord, Show)
