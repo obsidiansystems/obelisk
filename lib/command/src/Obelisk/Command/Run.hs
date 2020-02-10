@@ -129,7 +129,7 @@ getLocalPkgs root = do
   -- We do not want to find packages that are embedded inside other obelisk projects, unless that
   -- obelisk project is our own.
   let exclusions = filter (/= root) $ map takeDirectory obeliskPaths
-  runFind $
+  fmap (map (makeRelative ".")) $ runFind $
     ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
     <> concat [["-not", "-path", p </> "*"] | p <- exclusions]
   where
