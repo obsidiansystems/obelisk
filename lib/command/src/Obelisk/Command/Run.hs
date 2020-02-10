@@ -74,7 +74,6 @@ run :: MonadObelisk m => m ()
 run = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
   withGhciScript pkgs root $ \dotGhciPath -> do
-    freePort <- getFreePort
     assets <- do
       isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
         proc nixExePath
@@ -94,6 +93,7 @@ run = withProjectRoot "." $ \root -> do
         else readProcessAndLogStderr Debug $ setCwd (Just root) $
           proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
+    freePort <- getFreePort
     runGhcid root True dotGhciPath pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
