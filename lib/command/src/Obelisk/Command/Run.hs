@@ -108,7 +108,7 @@ run profiled = withProjectRoot "." $ \root -> do
               , "import Reflex.Profiled" ]
               <> obRunImports <>
               [ "main :: IO ()"
-              , "main = " <> obRunExpr <> " `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\"" ]
+              , "main = (" <> obRunExpr <> ") `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\"" ]
           -- Sane flags to enable by default, enable time profiling +
           -- closure heap profiling.
           rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
