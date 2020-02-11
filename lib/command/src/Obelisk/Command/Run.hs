@@ -24,8 +24,6 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Time (getCurrentTime)
-import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
 import Distribution.Compiler (CompilerFlavor(..))
@@ -83,20 +81,14 @@ obRunImports = [ "import qualified Obelisk.Run"
 
 profile
   :: MonadObelisk m
-  => Maybe FilePath
+  => FilePath
   -> m ()
-profile mProfileBaseName = withProjectRoot "." $ \root -> do
+profile profileBaseName = withProjectRoot "." $ \root -> do
   freePort <- getFreePort
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
   putLog Debug "Using profiled build of project."
-  time <- liftIO $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
-  profileBaseName <- case mProfileBaseName of
-    Just baseName -> pure baseName
-    Nothing -> do
-      let profileDirectory = root </> "profile"
-      liftIO $ createDirectoryIfMissing False profileDirectory
-      pure $ profileDirectory </> time
+  liftIO $ createDirectoryIfMissing False $ takeDirectory profileBaseName
   let -- Sane flags to enable by default, enable time profiling +
       -- closure heap profiling.
       rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
