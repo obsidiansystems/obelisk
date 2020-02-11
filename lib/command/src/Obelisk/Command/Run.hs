@@ -104,20 +104,11 @@ run profiled = withProjectRoot "." $ \root -> do
       let exeSource =
             unlines $
               [ "module Main where"
-              , "import Control.Concurrent"
-              , "import Control.Monad.Fix"
+              , "import Control.Exception"
               , "import Reflex.Profiled" ]
               <> obRunImports <>
               [ "main :: IO ()"
-              , "main = do"
-              , "  forkIO $ fix $ \\rec -> do"
-                -- TODO: make this filename customizable
-              , "    writeProfilingData \"" <> profileBaseName <> ".rprof\""
-                -- write every .1 seconds.
-                -- TODO: perhaps it should only write once at the end of ecah run
-              , "    threadDelay 10000"
-              , "    rec"
-              , "  " <> obRunExpr]
+              , "main = " <> obRunExpr <> " `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\"" ]
           -- Sane flags to enable by default, enable time profiling +
           -- closure heap profiling.
           rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
