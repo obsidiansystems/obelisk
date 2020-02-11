@@ -82,8 +82,9 @@ obRunImports = [ "import qualified Obelisk.Run"
 
 profile
   :: MonadObelisk m
-  => m ()
-profile = withProjectRoot "." $ \root -> do
+  => Maybe FilePath
+  -> m ()
+profile mProfileBaseName = withProjectRoot "." $ \root -> do
   freePort <- getFreePort
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
@@ -108,7 +109,7 @@ profile = withProjectRoot "." $ \root -> do
       -- closure heap profiling.
       rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
       profileDirectory = root </> "profile"
-      profileBaseName = profileDirectory </> time
+      profileBaseName = fromMaybe (profileDirectory </> time) mProfileBaseName
   liftIO $ createDirectoryIfMissing False profileDirectory
   withSystemTempFile "ob-run-profiled.hs" $ \hsFname hsHandle -> withSystemTempFile "ob-run" $ \exeFname exeHandle -> do
     liftIO $ hPutStr hsHandle exeSource
