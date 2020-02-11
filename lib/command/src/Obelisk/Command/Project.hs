@@ -13,6 +13,8 @@ module Obelisk.Command.Project
 
   , toObeliskDir
   , toImplDir
+  , setCwd
+  , setCtlc
   ) where
 
 import Control.Monad

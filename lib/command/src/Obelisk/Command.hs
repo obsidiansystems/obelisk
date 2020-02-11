@@ -90,6 +90,7 @@ data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
    | ObCommand_Run
+   | ObCommand_Profile
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
    | ObCommand_Watch
@@ -127,6 +128,7 @@ obCommand cfg = hsubparser
       [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
       , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
       , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+      , command "profile" $ info (pure ObCommand_Profile) $ progDesc "Run current project with profiling enabled"
       , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
       , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
       , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
@@ -372,8 +374,9 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> inNixShell' $ static run
+  ObCommand_Run -> inNixShell' $ static (run False)
     -- inNixShell ($(mkClosure 'ghcidAction) ())
+  ObCommand_Profile -> inNixShell' $ static (run True)
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks

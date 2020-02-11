@@ -29,17 +29,20 @@ import Hpack.Yaml
 import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
 import System.Directory
+import System.Exit (ExitCode (ExitSuccess, ExitFailure))
 import System.FilePath
-import System.Process (proc)
-import System.IO.Temp (withSystemTempDirectory)
 import Data.ByteString (ByteString)
+import System.IO (hPutStr, hFlush, hClose)
+import System.IO.Temp (withSystemTempDirectory, withSystemTempFile)
+import System.Process (proc, waitForProcess)
 
 import Obelisk.App (MonadObelisk, ObeliskT)
 import Obelisk.CliApp
   ( CliT (..), HasCliConfig, Severity (..)
   , callCommand, failWith, getCliConfig, putLog
-  , readProcessAndLogStderr, runCli)
-import Obelisk.Command.Project (inProjectShell, withProjectRoot)
+  , readProcessAndLogStderr, runCli
+  , readProcessAndLogStderr, createProcess_)
+import Obelisk.Command.Project (inProjectShell, withProjectRoot, setCwd, setCtlc)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageRoot :: FilePath
@@ -54,42 +57,89 @@ data CabalPackageInfo = CabalPackageInfo
   }
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
-run :: ObeliskT IO ()
-run = do
+run :: Bool -> ObeliskT IO ()
+run profiled = withProjectRoot "." $ \root -> do
   pkgs <- getLocalPkgs
-  withGhciScript pkgs $ \dotGhciPath -> do
-    freePort <- getFreePort
-    assets <- withProjectRoot "." $ \root -> do
-      let importableRoot = if "/" `isInfixOf` root
-            then root
-            else "./" <> root
-      isDerivation <- readProcessAndLogStderr Debug $
-        proc "nix"
-          [ "eval"
-          , "-f"
-          , root
-          , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
-          , "--raw"
-          -- `--raw` is not available with old nix-instantiate. It drops quotation
-          -- marks and trailing newline, so is very convenient for shelling out.
+  freePort <- getFreePort
+  assets <- do
+    let importableRoot = if "/" `isInfixOf` root
+          then root
+          else "./" <> root
+    isDerivation <- readProcessAndLogStderr Debug $
+      proc "nix"
+        [ "eval"
+        , "-f"
+        , root
+        , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+        , "--raw"
+        -- `--raw` is not available with old nix-instantiate. It drops quotation
+        -- marks and trailing newline, so is very convenient for shelling out.
+        ]
+    -- Check whether the impure static files are a derivation (and so must be built)
+    if isDerivation == "1"
+      then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
+        proc "nix-build"
+          [ "--no-out-link"
+          , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
           ]
-      -- Check whether the impure static files are a derivation (and so must be built)
-      if isDerivation == "1"
-        then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc "nix-build"
-            [ "--no-out-link"
-            , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
-            ]
-        else readProcessAndLogStderr Debug $
-          proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
-    putLog Debug $ "Assets impurely loaded from: " <> assets
-    runGhcid dotGhciPath $ Just $ unwords
-      [ "Obelisk.Run.run"
-      , show freePort
-      , "(runServeAsset " ++ show assets ++ ")"
-      , "Backend.backend"
-      , "Frontend.frontend"
-      ]
+      else readProcessAndLogStderr Debug $
+        proc "nix" ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+  let obRunExpr = unwords
+          [ "Obelisk.Run.run"
+          , show freePort
+          , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+          , "Backend.backend"
+          , "Frontend.frontend"
+          ]
+  putLog Debug $ "Assets impurely loaded from: " <> assets
+  case profiled of
+    True -> do
+      putLog Debug "Using profiled build of project."
+      let exeSource =
+            unlines $
+              [ "module Main where"
+              , "import Control.Concurrent"
+              , "import Control.Monad.Fix"
+              , "import Reflex.Profiled" ]
+              <> obRunImports <>
+              [ "main :: IO ()"
+              , "main = do"
+              , "  forkIO $ fix $ \\rec -> do"
+                -- TODO: make this filename customizable
+              , "    writeProfilingData \"ob-run.rfprof\""
+                -- write every .1 seconds.
+                -- TODO: perhaps it should only write once at the end of ecah run
+              , "    threadDelay 10000"
+              , "    rec"
+              , "  " <> obRunExpr]
+          -- sane flags to enable by default, enable time profiling + closure heap profiling
+          rtsFlags = [ "+RTS", "-p", "-hc", "-RTS" ]
+      withSystemTempFile "ob-run-profiled.hs" $ \hsFname hsHandle -> withSystemTempFile "ob-run" $ \exeFname exeHandle -> do
+        liftIO $ hPutStr hsHandle exeSource
+        liftIO $ hFlush hsHandle
+        (_, _, _, ph1) <- createProcess_ "nixGhcWithProfiling" $ setCwd (Just root) $ proc "nix-shell" [ "-p", "((import ./. {}).profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend]))", "--run", unwords [ "ghc", "-x", "hs", "-prof", "-fprof-auto", hsFname, "-o", exeFname ] ]
+        code <- liftIO $ waitForProcess ph1
+        case code of
+          ExitSuccess -> do
+            liftIO $ hClose exeHandle
+            (_, _, _, ph2) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setCtlc $ proc exeFname rtsFlags
+            _ <- liftIO $ waitForProcess ph2
+            pure ()
+          ExitFailure _ -> do
+            pure ()
+    False ->
+      withGhciScript pkgs $ \dotGhciPath -> do
+        runGhcid dotGhciPath $ Just obRunExpr
+
+-- | Used to signal to obelisk that it's being invoked as a preprocessor
+preprocessorIdentifier :: String
+preprocessorIdentifier = "__preprocessor-apply-packages"
+
+-- | Imports needed to use Obelisk.Run
+obRunImports :: [String]
+obRunImports = [ "import qualified Obelisk.Run"
+               , "import qualified Frontend"
+               , "import qualified Backend" ]
 
 runRepl :: MonadObelisk m => m ()
 runRepl = do
@@ -192,10 +242,7 @@ withGhciScript pkgs f = do
         , extensionsLine
         , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
         , ":load Backend Frontend"
-        , "import Obelisk.Run"
-        , "import qualified Frontend"
-        , "import qualified Backend"
-        ]
+        ] <> obRunImports
   warnDifferentLanguages language
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
