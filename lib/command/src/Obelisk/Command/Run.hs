@@ -72,27 +72,20 @@ data ReplOpts = ReplOpts
 instance ToJSON ReplOpts
 instance FromJSON ReplOpts
 
-data RunOpts = RunOpts
-  { _runOpts_replOpts :: ReplOpts
-  -- ^ Repl options
-  } deriving (Generic, Show)
-instance ToJSON RunOpts
-instance FromJSON RunOpts
+-- | Decode from a base 16 bytestring
+decodeOpts :: FromJSON a => String -> Either String a
+decodeOpts = Aeson.eitherDecodeStrict . fst . B16.decode . T.encodeUtf8 . T.pack
 
--- | Decode 'RunOpts' from a base 16 bytestring
-decodeRunOpts :: String -> Either String RunOpts
-decodeRunOpts = Aeson.eitherDecodeStrict . fst . B16.decode . T.encodeUtf8 . T.pack
-
--- | Encode 'RunOpts' to a base 16 bytestring. This uses base 16 to avoid
+-- | Encode to a base 16 bytestring. This uses base 16 to avoid
 -- shell quoting issues with JSON
-encodeRunOpts :: RunOpts -> String
-encodeRunOpts = T.unpack . T.decodeUtf8 . B16.encode . LBS.toStrict . Aeson.encode
+encodeOpts :: ToJSON a => a -> String
+encodeOpts = T.unpack . T.decodeUtf8 . B16.encode . LBS.toStrict . Aeson.encode
 
-runOptsModulesToLoad :: RunOpts -> [String]
-runOptsModulesToLoad opts = snd <$> _replOpts_import (_runOpts_replOpts opts)
+replOptsModulesToLoad :: ReplOpts -> [String]
+replOptsModulesToLoad opts = snd <$> _replOpts_import opts
 
 -- NOTE: `run` is not polymorphic like the rest because we use StaticPtr to invoke it.
-run :: RunOpts -> ObeliskT IO ()
+run :: ReplOpts -> ObeliskT IO ()
 run opts = do
   let nixPath = $(staticWhich "nix")
       nixBuildPath = $(staticWhich "nix-build")
@@ -131,23 +124,23 @@ run opts = do
       , "frontend"
       ]
 
-runRepl :: MonadObelisk m => RunOpts -> m ()
+runRepl :: MonadObelisk m => ReplOpts -> m ()
 runRepl opts = do
   pkgs <- getLocalPkgs opts
   withGhciScript opts pkgs $ \dotGhciPath -> do
     runGhciRepl dotGhciPath
 
-runWatch :: MonadObelisk m => RunOpts -> m ()
+runWatch :: MonadObelisk m => ReplOpts -> m ()
 runWatch opts = do
   pkgs <- getLocalPkgs opts
   withGhciScript opts pkgs $ \dotGhciPath -> runGhcid dotGhciPath Nothing
 
 -- | Relative paths to local packages of an obelisk project
 -- TODO a way to query this
-getLocalPkgs :: Applicative f => RunOpts -> f [FilePath]
+getLocalPkgs :: Applicative f => ReplOpts -> f [FilePath]
 getLocalPkgs opts = pure $ mconcat
   [ ["backend", "common", "frontend"]
-  , fst <$> _replOpts_import (_runOpts_replOpts opts)
+  , fst <$> _replOpts_import opts
   ]
 
 parseCabalPackage
@@ -204,7 +197,7 @@ withUTF8FileContentsM fp f = do
 -- | Create ghci configuration to load the given packages
 withGhciScript
   :: MonadObelisk m
-  => RunOpts
+  => ReplOpts
   -> [FilePath] -- ^ List of packages to load into ghci
   -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporory .ghci
   -> m ()
@@ -235,10 +228,10 @@ withGhciScript opts pkgs f = do
             xs -> ":set " <> intercalate " " xs
         , extensionsLine
         , ":set " <> intercalate " " (("-X" <>) . prettyShow <$> language)
-        , ":load " <> intercalate " " ("Backend" : runOptsModulesToLoad opts)
+        , ":load " <> intercalate " " ("Backend" : replOptsModulesToLoad opts)
         , "import Obelisk.Run"
         , "import Backend (backend, frontend)"
-        ] ++ fmap ("import qualified " <>) (runOptsModulesToLoad opts)
+        ] ++ fmap ("import qualified " <>) (replOptsModulesToLoad opts)
   warnDifferentLanguages language
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
