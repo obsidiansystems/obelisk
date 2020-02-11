@@ -1,5 +1,5 @@
 name: obelisk-command
-version: 0.4
+version: 0.5
 cabal-version: >= 1.8
 build-type: Simple
 
@@ -20,7 +20,6 @@ library
     , either
     , errors
     , exceptions
-    , extra
     , filepath
     , git
     , github
