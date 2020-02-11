@@ -80,12 +80,54 @@ obRunImports = [ "import qualified Obelisk.Run"
                , "import qualified Frontend"
                , "import qualified Backend" ]
 
+profile
+  :: MonadObelisk m
+  => m ()
+profile = withProjectRoot "." $ \root -> do
+  freePort <- getFreePort
+  assets <- findProjectAssets root
+  putLog Debug $ "Assets impurely loaded from: " <> assets
+  let obRunExpr = unwords
+          [ "Obelisk.Run.run"
+          , show freePort
+          , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+          , "Backend.backend"
+          , "Frontend.frontend"
+          ]
+  putLog Debug "Using profiled build of project."
+  time <- liftIO $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
+  let exeSource =
+        unlines $
+          [ "module Main where"
+          , "import Control.Exception"
+          , "import Reflex.Profiled" ]
+          <> obRunImports <>
+          [ "main :: IO ()"
+          , "main = (" <> obRunExpr <> ") `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\"" ]
+      -- Sane flags to enable by default, enable time profiling +
+      -- closure heap profiling.
+      rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
+      profileDirectory = root </> "profile"
+      profileBaseName = profileDirectory </> time
+  liftIO $ createDirectoryIfMissing False profileDirectory
+  withSystemTempFile "ob-run-profiled.hs" $ \hsFname hsHandle -> withSystemTempFile "ob-run" $ \exeFname exeHandle -> do
+    liftIO $ hPutStr hsHandle exeSource
+    liftIO $ hFlush hsHandle
+    (_, _, _, ph1) <- createProcess_ "nixGhcWithProfiling" $ setCwd (Just root) $ proc "nix-shell" [ "-p", "((import ./. {}).profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend]))", "--run", unwords [ "ghc", "-x", "hs", "-prof", "-fno-prof-auto", hsFname, "-o", exeFname ] ]
+    code <- liftIO $ waitForProcess ph1
+    case code of
+      ExitSuccess -> do
+        liftIO $ hClose exeHandle
+        (_, _, _, ph2) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exeFname rtsFlags
+        _ <- liftIO $ waitForProcess ph2
+        pure ()
+      ExitFailure _ -> do
+        pure ()
+
 run
   :: MonadObelisk m
-  => Bool
-  -- ^ Whether to enable profiling in the current project
-  -> m ()
-run profiled = withProjectRoot "." $ \root -> do
+  => m ()
+run = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
   freePort <- getFreePort
   assets <- findProjectAssets root
@@ -97,40 +139,8 @@ run profiled = withProjectRoot "." $ \root -> do
           , "Backend.backend"
           , "Frontend.frontend"
           ]
-  case profiled of
-    True -> do
-      putLog Debug "Using profiled build of project."
-      time <- liftIO $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
-      let exeSource =
-            unlines $
-              [ "module Main where"
-              , "import Control.Exception"
-              , "import Reflex.Profiled" ]
-              <> obRunImports <>
-              [ "main :: IO ()"
-              , "main = (" <> obRunExpr <> ") `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\"" ]
-          -- Sane flags to enable by default, enable time profiling +
-          -- closure heap profiling.
-          rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
-          profileDirectory = root </> "profile"
-          profileBaseName = profileDirectory </> time
-      liftIO $ createDirectoryIfMissing False profileDirectory
-      withSystemTempFile "ob-run-profiled.hs" $ \hsFname hsHandle -> withSystemTempFile "ob-run" $ \exeFname exeHandle -> do
-        liftIO $ hPutStr hsHandle exeSource
-        liftIO $ hFlush hsHandle
-        (_, _, _, ph1) <- createProcess_ "nixGhcWithProfiling" $ setCwd (Just root) $ proc "nix-shell" [ "-p", "((import ./. {}).profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend]))", "--run", unwords [ "ghc", "-x", "hs", "-prof", "-fno-prof-auto", hsFname, "-o", exeFname ] ]
-        code <- liftIO $ waitForProcess ph1
-        case code of
-          ExitSuccess -> do
-            liftIO $ hClose exeHandle
-            (_, _, _, ph2) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exeFname rtsFlags
-            _ <- liftIO $ waitForProcess ph2
-            pure ()
-          ExitFailure _ -> do
-            pure ()
-    False ->
-      withGhciScript pkgs root $ \dotGhciPath -> do
-        runGhcid root True dotGhciPath pkgs $ Just obRunExpr
+  withGhciScript pkgs root $ \dotGhciPath -> do
+    runGhcid root True dotGhciPath pkgs $ Just obRunExpr
 
 runRepl :: MonadObelisk m => m ()
 runRepl = withProjectRoot "." $ \root -> do

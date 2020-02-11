@@ -367,8 +367,8 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> run False
-  ObCommand_Profile -> run True
+  ObCommand_Run -> run
+  ObCommand_Profile -> profile
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
