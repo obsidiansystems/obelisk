@@ -23,6 +23,8 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Time (getCurrentTime)
+import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
 import Distribution.Compiler (CompilerFlavor(..))
@@ -100,6 +102,7 @@ run profiled = withProjectRoot "." $ \root -> do
   case profiled of
     True -> do
       putLog Debug "Using profiled build of project."
+      time <- liftIO $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
       let exeSource =
             unlines $
               [ "module Main where"
@@ -111,14 +114,18 @@ run profiled = withProjectRoot "." $ \root -> do
               , "main = do"
               , "  forkIO $ fix $ \\rec -> do"
                 -- TODO: make this filename customizable
-              , "    writeProfilingData \"ob-run.rfprof\""
+              , "    writeProfilingData \"" <> profileBaseName <> ".rprof\""
                 -- write every .1 seconds.
                 -- TODO: perhaps it should only write once at the end of ecah run
               , "    threadDelay 10000"
               , "    rec"
               , "  " <> obRunExpr]
-          -- sane flags to enable by default, enable time profiling + closure heap profiling
-          rtsFlags = [ "+RTS", "-p", "-hc", "-RTS" ]
+          -- Sane flags to enable by default, enable time profiling +
+          -- closure heap profiling.
+          rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
+          profileDirectory = root </> "profile"
+          profileBaseName = profileDirectory </> time
+      liftIO $ createDirectoryIfMissing False profileDirectory
       withSystemTempFile "ob-run-profiled.hs" $ \hsFname hsHandle -> withSystemTempFile "ob-run" $ \exeFname exeHandle -> do
         liftIO $ hPutStr hsHandle exeSource
         liftIO $ hFlush hsHandle
