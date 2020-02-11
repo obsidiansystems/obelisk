@@ -88,23 +88,17 @@ profile mProfileBaseName = withProjectRoot "." $ \root -> do
   freePort <- getFreePort
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
-  let obRunExpr = unwords
-          [ "Obelisk.Run.run"
-          , show freePort
-          , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
-          , "Backend.backend"
-          , "Frontend.frontend"
-          ]
   putLog Debug "Using profiled build of project."
   time <- liftIO $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
   let exeSource =
         unlines $
           [ "module Main where"
           , "import Control.Exception"
-          , "import Reflex.Profiled" ]
+          , "import Reflex.Profiled"
+          , "import System.Environment" ]
           <> obRunImports <>
           [ "main :: IO ()"
-          , "main = (" <> obRunExpr <> ") `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\"" ]
+          , "main = getArgs >>= \\args -> (Obelisk.Run.run (read (args !! 0)) (Obelisk.Run.runServeAsset (args !! 1)) Backend.backend Frontend.frontend) `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\"" ]
       -- Sane flags to enable by default, enable time profiling +
       -- closure heap profiling.
       rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
@@ -119,7 +113,7 @@ profile mProfileBaseName = withProjectRoot "." $ \root -> do
     case code of
       ExitSuccess -> do
         liftIO $ hClose exeHandle
-        (_, _, _, ph2) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exeFname rtsFlags
+        (_, _, _, ph2) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exeFname ([show freePort, T.unpack assets] <> rtsFlags)
         _ <- liftIO $ waitForProcess ph2
         pure ()
       ExitFailure _ -> do
