@@ -8,11 +8,13 @@ module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
+import qualified Control.Lens as Lens
 import Control.Monad (filterM, unless)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
 import Data.Coerce (coerce)
+import Data.Default (def)
 import Data.Either
 import Data.Foldable (for_, toList)
 import qualified Data.List.NonEmpty as NE
@@ -43,15 +45,14 @@ import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
 import System.Directory
 import System.Environment (getExecutablePath)
-import System.Exit (ExitCode (ExitSuccess, ExitFailure))
 import System.FilePath
 import qualified System.Info
-import System.IO (hPutStr, hFlush, hClose)
-import System.IO.Temp (withSystemTempDirectory, withSystemTempFile)
+import System.IO.Temp (withSystemTempDirectory)
 import System.Process (waitForProcess)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, setCwd, setDelegateCtlc, createProcess_)
+import Obelisk.Command.Nix
 import Obelisk.Command.Project (withProjectRoot, nixShellWithPkgs, findProjectAssets)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
@@ -90,34 +91,39 @@ profile mProfileBaseName = withProjectRoot "." $ \root -> do
   putLog Debug $ "Assets impurely loaded from: " <> assets
   putLog Debug "Using profiled build of project."
   time <- liftIO $ formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
-  let exeSource =
-        unlines $
-          [ "module Main where"
-          , "import Control.Exception"
-          , "import Reflex.Profiled"
-          , "import System.Environment" ]
-          <> obRunImports <>
-          [ "main :: IO ()"
-          , "main = getArgs >>= \\args -> (Obelisk.Run.run (read (args !! 0)) (Obelisk.Run.runServeAsset (args !! 1)) Backend.backend Frontend.frontend) `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\"" ]
-      -- Sane flags to enable by default, enable time profiling +
+  profileBaseName <- case mProfileBaseName of
+    Just baseName -> pure baseName
+    Nothing -> do
+      let profileDirectory = root </> "profile"
+      liftIO $ createDirectoryIfMissing False profileDirectory
+      pure $ profileDirectory </> time
+  let -- Sane flags to enable by default, enable time profiling +
       -- closure heap profiling.
       rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
-      profileDirectory = root </> "profile"
-      profileBaseName = fromMaybe (profileDirectory </> time) mProfileBaseName
-  liftIO $ createDirectoryIfMissing False profileDirectory
-  withSystemTempFile "ob-run-profiled.hs" $ \hsFname hsHandle -> withSystemTempFile "ob-run" $ \exeFname exeHandle -> do
-    liftIO $ hPutStr hsHandle exeSource
-    liftIO $ hFlush hsHandle
-    (_, _, _, ph1) <- createProcess_ "nixGhcWithProfiling" $ setCwd (Just root) $ proc "nix-shell" [ "-p", "((import ./. {}).profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend]))", "--run", unwords [ "ghc", "-x", "hs", "-prof", "-fno-prof-auto", hsFname, "-o", exeFname ] ]
-    code <- liftIO $ waitForProcess ph1
-    case code of
-      ExitSuccess -> do
-        liftIO $ hClose exeHandle
-        (_, _, _, ph2) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exeFname ([show freePort, T.unpack assets] <> rtsFlags)
-        _ <- liftIO $ waitForProcess ph2
-        pure ()
-      ExitFailure _ -> do
-        pure ()
+      nixBuildExpr = unlines $
+        [ "(with (import ./. {});"
+        , "let"
+        , "  exeSource = obelisk.nixpkgs.writeText \"ob-run\" ''"
+        , "module Main where"
+        , "import Control.Exception"
+        , "import Reflex.Profiled"
+        , "import System.Environment" ]
+        <> obRunImports <>
+        [ "main :: IO ()"
+        , "main = getArgs >>= \\args -> (Obelisk.Run.run (read (args !! 0)) (Obelisk.Run.runServeAsset (args !! 1)) Backend.backend Frontend.frontend) `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\""
+        , "  '';"
+        , "in obelisk.nixpkgs.runCommand \"ob-run\" {"
+        , "  buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];"
+        , "} \"ghc -x hs -prof -fno-prof-auto ${exeSource} -o $out\")" ]
+  exePath <- nixCmd $ NixCmd_Build $ def
+      Lens.& nixBuildConfig_outLink Lens..~ OutLink_None
+      Lens.& nixCmdConfig_target Lens..~ Target
+        { _target_path = Nothing
+        , _target_attr = Nothing
+        , _target_expr = Just nixBuildExpr }
+  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exePath ([show freePort, T.unpack assets] <> rtsFlags)
+  _ <- liftIO $ waitForProcess ph
+  pure ()
 
 run
   :: MonadObelisk m
