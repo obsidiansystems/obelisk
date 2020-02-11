@@ -311,11 +311,10 @@ projectShell root isPure shellName command = do
 
 findProjectAssets :: MonadObelisk m => FilePath -> m Text
 findProjectAssets root = do
-  let importableRoot = toNixPath root
-  isDerivation <- readProcessAndLogStderr Debug $
+  isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath
       [ "eval"
-      , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+      , "(let a = import ./. {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
       , "--raw"
       -- `--raw` is not available with old nix-instantiate. It drops quotation
       -- marks and trailing newline, so is very convenient for shelling out.
@@ -323,9 +322,9 @@ findProjectAssets root = do
   -- Check whether the impure static files are a derivation (and so must be built)
   if isDerivation == "1"
     then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-      proc nixBuildExePath
+      setCwd (Just root) $ proc nixBuildExePath
         [ "--no-out-link"
-        , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
+        , "-E", "(import ./. {}).passthru.staticFilesImpure"
         ]
     else readProcessAndLogStderr Debug $
       proc nixExePath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
