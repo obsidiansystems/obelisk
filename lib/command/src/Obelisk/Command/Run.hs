@@ -118,7 +118,7 @@ run profiled = withProjectRoot "." $ \root -> do
       withSystemTempFile "ob-run-profiled.hs" $ \hsFname hsHandle -> withSystemTempFile "ob-run" $ \exeFname exeHandle -> do
         liftIO $ hPutStr hsHandle exeSource
         liftIO $ hFlush hsHandle
-        (_, _, _, ph1) <- createProcess_ "nixGhcWithProfiling" $ setCwd (Just root) $ proc "nix-shell" [ "-p", "((import ./. {}).profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend]))", "--run", unwords [ "ghc", "-x", "hs", "-prof", "-fprof-auto", hsFname, "-o", exeFname ] ]
+        (_, _, _, ph1) <- createProcess_ "nixGhcWithProfiling" $ setCwd (Just root) $ proc "nix-shell" [ "-p", "((import ./. {}).profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend]))", "--run", unwords [ "ghc", "-x", "hs", "-prof", "-fno-prof-auto", hsFname, "-o", exeFname ] ]
         code <- liftIO $ waitForProcess ph1
         case code of
           ExitSuccess -> do
