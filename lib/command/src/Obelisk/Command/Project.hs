@@ -315,8 +315,6 @@ findProjectAssets root = do
   isDerivation <- readProcessAndLogStderr Debug $
     proc nixExePath
       [ "eval"
-      , "-f"
-      , root
       , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
       , "--raw"
       -- `--raw` is not available with old nix-instantiate. It drops quotation
