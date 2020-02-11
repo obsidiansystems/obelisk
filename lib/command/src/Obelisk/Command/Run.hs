@@ -42,12 +42,15 @@ import Language.Haskell.Extension
 import Network.Socket hiding (Debug)
 import System.Directory
 import System.Environment (getExecutablePath)
+import System.Exit (ExitCode (ExitSuccess, ExitFailure))
 import System.FilePath
 import qualified System.Info
-import System.IO.Temp (withSystemTempDirectory)
+import System.IO (hPutStr, hFlush, hClose)
+import System.IO.Temp (withSystemTempDirectory, withSystemTempFile)
+import System.Process (waitForProcess)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode)
+import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, setCwd, setDelegateCtlc, createProcess_)
 import Obelisk.Command.Project (obeliskDirName, toObeliskDir, withProjectRoot, nixShellWithPkgs, findProjectAssets)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
@@ -71,20 +74,67 @@ data CabalPackageInfo = CabalPackageInfo
 preprocessorIdentifier :: String
 preprocessorIdentifier = "__preprocessor-apply-packages"
 
-run :: MonadObelisk m => m ()
-run = withProjectRoot "." $ \root -> do
+-- | Imports needed to use Obelisk.Run
+obRunImports :: [String]
+obRunImports = [ "import qualified Obelisk.Run"
+               , "import qualified Frontend"
+               , "import qualified Backend" ]
+
+run
+  :: MonadObelisk m
+  => Bool
+  -- ^ Whether to enable profiling in the current project
+  -> m ()
+run profiled = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
-  withGhciScript pkgs root $ \dotGhciPath -> do
-    freePort <- getFreePort
-    assets <- findProjectAssets root
-    putLog Debug $ "Assets impurely loaded from: " <> assets
-    runGhcid root True dotGhciPath pkgs $ Just $ unwords
-      [ "Obelisk.Run.run"
-      , show freePort
-      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
-      , "Backend.backend"
-      , "Frontend.frontend"
-      ]
+  freePort <- getFreePort
+  assets <- findProjectAssets root
+  putLog Debug $ "Assets impurely loaded from: " <> assets
+  let obRunExpr = unwords
+          [ "Obelisk.Run.run"
+          , show freePort
+          , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+          , "Backend.backend"
+          , "Frontend.frontend"
+          ]
+  case profiled of
+    True -> do
+      putLog Debug "Using profiled build of project."
+      let exeSource =
+            unlines $
+              [ "module Main where"
+              , "import Control.Concurrent"
+              , "import Control.Monad.Fix"
+              , "import Reflex.Profiled" ]
+              <> obRunImports <>
+              [ "main :: IO ()"
+              , "main = do"
+              , "  forkIO $ fix $ \\rec -> do"
+                -- TODO: make this filename customizable
+              , "    writeProfilingData \"ob-run.rfprof\""
+                -- write every .1 seconds.
+                -- TODO: perhaps it should only write once at the end of ecah run
+              , "    threadDelay 10000"
+              , "    rec"
+              , "  " <> obRunExpr]
+          -- sane flags to enable by default, enable time profiling + closure heap profiling
+          rtsFlags = [ "+RTS", "-p", "-hc", "-RTS" ]
+      withSystemTempFile "ob-run-profiled.hs" $ \hsFname hsHandle -> withSystemTempFile "ob-run" $ \exeFname exeHandle -> do
+        liftIO $ hPutStr hsHandle exeSource
+        liftIO $ hFlush hsHandle
+        (_, _, _, ph1) <- createProcess_ "nixGhcWithProfiling" $ setCwd (Just root) $ proc "nix-shell" [ "-p", "((import ./. {}).profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend]))", "--run", unwords [ "ghc", "-x", "hs", "-prof", "-fprof-auto", hsFname, "-o", exeFname ] ]
+        code <- liftIO $ waitForProcess ph1
+        case code of
+          ExitSuccess -> do
+            liftIO $ hClose exeHandle
+            (_, _, _, ph2) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exeFname rtsFlags
+            _ <- liftIO $ waitForProcess ph2
+            pure ()
+          ExitFailure _ -> do
+            pure ()
+    False ->
+      withGhciScript pkgs root $ \dotGhciPath -> do
+        runGhcid root True dotGhciPath pkgs $ Just obRunExpr
 
 runRepl :: MonadObelisk m => m ()
 runRepl = withProjectRoot "." $ \root -> do
@@ -256,15 +306,12 @@ withGhciScript packageInfos pathBase f = do
       , [ "Backend" | "backend" `Set.member` packageNames ]
       , [ "Frontend" | "frontend" `Set.member` packageNames ]
       ]
-    dotGhci = unlines
+    dotGhci = unlines $
       -- TODO: Shell escape
       [ ":set -F -pgmF " <> selfExe <> " -optF " <> preprocessorIdentifier <> " " <> unwords (map (("-optF " <>) . makeRelative pathBase . _cabalPackageInfo_packageFile) packageInfos)
       , ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
       , if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
-      , "import qualified Obelisk.Run"
-      , "import qualified Frontend"
-      , "import qualified Backend"
-      ]
+      ] <> obRunImports
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
     liftIO $ writeFile dotGhciPath dotGhci
