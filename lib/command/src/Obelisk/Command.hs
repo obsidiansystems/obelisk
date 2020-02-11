@@ -134,14 +134,6 @@ parseFunction = do
 parseRunOpts :: Parser RunOpts
 parseRunOpts = RunOpts
   <$> parseReplOpts
-  <*> optional (option (readP parseModuleFn) $ long "frontend" <> metavar "Some.Module.myFrontend" <> help "Use this alternative frontend. The module must be Frontend, Backend, or an extra module imported by --import.")
-  <*> optional (option (readP parseModuleFn) $ long "backend" <> metavar "Some.Module.myBackend" <> help "Use this alternative backend. The module must be Frontend, Backend, or an extra module imported by --import.")
-  where
-    parseModuleFn = do
-      m <- parseModule
-      _ <- P.char '.'
-      f <- parseFunction
-      pure (m, f)
 
 inNixShell' :: MonadObelisk m => RunOpts -> StaticPtr (a -> ObeliskT IO ()) -> m ()
 inNixShell' opts p = withProjectRoot "." $ \root -> do
@@ -421,8 +413,8 @@ ob = \case
     ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
     ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
     ThunkCommand_Pack thunks force -> forM_ thunks (packThunk force)
-  ObCommand_Repl opts -> runRepl $ RunOpts opts Nothing Nothing
-  ObCommand_Watch opts -> inNixShell' (RunOpts opts Nothing Nothing) $ static runWatch
+  ObCommand_Repl opts -> runRepl $ RunOpts opts
+  ObCommand_Watch opts -> inNixShell' (RunOpts opts) $ static runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
   ObCommand_Doc shell pkgs -> withProjectRoot "." $ \root ->

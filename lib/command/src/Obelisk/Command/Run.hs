@@ -75,16 +75,6 @@ instance FromJSON ReplOpts
 data RunOpts = RunOpts
   { _runOpts_replOpts :: ReplOpts
   -- ^ Repl options
-  , _runOpts_frontend :: Maybe (String, String)
-  -- ^ Alternative frontend to load.
-  -- First argument is the module, second is the function in the module.
-  -- The module must be imported (see 'runOptsModulesToLoad').
-  -- For example, (Some.Other.Frontend, myFrontend)
-  , _runOpts_backend :: Maybe (String, String)
-  -- ^ Alternative backend to load.
-  -- First argument is the module, second is the function in the module.
-  -- The module must be imported (see 'runOptsModulesToLoad').
-  -- For example, (Some.Other.Backend, myBackend)
   } deriving (Generic, Show)
 instance ToJSON RunOpts
 instance FromJSON RunOpts
@@ -97,24 +87,6 @@ decodeRunOpts = Aeson.eitherDecodeStrict . fst . B16.decode . T.encodeUtf8 . T.p
 -- shell quoting issues with JSON
 encodeRunOpts :: RunOpts -> String
 encodeRunOpts = T.unpack . T.decodeUtf8 . B16.encode . LBS.toStrict . Aeson.encode
-
--- | Get the fully qualified frontend to use.
-runOptsFrontend :: MonadObelisk m => RunOpts -> m (Maybe String)
-runOptsFrontend opts
-  | Just (m, fun) <- _runOpts_frontend opts
-  = if any (\(_, m') -> m' == m) (_replOpts_import $ _runOpts_replOpts opts)
-    then pure $ Just $ m <> "." <> fun
-    else putLog Warning "Ignoring alternate frontend: the module is not imported" >> pure Nothing
-  | otherwise = pure Nothing
-
--- | Get the fully qualified backend to use.
-runOptsBackend :: MonadObelisk m => RunOpts -> m (Maybe String)
-runOptsBackend opts
-  | Just (m, fun) <- _runOpts_backend opts
-  = if any (\(_, m') -> m' == m) (_replOpts_import $ _runOpts_replOpts opts)
-    then pure $ Just $ m <> "." <> fun
-    else putLog Warning "Ignoring alternate backend: the module is not imported" >> pure Nothing
-  | otherwise = pure Nothing
 
 runOptsModulesToLoad :: RunOpts -> [String]
 runOptsModulesToLoad opts = snd <$> _replOpts_import (_runOpts_replOpts opts)
@@ -151,14 +123,12 @@ run opts = do
         else readProcessAndLogStderr Debug $
           proc nixPath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
     putLog Debug $ "Assets impurely loaded from: " <> assets
-    mFrontend <- runOptsFrontend opts
-    mBackend <- runOptsBackend opts
     runGhcid dotGhciPath $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
       , "(runServeAsset " ++ show assets ++ ")"
-      , fromMaybe "backend" mBackend
-      , fromMaybe "frontend" mFrontend
+      , "backend"
+      , "frontend"
       ]
 
 runRepl :: MonadObelisk m => RunOpts -> m ()
