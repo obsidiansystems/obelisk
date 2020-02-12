@@ -112,7 +112,7 @@ obCommand cfg time root = hsubparser
     [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
     , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
-    , command "profile" $ info (ObCommand_Profile <$> option auto (long "output" <> short 'o' <> help "Base output to use for profiling output. Suffixes are added to this based on the profiling type." <> showDefault <> value ((fromMaybe "" root) </> "profile" </> formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" time) <> metavar "PATH")) $ progDesc "Run current project with profiling enabled"
+    , command "profile" $ info (ObCommand_Profile <$> option auto (long "output" <> short 'o' <> help "Base output to use for profiling output. Suffixes are added to this based on the profiling type. Defaults to a timestamped path in the profile/ directory in the project's root." <> showDefault <> value ((fromMaybe "" root) </> "profile" </> formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" time) <> metavar "PATH")) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
     , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
