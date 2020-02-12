@@ -48,7 +48,8 @@ import System.IO.Temp (withSystemTempDirectory)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr, setCwd)
-import Obelisk.Command.Project (withProjectRoot, nixShellWithPkgs)
+import Obelisk.Command.Project (nixShellWithPkgs, toImplDir, withProjectRoot)
+import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath, nixBuildExePath, nixExePath)
 
 data CabalPackageInfo = CabalPackageInfo
@@ -128,7 +129,7 @@ getLocalPkgs root = do
   let exclusions = filter (/= root) $ map takeDirectory obeliskPaths
   fmap (map (makeRelative ".")) $ runFind $
     ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
-    <> concat [["-not", "-path", p </> "*"] | p <- exclusions]
+    <> concat [["-not", "-path", p </> "*"] | p <- (toImplDir "*" </> attrCacheFileName) : exclusions]
   where
     runFind args = do
       (_exitCode, out, err) <- readCreateProcessWithExitCode $ proc findExePath args
