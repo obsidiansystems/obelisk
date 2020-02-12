@@ -20,10 +20,11 @@
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route
   ( R
-  , pattern (:/)
   , (:.)
-  , pattern (:.)
+  , (?/)
   , hoistR
+  , pattern (:.)
+  , pattern (:/)
   , PageName
   , PathQuery
   , Encoder
@@ -194,10 +195,16 @@ import Data.Aeson (FromJSON, ToJSON)
 
 type R f = DSum f Identity --TODO: Better name
 
-{-# COMPLETE (:/) #-}
-infixr 5 :/
+-- | Convenience builder for an 'R' using 'Identity' for the functor.
 pattern (:/) :: f a -> a -> R f
 pattern a :/ b = a :=> Identity b
+{-# COMPLETE (:/) #-}
+infixr 5 :/
+
+-- | Like '(:/)' but adds a 'Just' wrapper around the right-hand side.
+(?/) :: f (Maybe a) -> a -> R f
+r ?/ a = r :/ Just a
+infixr 5 ?/
 
 mapSome :: (forall a. f a -> g a) -> Some f -> Some g
 mapSome f (Some a) = Some $ f a
@@ -881,7 +888,7 @@ instance (GCompare br, GCompare fr) => GCompare (FullRoute br fr) where
   gcompare (FullRoute_Frontend x) (FullRoute_Frontend y) = gcompare x y
 
 instance (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) where
-  universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome] 
+  universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome]
               ++ [Some (FullRoute_Frontend x) | Some x <- universeSome]
 
 -- | Build the typical top level application route encoder from a route for handling 404's,

@@ -3,8 +3,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StaticPointers #-}
-{-# LANGUAGE TypeApplications #-}
 module Obelisk.Command where
 
 import Control.Monad
@@ -13,8 +11,8 @@ import qualified Data.Binary as Binary
 import Data.Bool (bool)
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
+import Data.Foldable (for_)
 import Data.List
-import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Text.Encoding.Error (lenientDecode)
@@ -30,13 +28,12 @@ import System.Posix.Process (executeFile)
 
 import Obelisk.App
 import Obelisk.CliApp
-import Obelisk.CliApp.Demo (cliDemo)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils
 import qualified Obelisk.Command.VmBuilder as VmBuilder
+import qualified Obelisk.Command.Preprocessor as Preprocessor
 
 
 data Args = Args
@@ -95,53 +92,33 @@ data ObCommand
    | ObCommand_Watch
    | ObCommand_Shell ShellOpts
    | ObCommand_Doc String [String] -- shell and list of packages
+   | ObCommand_Hoogle String Int -- shell and port
    | ObCommand_Internal ObInternal
    deriving Show
 
 data ObInternal
-   = ObInternal_RunStaticIO StaticKey
-   | ObInternal_CLIDemo
+   -- the preprocessor argument syntax is also handled outside
+   -- optparse-applicative, but it shouldn't ever conflict with another syntax
+   = ObInternal_ApplyPackages String String String [String]
    deriving Show
-
-inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
-inNixShell' p = withProjectRoot "." $ \root -> do
-  cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
-  projectShell root False "ghc" (Just cmd)
-  where
-    mkCmd = do
-      argsCfg <- getArgsConfig
-      myArgs <- getArgs
-      obArgs <- parseCLIArgs argsCfg myArgs
-      progName <- getObeliskExe
-      return $ progName : catMaybes
-        [ Just "--no-handoff"
-        , bool Nothing (Just "--verbose") $ _args_verbose obArgs
-        , Just "internal"
-        , Just "run-static-io"
-        , Just $ encodeStaticKey $ staticKey p
-        ]
 
 obCommand :: ArgsConfig -> Parser ObCommand
 obCommand cfg = hsubparser
-    (mconcat
-      [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
-      , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-      , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
-      , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-      , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-      , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
-      , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
-      , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
-          progDesc "List paths to haddock documentation for specified packages"
-          <> footerDoc (Just $
-               text "Hint: To open the documentation you can pipe the output of this command like"
-               <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
-      ])
-  <|> subparser
-    (mconcat
-      [ internal
-      , command "internal" (info (ObCommand_Internal <$> internalCommand) mempty)
-      ])
+  (mconcat
+    [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
+    , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
+    , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+    , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
+    , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
+    , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+    , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
+    , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
+        progDesc "List paths to haddock documentation for specified packages"
+        <> footerDoc (Just $
+              text "Hint: To open the documentation you can pipe the output of this command like"
+              <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
+    , command "hoogle" $ info (ObCommand_Hoogle <$> shellFlags <*> portOpt 8080) $ progDesc "Run a hoogle server locally for your project's dependency tree"
+    ])
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
@@ -206,12 +183,6 @@ data DeployInitOpts = DeployInitOpts
   }
   deriving Show
 
-internalCommand :: Parser ObInternal
-internalCommand = subparser $ mconcat
-  [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
-  , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
-  ]
-
 --TODO: Result should provide normalised path and also original user input for error reporting.
 thunkDirectoryParser :: Parser FilePath
 thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
@@ -220,20 +191,35 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   , help "Path to directory containing thunk data"
   ]
 
-data ThunkCommand
-   = ThunkCommand_Update [FilePath] (Maybe String)
-   | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack   [FilePath] Bool
-  deriving Show
+thunkConfig :: Parser ThunkConfig
+thunkConfig = ThunkConfig
+  <$>
+    (   flag' (Just True) (long "private" <> help "Mark thunks as pointing to a private repository")
+    <|> flag' (Just False) (long "public" <> help "Mark thunks as pointing to a public repository")
+    <|> pure Nothing
+    )
 
-forceFlag :: Parser Bool
-forceFlag = switch $ long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care."
+thunkUpdateConfig :: Parser ThunkUpdateConfig
+thunkUpdateConfig = ThunkUpdateConfig
+  <$> optional (strOption (long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
+  <*> thunkConfig
+
+thunkPackConfig :: Parser ThunkPackConfig
+thunkPackConfig = ThunkPackConfig
+  <$> switch (long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care.")
+  <*> thunkConfig
+
+data ThunkCommand
+   = ThunkCommand_Update [FilePath] ThunkUpdateConfig
+   | ThunkCommand_Unpack [FilePath]
+   | ThunkCommand_Pack   [FilePath] ThunkPackConfig
+  deriving Show
 
 thunkCommand :: Parser ThunkCommand
 thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> optional (strOption (long "branch" <> metavar "BRANCH"))) $ progDesc "Update thunk to latest revision available"
+  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> thunkUpdateConfig) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> forceFlag) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> thunkPackConfig) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
   ]
 
 data ShellOpts
@@ -254,20 +240,24 @@ shellOpts = ShellOpts
   <$> shellFlags
   <*> optional (strArgument (metavar "COMMAND"))
 
+portOpt :: Int -> Parser Int
+portOpt dfault = option auto (long "port" <> short 'p' <> help "Port number for server" <> showDefault <> value dfault <> metavar "INT")
+
 parserPrefs :: ParserPrefs
 parserPrefs = defaultPrefs
   { prefShowHelpOnEmpty = True
   }
 
 parseCLIArgs :: ArgsConfig -> [String] -> IO Args
-parseCLIArgs cfg as = pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
+parseCLIArgs cfg = handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
 -- | Create an Obelisk config for the current process.
 mkObeliskConfig :: IO Obelisk
 mkObeliskConfig = do
   cliArgs <- getArgs
   -- This function should not use argument parser (full argument parsing happens post handoff)
-  let logLevel = toLogLevel $ "-v" `elem` cliArgs
+  -- TODO: See if we can use the argument parser with a subset of the parsers to get logging level out.
+  let logLevel = toLogLevel $ any (`elem` ["-v", "--verbose"]) cliArgs
   notInteractive <- not <$> isInteractiveTerm
   cliConf <- newCliConfig logLevel notInteractive notInteractive $ \case
     ObeliskError_ProcessError (ProcessFailure p code) ann ->
@@ -332,6 +322,9 @@ main' argsCfg = do
           liftIO $ executeFile impl False ("--no-handoff" : myArgs) Nothing
   case myArgs of
     "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
+    origPath:inPath:outPath:preprocessorName:packagePaths
+      | preprocessorName == preprocessorIdentifier && any (\c -> c == '.' || c == pathSeparator) origPath ->
+        ob $ ObCommand_Internal $ ObInternal_ApplyPackages origPath inPath outPath packagePaths
     a:as -- Otherwise bash completion would always hand-off even if the user isn't trying to
       | "--bash-completion" `isPrefixOf` a
       && "--no-handoff" `elem` as -> go (a:as)
@@ -358,7 +351,7 @@ ob = \case
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr False root
+          getThunkPtr False root Nothing
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
           route = _deployInitOpts_route deployOpts
@@ -372,25 +365,22 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> inNixShell' $ static run
-    -- inNixShell ($(mkClosure 'ghcidAction) ())
+  ObCommand_Run -> run
   ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks mBranch -> mapM_ ((flip updateThunkToLatest) mBranch) thunks
-    ThunkCommand_Unpack thunks -> mapM_ unpackThunk thunks
-    ThunkCommand_Pack thunks force -> forM_ thunks (packThunk force)
+    ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
+    ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
+    ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
   ObCommand_Repl -> runRepl
-  ObCommand_Watch -> inNixShell' $ static runWatch
+  ObCommand_Watch -> runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
-  ObCommand_Doc shell pkgs -> withProjectRoot "." $ \root ->
-    projectShell root False shell (Just $ haddockCommand pkgs)
+  ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
+    projectShell root False shell' (Just $ haddockCommand pkgs)
+  ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
+    nixShellWithHoogle root True shell' $ Just $ "hoogle server -p " <> show port <> " --local"
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
-      Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
-      Just p -> do
-        c <- getObelisk
-        liftIO $ runObelisk c $ deRefStaticPtr p
-    ObInternal_CLIDemo -> cliDemo
+    ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
+      liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
 
 haddockCommand :: [String] -> String
 haddockCommand pkgs = unwords

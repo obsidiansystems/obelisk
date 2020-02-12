@@ -1,12 +1,16 @@
 # Obelisk
 
+[![Haskell Programming Language](https://img.shields.io/badge/language-Haskell-blue.svg)](http://www.haskell.org)
+[![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)](https://tldrlegal.com/license/bsd-3-clause-license-%28revised%29)
+
+
 Obelisk provides an easy way to develop and deploy your [Reflex](https://github.com/reflex-frp/reflex) project as web apps and as mobile apps.
 
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
-  - [Hoogle](#hoogle)
   - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
+  - [Running over https](#running-over-https)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
@@ -22,14 +26,15 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 1. Set up nix caches
     1. If you are running NixOS, add this to `/etc/nixos/configuration.nix`:
         ```
-        nix.binaryCaches = [ "https://cache.nixos.org/" "https://nixcache.reflex-frp.org" ];
+        nix.binaryCaches = [ "https://nixcache.reflex-frp.org" ];
         nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
         and rebuild your NixOS configuration (e.g. `sudo nixos-rebuild switch`).
     1. If you are using another operating system or linux distribution, ensure that these lines are present in your Nix configuration file (`/etc/nix/nix.conf` on most systems; [see full list](https://nixos.org/nix/manual/#sec-conf-file)):
         ```
-        substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
-        trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
+       binary-caches = https://cache.nixos.org https://nixcache.reflex-frp.org
+       binary-cache-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
+       binary-caches-parallel-connections = 40
         ```
         * other Linux: enable sandboxing (see these [issue172](https://github.com/obsidiansystems/obelisk/issues/172#issuecomment-411507818) or [issue6](https://github.com/obsidiansystems/obelisk/issues/6) if you run into build problems)
           ```
@@ -68,8 +73,8 @@ nix-env -f /path/to/obelisk -iA command
 Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
 
 ```shell
-ob thunk unpack ./obelisk/impl
-cd ./obelisk/impl
+ob thunk unpack ./.obelisk/impl
+cd ./.obelisk/impl
 # apply your changes
 ```
 
@@ -105,15 +110,10 @@ Obelisk leverages ghcid to provide a live-reloading server that handles both fro
 ob run
 ```
 
-Now go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Now, with an appropriate browser, go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Firefox will not be able to properly run the development website due to [issue 460](https://github.com/obsidiansystems/obelisk/issues/460). Fortunately, this problem does not occur on a fully built website.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
-
-### Hoogle
-
-To enter a nix-shell from which you can run the hoogle command-line client or a hoogle server for your project:
-
-`nix-shell -A shells.ghc --arg withHoogle true`
 
 ### Adding packages
 
@@ -148,6 +148,29 @@ project ./. ({ pkgs, ... }: {
 
 For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
 
+### Adding extra local packages
+
+If the standard packages (`frontend`, `backend`, and `common`) are not
+enough, to add more local Haskell packages, define them with the
+`packages` parameter. The sources of these packages will be
+automatically reloaded by `ob run`.
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  packages = {
+    another = ./another;
+  };
+# ...
+```
+
+### Running over https
+
+To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+
+Since Obelisk generates a self-signed certificate for running https, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
+
 ## Deploying
 
 ### Locally
@@ -173,7 +196,7 @@ In this section we will demonstrate how to deploy your Obelisk app to an Amazon 
 
 First create a new EC2 instance:
 
-1. Launch a NixOS 18.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-009c9c3f1af480ff3))
+1. Launch a NixOS 19.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-00a8eeaf232a74f84))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
 1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and 443.
