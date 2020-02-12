@@ -8,8 +8,7 @@ module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
-import qualified Control.Lens as Lens
-import Control.Lens (ifor)
+import Control.Lens (ifor, (.~), (&))
 import Control.Monad (filterM, unless)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
@@ -109,8 +108,8 @@ profile profileBaseName = withProjectRoot "." $ \root -> do
         , "  buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];"
         , "} \"ghc -x hs -prof -fno-prof-auto ${exeSource} -o $out\")" ]
   exePath <- nixCmd $ NixCmd_Build $ def
-      Lens.& nixBuildConfig_outLink Lens..~ OutLink_None
-      Lens.& nixCmdConfig_target Lens..~ Target
+      & nixBuildConfig_outLink .~ OutLink_None
+      & nixCmdConfig_target .~ Target
         { _target_path = Nothing
         , _target_attr = Nothing
         , _target_expr = Just nixBuildExpr }
