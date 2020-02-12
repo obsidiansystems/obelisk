@@ -84,9 +84,6 @@ profile
   => FilePath
   -> m ()
 profile profileBaseName = withProjectRoot "." $ \root -> do
-  freePort <- getFreePort
-  assets <- findProjectAssets root
-  putLog Debug $ "Assets impurely loaded from: " <> assets
   putLog Debug "Using profiled build of project."
   liftIO $ createDirectoryIfMissing False $ takeDirectory profileBaseName
   let -- Sane flags to enable by default, enable time profiling +
@@ -113,6 +110,9 @@ profile profileBaseName = withProjectRoot "." $ \root -> do
         { _target_path = Nothing
         , _target_attr = Nothing
         , _target_expr = Just nixBuildExpr }
+  assets <- findProjectAssets root
+  putLog Debug $ "Assets impurely loaded from: " <> assets
+  freePort <- getFreePort
   (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exePath ([show freePort, T.unpack assets] <> rtsFlags)
   _ <- liftIO $ waitForProcess ph
   pure ()
@@ -122,18 +122,17 @@ run
   => m ()
 run = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
-  freePort <- getFreePort
-  assets <- findProjectAssets root
-  putLog Debug $ "Assets impurely loaded from: " <> assets
-  let obRunExpr = unwords
-          [ "Obelisk.Run.run"
-          , show freePort
-          , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
-          , "Backend.backend"
-          , "Frontend.frontend"
-          ]
   withGhciScript pkgs root $ \dotGhciPath -> do
-    runGhcid root True dotGhciPath pkgs $ Just obRunExpr
+    freePort <- getFreePort
+    assets <- findProjectAssets root
+    putLog Debug $ "Assets impurely loaded from: " <> assets
+    runGhcid root True dotGhciPath pkgs $ Just $ unwords
+      [ "Obelisk.Run.run"
+      , show freePort
+      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      , "Backend.backend"
+      , "Frontend.frontend"
+      ]
 
 runRepl :: MonadObelisk m => m ()
 runRepl = withProjectRoot "." $ \root -> do
