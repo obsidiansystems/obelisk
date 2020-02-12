@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
@@ -22,6 +23,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import qualified Data.Set as Set
+import Data.String.Here (hereLit)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Traversable (for)
@@ -73,12 +75,6 @@ data CabalPackageInfo = CabalPackageInfo
 preprocessorIdentifier :: String
 preprocessorIdentifier = "__preprocessor-apply-packages"
 
--- | Imports needed to use Obelisk.Run
-obRunImports :: [String]
-obRunImports = [ "import qualified Obelisk.Run"
-               , "import qualified Frontend"
-               , "import qualified Backend" ]
-
 profile
   :: MonadObelisk m
   => FilePath
@@ -89,21 +85,32 @@ profile profileBaseName = withProjectRoot "." $ \root -> do
   let -- Sane flags to enable by default, enable time profiling +
       -- closure heap profiling.
       rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
-      nixBuildExpr = unlines $
-        [ "(with (import ./. {});"
-        , "let"
-        , "  exeSource = obelisk.nixpkgs.writeText \"ob-run\" ''"
-        , "module Main where"
-        , "import Control.Exception"
-        , "import Reflex.Profiled"
-        , "import System.Environment" ]
-        <> obRunImports <>
-        [ "main :: IO ()"
-        , "main = getArgs >>= \\args -> (Obelisk.Run.run (read (args !! 0)) (Obelisk.Run.runServeAsset (args !! 1)) Backend.backend Frontend.frontend) `finally` writeProfilingData \"" <> profileBaseName <> ".rprof\""
-        , "  '';"
-        , "in obelisk.nixpkgs.runCommand \"ob-run\" {"
-        , "  buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];"
-        , "} \"ghc -x hs -prof -fno-prof-auto ${exeSource} -o $out\")" ]
+      nixBuildExpr = [hereLit|
+with (import ./. {});
+let
+  exeSource = obelisk.nixpkgs.writeText "ob-run" ''
+module Main where
+
+import Control.Exception
+import Reflex.Profiled
+import System.Environment
+
+import qualified Obelisk.Run
+import qualified Frontend
+import qualified Backend
+
+main :: IO ()
+main = do
+  args <- getArgs
+  let port = read $ args !! 0
+      assets = args !! 1
+      profileFile = (args !! 2) <> ".rprof"
+  Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
+  '';
+in obelisk.nixpkgs.runCommand "ob-run" {
+     buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+} "ghc -x hs -prof -fno-prof-auto ${exeSource} -o $out"
+|]
   exePath <- nixCmd $ NixCmd_Build $ def
       & nixBuildConfig_outLink .~ OutLink_None
       & nixCmdConfig_target .~ Target
@@ -113,7 +120,7 @@ profile profileBaseName = withProjectRoot "." $ \root -> do
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
   freePort <- getFreePort
-  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exePath ([show freePort, T.unpack assets] <> rtsFlags)
+  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exePath ([show freePort, T.unpack assets, profileBaseName] <> rtsFlags)
   _ <- liftIO $ waitForProcess ph
   pure ()
 
@@ -318,7 +325,9 @@ withGhciScript packageInfos pathBase f = do
       [ ":set -F -pgmF " <> selfExe <> " -optF " <> preprocessorIdentifier <> " " <> unwords (map (("-optF " <>) . makeRelative pathBase . _cabalPackageInfo_packageFile) packageInfos)
       , ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
       , if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
-      ] <> obRunImports
+      , "import qualified Obelisk.Run"
+      , "import qualified Frontend"
+      , "import qualified Backend" ]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
     liftIO $ writeFile dotGhciPath dotGhci
