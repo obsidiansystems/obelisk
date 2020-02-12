@@ -187,7 +187,7 @@ findProjectRoot target = do
   targetStat <- liftIO $ getFileStatus target
   umask <- liftIO getUmask
   (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat umask myUid) []
-  return result
+  return $ makeRelative "." <$> result
 
 withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
 withProjectRoot target f = findProjectRoot target >>= \case
@@ -321,10 +321,10 @@ findProjectAssets root = do
       ]
   -- Check whether the impure static files are a derivation (and so must be built)
   if isDerivation == "1"
-    then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-      setCwd (Just root) $ proc nixBuildExePath
+    then fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ -- Strip whitespace here because nix-build has no --raw option
+      proc nixBuildExePath
         [ "--no-out-link"
         , "-E", "(import ./. {}).passthru.staticFilesImpure"
         ]
-    else readProcessAndLogStderr Debug $
-      proc nixExePath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+    else readProcessAndLogStderr Debug $ setCwd (Just root) $
+      proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]

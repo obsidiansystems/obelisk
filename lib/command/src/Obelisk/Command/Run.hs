@@ -9,6 +9,7 @@ module Obelisk.Command.Run where
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
 import qualified Control.Lens as Lens
+import Control.Lens (ifor)
 import Control.Monad (filterM, unless)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
@@ -159,7 +160,7 @@ getLocalPkgs root = do
   -- We do not want to find packages that are embedded inside other obelisk projects, unless that
   -- obelisk project is our own.
   let exclusions = filter (/= root) $ map takeDirectory obeliskPaths
-  runFind $
+  fmap (map (makeRelative ".")) $ runFind $
     ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
     <> concat [["-not", "-path", p </> "*"] | p <- exclusions]
   where
@@ -276,7 +277,17 @@ parsePackagesOrFail dirs = do
         | _cabalPackageInfo_buildable packageInfo -> Right packageInfo
       _ -> Left dir
 
-  packageInfos <- case NE.nonEmpty packageInfos' of
+  let packagesByName = Map.fromListWith (<>) [(_cabalPackageInfo_packageName p, p NE.:| []) | p <- packageInfos']
+  unambiguous <- ifor packagesByName $ \packageName ps -> case ps of
+    p NE.:| [] -> pure p -- No ambiguity here
+    p NE.:| _ -> do
+      putLog Warning $ T.pack $
+        "Packages named '" <> T.unpack packageName <> "' appear in " <> show (length ps) <> " different locations: "
+        <> intercalate ", " (map _cabalPackageInfo_packageFile $ toList ps)
+        <> "; Picking " <> _cabalPackageInfo_packageFile p
+      pure p
+
+  packageInfos <- case NE.nonEmpty $ toList unambiguous of
     Nothing -> failWith $ T.pack $ "No valid, buildable packages found in " <> intercalate ", " dirs
     Just xs -> pure xs
 
