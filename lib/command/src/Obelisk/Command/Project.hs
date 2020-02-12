@@ -186,7 +186,7 @@ findProjectRoot target = do
   targetStat <- liftIO $ getFileStatus target
   umask <- liftIO getUmask
   (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat umask myUid) []
-  return result
+  return $ makeRelative "." <$> result
 
 withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
 withProjectRoot target f = findProjectRoot target >>= \case
