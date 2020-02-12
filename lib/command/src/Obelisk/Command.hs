@@ -53,8 +53,8 @@ newtype ArgsConfig = ArgsConfig
   { _argsConfig_enableVmBuilderByDefault :: Bool
   }
 
-args :: ArgsConfig -> UTCTime -> Maybe FilePath -> Parser Args
-args cfg time root = Args <$> noHandoff <*> verbose <*> obCommand cfg time root
+args :: ArgsConfig -> Parser Args
+args cfg = Args <$> noHandoff <*> verbose <*> obCommand cfg
 
 noHandoff :: Parser Bool
 noHandoff = flag False True $ mconcat
@@ -70,8 +70,8 @@ verbose = flag False True $ mconcat
   , help "Be more verbose"
   ]
 
-argsInfo :: ArgsConfig -> UTCTime -> Maybe FilePath -> ParserInfo Args
-argsInfo cfg time root = info (args cfg time root <**> helper) $ mconcat
+argsInfo :: ArgsConfig -> ParserInfo Args
+argsInfo cfg = info (args cfg <**> helper) $ mconcat
   [ fullDesc
   , progDesc "Manage Obelisk projects"
   ]
@@ -90,7 +90,7 @@ data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
    | ObCommand_Run
-   | ObCommand_Profile FilePath
+   | ObCommand_Profile (Maybe FilePath)
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
    | ObCommand_Watch
@@ -106,13 +106,13 @@ data ObInternal
    = ObInternal_ApplyPackages String String String [String]
    deriving Show
 
-obCommand :: ArgsConfig -> UTCTime -> Maybe FilePath -> Parser ObCommand
-obCommand cfg time root = hsubparser
+obCommand :: ArgsConfig -> Parser ObCommand
+obCommand cfg = hsubparser
   (mconcat
     [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
     , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
-    , command "profile" $ info (ObCommand_Profile <$> option auto (long "output" <> short 'o' <> help "Base output to use for profiling output. Suffixes are added to this based on the profiling type. Defaults to a timestamped path in the profile/ directory in the project's root." <> showDefault <> value ((fromMaybe "" root) </> "profile" </> formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" time) <> metavar "PATH")) $ progDesc "Run current project with profiling enabled"
+    , command "profile" $ info (ObCommand_Profile <$> option auto (long "output" <> short 'o' <> help "Base output to use for profiling output. Suffixes are added to this based on the profiling type. Defaults to a timestamped path in the profile/ directory in the project's root." <> metavar "PATH")) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
     , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
@@ -253,8 +253,8 @@ parserPrefs = defaultPrefs
   { prefShowHelpOnEmpty = True
   }
 
-parseCLIArgs :: ArgsConfig -> UTCTime -> Maybe FilePath -> [String] -> IO Args
-parseCLIArgs cfg time root = handleParseResult . execParserPure parserPrefs (argsInfo cfg time root)
+parseCLIArgs :: ArgsConfig -> [String] -> IO Args
+parseCLIArgs cfg = handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
 -- | Create an Obelisk config for the current process.
 mkObeliskConfig :: IO Obelisk
@@ -309,15 +309,12 @@ main' argsCfg = do
     , "logging-level=" <> show logLevel
     ]
 
-  time <- liftIO $ getCurrentTime
-  root <- findProjectRoot "."
-
   --TODO: We'd like to actually use the parser to determine whether to hand off,
   --but in the case where this implementation of 'ob' doesn't support all
   --arguments being passed along, this could fail.  For now, we don't bother
   --with optparse-applicative until we've done the handoff.
   let go as = do
-        args' <- liftIO $ handleParseResult (execParserPure parserPrefs (argsInfo argsCfg time root) as)
+        args' <- liftIO $ handleParseResult (execParserPure parserPrefs (argsInfo argsCfg) as)
         case _args_noHandOffPassed args' of
           False -> return ()
           True -> putLog Warning "--no-handoff should only be passed once and as the first argument; ignoring"
@@ -374,7 +371,14 @@ ob = \case
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run -> run
-  ObCommand_Profile basePath -> profile basePath
+  ObCommand_Profile mBasePath -> do
+    basePath <- case mBasePath of
+      Just path -> pure path
+      Nothing -> do
+        time <- liftIO $ getCurrentTime
+        root <- findProjectRoot "."
+        pure $ (fromMaybe "" root) </> "profile" </> formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" time
+    profile basePath
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
