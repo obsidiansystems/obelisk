@@ -13,7 +13,6 @@ import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (for_)
 import Data.List
-import Data.Maybe
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Text.Encoding.Error (lenientDecode)
@@ -376,8 +375,7 @@ ob = \case
       Just path -> pure path
       Nothing -> do
         time <- liftIO $ getCurrentTime
-        root <- findProjectRoot "."
-        pure $ (fromMaybe "" root) </> "profile" </> formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" time
+        pure $ "profile" </> formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" time
     profile basePath
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
