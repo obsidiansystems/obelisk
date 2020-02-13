@@ -109,7 +109,7 @@ main = do
   '';
 in obelisk.nixpkgs.runCommand "ob-run" {
      buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
-} "ghc -x hs -prof -fno-prof-auto ${exeSource} -o $out"
+} "ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out"
 |]
   exePath <- nixCmd $ NixCmd_Build $ def
       & nixBuildConfig_outLink .~ OutLink_None
