@@ -205,7 +205,6 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
       checkKeytoolConfExist <- liftIO $ doesFileExist keytoolConfPath
       unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"
       keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
-      liftIO $ print keytoolConfContents
       keyArgs <- case eitherDecode keytoolConfContents :: Either String KeytoolConfig of
         Left err -> failWith $ T.pack err
         Right conf -> pure [ "--sign"
