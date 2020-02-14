@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "master",
+  "branch": "android-allow-post-build-signing",
   "private": false,
-  "rev": "5429278830e1555a577f2550e045ce7f7164aa65",
-  "sha256": "1lp86cgccmim573rarsjny5vh0ygkfp5afq7006li0k9w2sw2d4c"
+  "rev": "02ba4af1e8a52e557567a6be51db2894a4e3c6ee",
+  "sha256": "0lxzm2bxfxpy2vb8w1msyfb88v47dqm71qinfxxaaqxazx83qpaz"
 }
