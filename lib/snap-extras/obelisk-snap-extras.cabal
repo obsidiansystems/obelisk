@@ -1,6 +1,6 @@
 name: obelisk-snap-extras
 version: 0.1
-synopsys: Extra functionality for Snap that should be considered for upstreaming
+synopsis: Extra functionality for Snap that should be considered for upstreaming
 license: BSD3
 build-type: Simple
 cabal-version: >=1.2
