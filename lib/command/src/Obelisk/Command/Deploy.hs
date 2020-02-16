@@ -72,6 +72,12 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
   --accidentally create a production deployment that uses development
   --credentials to connect to some resources.  This could result in, e.g.,
   --production data backed up to a dev environment.
+  putLog Notice "Writing default module.nix"
+  writeDeployConfig deployDir "module.nix"
+    "{ obeliskPkgs, ... }: {...}: {\n\
+    \  imports = [(obeliskPkgs.path + /nixos/modules/virtualisation/amazon-image.nix)];\n\
+    \  ec2.hvm = true;\n\
+    \}"
   withSpinner "Creating project configuration directories" $ do
     callProcessAndLogOutput (Notice, Error) $
       proc "mkdir" [ "-p"
@@ -113,6 +119,8 @@ deployPush deployPath getNixBuilders = do
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   builders <- getNixBuilders
+  let moduleFile = deployPath </> "module.nix"
+  moduleFileExists <- liftIO $ doesFileExist moduleFile
   buildOutputByHost <- ifor (Map.fromSet (const ()) hosts) $ \host () -> do
     --TODO: What does it mean if this returns more or less than 1 line of output?
     [result] <- fmap lines $ nixCmd $ NixCmd_Build $ def
@@ -122,13 +130,13 @@ deployPush deployPath getNixBuilders = do
         , _target_expr = Nothing
         }
       & nixBuildConfig_outLink .~ OutLink_None
-      & nixCmdConfig_args .~
+      & nixCmdConfig_args .~ (
         [ strArg "hostName" host
         , strArg "adminEmail" adminEmail
         , strArg "routeHost" routeHost
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
-        ]
+        ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
     pure result
   let knownHostsPath = deployPath </> "backend_known_hosts"
