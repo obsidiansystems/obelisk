@@ -2,7 +2,7 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
 
-## Unreleased
+## v0.6.0.0 - 2020-02-21
 
 * Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave exactly like `<a href="...">` when run by JavaScript. These functions now scroll to the top of the page when the link is clicked. ([#540](https://github.com/obsidiansystems/obelisk/pull/540))
 * Fix a bug in `ob run`/`ob watch`/`ob repl` where nested Obelisk projects would also be loaded into the session. These are now ignored. ([#652](https://github.com/obsidiansystems/obelisk/pull/652))
@@ -11,8 +11,8 @@ This project's release branch is `master`. This log is written from the perspect
 
       mkRouteToUrl validFullEncoder (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
 
-* Added `Obelisk.Backend.renderAllJsPath` to expose URL path to `ghcjs/all.js`.
-* Added argument to `serveDefaultObeliskApp`, `serveObeliskApp`, and `serveGhcjsApp` to take the path to `all.js` instead of hard-coding it.
+* Add `Obelisk.Backend.renderAllJsPath` to expose URL path to `ghcjs/all.js`. ([#545](https://github.com/obsidiansystems/obelisk/pull/545))
+* Add argument to `serveDefaultObeliskApp`, `serveObeliskApp`, and `serveGhcjsApp` to take the path to `all.js` instead of hard-coding it. ([#545](https://github.com/obsidiansystems/obelisk/pull/545))
 
 ## v0.5.0.0 - 2020-02-07
 
