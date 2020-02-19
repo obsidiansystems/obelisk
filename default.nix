@@ -1,7 +1,7 @@
 let
   nixos1909 = import (builtins.fetchTarball {
-    url = https://github.com/NixOS/nixpkgs-channels/archive/bf0936728f38565d7a88f0c2cc31ca1dd1195426.tar.gz;
-    sha256 = "1qcm3n83l6jy47yd4m9zpcdgwdpxqrp3f2wj7sirk5yz1v8hccsz";
+    url = https://github.com/NixOS/nixpkgs/archive/8731aaaf8b30888bc24994096db830993090d7c4.tar.gz;
+    sha256 = "1hcc89rxi47nb0mpk05nl9rbbb04kfw97xfydhpmmgh57yrp3zqa";
   }) {};
 in
 { system ? builtins.currentSystem
