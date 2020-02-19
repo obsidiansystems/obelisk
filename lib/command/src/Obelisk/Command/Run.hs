@@ -78,13 +78,15 @@ preprocessorIdentifier = "__preprocessor-apply-packages"
 profile
   :: MonadObelisk m
   => FilePath
+  -> Maybe String
   -> m ()
-profile profileBaseName = withProjectRoot "." $ \root -> do
+profile profileBaseName mRtsFlags = withProjectRoot "." $ \root -> do
   putLog Debug "Using profiled build of project."
   liftIO $ createDirectoryIfMissing False $ takeDirectory profileBaseName
   let -- Sane flags to enable by default, enable time profiling +
       -- closure heap profiling.
-      rtsFlags = [ "+RTS", "-p", "-po" <> profileBaseName, "-hc", "-RTS" ]
+      defaultRtsFlags = [ "-p", "-hc" ]
+      rtsFlags = maybe defaultRtsFlags words mRtsFlags
       nixBuildExpr = [hereLit|
 with (import ./. {});
 let
@@ -120,7 +122,14 @@ in obelisk.nixpkgs.runCommand "ob-run" {
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
   freePort <- getFreePort
-  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exePath ([show freePort, T.unpack assets, profileBaseName] <> rtsFlags)
+  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exePath $
+    [ show freePort
+    , T.unpack assets
+    , profileBaseName
+    , "+RTS"
+    , "-po" <> profileBaseName ]
+    <> rtsFlags
+    <> ["-RTS"]
   _ <- liftIO $ waitForProcess ph
   pure ()
 
