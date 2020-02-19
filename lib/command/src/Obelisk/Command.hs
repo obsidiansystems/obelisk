@@ -16,8 +16,6 @@ import Data.List
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Text.Encoding.Error (lenientDecode)
-import Data.Time.Clock
-import Data.Time.Format (formatTime, defaultTimeLocale)
 import GHC.StaticPtr
 import Options.Applicative
 import Options.Applicative.Help.Pretty (text, (<$$>))
@@ -89,7 +87,7 @@ data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
    | ObCommand_Run
-   | ObCommand_Profile (Maybe FilePath) String
+   | ObCommand_Profile String [String]
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
    | ObCommand_Watch
@@ -111,7 +109,7 @@ obCommand cfg = hsubparser
     [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
     , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
-    , command "profile" $ info (ObCommand_Profile <$> (optional (strOption (long "output" <> short 'o' <> help "Base output to use for profiling output. Suffixes are added to this based on the profiling type. Defaults to a timestamped path in the profile/ directory in the project's root." <> metavar "PATH"))) <*> (strOption (long "rts-flags" <> help "RTS Flags to pass to the executable." <> value "-p -hc" <> metavar "FLAGS" <> showDefault))) $ progDesc "Run current project with profiling enabled"
+    , command "profile" $ info (ObCommand_Profile <$> (strOption (long "output" <> short 'o' <> help "Base output to use for profiling output. Suffixes are added to this based on the profiling type. Defaults to a timestamped path in the profile/ directory in the project's root." <> metavar "PATH" <> value "profile/%Y-%m-%dT%H:%M:%S" <> showDefault)) <*> (words <$> strOption (long "rts-flags" <> help "RTS Flags to pass to the executable." <> value "-p -hc" <> metavar "FLAGS" <> showDefault))) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
     , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
@@ -370,13 +368,7 @@ ob = \case
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run -> run
-  ObCommand_Profile mBasePath rtsFlags -> do
-    basePath <- case mBasePath of
-      Just path -> pure path
-      Nothing -> do
-        time <- liftIO $ getCurrentTime
-        pure $ "profile" </> formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" time
-    profile basePath rtsFlags
+  ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack thunks -> for_ thunks unpackThunk

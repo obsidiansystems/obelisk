@@ -26,6 +26,8 @@ import qualified Data.Set as Set
 import Data.String.Here (hereLit)
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Time.Clock
+import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
 import Distribution.Compiler (CompilerFlavor(..))
@@ -77,12 +79,19 @@ preprocessorIdentifier = "__preprocessor-apply-packages"
 
 profile
   :: MonadObelisk m
-  => FilePath
-  -> String
+  => String
+  -> [String]
   -> m ()
-profile profileBaseName rtsFlags = withProjectRoot "." $ \root -> do
+profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
   putLog Debug "Using profiled build of project."
+
+  time <- liftIO $ getCurrentTime
+  let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
+
+  putLog Debug $ T.pack $ "Storing profiled data under base name of " <> profileBaseName
+
   liftIO $ createDirectoryIfMissing False $ takeDirectory profileBaseName
+
   let nixBuildExpr = [hereLit|
 with (import ./. {});
 let
@@ -124,7 +133,7 @@ in obelisk.nixpkgs.runCommand "ob-run" {
     , profileBaseName
     , "+RTS"
     , "-po" <> profileBaseName
-    ] <> words rtsFlags
+    ] <> rtsFlags
       <> [ "-RTS" ]
   _ <- liftIO $ waitForProcess ph
   pure ()
