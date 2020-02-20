@@ -68,6 +68,7 @@ let
       iosSkeleton = (import ./skeleton { inherit obelisk; }).ios.frontend;
       nameSuffix = if profiling then "profiled" else "unprofiled";
       packages = {
+        skeletonProfiledObRun = skeleton.profiledObRun;
         inherit
           command
           serverSkeletonShell

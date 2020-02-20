@@ -374,7 +374,32 @@ in rec {
       linuxExe = serverOn (projectOut "x86_64-linux");
       dummyVersion = "Version number is only available for deployments";
     in mainProjectOut // {
-      profiled = projectOut { inherit system; enableLibraryProfiling = true; };
+
+      profiledObRun = let
+        profiled = projectOut { inherit system; enableLibraryProfiling = true; };
+        exeSource = builtins.toFile "ob-run.hs" ''
+          module Main where
+
+          import Control.Exception
+          import Reflex.Profiled
+          import System.Environment
+
+          import qualified Obelisk.Run
+          import qualified Frontend
+          import qualified Backend
+
+          main :: IO ()
+          main = do
+            args <- getArgs
+            let port = read $ args !! 0
+                assets = args !! 1
+                profileFile = (args !! 2) <> ".rprof"
+            Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
+        '';
+      in nixpkgs.runCommand "ob-run" {
+           buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+      } "ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out";
+
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;

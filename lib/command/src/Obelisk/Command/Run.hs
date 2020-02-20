@@ -23,7 +23,6 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import qualified Data.Set as Set
-import Data.String.Here (hereLit)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time.Clock (getCurrentTime)
@@ -97,9 +96,9 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
   exePath <- nixCmd $ NixCmd_Build $ def
       & nixBuildConfig_outLink .~ OutLink_None
       & nixCmdConfig_target .~ Target
-        { _target_path = Nothing
-        , _target_attr = Nothing
-        , _target_expr = Just nixBuildExpr }
+        { _target_path = Just "."
+        , _target_attr = Just "profiledObRun"
+        , _target_expr = Nothing }
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
   freePort <- getFreePort
@@ -112,33 +111,6 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
     ] <> rtsFlags
       <> [ "-RTS" ]
   void $ waitForProcess ph
-  where
-    nixBuildExpr = [hereLit|
-with (import ./. {});
-let
-  exeSource = obelisk.nixpkgs.writeText "ob-run" ''
-module Main where
-
-import Control.Exception
-import Reflex.Profiled
-import System.Environment
-
-import qualified Obelisk.Run
-import qualified Frontend
-import qualified Backend
-
-main :: IO ()
-main = do
-  args <- getArgs
-  let port = read $ args !! 0
-      assets = args !! 1
-      profileFile = (args !! 2) <> ".rprof"
-  Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
-  '';
-in obelisk.nixpkgs.runCommand "ob-run" {
-     buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
-} "ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out"
-|]
 
 run
   :: MonadObelisk m
