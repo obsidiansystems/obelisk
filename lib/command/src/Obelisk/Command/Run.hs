@@ -50,10 +50,11 @@ import System.Environment (getExecutablePath)
 import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
-import System.Process (waitForProcess)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, setCwd, setDelegateCtlc, createProcess_)
+import Obelisk.CliApp (Severity (..),
+                       failWith, putLog, proc, readCreateProcessWithExitCode,
+                       setCwd, setDelegateCtlc, createProcess_, waitForProcess)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project (nixShellWithPkgs, toImplDir, withProjectRoot, findProjectAssets)
 import Obelisk.Command.Thunk (attrCacheFileName)
@@ -136,7 +137,7 @@ in obelisk.nixpkgs.runCommand "ob-run" {
     , "-po" <> profileBaseName
     ] <> rtsFlags
       <> [ "-RTS" ]
-  _ <- liftIO $ waitForProcess ph
+  _ <- waitForProcess ph
   pure ()
 
 run

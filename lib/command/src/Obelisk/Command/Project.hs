@@ -42,7 +42,6 @@ import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
-import System.Process (waitForProcess)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -288,7 +287,7 @@ nixShellWithPkgs root isPure chdirToRoot packageNamesAndPaths command = do
         [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
         , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
         ]
-  void $ liftIO $ waitForProcess ph
+  void $ waitForProcess ph
 
 nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 nixShellWithHoogle root isPure shell' command = do
@@ -299,7 +298,7 @@ nixShellWithHoogle root isPure shell' command = do
           \userSettings = super.userSettings // { withHoogle = true; };\
         \})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
-  void $ liftIO $ waitForProcess ph
+  void $ waitForProcess ph
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
@@ -307,7 +306,7 @@ projectShell root isPure shellName command = do
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_path ?~ "default.nix"
     & nixShellConfig_common . nixCmdConfig_target . target_attr ?~ ("shells." <> shellName)
-  void $ liftIO $ waitForProcess ph
+  void $ waitForProcess ph
 
 findProjectAssets :: MonadObelisk m => FilePath -> m Text
 findProjectAssets root = do
