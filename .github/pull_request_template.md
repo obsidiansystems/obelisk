@@ -1,4 +1,4 @@
-[Provide a clear overview of your changes.]
+<!-- Provide a clear overview of your changes. -->
 
 I have:
 
