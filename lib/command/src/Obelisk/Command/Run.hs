@@ -10,7 +10,7 @@ module Obelisk.Command.Run where
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
 import Control.Lens (ifor, (.~), (&))
-import Control.Monad (filterM, unless)
+import Control.Monad (filterM, unless, void)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -26,7 +26,7 @@ import qualified Data.Set as Set
 import Data.String.Here (hereLit)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Time.Clock
+import Data.Time.Clock (getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
@@ -87,14 +87,33 @@ profile
 profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
   putLog Debug "Using profiled build of project."
 
-  time <- liftIO $ getCurrentTime
+  time <- liftIO getCurrentTime
   let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
 
   putLog Debug $ T.pack $ "Storing profiled data under base name of " <> profileBaseName
 
   liftIO $ createDirectoryIfMissing False $ takeDirectory profileBaseName
 
-  let nixBuildExpr = [hereLit|
+  exePath <- nixCmd $ NixCmd_Build $ def
+      & nixBuildConfig_outLink .~ OutLink_None
+      & nixCmdConfig_target .~ Target
+        { _target_path = Nothing
+        , _target_attr = Nothing
+        , _target_expr = Just nixBuildExpr }
+  assets <- findProjectAssets root
+  putLog Debug $ "Assets impurely loaded from: " <> assets
+  freePort <- getFreePort
+  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exePath $
+    [ show freePort
+    , T.unpack assets
+    , profileBaseName
+    , "+RTS"
+    , "-po" <> profileBaseName
+    ] <> rtsFlags
+      <> [ "-RTS" ]
+  void $ waitForProcess ph
+  where
+    nixBuildExpr = [hereLit|
 with (import ./. {});
 let
   exeSource = obelisk.nixpkgs.writeText "ob-run" ''
@@ -120,25 +139,6 @@ in obelisk.nixpkgs.runCommand "ob-run" {
      buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
 } "ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out"
 |]
-  exePath <- nixCmd $ NixCmd_Build $ def
-      & nixBuildConfig_outLink .~ OutLink_None
-      & nixCmdConfig_target .~ Target
-        { _target_path = Nothing
-        , _target_attr = Nothing
-        , _target_expr = Just nixBuildExpr }
-  assets <- findProjectAssets root
-  putLog Debug $ "Assets impurely loaded from: " <> assets
-  freePort <- getFreePort
-  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exePath $
-    [ show freePort
-    , T.unpack assets
-    , profileBaseName
-    , "+RTS"
-    , "-po" <> profileBaseName
-    ] <> rtsFlags
-      <> [ "-RTS" ]
-  _ <- waitForProcess ph
-  pure ()
 
 run
   :: MonadObelisk m
@@ -336,7 +336,7 @@ withGhciScript packageInfos pathBase f = do
       , [ "Backend" | "backend" `Set.member` packageNames ]
       , [ "Frontend" | "frontend" `Set.member` packageNames ]
       ]
-    dotGhci = unlines $
+    dotGhci = unlines
       -- TODO: Shell escape
       [ ":set -F -pgmF " <> selfExe <> " -optF " <> preprocessorIdentifier <> " " <> unwords (map (("-optF " <>) . makeRelative pathBase . _cabalPackageInfo_packageFile) packageInfos)
       , ":set -i" <> intercalate ":" (packageInfos >>= rootedSourceDirs)
