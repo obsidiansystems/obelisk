@@ -27,7 +27,6 @@ import Shelly hiding (cp)
 import System.Directory (getCurrentDirectory, withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
-import System.FilePath (replaceBaseName, takeBaseName)
 import System.Which (staticWhich)
 import qualified System.Info
 import System.IO (Handle, hClose, hIsEOF, hGetContents)
@@ -217,9 +216,6 @@ main = do
       describe "ob run" $ {- NOT parallel $ -} do
         it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir' Nothing httpManager
         it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir' (Just "frontend") httpManager
-        it "works with differently named cabal files" $ inTmpObInit $ \_ -> do
-          changeCabalPackageName "backend/backend.cabal" "new-backend"
-          testObRunInDir' Nothing httpManager
 
       describe "obelisk project" $ parallel $ do
         it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImplDirty]
@@ -425,14 +421,6 @@ obRunCheck httpManager _stdout frontendUri = do
   let req uri = liftIO $ HTTP.parseRequest (T.unpack uri) >>= flip HTTP.httpLbs httpManager
   req frontendUri >>= \r -> when (HTTP.responseStatus r /= HTTP.ok200) $ errorExit $
     "Request to frontend server failed: " <> T.pack (show r)
-
--- | Rename a cabal file and do a really dumb, brittle search/replace in its content to update the name.
-changeCabalPackageName :: FilePath -> Text -> Sh ()
-changeCabalPackageName cabalFile newName = do
-  contents <- readfile cabalFile
-  writefile (replaceBaseName cabalFile (T.unpack newName)) $
-    T.replace (" " <> T.pack (takeBaseName cabalFile)) (" " <> newName) contents -- WARNING: Super brittle
-  rm cabalFile
 
 getFreePorts :: Int -> IO [Socket.PortNumber]
 getFreePorts 0 = pure []
