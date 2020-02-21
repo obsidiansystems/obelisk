@@ -375,7 +375,7 @@ in rec {
       dummyVersion = "Version number is only available for deployments";
     in mainProjectOut // {
 
-      profiledObRun = let
+      __unstable__.profiledObRun = let
         profiled = projectOut { inherit system; enableLibraryProfiling = true; };
         exeSource = builtins.toFile "ob-run.hs" ''
           module Main where

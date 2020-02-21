@@ -97,7 +97,7 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
       & nixBuildConfig_outLink .~ OutLink_None
       & nixCmdConfig_target .~ Target
         { _target_path = Just "."
-        , _target_attr = Just "profiledObRun"
+        , _target_attr = Just "__unstable__.profiledObRun"
         , _target_expr = Nothing }
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
