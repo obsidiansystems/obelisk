@@ -236,7 +236,7 @@ attrCacheFileName :: FilePath
 attrCacheFileName = ".attr-cache"
 
 data ThunkType = ThunkType
-  { _thunkType_loader :: FilePath
+  { _thunkType_loader :: Maybe FilePath
   , _thunkType_json :: FilePath
   , _thunkType_optional :: Set FilePath
   , _thunkType_loaderVersions :: NonEmpty Text
@@ -245,7 +245,7 @@ data ThunkType = ThunkType
 
 gitHubThunkType :: ThunkType
 gitHubThunkType = ThunkType
-  { _thunkType_loader = "default.nix"
+  { _thunkType_loader = Just "default.nix"
   , _thunkType_json = "github.json"
   , _thunkType_optional = Set.fromList [attrCacheFileName]
   , _thunkType_loaderVersions = gitHubStandaloneLoaders
@@ -255,7 +255,26 @@ gitHubThunkType = ThunkType
 
 gitThunkType :: ThunkType
 gitThunkType = ThunkType
-  { _thunkType_loader = "default.nix"
+  { _thunkType_loader = Just "default.nix"
+  , _thunkType_json = "git.json"
+  , _thunkType_optional = Set.fromList [attrCacheFileName]
+  , _thunkType_loaderVersions = plainGitStandaloneLoaders
+  , _thunkType_parser = parseThunkPtr $ fmap ThunkSource_Git . parseGitSource
+  }
+
+gitHubLoaderlessThunkType :: ThunkType
+gitHubLoaderlessThunkType = ThunkType
+  { _thunkType_loader = Nothing
+  , _thunkType_json = "github.json"
+  , _thunkType_optional = Set.fromList [attrCacheFileName]
+  , _thunkType_loaderVersions = gitHubStandaloneLoaders
+  , _thunkType_parser = parseThunkPtr $ \v ->
+      ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v
+  }
+
+gitLoaderlessThunkType :: ThunkType
+gitLoaderlessThunkType = ThunkType
+  { _thunkType_loader = Nothing
   , _thunkType_json = "git.json"
   , _thunkType_optional = Set.fromList [attrCacheFileName]
   , _thunkType_loaderVersions = plainGitStandaloneLoaders
@@ -263,16 +282,14 @@ gitThunkType = ThunkType
   }
 
 thunkTypes :: [ThunkType]
-thunkTypes = [gitThunkType, gitHubThunkType]
+thunkTypes = [gitThunkType, gitLoaderlessThunkType, gitHubThunkType, gitHubLoaderlessThunkType]
 
 findThunkType :: [ThunkType] -> FilePath -> IO (Either ReadThunkError ThunkType)
 findThunkType types thunkDir = do
   matches <- fmap catMaybes $ forM types $ \thunkType -> do
     let
       expectedContents = Set.fromList $ (thunkDir </>) <$>
-        [ _thunkType_loader thunkType
-        , _thunkType_json thunkType
-        ]
+        maybeToList (_thunkType_loader thunkType) <> [ _thunkType_json thunkType ]
       optionalContents = Set.map (thunkDir </>) (_thunkType_optional thunkType)
 
     -- Ensure that there aren't any other files in the thunk
@@ -294,10 +311,14 @@ findThunkType types thunkDir = do
 readPackedThunk :: FilePath -> IO (Either ReadThunkError ThunkPtr)
 readPackedThunk thunkDir = runExceptT $ do
   thunkType <- ExceptT $ findThunkType thunkTypes thunkDir
-  -- Ensure that we recognize the thunk loader
-  loader <- liftIO $ T.readFile $ thunkDir </> _thunkType_loader thunkType
-  unless (loader `elem` _thunkType_loaderVersions thunkType) $ do
-    throwError $ ReadThunkError_UnrecognizedLoader loader
+
+  case _thunkType_loader thunkType of
+    Just loaderFile -> do
+      -- Ensure that we recognize the thunk loader
+      loader <- liftIO $ T.readFile $ thunkDir </> loaderFile
+      unless (loader `elem` _thunkType_loaderVersions thunkType) $ do
+        throwError $ ReadThunkError_UnrecognizedLoader loader
+    Nothing -> pure ()
 
   txt <- liftIO $ LBS.readFile $ thunkDir </> _thunkType_json thunkType
   case parseMaybe (_thunkType_parser thunkType) =<< Aeson.decode txt of
