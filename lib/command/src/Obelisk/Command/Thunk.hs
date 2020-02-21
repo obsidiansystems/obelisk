@@ -269,11 +269,11 @@ findThunkType :: [ThunkType] -> FilePath -> IO (Either ReadThunkError ThunkType)
 findThunkType types thunkDir = do
   matches <- fmap catMaybes $ forM types $ \thunkType -> do
     let
-      expectedContents = Set.fromList $ (thunkDir </>) <$>
-        [ _thunkType_loader thunkType
-        , _thunkType_json thunkType
-        ]
-      optionalContents = Set.map (thunkDir </>) (_thunkType_optional thunkType)
+      expectedContents = (thunkDir </>) <$>
+        Set.singleton (_thunkType_json thunkType)
+      optionalContents = (thunkDir </>) <$>
+        (_thunkType_optional thunkType) <>
+        (Set.singleton (_thunkType_loader thunkType))
 
     -- Ensure that there aren't any other files in the thunk
     -- NB: System.Directory.listDirectory returns the contents without the directory path
