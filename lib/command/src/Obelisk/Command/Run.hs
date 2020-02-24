@@ -96,13 +96,6 @@ profile
 profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
   putLog Debug "Using profiled build of project."
 
-  time <- liftIO getCurrentTime
-  let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
-
-  putLog Debug $ T.pack $ "Storing profiled data under base name of " <> profileBaseName
-
-  liftIO $ createDirectoryIfMissing True $ takeDirectory $ root </> profileBaseName
-
   outPath <- withSpinner "Building profiled executable" $
     fmap (T.unpack . T.strip) $ readProcessAndLogStderr Debug $ setCwd (Just root) $ nixCmdProc $
       NixCmd_Build $ def
@@ -114,6 +107,10 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
           }
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
+  time <- liftIO getCurrentTime
+  let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
+  liftIO $ createDirectoryIfMissing True $ takeDirectory $ root </> profileBaseName
+  putLog Debug $ "Storing profiled data under base name of " <> T.pack (root </> profileBaseName)
   freePort <- getFreePort
   (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc (outPath </> "bin" </> "ob-run") $
     [ show freePort
