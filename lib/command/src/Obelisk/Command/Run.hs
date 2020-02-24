@@ -51,9 +51,19 @@ import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..),
-                       failWith, putLog, proc, readCreateProcessWithExitCode,
-                       setCwd, setDelegateCtlc, createProcess_, waitForProcess)
+import Obelisk.CliApp (
+    Severity (..),
+    createProcess_,
+    failWith,
+    proc,
+    putLog,
+    readCreateProcessWithExitCode,
+    readProcessAndLogStderr,
+    setCwd,
+    setDelegateCtlc,
+    waitForProcess,
+    withSpinner,
+  )
 import Obelisk.Command.Nix
 import Obelisk.Command.Project (nixShellWithPkgs, toImplDir, withProjectRoot, findProjectAssets)
 import Obelisk.Command.Thunk (attrCacheFileName)
@@ -93,12 +103,15 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
 
   liftIO $ createDirectoryIfMissing True $ takeDirectory profileBaseName
 
-  outPath <- nixCmd $ NixCmd_Build $ def
-      & nixBuildConfig_outLink .~ OutLink_None
-      & nixCmdConfig_target .~ Target
-        { _target_path = Just "."
-        , _target_attr = Just "__unstable__.profiledObRun"
-        , _target_expr = Nothing }
+  outPath <- withSpinner "Building profiled executable" $
+    fmap (T.unpack . T.strip) $ readProcessAndLogStderr Debug $ setCwd (Just root) $ nixCmdProc $
+      NixCmd_Build $ def
+        & nixBuildConfig_outLink .~ OutLink_None
+        & nixCmdConfig_target .~ Target
+          { _target_path = Just "."
+          , _target_attr = Just "__unstable__.profiledObRun"
+          , _target_expr = Nothing
+          }
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
   freePort <- getFreePort
