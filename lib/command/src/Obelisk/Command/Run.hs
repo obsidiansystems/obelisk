@@ -91,7 +91,7 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
 
   putLog Debug $ T.pack $ "Storing profiled data under base name of " <> profileBaseName
 
-  liftIO $ createDirectoryIfMissing False $ takeDirectory profileBaseName
+  liftIO $ createDirectoryIfMissing True $ takeDirectory profileBaseName
 
   outPath <- nixCmd $ NixCmd_Build $ def
       & nixBuildConfig_outLink .~ OutLink_None
