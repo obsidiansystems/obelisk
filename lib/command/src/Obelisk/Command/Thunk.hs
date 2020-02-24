@@ -94,6 +94,7 @@ data ThunkData
 data ThunkPtr = ThunkPtr
   { _thunkPtr_rev :: ThunkRev
   , _thunkPtr_source :: ThunkSource
+  , _thunkPtr_hasDefaultNix :: Bool
   }
   deriving (Show, Eq, Ord)
 
@@ -178,7 +179,7 @@ forgetGithub useSsh s = GitSource
   }
 
 getThunkGitBranch :: ThunkPtr -> Maybe Text
-getThunkGitBranch (ThunkPtr _ src) = fmap untagName $ case src of
+getThunkGitBranch (ThunkPtr _ src _) = fmap untagName $ case src of
   ThunkSource_GitHub s -> _gitHubSource_branch s
   ThunkSource_Git s -> _gitSource_branch s
 
@@ -240,7 +241,7 @@ data ThunkType = ThunkType
   , _thunkType_json :: FilePath
   , _thunkType_optional :: Set FilePath
   , _thunkType_loaderVersions :: NonEmpty Text
-  , _thunkType_parser :: Aeson.Object -> Aeson.Parser ThunkPtr
+  , _thunkType_parser :: Aeson.Object -> Aeson.Parser (ThunkRev, ThunkSource)
   }
 
 gitHubThunkType :: ThunkType
@@ -269,9 +270,9 @@ findThunkType :: [ThunkType] -> FilePath -> IO (Either ReadThunkError ThunkType)
 findThunkType types thunkDir = do
   matches <- fmap catMaybes $ forM types $ \thunkType -> do
     let
-      expectedContents = (thunkDir </>) <$>
+      expectedContents = Set.map (thunkDir </>) $
         Set.singleton (_thunkType_json thunkType)
-      optionalContents = (thunkDir </>) <$>
+      optionalContents = Set.map (thunkDir </>) $
         (_thunkType_optional thunkType) <>
         (Set.singleton (_thunkType_loader thunkType))
 
@@ -302,20 +303,22 @@ readPackedThunk thunkDir = runExceptT $ do
   txt <- liftIO $ LBS.readFile $ thunkDir </> _thunkType_json thunkType
   case parseMaybe (_thunkType_parser thunkType) =<< Aeson.decode txt of
     Nothing -> throwError $ ReadThunkError_UnparseablePtr txt
-    Just ptr -> return ptr
+    Just (rev, source) -> do
+      hasDefaultNix <- liftIO $ doesFileExist $ thunkDir </> "default.nix"
+      return $ ThunkPtr {
+                   _thunkPtr_rev = rev
+                 , _thunkPtr_source = source
+                 , _thunkPtr_hasDefaultNix = hasDefaultNix
+                 }
 
-parseThunkPtr :: (Aeson.Object -> Aeson.Parser ThunkSource) -> Aeson.Object -> Aeson.Parser ThunkPtr
+parseThunkPtr :: (Aeson.Object -> Aeson.Parser ThunkSource) -> Aeson.Object -> Aeson.Parser (ThunkRev, ThunkSource)
 parseThunkPtr parseSrc v = do
   rev <- v Aeson..: "rev"
   sha256 <- v Aeson..: "sha256"
   src <- parseSrc v
-  pure $ ThunkPtr
-    { _thunkPtr_rev = ThunkRev
-      { _thunkRev_commit = Ref.fromHexString rev
-      , _thunkRev_nixSha256 = sha256
-      }
-    , _thunkPtr_source = src
-    }
+  pure ((ThunkRev { _thunkRev_commit = Ref.fromHexString rev
+                  , _thunkRev_nixSha256 = sha256
+                  }), src)
 
 parseGitHubSource :: Aeson.Object -> Aeson.Parser GitHubSource
 parseGitHubSource v = do
@@ -360,7 +363,7 @@ thunkPtrLoader thunk = case _thunkPtr_source thunk of
 -- It's important that formatting be very consistent here, because
 -- otherwise when people update thunks, their patches will be messy
 encodeThunkPtrData :: ThunkPtr -> LBS.ByteString
-encodeThunkPtrData (ThunkPtr rev src) = case src of
+encodeThunkPtrData (ThunkPtr rev src _) = case src of
   ThunkSource_GitHub s -> encodePretty' githubCfg $ Aeson.object $ catMaybes
     [ Just $ "owner" .= _gitHubSource_owner s
     , Just $ "repo" .= _gitHubSource_repo s
@@ -405,7 +408,8 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
 createThunk :: MonadIO m => FilePath -> ThunkPtr -> m ()
 createThunk target thunk = liftIO $ do
   createDirectoryIfMissing True (target </> attrCacheFileName)
-  T.writeFile (target </> "default.nix") (thunkPtrLoader thunk)
+  when (_thunkPtr_hasDefaultNix thunk) $ do
+    T.writeFile (target </> "default.nix") (thunkPtrLoader thunk)
   let
     jsonFileName = case _thunkPtr_source thunk of
       ThunkSource_GitHub _ -> "github"
@@ -415,9 +419,11 @@ createThunk target thunk = liftIO $ do
 createThunkWithLatest :: MonadObelisk m => FilePath -> ThunkSource -> m ()
 createThunkWithLatest target s = do
   rev <- getLatestRev s
+  hasDefaultNix <- liftIO $ doesFileExist $ target </> "default.nix"
   createThunk target $ ThunkPtr
     { _thunkPtr_source = s
     , _thunkPtr_rev = rev
+    , _thunkPtr_hasDefaultNix = hasDefaultNix
     }
 
 updateThunkToLatest :: MonadObelisk m => ThunkUpdateConfig -> FilePath -> m ()
@@ -433,9 +439,11 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = withSpinner
           ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
       let src = _thunkPtr_source ptr
       rev <- getLatestRev src
+      hasDefaultNix <- liftIO $ doesFileExist $ target </> "default.nix"
       overwriteThunk overwrite $ modifyThunkPtrByConfig thunkConfig $ ThunkPtr
         { _thunkPtr_source = src
         , _thunkPtr_rev = rev
+        , _thunkPtr_hasDefaultNix = hasDefaultNix
         }
     Just branch -> readThunk target >>= \case
       Left err -> failWith $ T.pack $ "thunk update: " <> show err
@@ -449,7 +457,8 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = withSpinner
 
 setThunk :: MonadObelisk m => ThunkConfig -> FilePath -> GitSource -> String -> m ()
 setThunk thunkConfig target gs branch = do
-  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (_thunkConfig_private thunkConfig) (Just $ T.pack branch) Nothing
+  hasDefaultNix <- liftIO $ doesFileExist $ target </> "default.nix"
+  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (_thunkConfig_private thunkConfig) (Just $ T.pack branch) Nothing hasDefaultNix
   overwriteThunk target newThunkPtr
   updateThunkToLatest (ThunkUpdateConfig Nothing thunkConfig) target
 
@@ -855,7 +864,9 @@ getThunkPtr checkClean thunkDir mPrivate = do
   remoteUri <- case parseGitUri remoteUri' of
     Nothing -> failWith $ "Could not identify git remote: " <> remoteUri'
     Just uri -> pure uri
-  uriThunkPtr remoteUri mPrivate mCurrentBranch mCurrentCommit
+
+  hasDefaultNix <- liftIO $ doesFileExist $ thunkDir </> "default.nix"
+  uriThunkPtr remoteUri mPrivate mCurrentBranch mCurrentCommit hasDefaultNix
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
@@ -874,8 +885,8 @@ getLatestRev os = do
 -- performance. If that doesn't work (e.g. authentication issue), we fall back
 -- on just doing things the normal way for git repos in general, and save it as
 -- a regular git thunk.
-uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Bool -> Maybe Text -> Maybe Text -> m ThunkPtr
-uriThunkPtr uri mPrivate mbranch mcommit = do
+uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Bool -> Maybe Text -> Maybe Text -> Bool -> m ThunkPtr
+uriThunkPtr uri mPrivate mbranch mcommit hasDefaultNix = do
   commit <- case mcommit of
     Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
     (Just c) -> return c
@@ -895,6 +906,7 @@ uriThunkPtr uri mPrivate mbranch mcommit = do
   pure $ ThunkPtr
     { _thunkPtr_rev = rev
     , _thunkPtr_source = src
+    , _thunkPtr_hasDefaultNix = hasDefaultNix
     }
 
 -- | N.B. Cannot infer all fields.
