@@ -9,13 +9,9 @@ let
   inherit (reflex-platform) hackGet nixpkgs;
   pkgs = nixpkgs;
 
-  cleanSource = src: pkgs.lib.cleanSourceWith {
-    filter = name: _: let baseName = builtins.baseNameOf name; in !(
-      builtins.match "^\\.ghc\\.environment.*" baseName != null ||
-      baseName == "cabal.project.local"
-    );
-    src = pkgs.lib.cleanSource src;
-  };
+  inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
+
+  cleanSource = src: gitignoreSource (pkgs.lib.cleanSource src);
 
   commandRuntimeDeps = pkgs: with pkgs; [
     coreutils
