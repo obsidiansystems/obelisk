@@ -399,7 +399,7 @@ in rec {
       in nixpkgs.runCommand "ob-run" {
            buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
       } ''
-        mkdir -p $out/bin/ob-run
+        mkdir -p $out/bin/
         ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out/bin/ob-run
       '';
 
