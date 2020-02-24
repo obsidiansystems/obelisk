@@ -101,7 +101,7 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
 
   putLog Debug $ T.pack $ "Storing profiled data under base name of " <> profileBaseName
 
-  liftIO $ createDirectoryIfMissing True $ takeDirectory profileBaseName
+  liftIO $ createDirectoryIfMissing True $ takeDirectory $ root </> profileBaseName
 
   outPath <- withSpinner "Building profiled executable" $
     fmap (T.unpack . T.strip) $ readProcessAndLogStderr Debug $ setCwd (Just root) $ nixCmdProc $
