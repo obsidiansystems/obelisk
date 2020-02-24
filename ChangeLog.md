@@ -39,6 +39,20 @@ executable that is built with profiling enabled.
 
 ## v0.3.0.0 - 2019-12-20
 
+* Change the structure of Obelisk routes to use a designated
+  `FullRoute` type. This combines frontend and backend routes into one
+  structure. This is a **breaking** change which requires Obelisk apps
+  to take specific migrations. They are:
+    * Rewrite the implementation of `_backend_routeEncoder` in
+      `Backend` to use `mkFullRouteEncoder` instead of
+      `handleEncoder`. Specifically, the backend and frontend cases of
+      the top-level `pathComponentEncoder` become the second and third
+      arguments of `mkFullRouteEncoder` respectively, while the
+      missing route becomes the first argument. An example of how to
+      do this is available in [a reflex-examples
+      commit](https://github.com/reflex-frp/reflex-examples/commits/28f566c3e7dc615578dc74297b7c620c1f13683e).
+    * Replace type constructions of `InL` with `FullRoute_Backend` and
+      `InR` with `FullRoute_Frontend`.
 * Generalised `pathSegmentEncoder`, added `pathFieldEncoder`.
 * Added some `Prism`s to the encoder library for manipulating `DSum`s.
 * Add `ob doc` command, which lists paths to haddock documentation for specified packages.
