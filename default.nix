@@ -5,10 +5,13 @@
 , reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
-  cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
-    builtins.match "^\\.ghc\\.environment.*" baseName != null ||
-    baseName == "cabal.project.local"
-  ));
+  reflex-platform = getReflexPlatform system;
+  inherit (reflex-platform) hackGet nixpkgs;
+  pkgs = nixpkgs;
+
+  inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
+
+  cleanSource = src: gitignoreSource (pkgs.lib.cleanSource src);
 
   commandRuntimeDeps = pkgs: with pkgs; [
     coreutils
@@ -101,10 +104,6 @@ let
 
     ];
   };
-
-  reflex-platform = getReflexPlatform system;
-  inherit (reflex-platform) hackGet nixpkgs;
-  pkgs = nixpkgs;
 
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
   ghcObelisk = reflex-platform.ghc;
