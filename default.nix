@@ -398,7 +398,10 @@ in rec {
         '';
       in nixpkgs.runCommand "ob-run" {
            buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
-      } "ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out";
+      } ''
+        mkdir -p $out/bin/ob-run
+        ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out/bin/ob-run
+      '';
 
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;

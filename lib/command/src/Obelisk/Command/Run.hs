@@ -93,7 +93,7 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
 
   liftIO $ createDirectoryIfMissing False $ takeDirectory profileBaseName
 
-  exePath <- nixCmd $ NixCmd_Build $ def
+  outPath <- nixCmd $ NixCmd_Build $ def
       & nixBuildConfig_outLink .~ OutLink_None
       & nixCmdConfig_target .~ Target
         { _target_path = Just "."
@@ -102,7 +102,7 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
   assets <- findProjectAssets root
   putLog Debug $ "Assets impurely loaded from: " <> assets
   freePort <- getFreePort
-  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc exePath $
+  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc (outPath </> "bin" </> "ob-run") $
     [ show freePort
     , T.unpack assets
     , profileBaseName

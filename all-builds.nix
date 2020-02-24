@@ -87,8 +87,7 @@ let
     in packages // {
       cache = reflex-platform.pinBuildInputs
         "obelisk-${system}-${nameSuffix}"
-        # skeletonProfiledObRun is a binary, so can’t be used in pinBuildInputs
-        (collect (builtins.removeAttrs ["skeletonProfiledObRun"] packages));
+        (collect packages);
     };
 
     perProfiling = {
