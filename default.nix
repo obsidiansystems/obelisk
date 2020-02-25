@@ -18,7 +18,7 @@ let
 
   nixos1909 = import (builtins.fetchTarball {
     url = https://github.com/NixOS/nixpkgs-channels/archive/nixos-19.09.tar.gz;
-    sha256 = "0ysb2017n8g0bpkxy3lsnlf6mcya5gqwggmwdjxlfnj1ilj3lnqz";
+    sha256 = "13cd008gsagg7nx4m8x2i0j9jdzxnphg3llmlag8060f0l8gfz9g";
   }) {};
 
   getReflexPlatform = getReflexPlatform' __useLegacyCompilers;
