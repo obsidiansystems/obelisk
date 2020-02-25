@@ -16,6 +16,11 @@ let
     openssh
   ];
 
+  nixos1909 = import (builtins.fetchTarball {
+    url = https://github.com/NixOS/nixpkgs-channels/archive/nixos-19.09.tar.gz;
+    sha256 = "0ysb2017n8g0bpkxy3lsnlf6mcya5gqwggmwdjxlfnj1ilj3lnqz";
+  }) {};
+
   getReflexPlatform = getReflexPlatform' __useLegacyCompilers;
   getReflexPlatform' = __useLegacyCompilers: sys: import ./dep/reflex-platform {
     inherit iosSdkVersion __useLegacyCompilers;
@@ -25,6 +30,8 @@ let
     nixpkgsOverlays = [
       (self: super: {
         obeliskExecutableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
+        simp_le = nixos1909.simp_le;
+        acme-client = import ./acme.nix {};
       })
     ];
 
