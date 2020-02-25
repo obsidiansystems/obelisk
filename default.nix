@@ -30,8 +30,6 @@ let
     nixpkgsOverlays = [
       (self: super: {
         obeliskExecutableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
-        simp_le = nixos1909.simp_le;
-        acme-client = import ./acme.nix {};
       })
     ];
 
@@ -266,6 +264,12 @@ in rec {
         imports = [
           (serverModules.mkBaseEc2 args)
           (serverModules.mkObeliskApp args)
+          ./acme.nix
+        ];
+        nixpkgs.overlays = [
+          (self: super: {
+            simp_le = nixos1909.simp_le;
+          })
         ];
       };
     };
