@@ -266,6 +266,9 @@ in rec {
           (serverModules.mkObeliskApp args)
           ./acme.nix
         ];
+        disabledModules = [
+          (pkgs.path + /nixos/modules/security/acme.nix)
+        ];
         nixpkgs.overlays = [
           (self: super: {
             simp_le = nixos1909.simp_le;
