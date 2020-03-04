@@ -120,6 +120,11 @@ exportGhciConfig = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
   getGhciSessionSettings pkgs "."
 
+nixShellForUnpackedPackages :: MonadObelisk m => Bool -> Maybe String -> m ()
+nixShellForUnpackedPackages isPure cmd = withProjectRoot "." $ \root -> do
+  pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
+  nixShellWithPkgs root isPure False (packageInfoToNamePathMap pkgs) cmd
+
 -- | Relative paths to local packages of an obelisk project.
 --
 -- These are a combination of the obelisk predefined local packages,

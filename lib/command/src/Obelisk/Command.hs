@@ -232,6 +232,7 @@ thunkCommand = hsubparser $ mconcat
 data ShellOpts
   = ShellOpts
     { _shellOpts_shell :: String
+    , _shellOpts_forUnpacked :: Bool
     , _shellOpts_command :: Maybe String
     }
   deriving Show
@@ -242,9 +243,13 @@ shellFlags =
   <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
   <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
 
+forUnpackedFlagName :: String
+forUnpackedFlagName = "for-unpacked"
+
 shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
   <$> shellFlags
+  <*> flag False True (long forUnpackedFlagName <> help "Configure the shell for working on all unpacked packages in the project directory")
   <*> optional (strArgument (metavar "COMMAND"))
 
 portOpt :: Int -> Parser Int
@@ -379,8 +384,10 @@ ob = \case
     ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> runWatch
-  ObCommand_Shell so -> withProjectRoot "." $ \root ->
-    projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
+  ObCommand_Shell (ShellOpts shell' forUnpacked cmd)
+    | forUnpacked && shell' == "ghc" -> nixShellForUnpackedPackages False cmd
+    | forUnpacked -> failWith $ "--" <> T.pack forUnpackedFlagName <> " is only available for ghc shells"
+    | otherwise -> withProjectRoot "." $ \root -> projectShell root False shell' cmd
   ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
     projectShell root False shell' (Just $ haddockCommand pkgs)
   ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
