@@ -100,6 +100,7 @@ data ObInternal
    -- the preprocessor argument syntax is also handled outside
    -- optparse-applicative, but it shouldn't ever conflict with another syntax
    = ObInternal_ApplyPackages String String String [String]
+   | ObInternal_ExportGhciConfig
    deriving Show
 
 obCommand :: ArgsConfig -> Parser ObCommand
@@ -118,7 +119,13 @@ obCommand cfg = hsubparser
               text "Hint: To open the documentation you can pipe the output of this command like"
               <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
     , command "hoogle" $ info (ObCommand_Hoogle <$> shellFlags <*> portOpt 8080) $ progDesc "Run a hoogle server locally for your project's dependency tree"
+    , command "internal" $ info (ObCommand_Internal <$> internalCommand) $ progDesc "Internal Obelisk commands with unstable APIs"
     ])
+
+internalCommand :: Parser ObInternal
+internalCommand = hsubparser $ mconcat
+  [ command "export-ghci-configuration" $ info (pure ObInternal_ExportGhciConfig) $ progDesc "Export the GHCi configuration used by ob run, etc.; useful for IDE integration"
+  ]
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
@@ -133,7 +140,7 @@ deployCommand cfg = hsubparser $ mconcat
   where
     platformP = hsubparser $ mconcat
       [ command "android" $ info (pure (Android, [])) mempty
-      , command "ios"     $ info ((,) <$> pure IOS <*> (fmap pure $ strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal"))) mempty
+      , command "ios"     $ info ((,) <$> pure IOS <*> fmap pure (strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal"))) mempty
       ]
 
     remoteBuilderParser :: Parser (Maybe RemoteBuilder)
@@ -381,6 +388,7 @@ ob = \case
   ObCommand_Internal icmd -> case icmd of
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
+    ObInternal_ExportGhciConfig -> liftIO . putStrLn . unlines =<< exportGhciConfig
 
 haddockCommand :: [String] -> String
 haddockCommand pkgs = unwords
