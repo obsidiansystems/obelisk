@@ -39,6 +39,8 @@ let
         hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
 
         ghcid = self.callCabal2nix "ghcid" (hackGet ./dep/ghcid) {};
+        # Exports more internals
+        snap-core = haskellLib.dontCheck (self.callCabal2nix "snap-core" (hackGet ./dep/snap-core) {});
       })
 
       pkgs.obeliskExecutableConfig.haskellOverlay
