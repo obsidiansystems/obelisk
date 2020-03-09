@@ -98,8 +98,10 @@ serveAsset' doRedirect base fallback p = do
             . setHeader "Accept-Ranges" "bytes"
             . setContentType (fileType defaultMimeTypes p)
           let size = fromIntegral $ fileSize stat
-          -- Check if this is a range request
           req <- getRequest
+          -- Despite the name, this function actually does all of the work for
+          -- responding to range requests. We only need to handle *none* range
+          -- requests ourselves.
           wasRange <- checkRangeReq req finalFilename size
           unless wasRange $ do
             modifyResponse $ setResponseCode 200 . setContentLength size
