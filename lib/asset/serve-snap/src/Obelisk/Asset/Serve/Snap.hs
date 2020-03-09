@@ -95,8 +95,8 @@ serveAsset' doRedirect base fallback p = do
           let finalFilename = base </> p </> "encodings" </> T.unpack (decodeUtf8 e)
           stat <- liftIO $ getFileStatus finalFilename
           modifyResponse $ setHeader "Last-Modified" "Thu, 1 Jan 1970 00:00:00 GMT"
-          modifyResponse $ setHeader "Accept-Ranges" "bytes"
-          modifyResponse $ setContentType (fileType defaultMimeTypes p)
+            . setHeader "Accept-Ranges" "bytes"
+            . setContentType (fileType defaultMimeTypes p)
           let size = fromIntegral $ fileSize stat
           -- Check if this is a range request
           req <- getRequest
