@@ -11,7 +11,7 @@ let
 
   inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
 
-  cleanSource = src: gitignoreSource (pkgs.lib.cleanSource src);
+  cleanSource = src: pkgs.lib.cleanSource (gitignoreSource src);
 
   commandRuntimeDeps = pkgs: with pkgs; [
     coreutils
