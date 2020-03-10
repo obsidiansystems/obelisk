@@ -4,6 +4,10 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* Fully support HTTP [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) requests on static assets to support Safari. ([#664](https://github.com/obsidiansystems/obelisk/pull/664))
+
+## v0.6.0.0 - 2020-02-21
+
 * Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave exactly like `<a href="...">` when run by JavaScript. These functions now scroll to the top of the page when the link is clicked. ([#540](https://github.com/obsidiansystems/obelisk/pull/540))
 * Fix a bug in `ob run`/`ob watch`/`ob repl` where nested Obelisk projects would also be loaded into the session. These are now ignored. ([#652](https://github.com/obsidiansystems/obelisk/pull/652))
 * Improve behavior of `ob run`/`ob watch`/`ob repl` when multiple packages with the same name are encountered. Obelisk now issues a warning and tells you which one it will use. ([#653](https://github.com/obsidiansystems/obelisk/pull/653))
@@ -11,8 +15,8 @@ This project's release branch is `master`. This log is written from the perspect
 
       mkRouteToUrl validFullEncoder (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
 
-* Added `Obelisk.Backend.renderAllJsPath` to expose URL path to `ghcjs/all.js`.
-* Added argument to `serveDefaultObeliskApp`, `serveObeliskApp`, and `serveGhcjsApp` to take the path to `all.js` instead of hard-coding it.
+* Add `Obelisk.Backend.renderAllJsPath` to expose URL path to `ghcjs/all.js`. ([#545](https://github.com/obsidiansystems/obelisk/pull/545))
+* Add argument to `serveDefaultObeliskApp`, `serveObeliskApp`, and `serveGhcjsApp` to take the path to `all.js` instead of hard-coding it. ([#545](https://github.com/obsidiansystems/obelisk/pull/545))
 
 ## v0.5.0.0 - 2020-02-07
 
@@ -36,6 +40,20 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## v0.3.0.0 - 2019-12-20
 
+* Change the structure of Obelisk routes to use a designated
+  `FullRoute` type. This combines frontend and backend routes into one
+  structure. This is a **breaking** change which requires Obelisk apps
+  to take specific migrations. They are:
+    * Rewrite the implementation of `_backend_routeEncoder` in
+      `Backend` to use `mkFullRouteEncoder` instead of
+      `handleEncoder`. Specifically, the backend and frontend cases of
+      the top-level `pathComponentEncoder` become the second and third
+      arguments of `mkFullRouteEncoder` respectively, while the
+      missing route becomes the first argument. An example of how to
+      do this is available in [a reflex-examples
+      commit](https://github.com/reflex-frp/reflex-examples/commits/28f566c3e7dc615578dc74297b7c620c1f13683e).
+    * Replace type constructions of `InL` with `FullRoute_Backend` and
+      `InR` with `FullRoute_Frontend`.
 * Generalised `pathSegmentEncoder`, added `pathFieldEncoder`.
 * Added some `Prism`s to the encoder library for manipulating `DSum`s.
 * Add `ob doc` command, which lists paths to haddock documentation for specified packages.
