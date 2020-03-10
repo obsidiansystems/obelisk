@@ -8,7 +8,7 @@ module Obelisk.Command.Deploy where
 
 import Control.Lens
 import Control.Monad
-import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, try, bracket_)
+import Control.Monad.Catch (Exception (displayException), MonadThrow, bracket, throwM, try)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
@@ -244,9 +244,14 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   putLog Notice $ T.pack $ unwords ["Your recently built", mobileArtifact, "can be found at the following path:", show result]
   callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") (mobileArgs ++ extraArgs)
   where
-    withEcho showEcho f = do
-      prevEcho <- hGetEcho stdin
-      bracket_ (hSetEcho stdin showEcho) (hSetEcho stdin prevEcho) f
+    withEcho showEcho f = bracket
+      (do
+        prevEcho <- hGetEcho stdin
+        hSetEcho stdin showEcho
+        pure prevEcho
+      )
+      (hSetEcho stdin)
+      (const f)
 
 data KeytoolConfig = KeytoolConfig
   { _keytoolConfig_keystore :: FilePath
