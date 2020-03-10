@@ -213,7 +213,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
                       , "--key-alias", _keytoolConfig_alias conf
                       , "--key-password", _keytoolConfig_keypass conf]
       let expr = unwords
-            [ "with (import ", srcDir, " {});"
+            [ "with (import ", toNixPath srcDir, " {});"
             , "android.frontend.override (drv: {"
             , "isRelease = true;"
             , "staticSrc = (passthru.__androidWithConfig ", configDir, ").frontend.staticSrc;"
@@ -227,8 +227,8 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
         }, keyArgs)
     IOS -> do
       let expr = mconcat
-            [ "with (import ", srcDir, " {});"
-            , "ios.frontend.override (_: { staticSrc = (passthru.__iosWithConfig ", configDir, ").frontend.staticSrc; })"
+            [ "with (import ", toNixPath srcDir, " {});"
+            , "ios.frontend.override (_: { staticSrc = (passthru.__iosWithConfig ", toNixPath configDir, ").frontend.staticSrc; })"
             ]
       return (Target
         { _target_path = Nothing
