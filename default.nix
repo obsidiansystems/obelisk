@@ -11,7 +11,12 @@ let
 
   inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
 
-  cleanSource = src: pkgs.lib.cleanSource (gitignoreSource src);
+  cleanSource = src:
+    # WARNING: The order of application here seems to matter a great deal to
+    # how quickly `ghcid` is able to reload changes. As a rule of thumb,
+    # always apply `gitignoreSource` first.
+    # See https://github.com/obsidiansystems/obelisk/pull/666 and related.
+    pkgs.lib.cleanSource (gitignoreSource src);
 
   commandRuntimeDeps = pkgs: with pkgs; [
     coreutils
