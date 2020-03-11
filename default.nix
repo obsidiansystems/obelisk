@@ -173,9 +173,9 @@ in rec {
   '';
 
   serverModules = {
-    mkBaseEc2 = { obeliskPkgs, ... }: {...}: {
+    mkBaseEc2 = {...}: { pkgs, ...}: {
       imports = [
-        (obeliskPkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+        (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
       ];
       ec2.hvm = true;
     };
@@ -261,7 +261,7 @@ in rec {
       system = "x86_64-linux";
       configuration = {
         imports = [
-          (module (args // { obeliskPkgs = pkgs; }))
+          (module { inherit exe hostName adminEmail routeHost enableHttps version; })
           (serverModules.mkDefaultNetworking args)
           (serverModules.mkObeliskApp args)
         ];

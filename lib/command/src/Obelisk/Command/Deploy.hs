@@ -72,12 +72,6 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
   --accidentally create a production deployment that uses development
   --credentials to connect to some resources.  This could result in, e.g.,
   --production data backed up to a dev environment.
-  putLog Notice "Writing default module.nix"
-  writeDeployConfig deployDir "module.nix"
-    "{ obeliskPkgs, ... }: {...}: {\n\
-    \  imports = [(obeliskPkgs.path + /nixos/modules/virtualisation/amazon-image.nix)];\n\
-    \  ec2.hvm = true;\n\
-    \}"
   withSpinner "Creating project configuration directories" $ do
     callProcessAndLogOutput (Notice, Error) $
       proc "mkdir" [ "-p"
@@ -85,14 +79,20 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
                    , deployDir </> "config" </> "common"
                    , deployDir </> "config" </> "frontend"
                    ]
+
+  let srcDir = deployDir </> "src"
+  withSpinner ("Creating source thunk (" <> T.pack srcDir <> ")") $ liftIO $ do
+    createThunk srcDir thunkPtr
+    setupObeliskImpl deployDir
+
   withSpinner "Writing deployment configuration" $ do
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
     writeDeployConfig deployDir "enable_https" $ show enableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
     writeDeployConfig deployDir ("config" </> "common" </> "route") route
-  withSpinner "Creating source thunk (./src)" $ liftIO $ do
-    createThunk (deployDir </> "src") thunkPtr
-    setupObeliskImpl deployDir
+    writeDeployConfig deployDir "module.nix" $
+      "(import " <> toNixPath srcDir <> " {}).obelisk.serverModules.mkBaseEc2"
+
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
