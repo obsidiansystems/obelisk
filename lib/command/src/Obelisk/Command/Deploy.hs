@@ -272,19 +272,16 @@ instance FromJSON KeytoolConfig
 instance ToJSON KeytoolConfig
 
 createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
-createKeystore root config = do
-  let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
-  callProcessAndLogOutput (Notice,Notice) $ setCwd (Just root) $ proc "nix-shell" ["-E" , expr, "--run" , keytoolCmd]
-  where
-    keytoolCmd = processToShellString "keytool"
-      [ "-genkeypair", "-noprompt"
-      , "-keystore", _keytoolConfig_keystore config
-      , "-keyalg", "RSA", "-keysize", "2048"
-      , "-validity", "1000000"
-      , "-storepass", _keytoolConfig_storepass config
-      , "-alias", _keytoolConfig_alias config
-      , "-keypass", _keytoolConfig_keypass config
-      ]
+createKeystore root config =
+  callProcessAndLogOutput (Notice, Notice) $ setCwd (Just root) $ proc jreKeyToolPath
+    [ "-genkeypair", "-noprompt"
+    , "-keystore", _keytoolConfig_keystore config
+    , "-keyalg", "RSA", "-keysize", "2048"
+    , "-validity", "1000000"
+    , "-storepass", _keytoolConfig_storepass config
+    , "-alias", _keytoolConfig_alias config
+    , "-keypass", _keytoolConfig_keypass config
+    ]
 
 -- | Simplified deployment configuration mechanism. At one point we may revisit this.
 writeDeployConfig :: MonadObelisk m => FilePath -> FilePath -> String -> m ()

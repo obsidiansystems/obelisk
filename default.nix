@@ -68,6 +68,7 @@ let
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
         obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) {
           librarySystemDepends = [
+            pkgs.jre
             pkgs.nix
             (haskellLib.justStaticExecutables self.ghcid)
           ];
