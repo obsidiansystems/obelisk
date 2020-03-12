@@ -48,6 +48,7 @@ deployInit
   -> Bool -- ^ enable https
   -> m ()
 deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps = do
+  liftIO $ createDirectoryIfMissing True deployDir
   localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
       False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
