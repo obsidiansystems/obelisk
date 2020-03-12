@@ -155,8 +155,8 @@ deployCommand cfg = hsubparser $ mconcat
 
 deployInitOpts :: Parser DeployInitOpts
 deployInitOpts = DeployInitOpts
-  <$> strArgument (action "directory" <> metavar "DEPLOYDIR" <> help "Path to a directory that it will create")
-  <*> strOption (long "ssh-key" <> action "file" <> metavar "SSHKEY" <> help "Path to an ssh key that it will symlink to")
+  <$> strArgument (action "directory" <> metavar "DEPLOYDIR" <> help "Path to a directory where the deployment repository will be initialized")
+  <*> strOption (long "ssh-key" <> action "file" <> metavar "SSHKEY" <> help "Path to an SSH key that will be *copied* to the deployment repository")
   <*> some (strOption (long "hostname" <> metavar "HOSTNAME" <> help "hostname of the deployment target"))
   <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Publicly accessible URL of your app")
   <*> strOption (long "admin-email" <> metavar "ADMINEMAIL" <> help "Email address where administrative alerts will be sent")
