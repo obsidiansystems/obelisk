@@ -48,6 +48,7 @@ deployInit
   -> Bool -- ^ enable https
   -> m ()
 deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps = do
+  liftIO $ createDirectoryIfMissing True deployDir
   localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
       False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
@@ -74,22 +75,30 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
                    , deployDir </> "config" </> "common"
                    , deployDir </> "config" </> "frontend"
                    ]
+
+  let srcDir = deployDir </> "src"
+  withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ liftIO $ do
+    createThunk srcDir thunkPtr
+    setupObeliskImpl deployDir
+
   withSpinner "Writing deployment configuration" $ do
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
     writeDeployConfig deployDir "enable_https" $ show enableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
     writeDeployConfig deployDir ("config" </> "common" </> "route") route
-  withSpinner "Creating source thunk (./src)" $ liftIO $ do
-    createThunk (deployDir </> "src") thunkPtr
-    setupObeliskImpl deployDir
+    writeDeployConfig deployDir "module.nix" $
+      "(import " <> toNixPath (makeRelative deployDir srcDir) <> " {}).obelisk.serverModules.mkBaseEc2"
+
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
 setupObeliskImpl :: FilePath -> IO ()
 setupObeliskImpl deployDir = do
-  let implDir = toImplDir deployDir
+  let
+    implDir = toImplDir deployDir
+    goBackUp = foldr (</>) "" $ (".." <$) $ splitPath $ makeRelative deployDir implDir
   createDirectoryIfMissing True implDir
-  writeFile (implDir </> "default.nix") "(import ../../src {}).obelisk"
+  writeFile (implDir </> "default.nix") $ "(import " <> toNixPath (goBackUp </> "src") <> " {}).obelisk"
 
 deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
@@ -108,6 +117,8 @@ deployPush deployPath getNixBuilders = do
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   builders <- getNixBuilders
+  let moduleFile = deployPath </> "module.nix"
+  moduleFileExists <- liftIO $ doesFileExist moduleFile
   buildOutputByHost <- ifor (Map.fromSet (const ()) hosts) $ \host () -> do
     --TODO: What does it mean if this returns more or less than 1 line of output?
     [result] <- fmap lines $ nixCmd $ NixCmd_Build $ def
@@ -117,13 +128,13 @@ deployPush deployPath getNixBuilders = do
         , _target_expr = Nothing
         }
       & nixBuildConfig_outLink .~ OutLink_None
-      & nixCmdConfig_args .~
+      & nixCmdConfig_args .~ (
         [ strArg "hostName" host
         , strArg "adminEmail" adminEmail
         , strArg "routeHost" routeHost
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
-        ]
+        ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
     pure result
   let knownHostsPath = deployPath </> "backend_known_hosts"
@@ -207,12 +218,14 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
       keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
       keyArgs <- case eitherDecode keytoolConfContents :: Either String KeytoolConfig of
         Left err -> failWith $ T.pack err
-        Right conf -> pure [ "--sign"
-                      , "--store-file", _keytoolConfig_keystore conf
-                      , "--store-password", _keytoolConfig_storepass conf
-                      , "--key-alias", _keytoolConfig_alias conf
-                      , "--key-password", _keytoolConfig_keypass conf]
-      let expr = unwords
+        Right conf -> pure
+          [ "--sign"
+          , "--store-file", _keytoolConfig_keystore conf
+          , "--store-password", _keytoolConfig_storepass conf
+          , "--key-alias", _keytoolConfig_alias conf
+          , "--key-password", _keytoolConfig_keypass conf
+          ]
+      let expr = mconcat
             [ "with (import ", toNixPath srcDir, " {});"
             , "android.frontend.override (drv: {"
             , "isRelease = true;"
@@ -264,19 +277,16 @@ instance FromJSON KeytoolConfig
 instance ToJSON KeytoolConfig
 
 createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
-createKeystore root config = do
-  let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
-  callProcessAndLogOutput (Notice,Notice) $ setCwd (Just root) $ proc "nix-shell" ["-E" , expr, "--run" , keytoolCmd]
-  where
-    keytoolCmd = processToShellString "keytool"
-      [ "-genkeypair", "-noprompt"
-      , "-keystore", _keytoolConfig_keystore config
-      , "-keyalg", "RSA", "-keysize", "2048"
-      , "-validity", "1000000"
-      , "-storepass", _keytoolConfig_storepass config
-      , "-alias", _keytoolConfig_alias config
-      , "-keypass", _keytoolConfig_keypass config
-      ]
+createKeystore root config =
+  callProcessAndLogOutput (Notice, Notice) $ setCwd (Just root) $ proc jreKeyToolPath
+    [ "-genkeypair", "-noprompt"
+    , "-keystore", _keytoolConfig_keystore config
+    , "-keyalg", "RSA", "-keysize", "2048"
+    , "-validity", "1000000"
+    , "-storepass", _keytoolConfig_storepass config
+    , "-alias", _keytoolConfig_alias config
+    , "-keypass", _keytoolConfig_keypass config
+    ]
 
 -- | Simplified deployment configuration mechanism. At one point we may revisit this.
 writeDeployConfig :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
