@@ -174,9 +174,9 @@ in rec {
   '';
 
   serverModules = {
-    mkBaseEc2 = {...}: { pkgs, ...}: {
+    mkBaseEc2 = { nixosPkgs, ... }: {...}: {
       imports = [
-        (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+        (nixosPkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
       ];
       ec2.hvm = true;
     };
@@ -262,7 +262,7 @@ in rec {
       system = "x86_64-linux";
       configuration = {
         imports = [
-          (module { inherit exe hostName adminEmail routeHost enableHttps version; })
+          (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
           (serverModules.mkDefaultNetworking args)
           (serverModules.mkObeliskApp args)
         ];
