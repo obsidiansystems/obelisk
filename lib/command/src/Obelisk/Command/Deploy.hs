@@ -76,7 +76,7 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
                    ]
 
   let srcDir = deployDir </> "src"
-  withSpinner ("Creating source thunk (" <> T.pack srcDir <> ")") $ liftIO $ do
+  withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ liftIO $ do
     createThunk srcDir thunkPtr
     setupObeliskImpl deployDir
 
@@ -86,16 +86,18 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
     writeDeployConfig deployDir "admin_email" adminEmail
     writeDeployConfig deployDir ("config" </> "common" </> "route") route
     writeDeployConfig deployDir "module.nix" $
-      "(import " <> toNixPath srcDir <> " {}).obelisk.serverModules.mkBaseEc2"
+      "(import " <> toNixPath (makeRelative deployDir srcDir) <> " {}).obelisk.serverModules.mkBaseEc2"
 
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
 setupObeliskImpl :: FilePath -> IO ()
 setupObeliskImpl deployDir = do
-  let implDir = toImplDir deployDir
+  let
+    implDir = toImplDir deployDir
+    goBackUp = foldr (</>) "" $ (".." <$) $ splitPath $ makeRelative deployDir implDir
   createDirectoryIfMissing True implDir
-  writeFile (implDir </> "default.nix") "(import ../../src {}).obelisk"
+  writeFile (implDir </> "default.nix") $ "(import " <> toNixPath (goBackUp </> "src") <> " {}).obelisk"
 
 deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
@@ -215,12 +217,14 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
       keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
       keyArgs <- case eitherDecode keytoolConfContents :: Either String KeytoolConfig of
         Left err -> failWith $ T.pack err
-        Right conf -> pure [ "--sign"
-                      , "--store-file", _keytoolConfig_keystore conf
-                      , "--store-password", _keytoolConfig_storepass conf
-                      , "--key-alias", _keytoolConfig_alias conf
-                      , "--key-password", _keytoolConfig_keypass conf]
-      let expr = unwords
+        Right conf -> pure
+          [ "--sign"
+          , "--store-file", _keytoolConfig_keystore conf
+          , "--store-password", _keytoolConfig_storepass conf
+          , "--key-alias", _keytoolConfig_alias conf
+          , "--key-password", _keytoolConfig_keypass conf
+          ]
+      let expr = mconcat
             [ "with (import ", toNixPath srcDir, " {});"
             , "android.frontend.override (drv: {"
             , "isRelease = true;"
