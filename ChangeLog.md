@@ -5,6 +5,7 @@ This project's release branch is `master`. This log is written from the perspect
 ## Unreleased
 
 * Fully support HTTP [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) requests on static assets to support Safari. ([#664](https://github.com/obsidiansystems/obelisk/pull/664))
+* Support non-EC2 deployments. ([#658](https://github.com/obsidiansystems/obelisk/pull/658))
 
 ## v0.6.0.0 - 2020-02-21
 
