@@ -1,94 +1,66 @@
 # Obelisk Application Deployment Guide
-This document serves two purposes, the first one is to guide new users that want to deploy Obelisk/Reflex apps and the second one to provide a walkthrough for test driving obelisk releases.
+This document serves two purposes, the first one is to guide new users that want to deploy Obelisk/Reflex apps and the second one to provide a walk-through for test driving Obelisk releases.
 
-
-
-> NOTE: This guide assumes you have access to a MacOS machine running the
-> latest OSX release, a NixOS machine (can be a VM on that mac) an
-> iPhone or iPad and a recent Android device. It also assumes that you
-> have Nix correctly set up and that your system is set up to fetch from
-> binary caches instead of building everything on your machine. If you
-> notice any of the commands below takes more than 5 minutes, then
-> caches are not enabled.
+> **Note:** To complete this *entire* guide you need access to a macOS machine running the latest OSX release, a Linux machine (can be a VM on that mac) with Nix installed, an iPhone or iPad, and a recent Android device. It also assumes that you have Nix correctly set up and that your system is set up to fetch from binary caches instead of building everything on your machine. If you notice any of the commands below takes more than 5 minutes, then caches are not likely enabled.
 >
-> For example:
->
-> `/etc/nixos/configuration.nix`
->
-> ```nix
-> nix.binaryCaches = [ "https://cache.nixos.org/" "https://nixcache.reflex-frp.org" ];
-> nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
-> ```
->
-> or
->
-> `/etc/nix/nix.conf`
->
-> ```nix
-> binary-caches = https://cache.nixos.org/ https://nixcache.reflex-frp.org
-> trusted-binary-caches =
-> binary-cache-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
-> ```
-
-
+> Refer to the [Obelisk Installation Documentation](https://github.com/obsidiansystems/obelisk#installing-obelisk) for instructions on configuring the binary caches for any Nix-compatible setup.
 
 ## a) Get Obelisk
 
-There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of obelisk in different ways: the approach is to clone obelisk from it's github repository (master, develop or qa branches) and start a project that uses that local check out.
+There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of Obelisk in different ways: the approach is to clone obelisk from it's GitHub repository (master, develop or qa branches) and start a project that uses that local check out.
 
-First, let's open a terminal, navigate to the path of your choice and define a variable called `WORKDIR` to help us avoid running commands in the wrong folder.
+First open a terminal:
 
-~~~
-export WORKDIR=$(pwd)
-~~~
 
-Then let's get obelisk from Github using the qa branch:
+navigate to the path of your choice and define a variable called `WORKDIR` to help us avoid running commands in the wrong folder.
 
-~~~
-git clone https://github.com/obsidiansystems/obelisk -b qa "$WORKDIR/obelisk"
-~~~
+```bash
+export WORKDIR=~/obelisk-guide
+mkdir -p "$WORKDIR"
+```
 
-Once you have an obelisk check out, you can build it using Nix. And make a shortcut (alias) for the rest of the terminal session. With this, you will be able to type `ob` anywhere else in the system as long as you do not close the terminal.
+Then let's get obelisk from GitHub using a specific branch:
 
-~~~
-alias ob=$(nix-build $WORKDIR/obelisk -A command --no-out-link)/bin/ob
-~~~
+```bash
+export OBELISK_BRANCH=develop
+git clone https://github.com/obsidiansystems/obelisk.git -b "$OBELISK_BRANCH" "$WORKDIR/obelisk"
+```
 
-In order to start an obelisk project, we need to create an empty directory, let's call it `myapp`:
+Once you have an Obelisk check out, you can build it using Nix and make a shortcut (alias) for the rest of the terminal session. With this you will be able to type `ob` anywhere else in the system as long as you do not close the terminal.
 
-~~~
+```bash
+alias ob=$(nix-build "$WORKDIR/obelisk" -A command --no-out-link)/bin/ob
+```
+
+In order to start an Obelisk project, we need initialize it in a new directory. Let's call it `myapp`:
+
+```bash
 mkdir -p "$WORKDIR/myapp"
 cd "$WORKDIR/myapp"
-ob init --symlink "$WORKDIR/obelisk"
-~~~
+ob init --branch "$OBELISK_BRANCH"
+```
 
-> Note: If the --symlink parameter is not used, then obelisk sets your project
-> up to look at the master branch from Github. This is quite handy for
-> real life projects but distracting for our test drive since we want to
-> make sure any changes we do to the obelisk codebase  (like testing a
-> pull request) are immediately picked up.
+> **Note:** If the `--branch` parameter is not used, then obelisk sets your project up to look at the master branch from GitHub. This is quite handy for real life projects but distracting for our test drive since we want to make sure any changes we do to the obelisk codebase (like testing a pull request) are immediately picked up.
 
 ## b) Deploy a web app on localhost
 
-Let's test that we can run a server on localhost, this is quite easy:
+Let's test that we can run a server on localhost. This is quite easy:
 
-~~~
+```bash
 cd "$WORKDIR/myapp"
 ob run
-~~~
+```
 
-Now open a browser and point it to http://localhost:8000 ( <- or just click on this link). You will see the following:
+Now open a browser and point it to http://localhost:8000 (or just click on this link). You shoul see the following:
 
-
-
-![img](./assets/app-deploy.png)
+![](assets/app-deploy.png)
 
 ## c) Deploy a web app on a remote machine
 
+### Import the NixOS VirtualBox appliance
+Install [VirtualBox](https://www.virtualbox.org/) on your machine.
 
-Install VirtualBox on your machine.
-
-On NixOS do this by adding the following line to your `/etc/nixos/configuration.nix`:
+On NixOS, do this by adding the following line to your `/etc/nixos/configuration.nix`:
 
 ```
 virtualisation.virtualbox.host.enable = true;
@@ -96,186 +68,228 @@ virtualisation.virtualbox.host.enable = true;
 
 then `sudo nixos-rebuild switch`.
 
-The NixOS download page has a section called VirtualBox image. Download that as the target system. The author used 19.09 .ova files: https://nixos.org/nixos/download.html
+The NixOS download page has a section called VirtualBox image. Download that as the target system. The author used the 19.09 `.ova` file: https://nixos.org/nixos/download.html
 
-With the downloaded file, open VirtualBox and import the .ova file:
+With the downloaded file, open VirtualBox and import the `.ova` file:
 
-![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575390933162_image.png)
+![](assets/virtualbox-appliance-import.png)
 
-leave the default settings, that will take a few minutes:
+Leave the default settings and finish the import. That will take a few minutes:
 
-![img](https://paper-attachments.dropbox.com/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575390997785_image.png)
+![](assets/virtualbox-appliance-import-loading.png)
 
-then click on start:
+You should now see a NixOS machine in the dashboard:
 
-![img](./assets/FAQ.png)
+![](assets/virtualbox-dashboard-nixos.png)
 
-Make sure the selected Processor is Ubuntu-64 and not Ubuntu-32.
+If you are on a network with DHCP on your wireless or network card then select right-click on the "NixOS" image and click "Settings". Go to the "Network" section and make "Attached to:" set to "Bridged Adapter".
 
-![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392446973_image.png)
+![](assets/virtualbox-image-settings-network.png)
 
-If you are on a network with DHCP on your wireless or network card then select Bridged Adapter in network:
+Finally, double-click on the "NixOS" machine and wait for it boot up. If it asks for a password, use `demo`.
 
-![img](https://paper-attachments.dropbox.com/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392569418_image.png)
+![](assets/virtualbox-nioxs-after-boot.png)
 
-You will then have a fully booted NixOS machine:
+### Configure the virtual machine for SSH
 
-![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392475824_image.png)
+Inside the virtual machine open up "Konsole" by clicking on the start menu in the bottom left corner and typing in "Konsole" until you see it as an option in the menu. Then click on it to open it.
 
-Then open up Konsole by clicking on the start menu and typing it and type ifconfig to learn the target ip address:
-
-![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392616616_image.png)
-
-Change the system configuration using sudo to enable ssh access:
+Change the system configuration using `sudo` to enable SSH access:
 
 ```bash
 sudo nano /etc/nixos/configuration.nix
 ```
 
-![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575392731139_image.png)
+This will ask you to enter your password. Enter `demo`.
 
+![](assets/nano-edit-nixos-configuration.png)
 
-You need to have
+You need to add the following snippet right before the final line containing `}`.
 
 ```nix
   services.openssh.enable = true;
   services.openssh.permitRootLogin = "yes";
 ```
 
-and then Ctrl+O and Ctrl+X.
+Save and close the editor by typing <kbd>Ctrl</kbd>+<kbd>O</kbd> and then <kbd>Ctrl</kbd>+<kbd>X</kbd>.
 
-Now run `sudo nixos-rebuild switch` and then set the root password to anything you want using `sudo passwd root`.
+Now run `sudo nixos-rebuild switch` (if it asks for a password, again use `demo`) and then set the root password using `sudo passwd root`. Pick a simple password like `root`. You'll need to use it again.
 
-With that you will be able to SSH into that machine from a terminal, using the username root and the IP address you found out during the previous step:
-
-![img](./assets/s_5A46F38C14383C53D44B78268C1B1B989CA5CC503C2BC497190D1E756A8867D7_1575395157871_image.png)
-
-Create a new SSH key with ssh-keygen called obtest and leave it on the local folder:
-
-```shell
-ssh-keygen -t ed25519 -f obtest -P ""
-```
-
-Now copy your local SSH key to the server to enable passwordless login:
+To get the virtual machine's IP address go back to the terminal on your *host* machine (not the virtual machine) and run:
 
 ```bash
-ssh-copy-id -i obtest.pub root@192.168.5.185
+export VM_ID=$(VBoxManage list runningvms | grep "NixOS" | awk -F'[{}]' '{print $2}')
+echo "$VM_ID"
 ```
 
-Before the project can be deployed, it needs to be a valid git repository. This is taken care of by doing:
+You should see a single identifier that looks like `388bbbe5-e0a2-4b20-9c76-bbaa5746682e`. If you see anything else then you likely you have multiple NixOS machines running. Stop any other machines and run this command again. (Of course, if you're a power user, just change the `grep` to pick out right VM.)
+
+Now get the IP address for that machine:
 
 ```bash
-cd $WORKDIR/myapp
+export VM_IP=$(VBoxManage guestproperty enumerate "$VM_ID" | grep /V4/IP | awk '{print $4}' | sed 's/,//')
+echo "$VM_IP"
+```
+
+You should see an IP like `192.168.7.86`.
+
+With that you will be able to SSH into that machine from a terminal, using the username `root`.
+
+```bash
+ssh root@$VM_IP echo "Access granted"
+```
+
+It will ask you for a password. Enter the one you specified above. You should see `Access granted` printed after you type your password and hit <kbd>Enter</kbd>.
+
+Now we'll allow access with an SSH key instead of a password. Create a new SSH key with `ssh-keygen` called obtest and leave it in the local folder:
+
+```bash
+ssh-keygen -t ed25519 -f "$WORKDIR/obkey" -P ""
+```
+
+Now copy your local SSH key to the server:
+
+```bash
+ssh-copy-id -i "$WORKDIR/obkey.pub" root@$VM_IP
+```
+
+This will ask you for your password again.
+
+Now test login with your key instead:
+
+```bash
+ssh -i "$WORKDIR/obkey" root@$VM_IP echo "Access granted"
+```
+
+This should print `Access granted` *without* asking for a password.
+
+### Configure the git remote
+
+Before the project can be deployed, it needs to be a valid `git` repository.
+
+> **Note:** You need `git` installed and configured. You can do that with:
+>
+> ```bash
+> nix-env -i git
+> git config --global user.name "John Doe"
+> git config --global user.email johndoe@example.com
+> ```
+
+```bash
+git init --bare "$WORKDIR/myapp-git-remote"
+cd "$WORKDIR/myapp"
 git init
 git add --all
 git commit -m "initial commit"
-```
-
-In the remote machine, set up a bare git repo:
-
-Change `/etc/nixos/configuration.nix` using `nano` to have:
-
-```bash
-environment.systemPackages = with pkgs; [
-     git
-  ];
-```
-
-and then do another: `nixos-rebuild switch`.
-
-As the remote `root` user:
-```bash
-git init --bare ~/myapp.git
-```
-
-Now go back to your local project folder and set it up as the `origin` remote:
-```bash
-git remote add origin ssh://root@10.1.0.118/root/myapp.git
-```
-
-and push all the code to it:
-
-```bash
+git remote add origin "$WORKDIR/myapp-git-remote"
 git push origin master
 ```
 
-With that, we can come back to obelisk and  deploy the system:
+### Deploy
 
+With that, we can come back to Obelisk and initialize the deployment:
+
+```bash
+cd "$WORKDIR/myapp"
+ob deploy init --ssh-key "$WORKDIR/obkey" --admin-email a@a.a --hostname $VM_IP --route https://$VM_IP "$WORKDIR/myappdeploy"
 ```
-mkdir $WORKDIR/myappdeploy
-ob deploy init --ssh-key obtest --admin-email a@a.a --hostname 192.168.5.185 --route https://192.168.5.185 $WORKDIR/myappdeploy
-cd $WORKDIR/myappdeploy
-ob deploy push
+
+Then configure the deployment for VirtualBox:
+
+```bash
+echo "{nixosPkgs, ...}: {...}: { imports = [ (nixosPkgs.path + /nixos/modules/virtualisation/virtualbox-image.nix) ]; }" > "$WORKDIR/myappdeploy/module.nix"
 ```
 
+And deploy:
 
+```bash
+cd "$WORKDIR/myappdeploy"
+ob deploy push -v
+```
 
-And then navigate to: http://192.168.5.185 (adjust for your IP address) and make sure you see the same obelisk image.
+Once that is complete, open the webpage with
 
+```bash
+xdg-open http://$VM_IP
+```
 
+If that fails, just get the URL by running
 
-![](./assets/app-deploy-2.png)
+```bash
+echo http://$VM_IP`
+```
+
+and copy/paste that URL into your browser navigation input.
+
+It should look like this:
+
+![](assets/app-deploy-2.png)
 
 Congratulations! You have deployed an Obelisk application to a remote server via ssh.
 
-
-
 ## d) Deploy an Android app (from NixOS)
 
-If you are following along, you could do this from the NixOS VM you created in an earlier step but you would need to add a USB device mapping so that the USB connection can be seen from the guest VM.
+> **Note:** This section requires that you be running a Linux *host*.
 
-Modify `myapp/default.nix` to set `config.android_sdk.accept_license = true;` and then build the android app:
+Modify `$WORKDIR/myapp/default.nix` to set `config.android_sdk.accept_license = true;` and then update your app.
 
-```nix
-nix-build -A android.frontend -o result-android
+```bash
+cd "$WORKDIR/myapp"
+sed -i 's/# config.android_sdk.accept_license = false;/config.android_sdk.accept_license = true;/g' default.nix
+git add default.nix
+git commit -m"Accept license"
+git push
 ```
 
-There will be an android app in `./result-android/android-app-debug.apk`
+Make sure *USB debugging* is enabled n your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options) and connect the device using USB (be sure to confirm any security prompts on the device).
 
-After that, make sure  *USB debugging* is enabled n your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options) and connect the device using USB (be sure to confirm any security prompts on the device)
+Now update your deployment and deploy to Android:
+
+```bash
+cd "$WORKDIR/myappdeploy"
+ob deploy update
+ob deploy test android -v
+```
+
+This deployment will ask you to enter information and choose a password. If the deployment fails, try using different USB ports on your computer. The USB cable you use can also make a difference.
+
+When connecting your Android device you may be asked to "Allow USB debugging":
+![](assets/android-confirm-usb-debugging.jpg)
 
 
+When the deployment is complete it should look something like
 
-![](./assets/IMG_0512.jpg)
+![](assets/android-app.jpg)
 
-![](./assets/IMG_0513.jpg)
-
-Congratulations!  You have deployed an Obelisk Android app via USB.
-
-
+Congratulations! You have deployed an Obelisk Android app via USB.
 
 ## e) Deploy an iOS app
 
+> **Note:** This section requires that you be running a macOS *host*.
+
 Verify that you can see the device from XCode and you have installed a Provisioning profile that links your Apple Developer Id and the Device identifier. The workflow depends on whether or not you are an independent developer or part of an organization and is out of scope for this manual.
 
-![](./assets/Screen%20Shot%202019-12-18%20at%201.35.04%20PM.png)
+![](assets/xcode-devices.png)
 
-First, create the app:
+Find your `Team ID` at the following URL (Apple Developer Membership details): https://developer.apple.com/account/#/membership/
 
-```nix-build -A ios.frontend -o result-ios```
+It will be something like `5B445B3WY1`. With that, you can start the deployment workflow after plugging in an iPhone or iPad via USB and setting it to trust the computer:
 
-this will generate a `result-ios` folder that looks similar to this:
+```bash
+cd "$WORKDIR/myappdeploy"
+ob deploy test ios <TEAM-ID> # Use your Team ID here
+```
 
-![](./assets/Screen%20Shot%202019-12-18%20at%201.40.48%20PM.png)
+![](assets/ios-deploy-keychain.png)
 
-and then find your `Team ID` at the following url (Apple Developer Membership details): https://developer.apple.com/account/#/membership/
-
-It will be something like `5B445B3WY1` with that, you can start the deployment workflow after plugging in an iPhone or iPad via USB and setting it to trust the computer:
-
-
-![](./assets/Screen%20Shot%202019-12-18%20at%201.47.21%20PM.png)
-
-![](./assets/Screen%20Shot%202019-12-18%20at%201.48.02%20PM.png)
+![](assets/ios-deploy-example.png)
 
 If there are no errors and the last line says `100% Installed Package` you can open the device and look for the Obelisk app:
 
+![](assets/ios-obelisk-app-icon.jpg)
 
-
-![](./assets/out514.jpg)
-
-![](./assets/out515.jpg)
+![](assets/ios-obelisk-app-open.jpg)
 
 Congratulations, you have deployed an Obelisk app on an iOS device.
 
-You are now ready to create your own multi platform application using Obelisk!
-
+You are now ready to create your own multi-platform application using Obelisk!
