@@ -8,6 +8,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Support non-EC2 deployments. ([#658](https://github.com/obsidiansystems/obelisk/pull/658))
 * Fix `ob deploy test android` to work. ([#645](https://github.com/obsidiansystems/obelisk/pull/645))
 * Fix vulnerability where Android deployments would leave signing keys in the nix store which is world readable. ([#645](https://github.com/obsidiansystems/obelisk/pull/645)) (Thanks to [kmicklas](https://github.com/kmicklas) for the report.)
+* Add `Obelisk.Backend.runBackendWith` to allow customization of how GHCJS resources are loaded in the page. ([#668](https://github.com/obsidiansystems/obelisk/pull/668))
 
 ## v0.6.0.0 - 2020-02-21
 
