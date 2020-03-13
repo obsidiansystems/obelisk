@@ -9,6 +9,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Fix `ob deploy test android` to work. ([#645](https://github.com/obsidiansystems/obelisk/pull/645))
 * Fix vulnerability where Android deployments would leave signing keys in the nix store which is world readable. ([#645](https://github.com/obsidiansystems/obelisk/pull/645)) (Thanks to [kmicklas](https://github.com/kmicklas) for the report.)
 * Add `Obelisk.Backend.runBackendWith` to allow customization of how GHCJS resources are loaded in the page. ([#668](https://github.com/obsidiansystems/obelisk/pull/668))
+* Add `ob profile` command to run Obelisk projects with profiling. `ob profile` works like `ob run`, but instead of using `ghci`, it builds an executable that is built with profiling enabled. ([#654](https://github.com/obsidiansystems/obelisk/pull/654))
 
 ## v0.6.0.0 - 2020-02-21
 
