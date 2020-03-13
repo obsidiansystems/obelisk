@@ -5,10 +5,18 @@
 , reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
-  cleanSource = builtins.filterSource (name: _: let baseName = builtins.baseNameOf name; in !(
-    builtins.match "^\\.ghc\\.environment.*" baseName != null ||
-    baseName == "cabal.project.local"
-  ));
+  reflex-platform = getReflexPlatform { inherit system; };
+  inherit (reflex-platform) hackGet nixpkgs;
+  pkgs = nixpkgs;
+
+  inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
+
+  cleanSource = src:
+    # WARNING: The order of application here seems to matter a great deal to
+    # how quickly `ghcid` is able to reload changes. As a rule of thumb,
+    # always apply `gitignoreSource` first.
+    # See https://github.com/obsidiansystems/obelisk/pull/666 and related.
+    pkgs.lib.cleanSource (gitignoreSource src);
 
   commandRuntimeDeps = pkgs: with pkgs; [
     coreutils
@@ -37,6 +45,8 @@ let
         hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
 
         ghcid = self.callCabal2nix "ghcid" (hackGet ./dep/ghcid) {};
+        # Exports more internals
+        snap-core = haskellLib.dontCheck (self.callCabal2nix "snap-core" (hackGet ./dep/snap-core) {});
       })
 
       pkgs.obeliskExecutableConfig.haskellOverlay
@@ -56,6 +66,7 @@ let
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
         obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) {
           librarySystemDepends = [
+            pkgs.jre
             pkgs.nix
             (haskellLib.justStaticExecutables self.ghcid)
           ];
@@ -99,10 +110,6 @@ let
 
     ];
   };
-
-  reflex-platform = getReflexPlatform { inherit system; };
-  inherit (reflex-platform) hackGet nixpkgs;
-  pkgs = nixpkgs;
 
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
   ghcObelisk = reflex-platform.ghc;
@@ -165,10 +172,14 @@ in rec {
   '';
 
   serverModules = {
-    mkBaseEc2 = { hostName, routeHost, enableHttps, adminEmail, ... }: {...}: {
+    mkBaseEc2 = { nixosPkgs, ... }: {...}: {
       imports = [
-        (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+        (nixosPkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
       ];
+      ec2.hvm = true;
+    };
+
+    mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, ... }: {...}: {
       networking = {
         inherit hostName;
         firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
@@ -176,7 +187,6 @@ in rec {
       security.acme.certs = if enableHttps then {
         "${routeHost}".email = adminEmail;
       } else {};
-      ec2.hvm = true;
     };
 
     mkObeliskApp =
@@ -243,14 +253,15 @@ in rec {
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
       system = "x86_64-linux";
       configuration = {
         imports = [
-          (serverModules.mkBaseEc2 args)
+          (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
+          (serverModules.mkDefaultNetworking args)
           (serverModules.mkObeliskApp args)
         ];
       };
@@ -406,7 +417,7 @@ in rec {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
     };

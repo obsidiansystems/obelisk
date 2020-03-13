@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "bump-reflex-0-6-4-1",
+  "branch": "develop",
   "private": false,
-  "rev": "38060894cb377160d1217305334f7f11202042d4",
-  "sha256": "0n47fcwj9szy3aqip0smmxdsp9fr78985rdslpmx2zdlkswmm5r1"
+  "rev": "156ebb7c391ec909d19e794e591f107462862543",
+  "sha256": "0rvbaimcvcica80538i6vxckv8si1gbd1ynvgxv7zr5jd1gk6vi5"
 }
