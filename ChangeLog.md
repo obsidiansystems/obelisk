@@ -5,6 +5,9 @@ This project's release branch is `master`. This log is written from the perspect
 ## Unreleased
 
 * Fully support HTTP [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) requests on static assets to support Safari. ([#664](https://github.com/obsidiansystems/obelisk/pull/664))
+* Support non-EC2 deployments. ([#658](https://github.com/obsidiansystems/obelisk/pull/658))
+* Fix `ob deploy test android` to work. ([#645](https://github.com/obsidiansystems/obelisk/pull/645))
+* Fix vulnerability where Android deployments would leave signing keys in the nix store which is world readable. ([#645](https://github.com/obsidiansystems/obelisk/pull/645)) (Thanks to [kmicklas](https://github.com/kmicklas) for the report.)
 
 ## v0.6.0.0 - 2020-02-21
 

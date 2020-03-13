@@ -68,6 +68,7 @@ let
         obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
         obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) {
           librarySystemDepends = [
+            pkgs.jre
             pkgs.nix
             (haskellLib.justStaticExecutables self.ghcid)
           ];
@@ -173,10 +174,14 @@ in rec {
   '';
 
   serverModules = {
-    mkBaseEc2 = { hostName, routeHost, enableHttps, adminEmail, ... }: {...}: {
+    mkBaseEc2 = { nixosPkgs, ... }: {...}: {
       imports = [
-        (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+        (nixosPkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
       ];
+      ec2.hvm = true;
+    };
+
+    mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, ... }: {...}: {
       networking = {
         inherit hostName;
         firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
@@ -184,7 +189,6 @@ in rec {
       security.acme.certs = if enableHttps then {
         "${routeHost}".email = adminEmail;
       } else {};
-      ec2.hvm = true;
     };
 
     mkObeliskApp =
@@ -251,14 +255,15 @@ in rec {
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
       system = "x86_64-linux";
       configuration = {
         imports = [
-          (serverModules.mkBaseEc2 args)
+          (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
+          (serverModules.mkDefaultNetworking args)
           (serverModules.mkObeliskApp args)
         ];
       };
@@ -385,7 +390,7 @@ in rec {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
     };
