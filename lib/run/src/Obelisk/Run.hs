@@ -79,7 +79,7 @@ import qualified System.Which
 run
   :: Int -- ^ Port to run the backend
   -> ([Text] -> Snap ()) -- ^ Static asset handler
-  -> Backend fullRoute frontendRoute -- ^ Backend
+  -> Backend backendRoute frontendRoute -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
 run port serveStaticAsset backend frontend = do
@@ -90,14 +90,18 @@ run port serveStaticAsset backend frontend = do
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
     Right validFullEncoder -> do
       publicConfigs <- getPublicConfigs
-      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $ do
-        _backend_run backend $ \serveRoute -> do
-          runSnapWithCommandLineArgs $ do
+      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $
+        _backend_run backend $ \serveRoute ->
+          runSnapWithCommandLineArgs $
             getRouteWith validFullEncoder >>= \case
               Identity r -> case r of
                 FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
                 FullRoute_Frontend obeliskRoute :/ a ->
-                  serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
+                  serveDefaultObeliskApp appRouteToUrl allJsUrl serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
+                  where
+                    appRouteToUrl (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
+                    allJsUrl = renderAllJsPath validFullEncoder
+
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf publicConfigs frontend validFullEncoder `finally` killThread backendTid
 
@@ -129,7 +133,7 @@ runWidget conf configs frontend validFullEncoder = do
         putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
-      prepareRunner = case (uri ^? uriScheme . _Just . unRText) of
+      prepareRunner = case uri ^? uriScheme . _Just . unRText of
         Just "https" -> do
           -- Generate a private key and self-signed certificate for TLS
           privateKey <- RSA.generateRSAKey' 2048 3
@@ -189,7 +193,8 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
           }
       FullRoute_Frontend (ObeliskRoute_App appRouteComponent) :/ appRouteRest -> do
         let cookies = maybe [] parseCookies $ lookup (fromString "Cookie") (W.requestHeaders req)
-        html <- renderJsaddleFrontend configs cookies (mkRouteToUrl validFullEncoder) (appRouteComponent :/ appRouteRest) frontend
+            routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
+        html <- renderJsaddleFrontend configs cookies routeToUrl (appRouteComponent :/ appRouteRest) frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
       _ -> backend req sendResponse
 

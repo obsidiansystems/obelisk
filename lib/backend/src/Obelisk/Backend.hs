@@ -16,18 +16,15 @@ module Obelisk.Backend
   , runSnapWithCommandLineArgs
   , serveDefaultObeliskApp
   , prettifyOutput
+  , renderAllJsPath
   , runBackend
   , staticRenderContentType
-  , mkRouteToUrl
   , getPublicConfigs
   ) where
 
-import Prelude hiding (id, (.))
-import Control.Category
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Fail (MonadFail)
-import Control.Categorical.Bifunctor
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
@@ -38,7 +35,6 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding
 import Obelisk.Asset.Serve.Snap (serveAsset)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
@@ -66,15 +62,15 @@ data GhcjsApp route = GhcjsApp
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
 serveDefaultObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
-  => (R appRoute
-  -> Text)
-  -> ([Text]
-  -> m ())
+  => (R appRoute -> Text)
+  -> Text -- ^ URL to GHCJS app JavaScript
+  -> ([Text] -> m ())
   -> Frontend (R appRoute)
   -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
-serveDefaultObeliskApp urlEnc serveStaticAsset frontend configs = serveObeliskApp urlEnc serveStaticAsset frontendApp configs
+serveDefaultObeliskApp urlEnc allJsUrl serveStaticAsset frontend =
+  serveObeliskApp urlEnc allJsUrl serveStaticAsset frontendApp
   where frontendApp = GhcjsApp
           { _ghcjsApp_compiled = defaultFrontendGhcjsAssets
           , _ghcjsApp_value = frontend
@@ -121,19 +117,24 @@ getRouteWith e = do
   pageName <- getPageName
   return $ tryDecode e pageName
 
+renderAllJsPath :: Encoder Identity Identity (R (FullRoute a b)) PageName -> Text
+renderAllJsPath validFullEncoder =
+  renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ ["all.js"]
+
 serveObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute -> Text)
+  -> Text -- ^ URL to GHCJS app JavaScript
   -> ([Text] -> m ())
   -> GhcjsApp (R appRoute)
   -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
-serveObeliskApp urlEnc serveStaticAsset frontendApp config = \case
-  ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> serveGhcjsApp urlEnc frontendApp config $ GhcjsAppRoute_App appRouteComponent :/ appRouteRest
+serveObeliskApp urlEnc allJsUrl serveStaticAsset frontendApp config = \case
+  ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> serveGhcjsApp urlEnc allJsUrl frontendApp config $ GhcjsAppRoute_App appRouteComponent :/ appRouteRest
   ObeliskRoute_Resource resComponent :=> Identity resRest -> case resComponent :=> Identity resRest of
     ResourceRoute_Static :=> Identity pathSegments -> serveStaticAsset pathSegments
-    ResourceRoute_Ghcjs :=> Identity pathSegments -> serveGhcjsApp urlEnc frontendApp config $ GhcjsAppRoute_Resource :/ pathSegments
+    ResourceRoute_Ghcjs :=> Identity pathSegments -> serveGhcjsApp urlEnc allJsUrl frontendApp config $ GhcjsAppRoute_Resource :/ pathSegments
     ResourceRoute_JSaddleWarp :=> Identity _ -> do
       let msg = "Error: Obelisk.Backend received jsaddle request"
       liftIO $ putStrLn $ T.unpack msg
@@ -160,15 +161,16 @@ staticRenderContentType = "text/html; charset=utf-8"
 serveGhcjsApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRouteComponent -> Text)
+  -> Text -- ^ URL to GHCJS app JavaScript
   -> GhcjsApp (R appRouteComponent)
   -> Map Text ByteString
   -> R (GhcjsAppRoute appRouteComponent)
   -> m ()
-serveGhcjsApp urlEnc app config = \case
+serveGhcjsApp urlEnc allJsUrl app config = \case
   GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest -> do
     modifyResponse $ setContentType staticRenderContentType
     modifyResponse $ setHeader "Cache-Control" "no-store private"
-    writeBS <=< renderGhcjsFrontend urlEnc (appRouteComponent :/ appRouteRest) config $ _ghcjsApp_value app
+    writeBS <=< renderGhcjsFrontend urlEnc allJsUrl (appRouteComponent :/ appRouteRest) config $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
 runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
@@ -176,30 +178,29 @@ runBackend backend frontend = case checkEncoder $ _backend_routeEncoder backend 
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
-    _backend_run backend $ \serveRoute -> do
-      runSnapWithCommandLineArgs $ do
+    _backend_run backend $ \serveRoute ->
+      runSnapWithCommandLineArgs $
         getRouteWith validFullEncoder >>= \case
           Identity r -> case r of
             FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
             FullRoute_Frontend obeliskRoute :/ a ->
-              serveDefaultObeliskApp (mkRouteToUrl validFullEncoder) (serveStaticAssets defaultStaticAssets) frontend publicConfigs $
+              serveDefaultObeliskApp routeToUrl allJsUrl (serveStaticAssets defaultStaticAssets) frontend publicConfigs $
                 obeliskRoute :/ a
-
-mkRouteToUrl :: Encoder Identity parse (R (FullRoute br fr)) PageName -> R fr -> Text
-mkRouteToUrl validFullEncoder =
-  let pageNameEncoder' :: Encoder Identity (Either Text) PageName PathQuery = pageNameEncoder
-  in \(k :/ v) -> T.pack . uncurry (<>) . encode pageNameEncoder' . encode validFullEncoder $ (FullRoute_Frontend $ ObeliskRoute_App k) :/ v
+              where
+                routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
+                allJsUrl = renderAllJsPath validFullEncoder
 
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
   => (route -> Text)
+  -> Text -- ^ URL to GHCJS app JavaScript
   -> route
   -> Map Text ByteString
   -> Frontend route
   -> m ByteString
-renderGhcjsFrontend urlEnc route configs f = do
-  let ghcjsPreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "ghcjs/all.js") blank
-      ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: "ghcjs/all.js" <> "defer" =: "defer") blank
+renderGhcjsFrontend urlEnc allJsUrl route configs f = do
+  let ghcjsPreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
+      ghcjsScript = elAttr "script" ("language" =: "javascript" <> "src" =: allJsUrl <> "defer" =: "defer") blank
   cookies <- askCookies
   renderFrontendHtml configs cookies urlEnc route f ghcjsPreload ghcjsScript
 
