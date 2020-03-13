@@ -57,24 +57,24 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 
 When developing on obelisk itself you may launch `ghcid` for the corresponding project as follows. For example to launch ghcid for `lib/backend` project:
 
-```shell
+```bash
 nix-shell -A obeliskEnvs.obelisk-backend --run "cd lib/backend && ghcid -c 'cabal new-repl'"
 ```
 
 Or to launch ghcid for `lib/command` project:
 
-```shell
+```bash
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
 To re-install `ob` from source do
-```shell
+```bash
 nix-env -f /path/to/obelisk -iA command
 ```
 
 Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
 
-```shell
+```bash
 ob thunk unpack ./.obelisk/impl
 cd ./.obelisk/impl
 # apply your changes
@@ -82,7 +82,7 @@ cd ./.obelisk/impl
 
 If you want to commit your changes, first push them to your fork of obelisk and then
 
-```shell
+```bash
 cd /your/project/root
 ob thunk pack .obelisk/impl
 git add .obelisk/impl
@@ -102,13 +102,13 @@ access to:
 
 To create a new Obelisk project, go to an empty directory and run:
 
-```shell
+```bash
 ob init
 ```
 
 Obelisk leverages ghcid to provide a live-reloading server that handles both frontend and backend. To run your Obelisk app and monitor the source for changes:
 
-```shell
+```bash
 ob run
 ```
 
@@ -179,13 +179,13 @@ Since Obelisk generates a self-signed certificate for running https, the browser
 
 Build everything:
 
-```shell
+```bash
 nix-build -A exe --no-out-link
 ```
 
 Copy the result to a new directory, add configuration, and run!
 
-```shell
+```bash
 mkdir test-app
 ln -s $(nix-build -A exe --no-out-link)/* test-app/
 cp -r config test-app
@@ -269,7 +269,7 @@ Running `ob deploy push` will give you additional setup instructions.
 
 If you'd like to deploy an updated version (with new commits) of your Obelisk app: simply go to the configuration directory, update the source thunk and push:
 
-```shell
+```bash
 cd ~/code/myapp-deploy
 ob deploy update
 ob deploy push
@@ -295,14 +295,14 @@ These versions will work out of the box but iOS SDKs prior to 11.3 should also w
 
 More recent Xcodes should also work, as long as one of the SDKs mentioned above has been used.
 To add another SDK to your current Xcode, [download](https://developer.apple.com/download/more/) the corresponding Xcode, extract it and copy its SDK folder next to the installed one, e.g.
-```shell
+```bash
 open -W Xcode_9.2.xip
 sudo cp -R Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS11.2.sdk
 ```
 
 
 You can verify that you have correct versions by running
-```shell
+```bash
 xcodebuild -showsdks
 ```
 
@@ -328,7 +328,7 @@ Ensure that `bundleIdentifier` matches the App ID of the development profile, or
 1. Connect the registered iPhone.
 1. Find your Apple Team ID in the [developer portal](https://developer.apple.com/account/#/membership).
 1. Run the deploy command with your Team ID:
-```shell
+```bash
 result-ios/bin/deploy [TEAM_ID]
 # or in debug mode via lldb:
 result-ios/bin/deploy [TEAM_ID] -d
@@ -338,7 +338,7 @@ result-ios/bin/deploy [TEAM_ID] -d
 1. Go to [developer portal - distribution profiles](https://developer.apple.com/account/ios/profile/production).
 Create and download a distribution profile.
 1. Run the package script with your TEAM ID and your distribution profile to create a `.ipa`:
-```shell
+```bash
 result-ios/bin/package [TEAM_ID] /path/to/output/.ipa /path/to/profile/file
 ```
 
