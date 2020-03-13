@@ -14,8 +14,7 @@ module Obelisk.Backend
   , runBackend
   , runBackendWith
   -- * Configuration of backend
-  , GhcjsWidgets
-  , GhcjsWidgetsImpl(..)
+  , GhcjsWidgets(..)
   , defaultGhcjsWidgets
   -- * all.js script loading functions
   , deferredGhcjsScript
@@ -70,10 +69,8 @@ data GhcjsApp route = GhcjsApp
   , _ghcjsApp_value :: !(Frontend route)
   }
 
-type GhcjsWidgets r = GhcjsWidgetsImpl (Text -> FrontendWidgetT r ())
-
 -- | Widgets used to load all.js on the frontend
-data GhcjsWidgetsImpl a = GhcjsWidgets
+data GhcjsWidgets a = GhcjsWidgets
   { _ghcjsWidgets_preload :: a
   -- ^ A preload widget, placed in the document head
   , _ghcjsWidgets_script :: a
@@ -82,7 +79,7 @@ data GhcjsWidgetsImpl a = GhcjsWidgets
 
 -- | Given the URL of all.js, return the widgets which are responsible for
 -- loading the script. Defaults to 'preloadGhcjs' and 'deferredGhcjsScript'.
-defaultGhcjsWidgets :: GhcjsWidgets r
+defaultGhcjsWidgets :: GhcjsWidgets (Text -> FrontendWidgetT r ())
 defaultGhcjsWidgets = GhcjsWidgets
   { _ghcjsWidgets_preload = preloadGhcjs
   , _ghcjsWidgets_script = deferredGhcjsScript
@@ -93,7 +90,7 @@ defaultGhcjsWidgets = GhcjsWidgets
 serveDefaultObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute -> Text)
-  -> GhcjsWidgetsImpl (FrontendWidgetT (R appRoute) ())
+  -> GhcjsWidgets (FrontendWidgetT (R appRoute) ())
   -> ([Text] -> m ())
   -> Frontend (R appRoute)
   -> Map Text ByteString
@@ -154,7 +151,7 @@ renderAllJsPath validFullEncoder =
 serveObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute -> Text)
-  -> GhcjsWidgetsImpl (FrontendWidgetT (R appRoute) ())
+  -> GhcjsWidgets (FrontendWidgetT (R appRoute) ())
   -> ([Text] -> m ())
   -> GhcjsApp (R appRoute)
   -> Map Text ByteString
@@ -191,7 +188,7 @@ staticRenderContentType = "text/html; charset=utf-8"
 serveGhcjsApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRouteComponent -> Text)
-  -> GhcjsWidgetsImpl (FrontendWidgetT (R appRouteComponent) ())
+  -> GhcjsWidgets (FrontendWidgetT (R appRouteComponent) ())
   -> GhcjsApp (R appRouteComponent)
   -> Map Text ByteString
   -> R (GhcjsAppRoute appRouteComponent)
@@ -207,7 +204,7 @@ runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -
 runBackend = runBackendWith defaultGhcjsWidgets
 
 runBackendWith
-  :: GhcjsWidgets (R frontendRoute)
+  :: GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ())
   -- ^ Given the URL of all.js, return the widgets which are responsible for
   -- loading the script.
   -> Backend backendRoute frontendRoute
@@ -232,7 +229,7 @@ runBackendWith ghcjsWidgets backend frontend = case checkEncoder $ _backend_rout
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
   => (route -> Text)
-  -> GhcjsWidgetsImpl (FrontendWidgetT route ())
+  -> GhcjsWidgets (FrontendWidgetT route ())
   -> route
   -> Map Text ByteString
   -> Frontend route
