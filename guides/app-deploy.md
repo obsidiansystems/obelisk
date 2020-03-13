@@ -226,13 +226,19 @@ If you are following along, you could do this from the NixOS VM you created in a
 
 Modify `myapp/default.nix` to set `config.android_sdk.accept_license = true;` and then build the android app:
 
-```nix
+```
+mkdir testing
+cd testing
+ob init --branch <branch name>
+```
+Run `nano default.nix` and configure the last line to `config.android_sdk.accept_license = true;)` (Delete # and replace from false to true)
+Run the following:
+```
 nix-build -A android.frontend -o result-android
+ob deploy test android
 ```
 
-There will be an android app in `./result-android/android-app-debug.apk`
-
-After that, make sure  *USB debugging* is enabled n your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options) and connect the device using USB (be sure to confirm any security prompts on the device)
+After that, make sure  *USB debugging* is enabled and your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options) and connect the device using USB (be sure to confirm any security prompts on the device)
 
 
 
