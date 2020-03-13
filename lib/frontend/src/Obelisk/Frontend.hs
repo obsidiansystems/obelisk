@@ -20,6 +20,7 @@ module Obelisk.Frontend
   , renderFrontendHtml
   , removeHTMLConfigs
   , FrontendMode (..)
+  , FrontendWidgetT
   , module Obelisk.Frontend.Cookie
   ) where
 
@@ -226,18 +227,17 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
     then runHydrationWidgetWithHeadAndBody (pure ()) w
     else runImmediateWidgetWithHeadAndBody w
 
+type FrontendWidgetT r = RoutedT DomTimeline r (SetRouteT DomTimeline r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost))))))))
+
 renderFrontendHtml
-  :: ( t ~ DomTimeline
-     , MonadIO m
-     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost))))))))
-     )
+  :: MonadIO m
   => Map Text ByteString
   -> Cookies
   -> (r -> Text)
   -> r
   -> Frontend r
-  -> widget ()
-  -> widget ()
+  -> FrontendWidgetT r ()
+  -> FrontendWidgetT r ()
   -> m ByteString
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
