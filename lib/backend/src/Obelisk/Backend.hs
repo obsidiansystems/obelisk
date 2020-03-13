@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -12,9 +13,15 @@ module Obelisk.Backend
   -- * Running a backend
   , runBackend
   , runBackendWith
+  -- * Configuration of backend
+  , GhcjsWidgets
+  , GhcjsWidgetsImpl(..)
+  , defaultGhcjsWidgets
   -- * all.js script loading functions
   , deferredGhcjsScript
   , delayedGhcjsScript
+  -- * all.js preload functions
+  , preloadGhcjs
   -- * Re-exports
   , Default (def)
   , getPageName
@@ -63,20 +70,37 @@ data GhcjsApp route = GhcjsApp
   , _ghcjsApp_value :: !(Frontend route)
   }
 
+type GhcjsWidgets r = GhcjsWidgetsImpl (Text -> FrontendWidgetT r ())
+
+-- | Widgets used to load all.js on the frontend
+data GhcjsWidgetsImpl a = GhcjsWidgets
+  { _ghcjsWidgets_preload :: a
+  -- ^ A preload widget, placed in the document head
+  , _ghcjsWidgets_script :: a
+  -- ^ A script widget, placed in the document body
+  } deriving Functor
+
+-- | Given the URL of all.js, return the widgets which are responsible for
+-- loading the script. Defaults to 'preloadGhcjs' and 'deferredGhcjsScript'.
+defaultGhcjsWidgets :: GhcjsWidgets r
+defaultGhcjsWidgets = GhcjsWidgets
+  { _ghcjsWidgets_preload = preloadGhcjs
+  , _ghcjsWidgets_script = deferredGhcjsScript
+  }
+
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
 --TODO: The frontend should be provided together with the asset paths so that this isn't so easily breakable; that will probably make this function obsolete
 serveDefaultObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute -> Text)
-  -> Text -- ^ URL to GHCJS app JavaScript
-  -> (Text -> FrontendWidgetT (R appRoute) ()) -- ^ GHCJS all.js script widget
+  -> GhcjsWidgetsImpl (FrontendWidgetT (R appRoute) ())
   -> ([Text] -> m ())
   -> Frontend (R appRoute)
   -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
-serveDefaultObeliskApp urlEnc allJsUrl ghcjsScript serveStaticAsset frontend =
-  serveObeliskApp urlEnc allJsUrl ghcjsScript serveStaticAsset frontendApp
+serveDefaultObeliskApp urlEnc ghcjsWidgets serveStaticAsset frontend =
+  serveObeliskApp urlEnc ghcjsWidgets serveStaticAsset frontendApp
   where frontendApp = GhcjsApp
           { _ghcjsApp_compiled = defaultFrontendGhcjsAssets
           , _ghcjsApp_value = frontend
@@ -130,18 +154,17 @@ renderAllJsPath validFullEncoder =
 serveObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute -> Text)
-  -> Text -- ^ URL to GHCJS app JavaScript
-  -> (Text -> FrontendWidgetT (R appRoute) ()) -- ^ GHCJS all.js script widget
+  -> GhcjsWidgetsImpl (FrontendWidgetT (R appRoute) ())
   -> ([Text] -> m ())
   -> GhcjsApp (R appRoute)
   -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
-serveObeliskApp urlEnc allJsUrl ghcjsScript serveStaticAsset frontendApp config = \case
-  ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> serveGhcjsApp urlEnc allJsUrl ghcjsScript frontendApp config $ GhcjsAppRoute_App appRouteComponent :/ appRouteRest
+serveObeliskApp urlEnc ghcjsWidgets serveStaticAsset frontendApp config = \case
+  ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> serveGhcjsApp urlEnc ghcjsWidgets frontendApp config $ GhcjsAppRoute_App appRouteComponent :/ appRouteRest
   ObeliskRoute_Resource resComponent :=> Identity resRest -> case resComponent :=> Identity resRest of
     ResourceRoute_Static :=> Identity pathSegments -> serveStaticAsset pathSegments
-    ResourceRoute_Ghcjs :=> Identity pathSegments -> serveGhcjsApp urlEnc allJsUrl ghcjsScript frontendApp config $ GhcjsAppRoute_Resource :/ pathSegments
+    ResourceRoute_Ghcjs :=> Identity pathSegments -> serveGhcjsApp urlEnc ghcjsWidgets frontendApp config $ GhcjsAppRoute_Resource :/ pathSegments
     ResourceRoute_JSaddleWarp :=> Identity _ -> do
       let msg = "Error: Obelisk.Backend received jsaddle request"
       liftIO $ putStrLn $ T.unpack msg
@@ -168,28 +191,29 @@ staticRenderContentType = "text/html; charset=utf-8"
 serveGhcjsApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRouteComponent -> Text)
-  -> Text -- ^ URL to GHCJS app JavaScript
-  -> (Text -> FrontendWidgetT (R appRouteComponent) ()) -- ^ GHCJS all.js script widget
+  -> GhcjsWidgetsImpl (FrontendWidgetT (R appRouteComponent) ())
   -> GhcjsApp (R appRouteComponent)
   -> Map Text ByteString
   -> R (GhcjsAppRoute appRouteComponent)
   -> m ()
-serveGhcjsApp urlEnc allJsUrl ghcjsScript app config = \case
+serveGhcjsApp urlEnc ghcjsWidgets app config = \case
   GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest -> do
     modifyResponse $ setContentType staticRenderContentType
     modifyResponse $ setHeader "Cache-Control" "no-store private"
-    writeBS <=< renderGhcjsFrontend urlEnc allJsUrl ghcjsScript (appRouteComponent :/ appRouteRest) config $ _ghcjsApp_value app
+    writeBS <=< renderGhcjsFrontend urlEnc ghcjsWidgets (appRouteComponent :/ appRouteRest) config $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
 runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
-runBackend = runBackendWith deferredGhcjsScript
+runBackend = runBackendWith defaultGhcjsWidgets
 
 runBackendWith
-  :: (Text -> FrontendWidgetT (R frontendRoute) ()) -- ^ GHCJS all.js script widget
+  :: GhcjsWidgets (R frontendRoute)
+  -- ^ Given the URL of all.js, return the widgets which are responsible for
+  -- loading the script.
   -> Backend backendRoute frontendRoute
   -> Frontend (R frontendRoute)
   -> IO ()
-runBackendWith ghcjsScript backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackendWith ghcjsWidgets backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
@@ -199,7 +223,7 @@ runBackendWith ghcjsScript backend frontend = case checkEncoder $ _backend_route
           Identity r -> case r of
             FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
             FullRoute_Frontend obeliskRoute :/ a ->
-              serveDefaultObeliskApp routeToUrl allJsUrl ghcjsScript (serveStaticAssets defaultStaticAssets) frontend publicConfigs $
+              serveDefaultObeliskApp routeToUrl (($ allJsUrl) <$> ghcjsWidgets) (serveStaticAssets defaultStaticAssets) frontend publicConfigs $
                 obeliskRoute :/ a
               where
                 routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
@@ -208,16 +232,19 @@ runBackendWith ghcjsScript backend frontend = case checkEncoder $ _backend_route
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
   => (route -> Text)
-  -> Text
-  -> (Text -> FrontendWidgetT route ()) -- ^ GHCJS all.js script widget
+  -> GhcjsWidgetsImpl (FrontendWidgetT route ())
   -> route
   -> Map Text ByteString
   -> Frontend route
   -> m ByteString
-renderGhcjsFrontend urlEnc allJsUrl ghcjsScript route configs f = do
-  let ghcjsPreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
+renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
   cookies <- askCookies
-  renderFrontendHtml configs cookies urlEnc route f ghcjsPreload (ghcjsScript allJsUrl)
+  renderFrontendHtml configs cookies urlEnc route f (_ghcjsWidgets_preload ghcjsWidgets) (_ghcjsWidgets_script ghcjsWidgets)
+
+-- | Preload all.js in a link tag.
+-- This is the default preload method.
+preloadGhcjs :: Text -> FrontendWidgetT r ()
+preloadGhcjs allJsUrl = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
