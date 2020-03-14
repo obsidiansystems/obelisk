@@ -382,10 +382,9 @@ in rec {
         projectInst.passthru.staticFiles
         projectInst.passthru.__closureCompilerOptimizationLevel
         version;
-      linuxExe = serverOn (projectOut "x86_64-linux");
+      linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
     in mainProjectOut // {
-
       __unstable__.profiledObRun = let
         profiled = projectOut { inherit system; enableLibraryProfiling = true; };
         exeSource = builtins.toFile "ob-run.hs" ''
@@ -408,7 +407,7 @@ in rec {
             Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
         '';
       in nixpkgs.runCommand "ob-run" {
-           buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
       } ''
         mkdir -p $out/bin/
         ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out/bin/ob-run
