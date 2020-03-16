@@ -4,18 +4,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE QuasiQuotes #-}
 module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
-import Control.Monad (filterM, unless)
+import Control.Lens (ifor, (.~), (&))
+import Control.Monad (filterM, unless, void)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
 import Data.Coerce (coerce)
+import Data.Default (def)
 import Data.Either
 import Data.Foldable (for_, toList)
-import Data.List.Extra (dropPrefix)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -23,6 +25,8 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Time.Clock (getCurrentTime)
+import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
 import Distribution.Compiler (CompilerFlavor(..))
@@ -47,10 +51,23 @@ import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..) , failWith, putLog, proc, readCreateProcessWithExitCode, readProcessAndLogStderr)
-import Obelisk.Command.Project (obeliskDirName, toObeliskDir, withProjectRoot, nixShellWithPkgs, toNixPath)
+import Obelisk.CliApp (
+    Severity (..),
+    createProcess_,
+    failWith,
+    proc,
+    putLog,
+    readCreateProcessWithExitCode,
+    readProcessAndLogStderr,
+    setCwd,
+    setDelegateCtlc,
+    waitForProcess,
+    withSpinner,
+  )
+import Obelisk.Command.Nix
+import Obelisk.Command.Project (nixShellWithPkgs, toImplDir, withProjectRoot, findProjectAssets)
 import Obelisk.Command.Thunk (attrCacheFileName)
-import Obelisk.Command.Utils (findExePath, ghcidExePath, nixBuildExePath, nixExePath)
+import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -71,32 +88,48 @@ data CabalPackageInfo = CabalPackageInfo
 preprocessorIdentifier :: String
 preprocessorIdentifier = "__preprocessor-apply-packages"
 
-run :: MonadObelisk m => m ()
+profile
+  :: MonadObelisk m
+  => String
+  -> [String]
+  -> m ()
+profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
+  putLog Debug "Using profiled build of project."
+
+  outPath <- withSpinner "Building profiled executable" $
+    fmap (T.unpack . T.strip) $ readProcessAndLogStderr Debug $ setCwd (Just root) $ nixCmdProc $
+      NixCmd_Build $ def
+        & nixBuildConfig_outLink .~ OutLink_None
+        & nixCmdConfig_target .~ Target
+          { _target_path = Just "."
+          , _target_attr = Just "__unstable__.profiledObRun"
+          , _target_expr = Nothing
+          }
+  assets <- findProjectAssets root
+  putLog Debug $ "Assets impurely loaded from: " <> assets
+  time <- liftIO getCurrentTime
+  let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
+  liftIO $ createDirectoryIfMissing True $ takeDirectory $ root </> profileBaseName
+  putLog Debug $ "Storing profiled data under base name of " <> T.pack (root </> profileBaseName)
+  freePort <- getFreePort
+  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc (outPath </> "bin" </> "ob-run") $
+    [ show freePort
+    , T.unpack assets
+    , profileBaseName
+    , "+RTS"
+    , "-po" <> profileBaseName
+    ] <> rtsFlags
+      <> [ "-RTS" ]
+  void $ waitForProcess ph
+
+run
+  :: MonadObelisk m
+  => m ()
 run = withProjectRoot "." $ \root -> do
   pkgs <- fmap toList . parsePackagesOrFail =<< getLocalPkgs root
   withGhciScript pkgs root $ \dotGhciPath -> do
     freePort <- getFreePort
-    assets <- do
-      let importableRoot = toNixPath root
-      isDerivation <- readProcessAndLogStderr Debug $
-        proc nixExePath
-          [ "eval"
-          , "-f"
-          , root
-          , "(let a = import " <> importableRoot <> " {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
-          , "--raw"
-          -- `--raw` is not available with old nix-instantiate. It drops quotation
-          -- marks and trailing newline, so is very convenient for shelling out.
-          ]
-      -- Check whether the impure static files are a derivation (and so must be built)
-      if isDerivation == "1"
-        then fmap T.strip $ readProcessAndLogStderr Debug $ -- Strip whitespace here because nix-build has no --raw option
-          proc nixBuildExePath
-            [ "--no-out-link"
-            , "-E", "(import " <> importableRoot <> "{}).passthru.staticFilesImpure"
-            ]
-        else readProcessAndLogStderr Debug $
-          proc nixExePath ["eval", "-f", root, "passthru.staticFilesImpure", "--raw"]
+    assets <- findProjectAssets root
     putLog Debug $ "Assets impurely loaded from: " <> assets
     runGhcid root True dotGhciPath pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
@@ -125,20 +158,19 @@ runWatch = withProjectRoot "." $ \root -> do
 -- to the Nix @project@ function.
 getLocalPkgs :: MonadObelisk m => FilePath -> m [FilePath]
 getLocalPkgs root = do
-  (_exitCode, out, err) <- readCreateProcessWithExitCode $
-    proc findExePath ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
-  putLog Debug $ T.strip $ T.pack err
+  obeliskPaths <- runFind ["-L", root, "-name", ".obelisk", "-type", "d"]
 
-  let
-    -- We ignore any path that has ".obelisk" in it, but keep the root ".obelisk" paths
-    packagePaths = filter (not . isIgnored) $ map T.unpack $ T.lines $ T.strip $ T.pack out
-    isIgnored path =
-         obeliskDirName `elem` dropPrefix (splitPath $ toObeliskDir root) pathSegments
-      && attrCacheFileName `notElem` pathSegments
-      where
-        pathSegments = splitPath path
-
-  pure packagePaths
+  -- We do not want to find packages that are embedded inside other obelisk projects, unless that
+  -- obelisk project is our own.
+  let exclusions = filter (/= root) $ map takeDirectory obeliskPaths
+  fmap (map (makeRelative ".")) $ runFind $
+    ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
+    <> concat [["-not", "-path", p </> "*"] | p <- (toImplDir "*" </> attrCacheFileName) : exclusions]
+  where
+    runFind args = do
+      (_exitCode, out, err) <- readCreateProcessWithExitCode $ proc findExePath args
+      putLog Debug $ T.strip $ T.pack err
+      pure $ map T.unpack $ T.lines $ T.strip $ T.pack out
 
 data GuessPackageFileError = GuessPackageFileError_Ambiguous [FilePath] | GuessPackageFileError_NotFound
   deriving (Eq, Ord, Show)
@@ -248,7 +280,17 @@ parsePackagesOrFail dirs = do
         | _cabalPackageInfo_buildable packageInfo -> Right packageInfo
       _ -> Left dir
 
-  packageInfos <- case NE.nonEmpty packageInfos' of
+  let packagesByName = Map.fromListWith (<>) [(_cabalPackageInfo_packageName p, p NE.:| []) | p <- packageInfos']
+  unambiguous <- ifor packagesByName $ \packageName ps -> case ps of
+    p NE.:| [] -> pure p -- No ambiguity here
+    p NE.:| _ -> do
+      putLog Warning $ T.pack $
+        "Packages named '" <> T.unpack packageName <> "' appear in " <> show (length ps) <> " different locations: "
+        <> intercalate ", " (map _cabalPackageInfo_packageFile $ toList ps)
+        <> "; Picking " <> _cabalPackageInfo_packageFile p
+      pure p
+
+  packageInfos <- case NE.nonEmpty $ toList unambiguous of
     Nothing -> failWith $ T.pack $ "No valid, buildable packages found in " <> intercalate ", " dirs
     Just xs -> pure xs
 
@@ -283,8 +325,7 @@ withGhciScript packageInfos pathBase f = do
       , if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
       , "import qualified Obelisk.Run"
       , "import qualified Frontend"
-      , "import qualified Backend"
-      ]
+      , "import qualified Backend" ]
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
     liftIO $ writeFile dotGhciPath dotGhci

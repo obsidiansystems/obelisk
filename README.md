@@ -1,5 +1,9 @@
 # Obelisk
 
+[![Haskell Programming Language](https://img.shields.io/badge/language-Haskell-blue.svg)](http://www.haskell.org)
+[![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)](https://tldrlegal.com/license/bsd-3-clause-license-%28revised%29)
+
+
 Obelisk provides an easy way to develop and deploy your [Reflex](https://github.com/reflex-frp/reflex) project as web apps and as mobile apps.
 
 - [Installing Obelisk](#installing-obelisk)
@@ -9,7 +13,9 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
   - [Running over https](#running-over-https)
 - [Deploying](#deploying)
   - [Locally](#locally)
-  - [EC2](#ec2)
+  - [Default EC2 Deployment](#default-ec2-deployment)
+  - [Custom Non-EC2 Deployment](#custom-non-ec2-deployment)
+    - [VirtualBox Deployment](#virtualbox-deployment)
   - [From macOS](#from-macos)
   - [Deploying an updated version](#deploying-an-updated-version)
 - [Mobile](#mobile)
@@ -51,24 +57,24 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 
 When developing on obelisk itself you may launch `ghcid` for the corresponding project as follows. For example to launch ghcid for `lib/backend` project:
 
-```
+```bash
 nix-shell -A obeliskEnvs.obelisk-backend --run "cd lib/backend && ghcid -c 'cabal new-repl'"
 ```
 
 Or to launch ghcid for `lib/command` project:
 
-```
+```bash
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
 To re-install `ob` from source do
-```
+```bash
 nix-env -f /path/to/obelisk -iA command
 ```
 
 Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
 
-```shell
+```bash
 ob thunk unpack ./.obelisk/impl
 cd ./.obelisk/impl
 # apply your changes
@@ -76,7 +82,7 @@ cd ./.obelisk/impl
 
 If you want to commit your changes, first push them to your fork of obelisk and then
 
-```shell
+```bash
 cd /your/project/root
 ob thunk pack .obelisk/impl
 git add .obelisk/impl
@@ -96,13 +102,13 @@ access to:
 
 To create a new Obelisk project, go to an empty directory and run:
 
-```
+```bash
 ob init
 ```
 
 Obelisk leverages ghcid to provide a live-reloading server that handles both frontend and backend. To run your Obelisk app and monitor the source for changes:
 
-```
+```bash
 ob run
 ```
 
@@ -161,7 +167,7 @@ project ./. ({ pkgs, ... }: {
 # ...
 ```
 
-### Running over https
+### Running over HTTPS
 
 To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
 
@@ -173,22 +179,22 @@ Since Obelisk generates a self-signed certificate for running https, the browser
 
 Build everything:
 
-```
+```bash
 nix-build -A exe --no-out-link
 ```
 
 Copy the result to a new directory, add configuration, and run!
 
-```
+```bash
 mkdir test-app
 ln -s $(nix-build -A exe --no-out-link)/* test-app/
 cp -r config test-app
 (cd test-app && ./backend)
 ```
 
-### EC2
+### Default EC2 Deployment
 
-In this section we will demonstrate how to deploy your Obelisk app to an Amazon EC2 instance.
+In this section we will demonstrate how to deploy your Obelisk app to an Amazon EC2 instance. Obelisk deployments are configured for EC2 by default (see [Custom Non-EC2 Deployment](#custom-non-ec2-deployment)).
 
 First create a new EC2 instance:
 
@@ -215,7 +221,7 @@ ob deploy init \
   ~/code/myapp-deploy
 ```
 
-HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
+HTTPS is enabled by default; to disable HTTPS pass `--disable-https` to the `ob deploy init` command above.
 
 This step will also require that you manually verify the authenticity of the host `$SERVER`. Obelisk will save the fingerprint in a deployment-specific configuration. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
 
@@ -230,6 +236,26 @@ ob deploy push
 
 At this point you are done. Your app will be accessible at `${ROUTE}`. The currently deployed version - the git commit hash of the source repo - can be found at `${ROUTE}/version`.
 
+### Custom Non-EC2 Deployment
+
+By default Obelisk deployments are configured for NixOS machines running on AWS EC2. To provide your own configuration, you need to write a custom `module.nix` in the deployment repository. This still requires that your server is running NixOS.
+
+`module.nix` must contain a Nix *function* that produces a [NixOS module function](https://nixos.org/nixos/manual/index.html#sec-writing-modules). The top-level function takes deployment configuration as arguments: `hostName`, `adminEmail`, `routeHost`, `enableHttps`, `version`, `exe`, `nixosPkgs`. Most of these are the values you specified during `ob deploy init` and are stored in the deployment repository. `version` is a `git` hash for the app that you're deploying. `exe` is the Linux build of the app (as seen in [Deploying Locally](#locally)). `nixosPkgs` is the package set used to construct the NixOS VM.
+
+The [VirtualBox Deployment](#virtualbox-deployment) section provides an example.
+
+#### VirtualBox Deployment
+
+Here's a `module.nix` that is configured for deployment to a VirtualBox VM (running NixOS):
+
+```nix
+{ nixosPkgs, ... }: {...}: {
+  imports = [ (nixosPkgs.path + /nixos/modules/virtualisation/virtualbox-image.nix) ];
+}
+```
+
+The `{...}:` and following is the [NixOS module](https://nixos.org/nixos/manual/index.html#sec-writing-modules) definition.
+
 ### From macOS
 
 Deploying from macOS requires some extra setup:
@@ -243,7 +269,7 @@ Running `ob deploy push` will give you additional setup instructions.
 
 If you'd like to deploy an updated version (with new commits) of your Obelisk app: simply go to the configuration directory, update the source thunk and push:
 
-```
+```bash
 cd ~/code/myapp-deploy
 ob deploy update
 ob deploy push
@@ -269,14 +295,14 @@ These versions will work out of the box but iOS SDKs prior to 11.3 should also w
 
 More recent Xcodes should also work, as long as one of the SDKs mentioned above has been used.
 To add another SDK to your current Xcode, [download](https://developer.apple.com/download/more/) the corresponding Xcode, extract it and copy its SDK folder next to the installed one, e.g.
-```
+```bash
 open -W Xcode_9.2.xip
 sudo cp -R Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS11.2.sdk
 ```
 
 
 You can verify that you have correct versions by running
-```
+```bash
 xcodebuild -showsdks
 ```
 
@@ -302,7 +328,7 @@ Ensure that `bundleIdentifier` matches the App ID of the development profile, or
 1. Connect the registered iPhone.
 1. Find your Apple Team ID in the [developer portal](https://developer.apple.com/account/#/membership).
 1. Run the deploy command with your Team ID:
-```
+```bash
 result-ios/bin/deploy [TEAM_ID]
 # or in debug mode via lldb:
 result-ios/bin/deploy [TEAM_ID] -d
@@ -312,7 +338,7 @@ result-ios/bin/deploy [TEAM_ID] -d
 1. Go to [developer portal - distribution profiles](https://developer.apple.com/account/ios/profile/production).
 Create and download a distribution profile.
 1. Run the package script with your TEAM ID and your distribution profile to create a `.ipa`:
-```
+```bash
 result-ios/bin/package [TEAM_ID] /path/to/output/.ipa /path/to/profile/file
 ```
 

@@ -5,6 +5,7 @@ module Obelisk.Command.Project
   ( InitSource (..)
   , findProjectObeliskCommand
   , findProjectRoot
+  , findProjectAssets
   , initProject
   , nixShellRunConfig
   , nixShellRunProc
@@ -41,7 +42,6 @@ import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
-import System.Process (waitForProcess)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -50,7 +50,7 @@ import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (nixExePath)
+import Obelisk.Command.Utils (nixExePath, nixBuildExePath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -186,7 +186,7 @@ findProjectRoot target = do
   targetStat <- liftIO $ getFileStatus target
   umask <- liftIO getUmask
   (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat umask myUid) []
-  return result
+  return $ makeRelative "." <$> result
 
 withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
 withProjectRoot target f = findProjectRoot target >>= \case
@@ -287,7 +287,7 @@ nixShellWithPkgs root isPure chdirToRoot packageNamesAndPaths command = do
         [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
         , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
         ]
-  void $ liftIO $ waitForProcess ph
+  void $ waitForProcess ph
 
 nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 nixShellWithHoogle root isPure shell' command = do
@@ -298,7 +298,7 @@ nixShellWithHoogle root isPure shell' command = do
           \userSettings = super.userSettings // { withHoogle = true; };\
         \})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
-  void $ liftIO $ waitForProcess ph
+  void $ waitForProcess ph
 
 projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 projectShell root isPure shellName command = do
@@ -306,4 +306,24 @@ projectShell root isPure shellName command = do
   (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_path ?~ "default.nix"
     & nixShellConfig_common . nixCmdConfig_target . target_attr ?~ ("shells." <> shellName)
-  void $ liftIO $ waitForProcess ph
+  void $ waitForProcess ph
+
+findProjectAssets :: MonadObelisk m => FilePath -> m Text
+findProjectAssets root = do
+  isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+    proc nixExePath
+      [ "eval"
+      , "(let a = import ./. {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+      , "--raw"
+      -- `--raw` is not available with old nix-instantiate. It drops quotation
+      -- marks and trailing newline, so is very convenient for shelling out.
+      ]
+  -- Check whether the impure static files are a derivation (and so must be built)
+  if isDerivation == "1"
+    then fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ -- Strip whitespace here because nix-build has no --raw option
+      proc nixBuildExePath
+        [ "--no-out-link"
+        , "-E", "(import ./. {}).passthru.staticFilesImpure"
+        ]
+    else readProcessAndLogStderr Debug $ setCwd (Just root) $
+      proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]

@@ -513,9 +513,10 @@ gitHubStandaloneLoaderV4 = T.unlines
 
 plainGitStandaloneLoaders :: NonEmpty Text
 plainGitStandaloneLoaders =
-  plainGitStandaloneLoaderV3 :|
+  plainGitStandaloneLoaderV4 :|
   [ plainGitStandaloneLoaderV1
   , plainGitStandaloneLoaderV2
+  , plainGitStandaloneLoaderV3
   ]
 
 plainGitStandaloneLoaderV1 :: Text
@@ -536,6 +537,8 @@ plainGitStandaloneLoaderV2 = T.unlines
   , "in import (fetchGit (builtins.fromJSON (builtins.readFile ./git.json)))"
   ]
 
+-- This loader has a bug because @builtins.fetchGit@ is not given a @ref@
+-- and will fail to find commits without this because it does shallow clones.
 plainGitStandaloneLoaderV3 :: Text
 plainGitStandaloneLoaderV3 = T.unlines
   [ "# DO NOT HAND-EDIT THIS FILE"
@@ -546,6 +549,23 @@ plainGitStandaloneLoaderV3 = T.unlines
   , "    else url;"
   , "  in if !fetchSubmodules && private then builtins.fetchGit {"
   , "    url = realUrl; inherit rev;"
+  , "  } else (import <nixpkgs> {}).fetchgit {"
+  , "    url = realUrl; inherit rev sha256;"
+  , "  };"
+  , "in import (fetch (builtins.fromJSON (builtins.readFile ./git.json)))"
+  ]
+
+plainGitStandaloneLoaderV4 :: Text
+plainGitStandaloneLoaderV4 = T.unlines
+  [ "# DO NOT HAND-EDIT THIS FILE"
+  , "let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:"
+  , "  let realUrl = let firstChar = builtins.substring 0 1 url; in"
+  , "    if firstChar == \"/\" then /. + url"
+  , "    else if firstChar == \".\" then ./. + url"
+  , "    else url;"
+  , "  in if !fetchSubmodules && private then builtins.fetchGit {"
+  , "    url = realUrl; inherit rev;"
+  , "    ${if branch == null then null else \"ref\"} = branch;"
   , "  } else (import <nixpkgs> {}).fetchgit {"
   , "    url = realUrl; inherit rev sha256;"
   , "  };"
@@ -937,7 +957,7 @@ guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
     urisToTry = nubOrd $
       -- Include the original URI if it isn't using SSH because SSH will certainly fail.
       [uri | fmap URI.unRText (URI.uriScheme (unGitUri uri)) /= Just "ssh"] <>
-      [changeScheme "https" uri, changeScheme "http" uri, changeScheme "git" uri]
+      [changeScheme "https" uri, changeScheme "http" uri]
     changeScheme scheme (GitUri u) = GitUri $ u
       { URI.uriScheme = URI.mkScheme scheme
       , URI.uriAuthority = (\x -> x { URI.authUserInfo = Nothing }) <$> URI.uriAuthority u
