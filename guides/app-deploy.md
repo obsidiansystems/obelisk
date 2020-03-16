@@ -7,26 +7,23 @@ This document serves two purposes, the first one is to guide new users that want
 
 ## a) Get Obelisk
 
-There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of Obelisk in different ways: the approach is to clone obelisk from it's GitHub repository (master, develop or qa branches) and start a project that uses that local check out.
+There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of Obelisk in different ways. The approach is to clone Obelisk from it's GitHub repository and start a project that uses that local check out.
 
-First open a terminal:
-
-
-navigate to the path of your choice and define a variable called `WORKDIR` to help us avoid running commands in the wrong folder.
+Open a terminal and run the following:
 
 ```bash
 export WORKDIR=~/obelisk-guide
 mkdir -p "$WORKDIR"
 ```
 
-Then let's get obelisk from GitHub using a specific branch:
+Then let's get Obelisk from GitHub using a specific branch:
 
 ```bash
 export OBELISK_BRANCH=develop
 git clone https://github.com/obsidiansystems/obelisk.git -b "$OBELISK_BRANCH" "$WORKDIR/obelisk"
 ```
 
-Once you have an Obelisk check out, you can build it using Nix and make a shortcut (alias) for the rest of the terminal session. With this you will be able to type `ob` anywhere else in the system as long as you do not close the terminal.
+Once you have an Obelisk check out, you can build it using Nix and make a shortcut (alias) for the rest of the terminal session. With this you will be able to type `ob` anywhere as long as you do not close the terminal.
 
 ```bash
 alias ob=$(nix-build "$WORKDIR/obelisk" -A command --no-out-link)/bin/ob
@@ -40,9 +37,9 @@ cd "$WORKDIR/myapp"
 ob init --branch "$OBELISK_BRANCH"
 ```
 
-> **Note:** If the `--branch` parameter is not used, then obelisk sets your project up to look at the master branch from GitHub. This is quite handy for real life projects but distracting for our test drive since we want to make sure any changes we do to the obelisk codebase (like testing a pull request) are immediately picked up.
+> **Note:** If the `--branch` parameter is not used, then Obelisk sets your project up to look at the `master` branch from GitHub. This is quite handy for real life projects but distracting for our test drive since we want to make sure any changes we do to the Obelisk codebase (like testing a pull request) are immediately picked up.
 
-## b) Deploy a web app on localhost
+## b) Run the Obelisk app on localhost
 
 Let's test that we can run a server on localhost. This is quite easy:
 
@@ -51,24 +48,24 @@ cd "$WORKDIR/myapp"
 ob run
 ```
 
-Now open a browser and point it to http://localhost:8000 (or just click on this link). You shoul see the following:
+Now open a browser and point it to http://localhost:8000 (or just click on this link). You should see the following:
 
 ![](assets/app-deploy.png)
 
-## c) Deploy a web app on a remote machine
+## c) Deploy the web app on a remote machine
 
 ### Import the NixOS VirtualBox appliance
 Install [VirtualBox](https://www.virtualbox.org/) on your machine.
 
-On NixOS, do this by adding the following line to your `/etc/nixos/configuration.nix`:
+On NixOS, do this by adding the following line to your `/etc/nixos/configuration.nix` before the last line containing `}`:
 
-```
-virtualisation.virtualbox.host.enable = true;
+```nix
+  virtualisation.virtualbox.host.enable = true;
 ```
 
 then `sudo nixos-rebuild switch`.
 
-The NixOS download page has a section called VirtualBox image. Download that as the target system. The author used the 19.09 `.ova` file: https://nixos.org/nixos/download.html
+The NixOS [download page](https://nixos.org/nixos/download.html) has a section called "VirtualBox appliances". Download that as the target system. The author used the 19.09 `.ova` file.
 
 With the downloaded file, open VirtualBox and import the `.ova` file:
 
@@ -141,7 +138,7 @@ ssh root@$VM_IP echo "Access granted"
 
 It will ask you for a password. Enter the one you specified above. You should see `Access granted` printed after you type your password and hit <kbd>Enter</kbd>.
 
-Now we'll allow access with an SSH key instead of a password. Create a new SSH key with `ssh-keygen` called obtest and leave it in the local folder:
+Now we'll allow access with an SSH key instead of a password. Create a new SSH key with `ssh-keygen`:
 
 ```bash
 ssh-keygen -t ed25519 -f "$WORKDIR/obkey" -P ""
@@ -187,7 +184,7 @@ git push origin master
 
 ### Deploy
 
-With that, we can come back to Obelisk and initialize the deployment:
+With that, we can come back to the Obelisk app and initialize the deployment:
 
 ```bash
 cd "$WORKDIR/myapp"
@@ -197,7 +194,7 @@ ob deploy init --ssh-key "$WORKDIR/obkey" --admin-email a@a.a --hostname $VM_IP 
 Then configure the deployment for VirtualBox:
 
 ```bash
-echo "{nixosPkgs, ...}: {...}: { imports = [ (nixosPkgs.path + /nixos/modules/virtualisation/virtualbox-image.nix) ]; }" > "$WORKDIR/myappdeploy/module.nix"
+echo '{nixosPkgs, ...}: {...}: { imports = [ (nixosPkgs.path + /nixos/modules/virtualisation/virtualbox-image.nix) ]; }' > "$WORKDIR/myappdeploy/module.nix"
 ```
 
 And deploy:
@@ -225,9 +222,9 @@ It should look like this:
 
 ![](assets/app-deploy-2.png)
 
-Congratulations! You have deployed an Obelisk application to a remote server via ssh.
+Congratulations! You have deployed an Obelisk application to a remote server via SSH.
 
-## d) Deploy an Android app (from NixOS)
+## d) Deploy an Android app (Linux host only)
 
 > **Note:** This section requires that you be running a Linux *host*.
 
@@ -241,7 +238,7 @@ git commit -m"Accept license"
 git push
 ```
 
-Make sure *USB debugging* is enabled n your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options) and connect the device using USB (be sure to confirm any security prompts on the device).
+Make sure *USB debugging* is enabled in your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options) and connect the device using USB. Be sure to confirm any security prompts on the device.
 
 Now update your deployment and deploy to Android:
 
@@ -253,17 +250,17 @@ ob deploy test android -v
 
 This deployment will ask you to enter information and choose a password. If the deployment fails, try using different USB ports on your computer. The USB cable you use can also make a difference.
 
-When connecting your Android device you may be asked to "Allow USB debugging":
+When connecting your Android device you may be asked to "Allow USB debugging". You need to allow it.
 ![](assets/android-confirm-usb-debugging.jpg)
 
 
-When the deployment is complete it should look something like
+When the deployment is complete opening the app should look something like
 
 ![](assets/android-app.jpg)
 
 Congratulations! You have deployed an Obelisk Android app via USB.
 
-## e) Deploy an iOS app
+## e) Deploy an iOS app (macOS host only)
 
 > **Note:** This section requires that you be running a macOS *host*.
 
