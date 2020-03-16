@@ -3,8 +3,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StaticPointers #-}
-{-# LANGUAGE TypeApplications #-}
 module Obelisk.Command where
 
 import Control.Monad
@@ -15,7 +13,6 @@ import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (for_)
 import Data.List
-import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Data.Text.Encoding.Error (lenientDecode)
@@ -31,13 +28,12 @@ import System.Posix.Process (executeFile)
 
 import Obelisk.App
 import Obelisk.CliApp
-import Obelisk.CliApp.Demo (cliDemo)
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils
 import qualified Obelisk.Command.VmBuilder as VmBuilder
+import qualified Obelisk.Command.Preprocessor as Preprocessor
 
 
 data Args = Args
@@ -91,58 +87,40 @@ data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
    | ObCommand_Run
+   | ObCommand_Profile String [String]
    | ObCommand_Thunk ThunkCommand
    | ObCommand_Repl
    | ObCommand_Watch
    | ObCommand_Shell ShellOpts
    | ObCommand_Doc String [String] -- shell and list of packages
+   | ObCommand_Hoogle String Int -- shell and port
    | ObCommand_Internal ObInternal
    deriving Show
 
 data ObInternal
-   = ObInternal_RunStaticIO StaticKey
-   | ObInternal_CLIDemo
+   -- the preprocessor argument syntax is also handled outside
+   -- optparse-applicative, but it shouldn't ever conflict with another syntax
+   = ObInternal_ApplyPackages String String String [String]
    deriving Show
-
-inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
-inNixShell' p = withProjectRoot "." $ \root -> do
-  cmd <- liftIO $ unwords <$> mkCmd  -- TODO: shell escape instead of unwords
-  projectShell root True "ghc" (Just cmd)
-  where
-    mkCmd = do
-      argsCfg <- getArgsConfig
-      myArgs <- getArgs
-      obArgs <- parseCLIArgs argsCfg myArgs
-      progName <- getObeliskExe
-      return $ progName : catMaybes
-        [ Just "--no-handoff"
-        , bool Nothing (Just "--verbose") $ _args_verbose obArgs
-        , Just "internal"
-        , Just "run-static-io"
-        , Just $ encodeStaticKey $ staticKey p
-        ]
 
 obCommand :: ArgsConfig -> Parser ObCommand
 obCommand cfg = hsubparser
-    (mconcat
-      [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
-      , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-      , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
-      , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-      , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-      , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
-      , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
-      , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
-          progDesc "List paths to haddock documentation for specified packages"
-          <> footerDoc (Just $
-               text "Hint: To open the documentation you can pipe the output of this command like"
-               <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
-      ])
-  <|> subparser
-    (mconcat
-      [ internal
-      , command "internal" (info (ObCommand_Internal <$> internalCommand) mempty)
-      ])
+  (mconcat
+    [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
+    , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
+    , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+    , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
+    , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
+    , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
+    , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+    , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
+    , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
+        progDesc "List paths to haddock documentation for specified packages"
+        <> footerDoc (Just $
+              text "Hint: To open the documentation you can pipe the output of this command like"
+              <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
+    , command "hoogle" $ info (ObCommand_Hoogle <$> shellFlags <*> portOpt 8080) $ progDesc "Run a hoogle server locally for your project's dependency tree"
+    ])
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
@@ -157,7 +135,7 @@ deployCommand cfg = hsubparser $ mconcat
   where
     platformP = hsubparser $ mconcat
       [ command "android" $ info (pure (Android, [])) mempty
-      , command "ios"     $ info ((,) <$> pure IOS <*> (fmap pure $ strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal"))) mempty
+      , command "ios" $ info ((,) <$> pure IOS <*> fmap pure (strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal"))) mempty
       ]
 
     remoteBuilderParser :: Parser (Maybe RemoteBuilder)
@@ -179,8 +157,8 @@ deployCommand cfg = hsubparser $ mconcat
 
 deployInitOpts :: Parser DeployInitOpts
 deployInitOpts = DeployInitOpts
-  <$> strArgument (action "directory" <> metavar "DEPLOYDIR" <> help "Path to a directory that it will create")
-  <*> strOption (long "ssh-key" <> action "file" <> metavar "SSHKEY" <> help "Path to an ssh key that it will symlink to")
+  <$> strArgument (action "directory" <> metavar "DEPLOYDIR" <> help "Path to a directory where the deployment repository will be initialized")
+  <*> strOption (long "ssh-key" <> action "file" <> metavar "SSHKEY" <> help "Path to an SSH key that will be *copied* to the deployment repository")
   <*> some (strOption (long "hostname" <> metavar "HOSTNAME" <> help "hostname of the deployment target"))
   <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Publicly accessible URL of your app")
   <*> strOption (long "admin-email" <> metavar "ADMINEMAIL" <> help "Email address where administrative alerts will be sent")
@@ -207,11 +185,24 @@ data DeployInitOpts = DeployInitOpts
   }
   deriving Show
 
-internalCommand :: Parser ObInternal
-internalCommand = subparser $ mconcat
-  [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
-  , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
-  ]
+profileCommand :: Parser (String, [String])
+profileCommand = (,)
+  <$> strOption
+    (  long "output"
+    <> short 'o'
+    <> help "Base output to use for profiling output. Suffixes are added to this based on the profiling type. Defaults to a timestamped path in the profile/ directory in the project's root."
+    <> metavar "PATH"
+    <> value "profile/%Y-%m-%dT%H:%M:%S"
+    <> showDefault
+    )
+  <*> (words <$> strOption
+    (  long "rts-flags"
+    <> help "RTS Flags to pass to the executable."
+    <> value "-p -hc"
+    <> metavar "FLAGS"
+    <> showDefault
+    ))
+
 
 --TODO: Result should provide normalised path and also original user input for error reporting.
 thunkDirectoryParser :: Parser FilePath
@@ -270,13 +261,16 @@ shellOpts = ShellOpts
   <$> shellFlags
   <*> optional (strArgument (metavar "COMMAND"))
 
+portOpt :: Int -> Parser Int
+portOpt dfault = option auto (long "port" <> short 'p' <> help "Port number for server" <> showDefault <> value dfault <> metavar "INT")
+
 parserPrefs :: ParserPrefs
 parserPrefs = defaultPrefs
   { prefShowHelpOnEmpty = True
   }
 
 parseCLIArgs :: ArgsConfig -> [String] -> IO Args
-parseCLIArgs cfg as = pure as >>= handleParseResult . execParserPure parserPrefs (argsInfo cfg)
+parseCLIArgs cfg = handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
 -- | Create an Obelisk config for the current process.
 mkObeliskConfig :: IO Obelisk
@@ -349,6 +343,9 @@ main' argsCfg = do
           liftIO $ executeFile impl False ("--no-handoff" : myArgs) Nothing
   case myArgs of
     "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
+    origPath:inPath:outPath:preprocessorName:packagePaths
+      | preprocessorName == preprocessorIdentifier && any (\c -> c == '.' || c == pathSeparator) origPath ->
+        ob $ ObCommand_Internal $ ObInternal_ApplyPackages origPath inPath outPath packagePaths
     a:as -- Otherwise bash completion would always hand-off even if the user isn't trying to
       | "--bash-completion" `isPrefixOf` a
       && "--no-handoff" `elem` as -> go (a:as)
@@ -375,7 +372,7 @@ ob = \case
         Right (ThunkData_Packed ptr) -> return ptr
         Right (ThunkData_Checkout (Just ptr)) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr False root
+          getThunkPtr False root Nothing
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
           route = _deployInitOpts_route deployOpts
@@ -389,24 +386,23 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> inNixShell' $ static run
+  ObCommand_Run -> run
+  ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
     ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
   ObCommand_Repl -> runRepl
-  ObCommand_Watch -> inNixShell' $ static runWatch
+  ObCommand_Watch -> runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
     projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
   ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
     projectShell root False shell' (Just $ haddockCommand pkgs)
+  ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
+    nixShellWithHoogle root True shell' $ Just $ "hoogle server -p " <> show port <> " --local"
   ObCommand_Internal icmd -> case icmd of
-    ObInternal_RunStaticIO k -> liftIO (unsafeLookupStaticPtr @(ObeliskT IO ()) k) >>= \case
-      Nothing -> failWith $ "ObInternal_RunStaticIO: no such StaticKey: " <> T.pack (show k)
-      Just p -> do
-        c <- getObelisk
-        liftIO $ runObelisk c $ deRefStaticPtr p
-    ObInternal_CLIDemo -> cliDemo
+    ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
+      liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
 
 haddockCommand :: [String] -> String
 haddockCommand pkgs = unwords

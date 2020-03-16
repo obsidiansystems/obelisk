@@ -4,7 +4,34 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* Fully support HTTP [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) requests on static assets to support Safari. ([#664](https://github.com/obsidiansystems/obelisk/pull/664))
+* Support non-EC2 deployments. ([#658](https://github.com/obsidiansystems/obelisk/pull/658))
+* Fix `ob deploy test android` to work. ([#645](https://github.com/obsidiansystems/obelisk/pull/645))
+* Fix vulnerability where Android deployments would leave signing keys in the nix store which is world readable. ([#645](https://github.com/obsidiansystems/obelisk/pull/645)) (Thanks to [kmicklas](https://github.com/kmicklas) for the report.)
+* Add `Obelisk.Backend.runBackendWith` to allow customization of how GHCJS resources are loaded in the page. ([#668](https://github.com/obsidiansystems/obelisk/pull/668))
+* Add `ob profile` command to run Obelisk projects with profiling. `ob profile` works like `ob run`, but instead of using `ghci`, it builds an executable that is built with profiling enabled. ([#654](https://github.com/obsidiansystems/obelisk/pull/654))
 * Obelisk now depends directly on `reflex-dom-core` instead of `reflex-dom`. This avoids requiring a `jsaddle-webkit2gtk` dependency in apps that are only using `jsaddle-warp`. ([#606](https://github.com/obsidiansystems/obelisk/pull/606))
+
+## v0.6.0.0 - 2020-02-21
+
+* Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave exactly like `<a href="...">` when run by JavaScript. These functions now scroll to the top of the page when the link is clicked. ([#540](https://github.com/obsidiansystems/obelisk/pull/540))
+* Fix a bug in `ob run`/`ob watch`/`ob repl` where nested Obelisk projects would also be loaded into the session. These are now ignored. ([#652](https://github.com/obsidiansystems/obelisk/pull/652))
+* Improve behavior of `ob run`/`ob watch`/`ob repl` when multiple packages with the same name are encountered. Obelisk now issues a warning and tells you which one it will use. ([#653](https://github.com/obsidiansystems/obelisk/pull/653))
+* Removed `Obelisk.Backend.mkRouteToUrl` since it is easily written in terms of `Obelisk.Route.renderObeliskRoute`:
+
+      mkRouteToUrl validFullEncoder (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
+
+* Add `Obelisk.Backend.renderAllJsPath` to expose URL path to `ghcjs/all.js`. ([#545](https://github.com/obsidiansystems/obelisk/pull/545))
+* Add argument to `serveDefaultObeliskApp`, `serveObeliskApp`, and `serveGhcjsApp` to take the path to `all.js` instead of hard-coding it. ([#545](https://github.com/obsidiansystems/obelisk/pull/545))
+
+## v0.5.0.0 - 2020-02-07
+
+* Add `Obelisk.Route.(?/)`, a convenience function for constructing routes nested in `Maybe`. ([#457](https://github.com/obsidiansystems/obelisk/pull/457))
+* Add local unpacked packages to the `ob run`, `ob watch`, and `ob repl` sessions. Any `.cabal` or hpack package inside the current obelisk project will be loaded into the session. For `ob run`/`ob watch` this means the session will automatically reload when you save a source file in any of those packages. For `ob repl` it means that `:r` will reload changes to any of those packages. There are some edge cases where this integration is still rough. Report any issues you encounter. ([#489](https://github.com/obsidiansystems/obelisk/pull/489))
+* Add `ob hoogle` command to start a local [Hoogle](https://hoogle.haskell.org/) server for the project. ([#628](https://github.com/obsidiansystems/obelisk/pull/628))
+* `ob thunk pack` will now attempt to automatically detect if the thunk is a private or public repo. To avoid this detection, specify `--private` or `--public` manually. ([#607](https://github.com/obsidiansystems/obelisk/pull/607))
+* Fix a bug in the plain git thunk loader for thunks marked as 'private' when the revision is not in the default branch. ([#648](https://github.com/obsidiansystems/obelisk/pull/648))
+* Improve handling of runtime nix dependencies. This may fix some issues encountered particularly by users on systems other than NixOS.
 
 ## v0.4.0.0 - 2020-01-10
 
@@ -19,6 +46,20 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## v0.3.0.0 - 2019-12-20
 
+* Change the structure of Obelisk routes to use a designated
+  `FullRoute` type. This combines frontend and backend routes into one
+  structure. This is a **breaking** change which requires Obelisk apps
+  to take specific migrations. They are:
+    * Rewrite the implementation of `_backend_routeEncoder` in
+      `Backend` to use `mkFullRouteEncoder` instead of
+      `handleEncoder`. Specifically, the backend and frontend cases of
+      the top-level `pathComponentEncoder` become the second and third
+      arguments of `mkFullRouteEncoder` respectively, while the
+      missing route becomes the first argument. An example of how to
+      do this is available in [a reflex-examples
+      commit](https://github.com/reflex-frp/reflex-examples/commits/28f566c3e7dc615578dc74297b7c620c1f13683e).
+    * Replace type constructions of `InL` with `FullRoute_Backend` and
+      `InR` with `FullRoute_Frontend`.
 * Generalised `pathSegmentEncoder`, added `pathFieldEncoder`.
 * Added some `Prism`s to the encoder library for manipulating `DSum`s.
 * Add `ob doc` command, which lists paths to haddock documentation for specified packages.

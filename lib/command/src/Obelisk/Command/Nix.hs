@@ -9,22 +9,33 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 module Obelisk.Command.Nix
-  ( nixCmd
-  , NixCmd (..)
-  , nixCmdConfig_target
-  , nixCmdConfig_args
-  , nixCmdConfig_builders
+  ( Arg (..)
   , NixBuildConfig (..)
   , nixBuildConfig_common
   , nixBuildConfig_outLink
+  , NixCmd (..)
+  , nixCmdConfig_args
+  , nixCmdConfig_builders
+  , nixCmdConfig_target
+  , NixCommonConfig (..)
   , NixInstantiateConfig (..)
   , nixInstantiateConfig_eval
-  , NixCommonConfig (..)
-  , Target (..)
+  , NixShellConfig (..)
+  , nixShellConfig_common
+  , nixShellConfig_pure
+  , nixShellConfig_run
   , OutLink (..)
-  , Arg (..)
+  , Target (..)
+  , target_attr
+  , target_expr
+  , target_path
+
   , boolArg
+  , nixCmd
+  , nixCmdProc
+  , nixCmdProc'
   , rawArg
+  , runNixShellConfig
   , strArg
   ) where
 
@@ -62,10 +73,10 @@ data Arg
   deriving (Eq, Show)
 
 strArg :: String -> String -> Arg
-strArg k = Arg_Str k
+strArg = Arg_Str
 
 rawArg :: String -> String -> Arg
-rawArg k = Arg_Expr k
+rawArg = Arg_Expr
 
 boolArg :: String -> Bool -> Arg
 boolArg k = Arg_Expr k . bool "false" "true"
@@ -85,7 +96,7 @@ makeClassy ''NixCommonConfig
 instance Default NixCommonConfig where
   def = NixCommonConfig def mempty mempty
 
-runNixCommonConfig :: NixCommonConfig -> [FilePath]
+runNixCommonConfig :: NixCommonConfig -> [String]
 runNixCommonConfig cfg = mconcat [maybeToList path, attrArg, exprArg, args, buildersArg]
   where
     path = _target_path $ _nixCmdConfig_target cfg
@@ -123,7 +134,7 @@ instance HasNixCommonConfig NixBuildConfig where
 instance Default NixBuildConfig where
   def = NixBuildConfig def def
 
-runNixBuildConfig :: NixBuildConfig -> [FilePath]
+runNixBuildConfig :: NixBuildConfig -> [String]
 runNixBuildConfig cfg = mconcat
   [ runNixCommonConfig $ cfg ^. nixCommonConfig
   , case _nixBuildConfig_outLink cfg of
@@ -144,11 +155,25 @@ instance HasNixCommonConfig NixInstantiateConfig where
 instance Default NixInstantiateConfig where
   def = NixInstantiateConfig def False
 
-runNixInstantiateConfig :: NixInstantiateConfig -> [FilePath]
+runNixInstantiateConfig :: NixInstantiateConfig -> [String]
 runNixInstantiateConfig cfg = mconcat
   [ runNixCommonConfig $ cfg ^. nixCommonConfig
   , "--eval" <$ guard (_nixInstantiateConfig_eval cfg)
   ]
+
+data NixShellConfig = NixShellConfig
+  { _nixShellConfig_common :: NixCommonConfig
+  , _nixShellConfig_pure :: Bool
+  , _nixShellConfig_run :: Maybe String
+  }
+
+makeLenses ''NixShellConfig
+
+instance HasNixCommonConfig NixShellConfig where
+  nixCommonConfig = nixShellConfig_common
+
+instance Default NixShellConfig where
+  def = NixShellConfig def False Nothing
 
 data NixCmd
   = NixCmd_Build NixBuildConfig
@@ -157,27 +182,43 @@ data NixCmd
 instance Default NixCmd where
   def = NixCmd_Build def
 
-nixCmd :: MonadObelisk m => NixCmd -> m FilePath
-nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built " <> desc) $ do
-  output <- readProcessAndLogStderr Debug $ proc (T.unpack cmd) options
-  -- Remove final newline that Nix appends
-  Just (outPath, '\n') <- pure $ T.unsnoc output
-  pure $ T.unpack outPath
+runNixShellConfig :: NixShellConfig -> [String]
+runNixShellConfig cfg = mconcat
+  [ runNixCommonConfig $ cfg ^. nixCommonConfig
+  , [ "--pure" | cfg ^. nixShellConfig_pure ]
+  ] ++ mconcat [
+    ["--run", run] | run <- maybeToList $ cfg ^. nixShellConfig_run
+  ]
+
+nixCmdProc :: NixCmd -> ProcessSpec
+nixCmdProc = fst . nixCmdProc'
+
+nixCmdProc' :: NixCmd -> (ProcessSpec, T.Text)
+nixCmdProc' cmdCfg = (proc (T.unpack cmd) options, cmd)
   where
-    (cmd, options, commonCfg) = case cmdCfg of
+    (cmd, options) = case cmdCfg of
       NixCmd_Build cfg' ->
         ( "nix-build"
         , runNixBuildConfig cfg'
-        , cfg' ^. nixCommonConfig
         )
       NixCmd_Instantiate cfg' ->
         ( "nix-instantiate"
         , runNixInstantiateConfig cfg'
-        , cfg' ^. nixCommonConfig
         )
+
+nixCmd :: MonadObelisk m => NixCmd -> m FilePath
+nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built " <> desc) $ do
+  output <- readProcessAndLogStderr Debug cmdProc
+  -- Remove final newline that Nix appends
+  Just (outPath, '\n') <- pure $ T.unsnoc output
+  pure $ T.unpack outPath
+  where
+    (cmdProc, cmd) = nixCmdProc' cmdCfg
+    commonCfg = case cmdCfg of
+      NixCmd_Build cfg' -> cfg' ^. nixCommonConfig
+      NixCmd_Instantiate cfg' -> cfg' ^. nixCommonConfig
     path = commonCfg ^. nixCmdConfig_target . target_path
     desc = T.pack $ mconcat $ catMaybes
-      [ (" on " <>) <$> path
+      [ ("on " <>) <$> path
       , (\a -> " [" <> a <> "]") <$> (commonCfg ^. nixCmdConfig_target . target_attr)
       ]
-
