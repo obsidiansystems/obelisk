@@ -68,7 +68,7 @@ import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 data Backend backendRoute frontendRoute = Backend
   { _backend_routeEncoder :: Encoder (Either Text) Identity (R (FullRoute backendRoute frontendRoute)) PageName
   , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
-  } deriving Generic
+  } deriving (Generic)
 
 data BackendConfig frontendRoute = BackendConfig
   { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
