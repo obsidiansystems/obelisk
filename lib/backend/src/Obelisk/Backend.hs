@@ -11,7 +11,10 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Obelisk.Backend
   ( Backend (..)
+  , BackendConfig (..)
+  , defaultBackendConfig
   , StaticAssets (..)
+  , defaultStaticAssets
   -- * Running a backend
   , runBackend
   , runBackendWith
