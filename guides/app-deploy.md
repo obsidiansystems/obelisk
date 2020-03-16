@@ -108,7 +108,7 @@ You need to add the following snippet right before the final line containing `}`
   services.openssh.permitRootLogin = "yes";
 ```
 
-Save and close the editor by typing <kbd>Ctrl</kbd>+<kbd>O</kbd> and then <kbd>Ctrl</kbd>+<kbd>X</kbd>.
+Save and close the editor by typing <kbd>Ctrl</kbd>+<kbd>O</kbd>, <kbd>Enter</kbd>, and then <kbd>Ctrl</kbd>+<kbd>X</kbd>.
 
 Now run `sudo nixos-rebuild switch` (if it asks for a password, again use `demo`) and then set the root password using `sudo passwd root`. Pick a simple password like `root`. You'll need to use it again.
 
@@ -179,7 +179,7 @@ git init
 git add --all
 git commit -m "initial commit"
 git remote add origin "$WORKDIR/myapp-git-remote"
-git push origin master
+git push -u origin master
 ```
 
 ### Deploy
@@ -188,7 +188,7 @@ With that, we can come back to the Obelisk app and initialize the deployment:
 
 ```bash
 cd "$WORKDIR/myapp"
-ob deploy init --ssh-key "$WORKDIR/obkey" --admin-email a@a.a --hostname $VM_IP --route https://$VM_IP "$WORKDIR/myappdeploy"
+ob deploy init --ssh-key "$WORKDIR/obkey" --admin-email a@a.a --hostname $VM_IP --route https://$VM_IP "$WORKDIR/myappdeploy" --disable-https
 ```
 
 Then configure the deployment for VirtualBox:
@@ -248,7 +248,7 @@ ob deploy update
 ob deploy test android -v
 ```
 
-This deployment will ask you to enter information and choose a password. If the deployment fails, try using different USB ports on your computer. The USB cable you use can also make a difference.
+This deployment will ask you to create a password (at least 6 characters long) and then ask you a series of questions. You can pick arbitrary answers. If the deployment fails, try using different USB ports on your computer and running `ob deploy test android -v` again. The USB cable you use can also make a difference.
 
 When connecting your Android device you may be asked to "Allow USB debugging". You need to allow it.
 ![](assets/android-confirm-usb-debugging.jpg)
