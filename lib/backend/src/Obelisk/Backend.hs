@@ -65,6 +65,14 @@ data Backend backendRoute frontendRoute = Backend
   , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
   }
 
+data BackendConfig frontendRoute = BackendConfig
+  { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
+  , _backendConfig_staticAssets :: !StaticAssets -- ^ Static assets
+  , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ()))
+    -- ^ Given the URL of all.js, return the widgets which are responsible for
+    -- loading the script.
+  }
+
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
 data GhcjsApp route = GhcjsApp
   { _ghcjsApp_compiled :: !StaticAssets
@@ -206,22 +214,21 @@ serveGhcjsApp urlEnc ghcjsWidgets app config = \case
     writeBS <=< renderGhcjsFrontend urlEnc ghcjsWidgets (appRouteComponent :/ appRouteRest) config $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
--- | Run an obelisk backend
-runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
-runBackend = runBackendWith runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets
+-- | Default obelisk backend configuration.
+defaultBackendConfig :: BackendConfig frontendRoute
+defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets
 
+-- | Run an obelisk backend with the default configuration.
+runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
+runBackend = runBackendWith defaultBackendConfig
+
+-- | Run an obelisk backend with the given configuration.
 runBackendWith
-  :: (Snap () -> IO ())
-  -- ^ Run the snap server
-  -> StaticAssets
-  -- ^ Use these assets
-  -> GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ())
-  -- ^ Given the URL of all.js, return the widgets which are responsible for
-  -- loading the script.
+  :: BackendConfig frontendRoute
   -> Backend backendRoute frontendRoute
   -> Frontend (R frontendRoute)
   -> IO ()
-runBackendWith runSnap staticAssets ghcjsWidgets backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
