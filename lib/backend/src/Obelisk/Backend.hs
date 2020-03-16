@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -48,6 +49,7 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
+import GHC.Generics (Generic)
 import Obelisk.Asset.Serve.Snap (serveAsset)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
@@ -63,7 +65,7 @@ import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 data Backend backendRoute frontendRoute = Backend
   { _backend_routeEncoder :: Encoder (Either Text) Identity (R (FullRoute backendRoute frontendRoute)) PageName
   , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
-  }
+  } deriving Generic
 
 data BackendConfig frontendRoute = BackendConfig
   { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
@@ -71,13 +73,13 @@ data BackendConfig frontendRoute = BackendConfig
   , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ()))
     -- ^ Given the URL of all.js, return the widgets which are responsible for
     -- loading the script.
-  }
+  } deriving (Generic)
 
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
 data GhcjsApp route = GhcjsApp
   { _ghcjsApp_compiled :: !StaticAssets
   , _ghcjsApp_value :: !(Frontend route)
-  }
+  } deriving (Generic)
 
 -- | Widgets used to load all.js on the frontend
 data GhcjsWidgets a = GhcjsWidgets
@@ -85,7 +87,7 @@ data GhcjsWidgets a = GhcjsWidgets
   -- ^ A preload widget, placed in the document head
   , _ghcjsWidgets_script :: a
   -- ^ A script widget, placed in the document body
-  } deriving Functor
+  } deriving (Functor, Generic)
 
 
 -- | Given the URL of all.js, return the widgets which are responsible for
