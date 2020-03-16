@@ -183,13 +183,14 @@ in rec {
       networking = {
         inherit hostName;
         firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
-
-        # `amazon-image.nix` already sets these but if the user provides their own module then
-        # forgetting these can cause them to lose access to the server!
-        # https://github.com/NixOS/nixpkgs/blob/fab05f17d15e4e125def4fd4e708d205b41d8d74/nixos/modules/virtualisation/amazon-image.nix#L133-L136
-        services.openssh.enable = true;
-        services.openssh.permitRootLogin = "prohibit-password";
       };
+
+      # `amazon-image.nix` already sets these but if the user provides their own module then
+      # forgetting these can cause them to lose access to the server!
+      # https://github.com/NixOS/nixpkgs/blob/fab05f17d15e4e125def4fd4e708d205b41d8d74/nixos/modules/virtualisation/amazon-image.nix#L133-L136
+      services.openssh.enable = true;
+      services.openssh.permitRootLogin = "prohibit-password";
+
       security.acme.certs = if enableHttps then {
         "${routeHost}".email = adminEmail;
       } else {};
