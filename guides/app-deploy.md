@@ -136,7 +136,26 @@ With that you will be able to SSH into that machine from a terminal, using the u
 ssh root@$VM_IP echo "Access granted"
 ```
 
-It will ask you for a password. Enter the one you specified above. You should see `Access granted` printed after you type your password and hit <kbd>Enter</kbd>.
+This may ask if you want to trust the fingerprint for this server. Answer `yes`. It will ask you for a password. Enter the one you specified above. You should see `Access granted` printed after you type your password and hit <kbd>Enter</kbd>.
+
+> **Note:** If instead you see an error like this
+>
+> ```
+> @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+> @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+> @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+> IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+> Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+> It is also possible that a host key has just been changed.
+> ```
+>
+> you need to remove the old fingerprint for this IP. Run the following:
+>
+> ```bash
+> sed -i "/^$VM_IP /d" ~/.ssh/known_hosts
+> ```
+>
+> and then try the previous `ssh` command again.
 
 Now we'll allow access with an SSH key instead of a password. Create a new SSH key with `ssh-keygen`:
 
