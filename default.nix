@@ -250,6 +250,8 @@ in rec {
     };
   };
 
+  inherit mkAssets;
+
   serverExe = backend: frontend: assets: optimizationLevel: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
