@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -10,6 +11,10 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Obelisk.Backend
   ( Backend (..)
+  , BackendConfig (..)
+  , defaultBackendConfig
+  , StaticAssets (..)
+  , defaultStaticAssets
   -- * Running a backend
   , runBackend
   , runBackendWith
@@ -21,14 +26,15 @@ module Obelisk.Backend
   , delayedGhcjsScript
   -- * all.js preload functions
   , preloadGhcjs
+  , renderAllJsPath
   -- * Re-exports
   , Default (def)
   , getPageName
   , getRouteWith
   , runSnapWithCommandLineArgs
+  , runSnapWithConfig
   , serveDefaultObeliskApp
   , prettifyOutput
-  , renderAllJsPath
   , staticRenderContentType
   , getPublicConfigs
   ) where
@@ -46,6 +52,7 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
+import GHC.Generics (Generic)
 import Obelisk.Asset.Serve.Snap (serveAsset)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
@@ -61,13 +68,21 @@ import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 data Backend backendRoute frontendRoute = Backend
   { _backend_routeEncoder :: Encoder (Either Text) Identity (R (FullRoute backendRoute frontendRoute)) PageName
   , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
-  }
+  } deriving (Generic)
+
+data BackendConfig frontendRoute = BackendConfig
+  { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
+  , _backendConfig_staticAssets :: !StaticAssets -- ^ Static assets
+  , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ()))
+    -- ^ Given the URL of all.js, return the widgets which are responsible for
+    -- loading the script.
+  } deriving (Generic)
 
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
 data GhcjsApp route = GhcjsApp
   { _ghcjsApp_compiled :: !StaticAssets
   , _ghcjsApp_value :: !(Frontend route)
-  }
+  } deriving (Generic)
 
 -- | Widgets used to load all.js on the frontend
 data GhcjsWidgets a = GhcjsWidgets
@@ -75,7 +90,8 @@ data GhcjsWidgets a = GhcjsWidgets
   -- ^ A preload widget, placed in the document head
   , _ghcjsWidgets_script :: a
   -- ^ A script widget, placed in the document body
-  } deriving Functor
+  } deriving (Functor, Generic)
+
 
 -- | Given the URL of all.js, return the widgets which are responsible for
 -- loading the script. Defaults to 'preloadGhcjs' and 'deferredGhcjsScript'.
@@ -122,16 +138,19 @@ defaultFrontendGhcjsAssets = StaticAssets
   , _staticAssets_unprocessed = "frontend.jsexe"
   }
 
-runSnapWithCommandLineArgs :: MonadIO m => Snap () -> m ()
-runSnapWithCommandLineArgs a = do
-  -- Get the web server configuration from the command line
-  cmdLineConf <- liftIO $ commandLineConfig defaultConfig
-  let httpConf = cmdLineConf
+runSnapWithConfig :: MonadIO m => Config Snap a -> Snap () -> m ()
+runSnapWithConfig conf a = do
+  let httpConf = conf
         { accessLog = Just $ ConfigIoLog BSC8.putStrLn
         , errorLog = Just $ ConfigIoLog BSC8.putStrLn
         }
   -- Start the web server
   liftIO $ httpServe httpConf a
+
+-- Get the web server configuration from the command line
+runSnapWithCommandLineArgs :: MonadIO m => Snap () -> m ()
+runSnapWithCommandLineArgs s = liftIO (commandLineConfig defaultConfig) >>= \c ->
+  runSnapWithConfig c s
 
 getPageName :: (MonadSnap m) => m PageName
 getPageName = do
@@ -200,27 +219,31 @@ serveGhcjsApp urlEnc ghcjsWidgets app config = \case
     writeBS <=< renderGhcjsFrontend urlEnc ghcjsWidgets (appRouteComponent :/ appRouteRest) config $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
-runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
-runBackend = runBackendWith defaultGhcjsWidgets
+-- | Default obelisk backend configuration.
+defaultBackendConfig :: BackendConfig frontendRoute
+defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets
 
+-- | Run an obelisk backend with the default configuration.
+runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
+runBackend = runBackendWith defaultBackendConfig
+
+-- | Run an obelisk backend with the given configuration.
 runBackendWith
-  :: GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ())
-  -- ^ Given the URL of all.js, return the widgets which are responsible for
-  -- loading the script.
+  :: BackendConfig frontendRoute
   -> Backend backendRoute frontendRoute
   -> Frontend (R frontendRoute)
   -> IO ()
-runBackendWith ghcjsWidgets backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
     _backend_run backend $ \serveRoute ->
-      runSnapWithCommandLineArgs $
+      runSnap $
         getRouteWith validFullEncoder >>= \case
           Identity r -> case r of
             FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
             FullRoute_Frontend obeliskRoute :/ a ->
-              serveDefaultObeliskApp routeToUrl (($ allJsUrl) <$> ghcjsWidgets) (serveStaticAssets defaultStaticAssets) frontend publicConfigs $
+              serveDefaultObeliskApp routeToUrl (($ allJsUrl) <$> ghcjsWidgets) (serveStaticAssets staticAssets) frontend publicConfigs $
                 obeliskRoute :/ a
               where
                 routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
