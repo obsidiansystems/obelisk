@@ -11,6 +11,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Add `Obelisk.Backend.runBackendWith` to allow several customizations. ([#668](https://github.com/obsidiansystems/obelisk/pull/668), [#644](https://github.com/obsidiansystems/obelisk/pull/644))
 * Add `ob profile` command to run Obelisk projects with profiling. `ob profile` works like `ob run`, but instead of using `ghci`, it builds an executable that is built with profiling enabled. ([#654](https://github.com/obsidiansystems/obelisk/pull/654))
 * Obelisk's `default.nix` now exposes `mkAssets` function which is used to construct the assets served by an Obelisk application. ([#651](https://github.com/obsidiansystems/obelisk/pull/651))
+* Bump reflex-platform to v0.5.2.0. ([#671](https://github.com/obsidiansystems/obelisk/pull/671))
 
 ## v0.6.0.0 - 2020-02-21
 
