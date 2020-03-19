@@ -814,8 +814,8 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
   Right (ThunkData_Checkout _) -> do
     withSpinner' ("Packing thunk " <> T.pack thunkDir)
                  (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
-      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) (thunkDir </> unpackedDirName) (_thunkConfig_private thunkConfig)
-      callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-rf", thunkDir </> unpackedDirName] -- thunkDir may be a symlink
+      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir (_thunkConfig_private thunkConfig)
+      callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-rf", thunkDir] -- thunkDir may be a symlink
       createThunk thunkDir thunkPtr
       pure thunkPtr
 
@@ -828,7 +828,13 @@ modifyThunkPtrByConfig (ThunkConfig markPrivate') ptr = case markPrivate' of
     }
 
 getThunkPtr :: forall m. MonadObelisk m => Bool -> FilePath -> Maybe Bool -> m ThunkPtr
-getThunkPtr checkClean thunkDir mPrivate = do
+getThunkPtr checkClean dir mPrivate = do
+  let repoLocations = [(".git", "."), (unpackedDirName, unpackedDirName)]
+  repoLocation' <- liftIO $ flip findM repoLocations $ doesDirectoryExist . (dir </>) . fst
+  thunkDir <- case repoLocation' of
+    Nothing -> failWith [i|Can't find an unpacked thunk in ${dir}|]
+    Just (_, path) -> pure $ normalise $ dir </> path
+
   when checkClean $ ensureCleanGitRepo thunkDir True
     "thunk pack: thunk checkout contains unsaved modifications"
 
