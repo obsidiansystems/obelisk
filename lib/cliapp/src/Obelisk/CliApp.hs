@@ -51,6 +51,7 @@ module Obelisk.CliApp
   , setDelegateCtlc
   , setEnvOverride
   , shell
+  , waitForProcess
   ) where
 
 import Control.Monad.Log (Severity (..))

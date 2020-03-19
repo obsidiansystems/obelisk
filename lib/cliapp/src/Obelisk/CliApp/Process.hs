@@ -28,6 +28,7 @@ module Obelisk.CliApp.Process
   , setDelegateCtlc
   , setEnvOverride
   , shell
+  , waitForProcess
   ) where
 
 import Control.Monad ((<=<), join, void)
@@ -51,7 +52,7 @@ import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
 import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
-import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), std_err, std_out, waitForProcess)
+import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), std_err, std_out)
 import qualified System.Process as Process
 import qualified Data.Aeson as Aeson
 
@@ -143,7 +144,7 @@ readProcessAndLogOutput (sev_out, sev_err) process = do
   outText <- liftIO $ T.decodeUtf8With lenientDecode <$> BS.hGetContents out
   putLogRaw sev_out outText
 
-  liftIO (waitForProcess p) >>= \case
+  waitForProcess p >>= \case
     ExitSuccess -> pure outText
     ExitFailure code -> throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess process) code
 
@@ -218,7 +219,7 @@ withProcess process f = do -- TODO: Use bracket.
 
   f out err  -- Pass the handles to the passed function
 
-  liftIO (waitForProcess p) >>= \case
+  waitForProcess p >>= \case
     ExitSuccess -> return (out, err)
     ExitFailure code -> throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess process) code
 
@@ -234,6 +235,10 @@ streamToLog stream = fix $ \loop -> do
   liftIO (Streams.read stream) >>= \case
     Nothing -> return ()
     Just (sev, line) -> putLogRaw sev (T.decodeUtf8With lenientDecode line) >> loop
+
+-- | Wrapper around `System.Process.waitForProcess`
+waitForProcess :: MonadIO m => ProcessHandle -> m ExitCode
+waitForProcess = liftIO . Process.waitForProcess
 
 -- | Pretty print a 'CmdSpec'
 reconstructCommand :: Process.CmdSpec -> Text

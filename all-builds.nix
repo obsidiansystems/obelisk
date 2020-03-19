@@ -3,10 +3,7 @@
     iosSdkVersion = "10.2";
   }
 , local-self ? import ./. self-args
-, supportedSystems ? [
-    "x86_64-linux"
-    "x86_64-darwin"
-  ]
+, supportedSystems ? [ builtins.currentSystem ]
 }:
 
 let
@@ -68,6 +65,7 @@ let
       iosSkeleton = (import ./skeleton { inherit obelisk; }).ios.frontend;
       nameSuffix = if profiling then "profiled" else "unprofiled";
       packages = {
+        skeletonProfiledObRun = skeleton.__unstable__.profiledObRun;
         inherit
           command
           serverSkeletonShell
