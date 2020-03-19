@@ -32,6 +32,9 @@ import Obelisk.CliApp
 cp :: FilePath
 cp = $(staticWhich "cp")
 
+rmPath :: FilePath
+rmPath = $(staticWhich "rm")
+
 ghcidExePath :: FilePath
 ghcidExePath = $(staticWhich "ghcid")
 
