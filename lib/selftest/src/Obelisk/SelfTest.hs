@@ -26,11 +26,12 @@ import Shelly
 import System.Directory (getCurrentDirectory, withCurrentDirectory, getDirectoryContents)
 import System.Environment
 import System.Exit (ExitCode (..))
-import System.Which (staticWhich)
+import System.FilePath (addTrailingPathSeparator)
 import qualified System.Info
 import System.IO (Handle, hClose, hIsEOF, hGetContents)
 import System.IO.Temp
 import System.Process (readProcessWithExitCode)
+import System.Which (staticWhich)
 import Test.Hspec
 import Test.HUnit.Base
 
@@ -70,6 +71,9 @@ lnPath = $(staticWhich "ln")
 rmPath :: FilePath
 rmPath = $(staticWhich "rm")
 
+rsyncPath :: FilePath
+rsyncPath = $(staticWhich "rsync")
+
 gitUserConfig :: [Text]
 gitUserConfig = ["-c", "user.name=Obelisk Selftest", "-c", "user.email=noreply@example.com"]
 
@@ -97,6 +101,29 @@ ob = "ob"
 augmentWithVerbosity :: (String -> [Text] -> a) -> String -> Bool -> [Text] -> a
 augmentWithVerbosity runner executable isVerbose args = runner executable $ (if isVerbose then ("-v" :) else id) args
 
+-- | Copies a git repo to a new location and "resets" the git history to include
+-- exactly one commit with all files added. It then restricts writing and reading
+-- for group and user to make the repo ideal for being a valid git remote for thunks.
+--
+-- Using this allows dirty repos to be used as git remotes during the test since 'git clone'ing
+-- a dirty repo will not include the uncommitted changes.
+copyForGitRemote :: Bool -> FilePath -> FilePath -> IO ()
+copyForGitRemote isVerbose origDir copyDir = shelly $ bool silently verbosely isVerbose $ do
+  setenv "HOME" "/dev/null"
+  setenv "GIT_CONFIG_NOSYSTEM" "1"
+  run_ rsyncPath
+    [ "-r", "--no-perms", "--no-owner", "--no-group", "--exclude", ".git"
+    , toTextIgnore (addTrailingPathSeparator origDir), toTextIgnore copyDir
+    ]
+  git ["init"]
+  git ["config", "user.name", "SelfTest"]
+  git ["config", "user.email", "self@test"]
+  git ["add", "--all"]
+  git ["commit", "-m", "Copy repo"]
+  run_ chmodPath ["-R", "u-w,g-rw,o-rw", toTextIgnore copyDir] -- Freeze this state
+  where
+    git args = run_ gitPath $ ["-C", toTextIgnore copyDir] <> args
+
 main :: IO ()
 main = do
   -- Note: you can pass hspec arguments as well, eg: `-m <pattern>`
@@ -104,13 +131,15 @@ main = do
   unless isVerbose $
     putStrLn "Tests may take longer to run if there are unbuilt derivations: use -v for verbose output"
 
-  obeliskImplDirtyReadOnly <- fromString <$> getCurrentDirectory
+  obeliskImplDirtyReadOnly <- getCurrentDirectory
   httpManager <- HTTP.newManager HTTP.defaultManagerSettings
 
-  main' isVerbose httpManager obeliskImplDirtyReadOnly
+  withSystemTempDirectory "obelisk-repo-git-remote" $ \copyDir -> do
+    copyForGitRemote isVerbose obeliskImplDirtyReadOnly copyDir
+    main' isVerbose httpManager copyDir
 
 main' :: Bool -> HTTP.Manager -> FilePath -> IO ()
-main' isVerbose httpManager obeliskRepoReadOnly = withObeliskImplDirtyAndInitCache $ \obeliskImplDirty initCache -> hspec $ parallel $ do
+main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> hspec $ parallel $ do
   let
     inTmpObInit' dirname f = inTmp' dirname $ \dir -> do
       run_ cpPath ["-rT", fromString initCache, toTextIgnore dir]
@@ -127,7 +156,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withObeliskImplDirtyAndInitCac
   describe "ob init" $ parallel $ do
     it "works with default impl"       $ inTmp $ \_ -> runOb ["init"]
     it "works with master branch impl" $ inTmp $ \_ -> runOb ["init", "--branch", "master"]
-    it "works with symlink"            $ inTmp $ \_ -> runOb ["init", "--symlink", toTextIgnore obeliskImplDirty]
+    it "works with symlink"            $ inTmp $ \_ -> runOb ["init", "--symlink", toTextIgnore obeliskRepoReadOnly]
     it "doesn't silently overwrite existing files" $ inTmp $ \_ -> do
       let p force = errExit False $ do
             run_ ob $ "--no-handoff" : "-v" : "init" : ["--force"|force]
@@ -154,10 +183,10 @@ main' isVerbose httpManager obeliskRepoReadOnly = withObeliskImplDirtyAndInitCac
     it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir' (Just "frontend") httpManager
 
   describe "obelisk project" $ parallel $ do
-    it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskImplDirty]
-    it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", toTextIgnore obeliskImplDirty]
-    it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    toTextIgnore obeliskImplDirty]
-    it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [toTextIgnore obeliskImplDirty]
+    it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskRepoReadOnly]
+    it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", toTextIgnore obeliskRepoReadOnly]
+    it "can build obelisk shell"    $ inTmpObInit $ \_ -> nixBuild ["-A", "shell",    toTextIgnore obeliskRepoReadOnly]
+    it "can build everything"       $ inTmpObInit $ \_ -> nixBuild [toTextIgnore obeliskRepoReadOnly]
 
   describe "blank initialized project" $ parallel $ do
 
@@ -274,33 +303,21 @@ main' isVerbose httpManager obeliskRepoReadOnly = withObeliskImplDirtyAndInitCac
     testThunkPack' = augmentWithVerbosity testThunkPack ob isVerbose []
 
     withObeliskImplClean f =
-      withSystemTempDirectory "obelisk-impl-clean" $ \(fromString -> obeliskImpl) -> do
+      withSystemTempDirectory "obelisk-impl-clean" $ \obeliskImpl -> do
         void . shellyOb verbosity $ chdir obeliskImpl $ do
           dirtyFiles <- T.strip <$> run gitPath ["-C", toTextIgnore obeliskRepoReadOnly, "diff", "--stat"]
-          () <- when (dirtyFiles /= "") $ error "SelfTest does not work correctly on dirty repo"
+          () <- when (dirtyFiles /= "") $ error "SelfTest does not work correctly with dirty obelisk repos as remote"
           run_ gitPath ["clone", "file://" <> toTextIgnore obeliskRepoReadOnly, toTextIgnore obeliskImpl]
         f obeliskImpl
 
-    withObeliskImplDirty f =
-      withSystemTempDirectory "obelisk-impl-copy" $ \(fromString -> obeliskImpl) -> do
-        void . shellyOb verbosity $ chdir obeliskImpl $ do
-          user <- T.strip <$> run whoamiPath []
-          run_ cpPath ["-rT", "--no-preserve=mode", toTextIgnore obeliskRepoReadOnly, toTextIgnore obeliskImpl]
-          run_ chownPath ["-R", user, toTextIgnore obeliskImpl]
-          run_ chmodPath ["-R", "g-rw,o-rw", toTextIgnore obeliskImpl]
-        f obeliskImpl
-
-    withInitCache f obeliskImpl =
+    withInitCache f =
       withSystemTempDirectory "init Cache λ" $ \initCache -> do
         -- Setup the ob init cache
         void . shellyOb verbosity $ chdir initCache $ do
-          runOb_ ["init", "--symlink", toTextIgnore obeliskImpl]
+          runOb_ ["init", "--symlink", toTextIgnore obeliskRepoReadOnly]
           run_ gitPath ["init"]
 
         f initCache
-
-    withObeliskImplDirtyAndInitCache f =
-      withObeliskImplDirty $ \impl -> withInitCache (f impl) impl
 
     shelly_ = void . shellyOb verbosity
 

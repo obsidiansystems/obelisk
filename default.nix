@@ -82,6 +82,7 @@ let
             pkgs.coreutils
             pkgs.git
             pkgs.nix
+            pkgs.rsync
           ];
         };
         obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
