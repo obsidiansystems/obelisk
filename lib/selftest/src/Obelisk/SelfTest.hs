@@ -195,11 +195,14 @@ main = do
         it "works with default impl"       $ inTmp $ \_ -> runOb ["init"]
         it "works with master branch impl" $ inTmp $ \_ -> runOb ["init", "--branch", "master"]
         it "works with symlink"            $ inTmp $ \_ -> runOb ["init", "--symlink", toTextIgnore obeliskImplDirty]
-        it "doesn't silently overwrite existing files" $ withSystemTempDirectory "ob-init λ" $ \dir -> do
-          let p force = (System.Process.proc ob $ "--no-handoff" : "-v" : "init" : ["--force"|force]) { cwd = Just dir }
-          (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p False) ""
-          (ExitFailure _, _, _) <- readCreateProcessWithExitCode (p False) ""
-          (ExitSuccess, _, _) <- readCreateProcessWithExitCode (p True) ""
+        it "doesn't silently overwrite existing files" $ inTmp $ \dir -> do
+          let p force = errExit False $ do
+                run_ ob $ "--no-handoff" : "-v" : "init" : ["--force"|force]
+                (== 0) <$> lastExitCode
+
+          True <- p False
+          False <- p False
+          True <- p True
           pure ()
 
         it "doesn't create anything when given an invalid impl" $ inTmp $ \tmp -> do
@@ -279,7 +282,7 @@ main = do
 
         it "can pack and unpack plain git repos" $
           shelly_ $ withSystemTempDirectory "git-repo" $ \dir -> do
-            let repo = toTextIgnore $ dir </> ("repo" :: String)
+            let repo = toTextIgnore $ dir </> ("repo" :: FilePath)
             run_ gitPath ["clone", "https://github.com/haskell/process.git", repo]
             origHash <- chdir (fromText repo) revParseHead
 
