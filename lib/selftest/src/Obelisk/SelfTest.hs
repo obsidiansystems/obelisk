@@ -251,7 +251,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
         runOb_ ["thunk", "pack", repo]
         packedFiles <- Set.fromList <$> ls (fromText repo)
         liftIO $ assertEqual "" packedFiles $ Set.fromList $ (repo </>) <$>
-          ["default.nix", "github.json", ".attr-cache" :: FilePath]
+          ["default.nix", "github.json" :: FilePath]
 
         runOb_ ["thunk", "unpack", repo]
         chdir (fromText repo) $ do
