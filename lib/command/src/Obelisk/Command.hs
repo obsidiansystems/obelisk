@@ -354,14 +354,9 @@ ob = \case
       when rootEqualsTarget $
         failWith $ "Deploy directory " <> T.pack deployDir <> " should not be the same as project root."
       thunkPtr <- readThunk root >>= \case
-        Left err -> failWith $ case err of
-          ReadThunkError_AmbiguousFiles ->
-            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
-          ReadThunkError_UnrecognizedFiles ->
-            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
-          _ -> "thunk read: " <> T.pack (show err)
-        Right (ThunkData_Packed ptr) -> return ptr
-        Right (ThunkData_Checkout (Just ptr)) -> return ptr
+        Left err -> failWith $ "Can't read thunk at: " <> T.pack root <> ": " <> T.pack (show err)
+        Right (ThunkData_Packed (_, ptr)) -> return ptr
+        Right (ThunkData_Checkout (Just (_, ptr))) -> return ptr
         Right (ThunkData_Checkout Nothing) ->
           getThunkPtr False root Nothing
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
