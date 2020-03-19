@@ -5,9 +5,9 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE QuasiQuotes #-}
 module Obelisk.Command.Thunk where
 
 import Control.Applicative
@@ -368,7 +368,7 @@ overwriteThunk target thunk = do
     Right _ -> pure ()
 
   --TODO: Is there a safer way to do this overwriting?
-  liftIO $ removeDirectoryRecursive target
+  callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-r", target] -- target may be a symlink
   createThunk target thunk
 
 thunkPtrToSpec :: ThunkPtr -> ThunkSpec
@@ -751,7 +751,7 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from with
         callProcessAndLogOutput (Notice, Error) $
           proc cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
         callProcessAndLogOutput (Notice, Error) $
-          proc "rm" ["-r", thunkDir]
+          proc rmPath ["-r", thunkDir]
         callProcessAndLogOutput (Notice, Error) $
           proc "mv" ["-T", tmpRepo, thunkDir]
 
@@ -767,7 +767,7 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
     withSpinner' ("Packing thunk " <> T.pack thunkDir)
                  (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
       thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir (_thunkConfig_private thunkConfig)
-      liftIO $ removeDirectoryRecursive thunkDir
+      callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-r", thunkDir] -- thunkDir may be a symlink
       createThunk thunkDir thunkPtr
       pure thunkPtr
 
