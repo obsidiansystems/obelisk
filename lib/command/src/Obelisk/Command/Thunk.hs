@@ -38,6 +38,7 @@ import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String.Here.Interpolated (i)
+import Data.String.Here.Uninterpolated (here)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
@@ -479,8 +480,9 @@ setThunk thunkConfig target gs branch = do
 -- This tool will only ever produce the newest one when it writes a thunk.
 gitHubThunkSpecs :: NonEmpty ThunkSpec
 gitHubThunkSpecs =
-  gitHubThunkSpecV4 :|
-  [ gitHubThunkSpecV3
+  gitHubThunkSpecV5 :|
+  [ gitHubThunkSpecV4
+  , gitHubThunkSpecV3
   , gitHubThunkSpecV2
   , gitHubThunkSpecV1
   ]
@@ -535,15 +537,31 @@ gitHubThunkSpecV4 = legacyGitHubThunkSpec "github-v4" $ T.unlines
 legacyGitHubThunkSpec :: Text -> Text -> ThunkSpec
 legacyGitHubThunkSpec name loader = ThunkSpec name $ Map.fromList
   [ ("default.nix", ThunkFileSpec_FileMatches $ T.strip loader)
-  , ("github.json" , ThunkFileSpec_Ptr $ parseJsonObject $ parseThunkPtr $ \v ->
-      ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v)
+  , ("github.json" , ThunkFileSpec_Ptr parseGitHubJsonBytes)
   , (attrCacheFileName, ThunkFileSpec_AttrCache)
   ]
 
+gitHubThunkSpecV5 :: ThunkSpec
+gitHubThunkSpecV5 = mkThunkSpec "github-v5" "github.json" parseGitHubJsonBytes [here|
+# DO NOT HAND-EDIT THIS FILE
+let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:
+  if !fetchSubmodules && !private then builtins.fetchTarball {
+    url = "https://github.com/${owner}/${repo}/archive/${rev}.tar.gz"; inherit sha256;
+  } else (import <nixpkgs> {}).fetchFromGitHub {
+    inherit owner repo rev sha256 fetchSubmodules private;
+  };
+in if builtins.pathExists ./_ then ./_ else fetch (builtins.fromJSON (builtins.readFile ./github.json))
+|]
+
+parseGitHubJsonBytes :: LBS.ByteString -> Either String ThunkPtr
+parseGitHubJsonBytes = parseJsonObject $ parseThunkPtr $ \v ->
+  ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v
+
 gitThunkSpecs :: NonEmpty ThunkSpec
 gitThunkSpecs =
-  gitThunkSpecV4 :|
-  [ gitThunkSpecV3
+  gitThunkSpecV5 :|
+  [ gitThunkSpecV4
+  , gitThunkSpecV3
   , gitThunkSpecV2
   , gitThunkSpecV1
   ]
@@ -604,9 +622,43 @@ gitThunkSpecV4 = legacyGitThunkSpec "git-v4" $ T.unlines
 legacyGitThunkSpec :: Text -> Text -> ThunkSpec
 legacyGitThunkSpec name loader = ThunkSpec name $ Map.fromList
   [ ("default.nix", ThunkFileSpec_FileMatches $ T.strip loader)
-  , ("git.json" , ThunkFileSpec_Ptr $ parseJsonObject $ parseThunkPtr $ fmap ThunkSource_Git . parseGitSource)
+  , ("git.json" , ThunkFileSpec_Ptr parseGitJsonBytes)
   , (attrCacheFileName, ThunkFileSpec_AttrCache)
   ]
+
+gitThunkSpecV5 :: ThunkSpec
+gitThunkSpecV5 = mkThunkSpec "git-v5" "git.json" parseGitJsonBytes [here|
+# DO NOT HAND-EDIT THIS FILE
+let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
+  let realUrl = let firstChar = builtins.substring 0 1 url; in
+    if firstChar == "/" then /. + url
+    else if firstChar == "." then ./. + url
+    else url;
+  in if !fetchSubmodules && private then builtins.fetchGit {
+    url = realUrl; inherit rev;
+    ${if branch == null then null else "ref"} = branch;
+  } else (import <nixpkgs> {}).fetchgit {
+    url = realUrl; inherit rev sha256;
+  };
+in if builtins.pathExists ./_ then ./_ else fetch (builtins.fromJSON (builtins.readFile ./git.json))
+|]
+
+parseGitJsonBytes :: LBS.ByteString -> Either String ThunkPtr
+parseGitJsonBytes = parseJsonObject $ parseThunkPtr $ fmap ThunkSource_Git . parseGitSource
+
+mkThunkSpec :: Text -> FilePath -> (LBS.ByteString -> Either String ThunkPtr) -> Text -> ThunkSpec
+mkThunkSpec name jsonFileName parser srcNix = ThunkSpec name $ Map.fromList
+  [ ("default.nix", ThunkFileSpec_FileMatches defaultNixViaSrc)
+  , ("src.nix", ThunkFileSpec_FileMatches srcNix)
+  , (jsonFileName, ThunkFileSpec_Ptr parser)
+  , (attrCacheFileName, ThunkFileSpec_AttrCache)
+  ]
+  where
+    defaultNixViaSrc = [here|
+# DO NOT HAND-EDIT THIS FILE
+import (import ./src.nix)
+|]
+
 
 parseJsonObject :: (Aeson.Object -> Aeson.Parser a) -> LBS.ByteString -> Either String a
 parseJsonObject p bytes = Aeson.parseEither p =<< Aeson.eitherDecode bytes
@@ -731,15 +783,15 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from with
   Right (ThunkData_Packed (_, tptr)) -> do
     let (thunkParent, thunkName) = splitFileName thunkDir
     withTempDirectory thunkParent thunkName $ \tmpRepo -> do
-      let obGitDir = tmpRepo </> ".git" </> "obelisk"
-          s = case _thunkPtr_source tptr of
-            ThunkSource_GitHub s' -> forgetGithub False s'
-            ThunkSource_Git s' -> s'
+      let
+        s = case _thunkPtr_source tptr of
+          ThunkSource_GitHub s' -> forgetGithub False s'
+          ThunkSource_Git s' -> s'
       withSpinner' ("Fetching thunk " <> T.pack thunkName)
                    (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
         let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
         git $ [ "clone" ]
-          ++  ("--recursive" <$ guard (_gitSource_fetchSubmodules s))
+          ++  ["--recursive" | _gitSource_fetchSubmodules s]
           ++  [ T.unpack $ gitUriToText $ _gitSource_url s ]
           ++  do branch <- maybeToList $ _gitSource_branch s
                  [ "--branch", T.unpack $ untagName branch ]
@@ -747,13 +799,9 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from with
         when (_gitSource_fetchSubmodules s) $
           git ["submodule", "update", "--recursive", "--init"]
 
-        liftIO $ createDirectory obGitDir
-        callProcessAndLogOutput (Notice, Error) $
-          proc cp ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
-        callProcessAndLogOutput (Notice, Error) $
-          proc rmPath ["-r", thunkDir]
-        callProcessAndLogOutput (Notice, Error) $
-          proc "mv" ["-T", tmpRepo, thunkDir]
+        let unpackedPath = thunkDir </> unpackedDirName
+        liftIO $ createDirectoryIfMissing True (takeDirectory unpackedPath)
+        callProcessAndLogOutput (Notice, Error) $ proc mvPath [tmpRepo, unpackedPath]
 
 --TODO: add a rollback mode to pack to the original thunk
 packThunk :: MonadObelisk m => ThunkPackConfig -> FilePath -> m ThunkPtr
@@ -766,8 +814,8 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
   Right (ThunkData_Checkout _) -> do
     withSpinner' ("Packing thunk " <> T.pack thunkDir)
                  (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
-      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir (_thunkConfig_private thunkConfig)
-      callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-r", thunkDir] -- thunkDir may be a symlink
+      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) (thunkDir </> unpackedDirName) (_thunkConfig_private thunkConfig)
+      callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-rf", thunkDir </> unpackedDirName] -- thunkDir may be a symlink
       createThunk thunkDir thunkPtr
       pure thunkPtr
 
