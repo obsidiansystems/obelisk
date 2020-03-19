@@ -14,7 +14,6 @@ module Obelisk.Command.Project
   , obeliskDirName
   , projectShell
   , toImplDir
-  , toNixPath
   , toObeliskDir
   , withProjectRoot
   ) where
@@ -29,7 +28,6 @@ import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
 import Data.Function ((&), on)
-import Data.List (isInfixOf)
 import Data.Map (Map)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -50,7 +48,7 @@ import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (nixExePath, nixBuildExePath)
+import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -248,13 +246,6 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
     fileWorldWritable = fileMode s .&. 0o002 == 0o002
     fileGroupWritable = fileMode s .&. 0o020 == 0o020
     umaskGroupWritable = umask .&. 0o020 == 0
-
--- | Nix syntax requires relative paths to be prefixed by @./@ or
--- @../@. This will make a 'FilePath' that can be embedded in a Nix
--- expression.
-toNixPath :: FilePath -> FilePath
-toNixPath root | "/" `isInfixOf` root = root
-               | otherwise = "./" <> root
 
 nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
 nixShellRunConfig root isPure command = do
