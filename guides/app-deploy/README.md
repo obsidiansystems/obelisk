@@ -232,7 +232,7 @@ xdg-open http://$VM_IP
 If that fails, just get the URL by running
 
 ```bash
-echo http://$VM_IP`
+echo http://$VM_IP
 ```
 
 and copy/paste that URL into your browser navigation input.
