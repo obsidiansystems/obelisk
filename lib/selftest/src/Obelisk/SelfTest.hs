@@ -241,7 +241,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       run_ gitPath ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
       runOb_ ["thunk", "pack", toTextIgnore dir]
       runOb_ ["thunk", "unpack", toTextIgnore dir]
-      branch' <- chdir dir $ run gitPath ["rev-parse", "--abbrev-ref", "HEAD"]
+      branch' <- run gitPath ["-C", toTextIgnore $ dir </> ("_" :: FilePath), "rev-parse", "--abbrev-ref", "HEAD"]
       liftIO $ assertEqual "" branch (T.strip branch')
 
     it "can pack and unpack plain git repos" $
@@ -253,10 +253,10 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
         runOb_ ["thunk", "pack", repo]
         packedFiles <- Set.fromList <$> ls (fromText repo)
         liftIO $ assertEqual "" packedFiles $ Set.fromList $ (repo </>) <$>
-          ["default.nix", "github.json" :: FilePath]
+          ["default.nix", "src.nix", "github.json" :: FilePath]
 
         runOb_ ["thunk", "unpack", repo]
-        chdir (fromText repo) $ do
+        chdir (fromText repo </> ("_" :: FilePath)) $ do
           unpackHash <- revParseHead
           assertRevEQ origHash unpackHash
 
@@ -309,10 +309,11 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
 
     withObeliskImplClean f =
       withSystemTempDirectory "obelisk-impl-clean" $ \obeliskImpl -> do
-        void . shellyOb verbosity $ chdir obeliskImpl $ do
+        void . shellyOb verbosity $ do
           dirtyFiles <- T.strip <$> run gitPath ["-C", toTextIgnore obeliskRepoReadOnly, "diff", "--stat"]
           () <- when (dirtyFiles /= "") $ error "SelfTest does not work correctly with dirty obelisk repos as remote"
           run_ gitPath ["clone", "file://" <> toTextIgnore obeliskRepoReadOnly, toTextIgnore obeliskImpl]
+          runOb_ ["thunk", "init", toTextIgnore obeliskImpl]
         f obeliskImpl
 
     withInitCache f =
@@ -374,28 +375,31 @@ testObRunInDir executable extraArgs mdir httpManager = maskExitSuccess $ do
       else exit 0
 
 testThunkPack :: String -> [Text] -> FilePath -> Sh ()
-testThunkPack executable args path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
-  let pack' = readProcessWithExitCode executable (T.unpack <$> ["thunk", "pack", toTextIgnore path'] ++ args) ""
-      ensureThunkPackFails q = liftIO $ pack' >>= \case
-        (code, out, err)
-          | code == ExitSuccess -> fail $ "ob thunk pack succeeded when it should have failed with error '" <> show q <> "'"
-          | q `T.isInfixOf` T.pack (out <> err) -> pure ()
-          | otherwise -> fail $ "ob thunk pack failed for an unexpected reason, expecting '" <> show q <> "', received: " <> show out <> "\nstderr: " <> err
-      git = chdir path' . run gitPath
+testThunkPack executable args path' = withTempFile repoDir "test-file" $ \file handle -> do
+  let
+    pack' = readProcessWithExitCode executable (["thunk", "pack", path'] ++ map T.unpack args) ""
+    ensureThunkPackFails q = liftIO $ pack' >>= \case
+      (code, out, err)
+        | code == ExitSuccess -> fail $ "ob thunk pack succeeded when it should have failed with error '" <> show q <> "'"
+        | q `T.isInfixOf` T.pack (out <> err) -> pure ()
+        | otherwise -> fail $ "ob thunk pack failed for an unexpected reason, expecting '" <> show q <> "', received: " <> show out <> "\nstderr: " <> err
+    git = chdir repoDir . run_ gitPath
   -- Untracked files
   ensureThunkPackFails "Untracked files"
-  void $ git ["add", T.pack file]
+  git ["add", T.pack file]
   -- Uncommitted files (staged)
   ensureThunkPackFails "unsaved"
-  chdir path' $ commit "test commit"
+  chdir repoDir $ commit "test commit"
   -- Non-pushed commits in any branch
   ensureThunkPackFails "not yet pushed"
   -- Uncommitted files (unstaged)
   liftIO $ T.hPutStrLn handle "test file" >> hClose handle
   ensureThunkPackFails "modified"
   -- Existing stashes
-  void $ git $ gitUserConfig <> [ "stash" ]
+  git $ gitUserConfig <> [ "stash" ]
   ensureThunkPackFails "has stashes"
+  where
+    repoDir = path' </> ("_" :: FilePath)
 
 -- | Blocks until a non-empty line is available
 hGetLineSkipBlanks :: MonadIO m => Handle -> m Text
