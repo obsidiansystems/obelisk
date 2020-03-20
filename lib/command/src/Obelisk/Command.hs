@@ -225,9 +225,9 @@ thunkPackConfig = ThunkPackConfig
   <*> thunkConfig
 
 data ThunkCommand
-   = ThunkCommand_Update [FilePath] ThunkUpdateConfig
-   | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack   [FilePath] ThunkPackConfig
+  = ThunkCommand_Update [FilePath] ThunkUpdateConfig
+  | ThunkCommand_Unpack [FilePath]
+  | ThunkCommand_Pack   [FilePath] ThunkPackConfig
   deriving Show
 
 thunkCommand :: Parser ThunkCommand
