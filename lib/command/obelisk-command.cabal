@@ -10,8 +10,6 @@ library
     , aeson-pretty
     , ansi-terminal
     , base
-    , base16-bytestring
-    , binary
     , bytestring
     , Cabal
     , containers
