@@ -7,16 +7,10 @@ module Obelisk.Command where
 
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
-import qualified Data.Binary as Binary
 import Data.Bool (bool)
-import qualified Data.ByteString.Base16 as Base16
-import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (for_)
 import Data.List
 import qualified Data.Text as T
-import Data.Text.Encoding
-import Data.Text.Encoding.Error (lenientDecode)
-import GHC.StaticPtr
 import Options.Applicative
 import Options.Applicative.Help.Pretty (text, (<$$>))
 import System.Directory
@@ -269,9 +263,6 @@ parserPrefs = defaultPrefs
   { prefShowHelpOnEmpty = True
   }
 
-parseCLIArgs :: ArgsConfig -> [String] -> IO Args
-parseCLIArgs cfg = handleParseResult . execParserPure parserPrefs (argsInfo cfg)
-
 -- | Create an Obelisk config for the current process.
 mkObeliskConfig :: IO Obelisk
 mkObeliskConfig = do
@@ -416,15 +407,3 @@ haddockCommand pkgs = unwords
 
 getArgsConfig :: IO ArgsConfig
 getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = System.Info.os == "darwin" }
-
-encodeStaticKey :: StaticKey -> String
-encodeStaticKey = T.unpack . decodeUtf8With lenientDecode . Base16.encode . LBS.toStrict . Binary.encode
-
--- TODO: Use failWith in place of fail to be consistent.
-decodeStaticKey :: String -> Either String StaticKey
-decodeStaticKey s = case Base16.decode $ encodeUtf8 $ T.pack s of
-  (b, "") -> case Binary.decodeOrFail $ LBS.fromStrict b of
-    Right ("", _, a) -> pure a
-    Right _ -> fail "decodeStaticKey: Binary.decodeOrFail didn't consume all input"
-    Left (_, _, e) -> fail $ "decodeStaticKey: Binary.decodeOrFail failed: " <> show e
-  _ -> fail $ "decodeStaticKey: could not decode hex string: " <> show s
