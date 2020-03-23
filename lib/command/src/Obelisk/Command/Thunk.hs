@@ -862,7 +862,7 @@ getThunkPtr checkClean dir mPrivate = do
 
   -- Get information on all branches and their (optional) designated upstream
   -- correspondents
-  (headDump :: [Text]) <- T.lines <$> readGitProcess thunkDir
+  headDump :: [Text] <- T.lines <$> readGitProcess thunkDir
     [ "for-each-ref"
     , "--format=%(refname:short) %(upstream:short) %(upstream:remotename)"
     , "refs/heads/"
