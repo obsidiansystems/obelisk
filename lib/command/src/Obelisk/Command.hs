@@ -228,6 +228,7 @@ data ThunkCommand
   = ThunkCommand_Update [FilePath] ThunkUpdateConfig
   | ThunkCommand_Unpack [FilePath]
   | ThunkCommand_Pack   [FilePath] ThunkPackConfig
+  | ThunkCommand_Init   [FilePath]
   deriving Show
 
 thunkCommand :: Parser ThunkCommand
@@ -235,6 +236,7 @@ thunkCommand = hsubparser $ mconcat
   [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> thunkUpdateConfig) $ progDesc "Update thunk to latest revision available"
   , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
   , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> thunkPackConfig) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+  , command "init" $ info (ThunkCommand_Init <$> some thunkDirectoryParser) $ progDesc "Initialize a git checkout by converting it to an unpacked thunk"
   ]
 
 data ShellOpts
@@ -378,6 +380,7 @@ ob = \case
     ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
     ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
+    ThunkCommand_Init thunks -> for_ thunks initThunk
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->

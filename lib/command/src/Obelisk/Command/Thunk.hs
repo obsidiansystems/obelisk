@@ -14,7 +14,7 @@ import Control.Applicative
 import Control.Exception (displayException, try)
 import Control.Lens (ifor, ifor_, (.~))
 import Control.Monad
-import Control.Monad.Extra (findM)
+import Control.Monad.Extra (findM, unlessM, whenM)
 import Control.Monad.Catch (MonadCatch, handle)
 import Control.Monad.Except
 import Data.Aeson ((.=))
@@ -27,6 +27,7 @@ import Data.Default
 import Data.Either.Combinators (fromRight', rightToMaybe)
 import Data.Foldable (toList)
 import Data.Function ((&))
+import Data.Functor ((<&>))
 import Data.Git.Ref (Ref)
 import qualified Data.Git.Ref as Ref
 import qualified Data.List as L
@@ -193,45 +194,11 @@ nixPrefetchGit uri rev fetchSubmodules =
 data ReadThunkError
    = ReadThunkError_UnrecognizedPaths (NonEmpty FilePath)
    | ReadThunkError_MissingPaths (NonEmpty FilePath)
-   | ReadThunkError_UnrecognizedThunk -- TODO: Delete?
+   | ReadThunkError_UnrecognizedThunk
    | ReadThunkError_UnparseablePtr FilePath String
    | ReadThunkError_FileError IOError
    | ReadThunkError_FileDoesNotMatch FilePath Text
    deriving (Show)
-
-
-data ThunkCheckoutPaths = ThunkCheckoutPaths
-  { _thunkCheckoutPaths_isCheckoutIfExists :: FilePath
-  , _thunkCheckoutPaths_origThunkPath :: FilePath
-  } deriving (Show)
-
-thunkCheckoutPaths :: NonEmpty ThunkCheckoutPaths
-thunkCheckoutPaths =
-  ThunkCheckoutPaths
-    { _thunkCheckoutPaths_isCheckoutIfExists = unpackedDirName
-    , _thunkCheckoutPaths_origThunkPath = "."
-    }
-  :| [
-    ThunkCheckoutPaths
-      { _thunkCheckoutPaths_isCheckoutIfExists = ".git"
-      , _thunkCheckoutPaths_origThunkPath = ".git" </> "obelisk" </> "orig-thunk"
-      }
-  ]
-
-
--- | Read a thunk and validate that it is only a thunk, either packed or unpacked.
--- If the thunk is packed and additional data is present, fail.
-readThunk :: MonadObelisk m => FilePath -> m (Either ReadThunkError ThunkData)
-readThunk thunkDir = do
-  thunkCheckout' <- liftIO $ flip findM (toList thunkCheckoutPaths) $
-    doesPathExist . (thunkDir </>) . _thunkCheckoutPaths_isCheckoutIfExists
-  case thunkCheckout' of
-    Nothing -> fmap ThunkData_Packed <$> readPackedThunk thunkDir
-    Just thunkCheckout -> do
-      origPathExists <- liftIO $ doesDirectoryExist $ _thunkCheckoutPaths_origThunkPath thunkCheckout
-      fmap (Right . ThunkData_Checkout) $ if origPathExists
-        then rightToMaybe <$> readPackedThunk (thunkDir </> _thunkCheckoutPaths_origThunkPath thunkCheckout)
-        else pure Nothing
 
 unpackedDirName :: FilePath
 unpackedDirName = "_"
@@ -241,11 +208,10 @@ attrCacheFileName = ".attr-cache"
 
 -- | Specification for how a file in a thunk version works.
 data ThunkFileSpec
-  = ThunkFileSpec_FileMayExist
-  | ThunkFileSpec_DirMayExist
-  | ThunkFileSpec_AttrCache
-  | ThunkFileSpec_Ptr (LBS.ByteString -> Either String ThunkPtr)
-  | ThunkFileSpec_FileMatches Text
+  = ThunkFileSpec_Ptr (LBS.ByteString -> Either String ThunkPtr) -- ^ This file specifies a parser for 'ThunkPtr' data
+  | ThunkFileSpec_FileMatches Text -- ^ This file must match the given content exactly
+  | ThunkFileSpec_CheckoutIndicator -- ^ Existence of this directory indicates that the thunk is unpacked
+  | ThunkFileSpec_AttrCache -- ^ This directory is an attribute cache
 
 -- | Specification for how a set of files in a thunk version work.
 data ThunkSpec = ThunkSpec
@@ -262,7 +228,7 @@ matchThunkSpecToDir
   => ThunkSpec -- ^ 'ThunkSpec' to match against the given files/directory
   -> FilePath -- ^ Path to directory
   -> Set FilePath -- ^ Set of file paths relative to the given directory
-  -> m ThunkPtr
+  -> m ThunkData
 matchThunkSpecToDir thunkSpec dir dirFiles = do
   case nonEmpty (toList $ dirFiles `Set.difference` expectedPaths) of
     Just fs -> throwError $ ReadThunkError_UnrecognizedPaths $ (dir </>) <$> fs
@@ -270,12 +236,11 @@ matchThunkSpecToDir thunkSpec dir dirFiles = do
   case nonEmpty (toList $ requiredPaths `Set.difference` dirFiles) of
     Just fs -> throwError $ ReadThunkError_MissingPaths $ (dir </>) <$> fs
     Nothing -> pure ()
-  ptrs <- fmap toList $ flip Map.traverseMaybeWithKey (_thunkSpec_files thunkSpec) $ \expectedPath -> \case
-    ThunkFileSpec_FileMayExist -> liftIO (doesDirectoryExist (dir </> expectedPath)) >>= \case
-      True -> throwError $ ReadThunkError_UnrecognizedPaths $ expectedPath :| []
-      False -> pure Nothing
-    ThunkFileSpec_DirMayExist -> dirMayExist expectedPath
-    ThunkFileSpec_AttrCache -> dirMayExist expectedPath
+  datas <- fmap toList $ flip Map.traverseMaybeWithKey (_thunkSpec_files thunkSpec) $ \expectedPath -> \case
+    ThunkFileSpec_AttrCache -> Nothing <$ dirMayExist expectedPath
+    ThunkFileSpec_CheckoutIndicator -> liftIO (doesDirectoryExist (dir </> expectedPath)) <&> \case
+      False -> Nothing
+      True -> Just (ThunkData_Checkout Nothing)
     ThunkFileSpec_FileMatches expectedContents -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
       actualContents <- liftIO (T.readFile $ dir </> expectedPath)
       case T.strip expectedContents == T.strip actualContents of
@@ -284,16 +249,19 @@ matchThunkSpecToDir thunkSpec dir dirFiles = do
     ThunkFileSpec_Ptr parser -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
       actualContents <- liftIO $ LBS.readFile $ dir </> expectedPath
       case parser actualContents of
-        Right v -> pure $ Just v
+        Right v -> pure $ Just (ThunkData_Packed (thunkSpec, v))
         Left e -> throwError $ ReadThunkError_UnparseablePtr (dir </> expectedPath) e
 
-  case nubOrd ptrs of
-    [x] -> pure x
-    _ -> throwError ReadThunkError_UnrecognizedThunk
-
+  case nonEmpty datas of
+    Nothing -> throwError ReadThunkError_UnrecognizedThunk
+    Just xs -> fold1WithM xs $ \a b -> maybe (throwError ReadThunkError_UnrecognizedThunk) pure (mergeThunkData a b)
   where
-    expectedPaths = Map.keysSet $ _thunkSpec_files thunkSpec
-    requiredPaths = Map.keysSet $ Map.filter isRequiredFileSpec $ _thunkSpec_files thunkSpec
+    rootPathsOnly = Set.fromList . mapMaybe takeRootDir . Map.keys
+    takeRootDir = fmap NonEmpty.head . nonEmpty . splitPath
+
+    expectedPaths = rootPathsOnly $ _thunkSpec_files thunkSpec
+
+    requiredPaths = rootPathsOnly $ Map.filter isRequiredFileSpec $ _thunkSpec_files thunkSpec
     isRequiredFileSpec = \case
       ThunkFileSpec_FileMatches _ -> True
       ThunkFileSpec_Ptr _ -> True
@@ -301,26 +269,36 @@ matchThunkSpecToDir thunkSpec dir dirFiles = do
 
     dirMayExist expectedPath = liftIO (doesFileExist (dir </> expectedPath)) >>= \case
       True -> throwError $ ReadThunkError_UnrecognizedPaths $ expectedPath :| []
-      False -> pure Nothing
+      False -> pure ()
 
-readPackedThunkWith
+    -- Combine 'ThunkData' from different files, preferring "Checkout" over "Packed"
+    mergeThunkData a@(ThunkData_Checkout _) (ThunkData_Checkout Nothing) = Just a
+    mergeThunkData (ThunkData_Checkout Nothing) b@(ThunkData_Checkout _) = Just b
+    mergeThunkData a@(ThunkData_Checkout (Just _)) (ThunkData_Packed _) = Just a
+    mergeThunkData (ThunkData_Packed _) b@(ThunkData_Checkout (Just _)) = Just b
+    mergeThunkData (ThunkData_Packed a) (ThunkData_Checkout Nothing) = Just $ ThunkData_Checkout $ Just a
+    mergeThunkData (ThunkData_Checkout Nothing) (ThunkData_Packed b) = Just $ ThunkData_Checkout $ Just b
+    mergeThunkData a@(ThunkData_Checkout (Just (_, ptrA))) (ThunkData_Checkout (Just (_, ptrB))) = if ptrA == ptrB then Just a else Nothing
+    mergeThunkData a@(ThunkData_Packed (_, ptrA)) (ThunkData_Packed (_, ptrB)) = if ptrA == ptrB then Just a else Nothing
+
+    fold1WithM (x :| xs) f = foldM f x xs
+
+readThunkWith
   :: (MonadObelisk m)
-  => NonEmpty (NonEmpty ThunkSpec) -> FilePath -> m (Either ReadThunkError (ThunkSpec, ThunkPtr))
-readPackedThunkWith specTypes dir = do
+  => NonEmpty (NonEmpty ThunkSpec) -> FilePath -> m (Either ReadThunkError ThunkData)
+readThunkWith specTypes dir = do
   dirFiles <- Set.fromList <$> liftIO (listDirectory dir)
   let specs = concatMap toList $ toList $ NonEmpty.transpose specTypes -- Interleave spec types so we try each one in a "fair" ordering
   flip fix specs $ \loop -> \case
     [] -> pure $ Left ReadThunkError_UnrecognizedThunk
     spec:rest -> runExceptT (matchThunkSpecToDir spec dir dirFiles) >>= \case
-      Left e -> do
-        putLog Debug [i|Thunk ${_thunkSpec_name spec} specification did not match ${dir}: ${e}|]
-        loop rest
-      Right ptr -> Right (spec, ptr) <$ putLog Debug ("Thunk " <> _thunkSpec_name spec <> " matched " <> T.pack dir)
+      Left e -> loop rest <* putLog Debug [i|Thunk specification ${_thunkSpec_name spec} did not match ${dir}: ${e}|]
+      x@(Right _) -> x <$ putLog Debug [i|Thunk specification ${_thunkSpec_name spec} matched ${dir}|]
 
 -- | Read a thunk and validate that it is exactly a packed thunk.
 -- If additional data is present, fail.
-readPackedThunk :: (MonadObelisk m) => FilePath -> m (Either ReadThunkError (ThunkSpec, ThunkPtr))
-readPackedThunk = readPackedThunkWith thunkSpecTypes
+readThunk :: (MonadObelisk m) => FilePath -> m (Either ReadThunkError ThunkData)
+readThunk = readThunkWith thunkSpecTypes
 
 parseThunkPtr :: (Aeson.Object -> Aeson.Parser ThunkSource) -> Aeson.Object -> Aeson.Parser ThunkPtr
 parseThunkPtr parseSrc v = do
@@ -422,6 +400,21 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     , confTrailingNewline = True
     }
 
+-- | Initialize a git repository to an unpacked thunk.
+initThunk :: MonadObelisk m => FilePath -> m ()
+initThunk target = withSpinner [i|Initializing thunk at ${target}|] $ do
+  checkThunkDirectory target
+  unlessM (liftIO $ doesDirectoryExist $ target </> ".git") $ failWith [i|${target} is not a git checkout.|]
+  ptr <- getThunkPtr False target Nothing
+  let tempThunkDir = target <.> "thunk-init"
+  whenM (liftIO $ doesPathExist tempThunkDir) $
+    failWith [i|A previous 'thunk init' left unfinished state at ${tempThunkDir}. You will need to rename or remove that path before trying again.|]
+  createThunk tempThunkDir ptr
+  liftIO $ do
+    renameDirectory target (tempThunkDir </> unpackedDirName)
+    removePathForcibly target
+    renameDirectory tempThunkDir target
+
 createThunk :: MonadObelisk m => FilePath -> ThunkPtr -> m ()
 createThunk target ptr =
   ifor_ (_thunkSpec_files $ thunkPtrToSpec ptr) $ \path -> \case
@@ -444,8 +437,8 @@ createThunkWithLatest target s = do
     }
 
 updateThunkToLatest :: MonadObelisk m => ThunkUpdateConfig -> FilePath -> m ()
-updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
-  checkThunkDirectory "ob thunk update directory cannot be '.'" target
+updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = spinner $ do
+  checkThunkDirectory target
   -- check to see if thunk should be updated to a specific branch or just update it's current branch
   case mBranch of
     Nothing -> do
@@ -469,6 +462,8 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = withSpinner
             let tsg = forgetGithub False tsgh
             setThunk thunkConfig target tsg branch
         ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> show target <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
+  where
+    spinner = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest")
 
 setThunk :: MonadObelisk m => ThunkConfig -> FilePath -> GitSource -> String -> m ()
 setThunk thunkConfig target gs branch = do
@@ -539,6 +534,7 @@ legacyGitHubThunkSpec name loader = ThunkSpec name $ Map.fromList
   [ ("default.nix", ThunkFileSpec_FileMatches $ T.strip loader)
   , ("github.json" , ThunkFileSpec_Ptr parseGitHubJsonBytes)
   , (attrCacheFileName, ThunkFileSpec_AttrCache)
+  , (".git", ThunkFileSpec_CheckoutIndicator)
   ]
 
 gitHubThunkSpecV5 :: ThunkSpec
@@ -624,6 +620,7 @@ legacyGitThunkSpec name loader = ThunkSpec name $ Map.fromList
   [ ("default.nix", ThunkFileSpec_FileMatches $ T.strip loader)
   , ("git.json" , ThunkFileSpec_Ptr parseGitJsonBytes)
   , (attrCacheFileName, ThunkFileSpec_AttrCache)
+  , (".git", ThunkFileSpec_CheckoutIndicator)
   ]
 
 gitThunkSpecV5 :: ThunkSpec
@@ -652,6 +649,7 @@ mkThunkSpec name jsonFileName parser srcNix = ThunkSpec name $ Map.fromList
   , ("src.nix", ThunkFileSpec_FileMatches srcNix)
   , (jsonFileName, ThunkFileSpec_Ptr parser)
   , (attrCacheFileName, ThunkFileSpec_AttrCache)
+  , (unpackedDirName, ThunkFileSpec_CheckoutIndicator)
   ]
   where
     defaultNixViaSrc = [here|
@@ -769,14 +767,21 @@ unpackThunk :: MonadObelisk m => FilePath -> m ()
 unpackThunk = unpackThunk' False
 
 -- | Check that we are not somewhere inside the thunk directory
-checkThunkDirectory :: MonadObelisk m => Text -> FilePath -> m ()
-checkThunkDirectory msg thunkDir = do
+checkThunkDirectory :: MonadObelisk m => FilePath -> m ()
+checkThunkDirectory thunkDir = do
   currentDir <- liftIO getCurrentDirectory
   thunkDir' <- liftIO $ canonicalizePath thunkDir
-  when (thunkDir' `L.isInfixOf` currentDir) $ failWith msg
+  when (thunkDir' `L.isInfixOf` currentDir) $
+    failWith [i|Can't perform thunk operations from within the thunk directory: ${thunkDir}|]
+
+  -- Don't let thunk commands work when directly given an unpacked repo
+  when (takeFileName thunkDir == unpackedDirName) $
+    readThunk (takeDirectory thunkDir) >>= \case
+      Right _ -> failWith [i|Refusing to perform thunk operation on ${thunkDir} because it is a thunk's unpacked source|]
+      Left _ -> pure ()
 
 unpackThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
-unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
+unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
   Left err -> failWith [i|Invalid thunk at ${thunkDir}: ${err}|]
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right (ThunkData_Checkout _) -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
@@ -808,7 +813,7 @@ packThunk :: MonadObelisk m => ThunkPackConfig -> FilePath -> m ThunkPtr
 packThunk = packThunk' False
 
 packThunk' :: MonadObelisk m => Bool -> ThunkPackConfig -> FilePath -> m ThunkPtr
-packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
+packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
   Left err -> failWith [i|Can't pack thunk at ${thunkDir}: ${err}|]
   Right (ThunkData_Packed _) -> failWith [i|Thunk at ${thunkDir} is is already packed|]
   Right (ThunkData_Checkout _) -> do
@@ -839,14 +844,13 @@ getThunkPtr checkClean dir mPrivate = do
     "thunk pack: thunk checkout contains unsaved modifications"
 
   -- Check whether there are any stashes
-  stashOutput <- readGitProcess thunkDir ["stash", "list"]
-  when checkClean $ case T.null stashOutput of
-    False -> do
+  when checkClean $ do
+    stashOutput <- readGitProcess thunkDir ["stash", "list"]
+    unless (T.null stashOutput) $
       failWith $ T.unlines $
         [ "thunk pack: thunk checkout has stashes"
         , "git stash list:"
         ] ++ T.lines stashOutput
-    True -> return ()
 
   -- Get current branch
   (mCurrentBranch, mCurrentCommit) <- do
@@ -932,8 +936,9 @@ getThunkPtr checkClean dir mPrivate = do
         \pushed but this repo's remote tracking branches don't know it.)"
       ]
 
-  -- We assume it's safe to pack the thunk at this point
-  putLog Informational "All changes safe in git remotes. OK to pack thunk."
+  when checkClean $ do
+    -- We assume it's safe to pack the thunk at this point
+    putLog Informational "All changes safe in git remotes. OK to pack thunk."
 
   let remote = maybe "origin" snd $ flip Map.lookup headUpstream =<< mCurrentBranch
 
