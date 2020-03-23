@@ -814,11 +814,11 @@ packThunk = packThunk' False
 
 packThunk' :: MonadObelisk m => Bool -> ThunkPackConfig -> FilePath -> m ThunkPtr
 packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
-  Left err -> failWith [i|Can't pack thunk at ${thunkDir}: ${err}|]
   Right (ThunkData_Packed _) -> failWith [i|Thunk at ${thunkDir} is is already packed|]
-  Right (ThunkData_Checkout _) -> do
-    withSpinner' ("Packing thunk " <> T.pack thunkDir)
-                 (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
+  _ -> withSpinner'
+    ("Packing thunk " <> T.pack thunkDir)
+    (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $
+    do
       thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir (_thunkConfig_private thunkConfig)
       callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-rf", thunkDir] -- thunkDir may be a symlink
       createThunk thunkDir thunkPtr
