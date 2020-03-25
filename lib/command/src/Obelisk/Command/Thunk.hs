@@ -203,7 +203,7 @@ data ReadThunkError
   deriving (Show)
 
 unpackedDirName :: FilePath
-unpackedDirName = "_"
+unpackedDirName = "unpacked"
 
 attrCacheFileName :: FilePath
 attrCacheFileName = ".attr-cache"
@@ -551,7 +551,8 @@ let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256
   } else (import <nixpkgs> {}).fetchFromGitHub {
     inherit owner repo rev sha256 fetchSubmodules private;
   };
-in if builtins.pathExists ./_ then ./_ else fetch (builtins.fromJSON (builtins.readFile ./github.json))
+  json = builtins.fromJSON (builtins.readFile ./github.json);
+in if builtins.pathExists ./unpacked then ./unpacked else fetch json
 |]
 
 parseGitHubJsonBytes :: LBS.ByteString -> Either String ThunkPtr
@@ -642,7 +643,8 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
   } else (import <nixpkgs> {}).fetchgit {
     url = realUrl; inherit rev sha256;
   };
-in if builtins.pathExists ./_ then ./_ else fetch (builtins.fromJSON (builtins.readFile ./git.json))
+  json = builtins.fromJSON (builtins.readFile ./git.json);
+in if builtins.pathExists ./unpacked then ./unpacked else fetch json
 |]
 
 parseGitJsonBytes :: LBS.ByteString -> Either String ThunkPtr

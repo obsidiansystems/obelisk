@@ -241,7 +241,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       run_ gitPath ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
       runOb_ ["thunk", "pack", toTextIgnore dir]
       runOb_ ["thunk", "unpack", toTextIgnore dir]
-      branch' <- run gitPath ["-C", toTextIgnore $ dir </> ("_" :: FilePath), "rev-parse", "--abbrev-ref", "HEAD"]
+      branch' <- run gitPath ["-C", toTextIgnore $ dir </> unpackedDirName, "rev-parse", "--abbrev-ref", "HEAD"]
       liftIO $ assertEqual "" branch (T.strip branch')
 
     it "can pack and unpack plain git repos" $
@@ -256,7 +256,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
           ["default.nix", "src.nix", "github.json" :: FilePath]
 
         runOb_ ["thunk", "unpack", repo]
-        chdir (fromText repo </> ("_" :: FilePath)) $ do
+        chdir (fromText repo </> unpackedDirName) $ do
           unpackHash <- revParseHead
           assertRevEQ origHash unpackHash
 
@@ -399,7 +399,7 @@ testThunkPack executable args path' = withTempFile repoDir "test-file" $ \file h
   git $ gitUserConfig <> [ "stash" ]
   ensureThunkPackFails "has stashes"
   where
-    repoDir = path' </> ("_" :: FilePath)
+    repoDir = path' </> unpackedDirName
 
 -- | Blocks until a non-empty line is available
 hGetLineSkipBlanks :: MonadIO m => Handle -> m Text
@@ -460,3 +460,6 @@ getFreePorts n = Socket.withSocketsDo $ do
       sock <- Socket.socket (Socket.addrFamily addr) (Socket.addrSocketType addr) (Socket.addrProtocol addr)
       Socket.bind sock (Socket.addrAddress addr)
       pure sock
+
+unpackedDirName :: FilePath
+unpackedDirName = "unpacked"
