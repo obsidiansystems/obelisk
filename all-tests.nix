@@ -100,14 +100,13 @@ in
               "cd ~/code/myapp && git remote add origin root@githost:/root/myorg/myapp.git"
           )
 
-
       with subtest("test pushing code to the remote"):
           client.succeed("cd ~/code/myapp && git push -u origin master")
           client.succeed("cd ~/code/myapp && git status")
 
       with subtest("test obelisk can pack"):
           client.succeed("ob -v thunk pack ~/code/myapp")
-          client.succeed("grep -qF 'git' ~/code/myapp/default.nix")
+          client.succeed("grep -qF 'git.json' ~/code/myapp/src.nix")
           client.succeed("grep -qF 'myorg' ~/code/myapp/git.json")
           client.succeed("ob -v thunk unpack ~/code/myapp")
 
@@ -123,19 +122,19 @@ in
           client.succeed("ob -v thunk unpack ~/code/myapp")
 
       with subtest("test building an invalid thunk fails"):
-          client.succeed("cd ~/code/myapp && git checkout -b bad")
+          client.succeed("cd ~/code/myapp/unpacked && git checkout -b bad")
           client.succeed(
-              "cp ${invalidThunkableSample} ~/code/myapp/default.nix"
+              "cp ${invalidThunkableSample} ~/code/myapp/unpacked/default.nix"
           )
-          client.succeed("cd ~/code/myapp && git add .")
+          client.succeed("cd ~/code/myapp/unpacked && git add .")
           client.succeed('git config --global user.email "you@example.com"')
           client.succeed('git config --global user.name "Your Name"')
-          client.succeed('cd ~/code/myapp && git commit -m "Bad commit"')
-          client.succeed("cd ~/code/myapp && git push -u origin bad")
+          client.succeed('cd ~/code/myapp/unpacked && git commit -m "Bad commit"')
+          client.succeed("cd ~/code/myapp/unpacked && git push -u origin bad")
           client.succeed("ob -v thunk pack ~/code/myapp --public")
           client.fail("nix-build  ~/code/myapp")
           client.succeed("ob -v thunk unpack ~/code/myapp")
-          client.succeed("cd ~/code/myapp && git checkout master")
+          client.succeed("cd ~/code/myapp/unpacked && git checkout master")
 
       with subtest("test obelisk can detect private repos"):
           client.succeed("ob -v thunk pack ~/code/myapp")
