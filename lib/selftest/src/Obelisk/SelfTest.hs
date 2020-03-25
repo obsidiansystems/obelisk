@@ -5,10 +5,12 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell  #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.SelfTest where
 
-import Control.Exception (bracket, throw)
+import Control.Concurrent (threadDelay)
+import Control.Exception (bracket, throw, try)
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Bool (bool)
@@ -282,17 +284,20 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
   describe "ob hoogle" $ {- NOT parallel -} do
     it "starts a hoogle server on the given port" $ inTmpObInit $ \_ -> do
       [p0] <- liftIO $ getFreePorts 1
-      maskExitSuccess $ runHandle "ob" ["hoogle", "--port", T.pack (show p0)] $ \stdout -> fix $ \loop -> do
-        ln <- liftIO $ T.hGetLine stdout
-        echo ln
-        let search = "Server starting on port " <> T.pack (show p0)
-        case search `T.isInfixOf` ln of
-          False -> loop -- keep waiting
-          True -> do
-            let req uri = liftIO $ HTTP.parseRequest uri >>= flip HTTP.httpLbs httpManager
-            req ("http://127.0.0.1:" <> show p0) >>= \r -> case HTTP.responseStatus r == HTTP.ok200 of
-              False -> errorExit $ "Request to hoogle server failed: " <> T.pack (show r)
-              True -> exit 0
+      maskExitSuccess $ runHandle "ob" ["hoogle", "--port", T.pack (show p0)] $ \stdout -> flip fix Nothing $ \loop -> \case
+        Nothing -> do -- Still waiting for initial signal that the server has started
+          ln <- liftIO $ T.hGetLine stdout
+          let search = "Server starting on port " <> T.pack (show p0)
+          case search `T.isInfixOf` ln of
+            False -> loop Nothing -- keep waiting
+            True -> loop $ Just 10
+        Just (n :: Int) -> do -- Server has started and we have n attempts left
+          let req uri = liftIO $ try @HTTP.HttpException $ HTTP.parseRequest uri >>= flip HTTP.httpLbs httpManager
+          req ("http://127.0.0.1:" <> show p0) >>= \case
+            Right r | HTTP.responseStatus r == HTTP.ok200 -> exit 0
+            e -> if n <= 0
+              then errorExit $ "Request to hoogle server failed: " <> T.pack (show e)
+              else liftIO (threadDelay (1*10^(6 :: Int))) *> loop (Just $ n - 1)
   where
     verbosity = bool silently verbosely isVerbose
     nixBuild args = run nixBuildPath ("--no-out-link" : args)
