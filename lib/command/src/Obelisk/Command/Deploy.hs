@@ -78,7 +78,7 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
 
   let srcDir = deployDir </> "src"
   withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ do
-    createThunk srcDir thunkPtr
+    createThunk True srcDir thunkPtr
     setupObeliskImpl deployDir
 
   withSpinner "Writing deployment configuration" $ do
@@ -109,8 +109,8 @@ deployPush deployPath getNixBuilders = do
   routeHost <- getHostFromRoute enableHttps route
   let srcPath = deployPath </> "src"
   thunkPtr <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed (_, ptr)) -> return ptr
-    Right (ThunkData_Checkout _) -> do
+    Right (ThunkData_Packed _ ptr) -> return ptr
+    Right ThunkData_Checkout -> do
       checkGitCleanStatus srcPath True >>= \case
         True -> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
