@@ -4,7 +4,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE QuasiQuotes #-}
 module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
