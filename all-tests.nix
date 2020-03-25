@@ -63,15 +63,18 @@ in
         '';
       in ''
       start_all()
+
+      with subtest("obelisk is installed and git is configured"):
+          client.succeed("ob --help")
+          client.succeed('git config --global user.email "you@example.com"')
+          client.succeed('git config --global user.name "Your Name"')
+
       githost.wait_for_open_port("22")
 
-      with subtest("test obelisk is installed"):
-          client.succeed("ob --help")
-
-      with subtest("test the client can access the server via ssh"):
+      with subtest("the client can access the server via ssh"):
           client.succeed("mkdir -p ~/.ssh/")
           client.succeed(
-              "cp ${privateKeyFile}  ~/.ssh/id_rsa"
+              "cp ${privateKeyFile} ~/.ssh/id_rsa"
           )
           client.succeed("chmod 600 ~/.ssh/id_rsa")
           client.wait_until_succeeds(
@@ -82,35 +85,35 @@ in
           )
           client.wait_until_succeeds("ssh githost true")
 
-      with subtest("test a remote bare repo can be started"):
+      with subtest("a remote bare repo can be started"):
           githost.succeed("mkdir -p ~/myorg/myapp.git")
           githost.succeed("cd ~/myorg/myapp.git && git init --bare")
 
-      with subtest("test a git project can be configured with a remote using ssh"):
+      with subtest("a git project can be configured with a remote using ssh"):
           client.succeed("mkdir -p ~/code/myapp")
           client.succeed("cd ~/code/myapp && git init")
           client.succeed(
               "cp ${thunkableSample} ~/code/myapp/default.nix"
           )
           client.succeed("cd ~/code/myapp && git add .")
-          client.succeed('git config --global user.email "you@example.com"')
-          client.succeed('git config --global user.name "Your Name"')
+
           client.succeed('cd ~/code/myapp && git commit -m "Initial"')
           client.succeed(
               "cd ~/code/myapp && git remote add origin root@githost:/root/myorg/myapp.git"
           )
 
-      with subtest("test pushing code to the remote"):
+
+      with subtest("pushing code to the remote"):
           client.succeed("cd ~/code/myapp && git push -u origin master")
           client.succeed("cd ~/code/myapp && git status")
 
-      with subtest("test obelisk can pack"):
+      with subtest("obelisk can pack"):
           client.succeed("ob -v thunk pack ~/code/myapp")
           client.succeed("grep -qF 'git.json' ~/code/myapp/src.nix")
           client.succeed("grep -qF 'myorg' ~/code/myapp/git.json")
           client.succeed("ob -v thunk unpack ~/code/myapp")
 
-      with subtest("test obelisk can set the public / private flag"):
+      with subtest("obelisk can set the public / private flag"):
           client.succeed("ob -v thunk pack ~/code/myapp --private")
           client.fail("""grep -qF '"private": practice' ~/code/myapp/git.json""")
           client.succeed("""grep -qF '"private": true' ~/code/myapp/git.json""")
@@ -121,22 +124,20 @@ in
           client.succeed("nix-build ~/code/myapp")
           client.succeed("ob -v thunk unpack ~/code/myapp")
 
-      with subtest("test building an invalid thunk fails"):
+      with subtest("building an invalid thunk fails"):
           client.succeed("cd ~/code/myapp/unpacked && git checkout -b bad")
           client.succeed(
               "cp ${invalidThunkableSample} ~/code/myapp/unpacked/default.nix"
           )
           client.succeed("cd ~/code/myapp/unpacked && git add .")
-          client.succeed('git config --global user.email "you@example.com"')
-          client.succeed('git config --global user.name "Your Name"')
           client.succeed('cd ~/code/myapp/unpacked && git commit -m "Bad commit"')
           client.succeed("cd ~/code/myapp/unpacked && git push -u origin bad")
           client.succeed("ob -v thunk pack ~/code/myapp --public")
-          client.fail("nix-build  ~/code/myapp")
+          client.fail("nix-build ~/code/myapp")
           client.succeed("ob -v thunk unpack ~/code/myapp")
           client.succeed("cd ~/code/myapp/unpacked && git checkout master")
 
-      with subtest("test obelisk can detect private repos"):
+      with subtest("obelisk can detect private repos"):
           client.succeed("ob -v thunk pack ~/code/myapp")
           client.succeed("""grep -qF '"private": true' ~/code/myapp/git.json""")
           client.succeed("ob -v thunk unpack ~/code/myapp")
