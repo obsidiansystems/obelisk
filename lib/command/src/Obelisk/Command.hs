@@ -9,7 +9,9 @@ import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Data.Bool (bool)
 import Data.Foldable (for_)
-import Data.List
+import Data.List (isInfixOf, isPrefixOf)
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as T
 import Options.Applicative
 import Options.Applicative.Help.Pretty (text, (<$$>))
@@ -82,7 +84,7 @@ data ObCommand
    | ObCommand_Deploy DeployCommand
    | ObCommand_Run
    | ObCommand_Profile String [String]
-   | ObCommand_Thunk ThunkCommand
+   | ObCommand_Thunk ThunkOption
    | ObCommand_Repl
    | ObCommand_Watch
    | ObCommand_Shell ShellOpts
@@ -104,7 +106,7 @@ obCommand cfg = hsubparser
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
     , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
-    , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
+    , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
     , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
     , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
@@ -224,20 +226,27 @@ thunkPackConfig = ThunkPackConfig
   <$> switch (long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care.")
   <*> thunkConfig
 
+data ThunkOption = ThunkOption
+  { _thunkOption_thunks :: NonEmpty FilePath
+  , _thunkOption_command :: ThunkCommand
+  } deriving Show
+
 data ThunkCommand
-  = ThunkCommand_Update [FilePath] ThunkUpdateConfig
-  | ThunkCommand_Unpack [FilePath]
-  | ThunkCommand_Pack   [FilePath] ThunkPackConfig
-  | ThunkCommand_Init   [FilePath]
+  = ThunkCommand_Update ThunkUpdateConfig
+  | ThunkCommand_Unpack
+  | ThunkCommand_Pack ThunkPackConfig
+  | ThunkCommand_Init
   deriving Show
 
-thunkCommand :: Parser ThunkCommand
-thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> thunkUpdateConfig) $ progDesc "Update thunk to latest revision available"
-  , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> thunkPackConfig) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
-  , command "init" $ info (ThunkCommand_Init <$> some thunkDirectoryParser) $ progDesc "Initialize a git checkout by converting it to an unpacked thunk"
+thunkOption :: Parser ThunkOption
+thunkOption = hsubparser $ mconcat
+  [ command "update" $ info (thunkOptionWith $ ThunkCommand_Update <$> thunkUpdateConfig) $ progDesc "Update thunk to latest revision available"
+  , command "unpack" $ info (thunkOptionWith $ pure ThunkCommand_Unpack) $ progDesc "Unpack thunk into git checkout of revision it points to"
+  , command "pack" $ info (thunkOptionWith $ ThunkCommand_Pack <$> thunkPackConfig) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+  , command "init" $ info (thunkOptionWith $ pure ThunkCommand_Init) $ progDesc "Initialize a git checkout by converting it to an unpacked thunk"
   ]
+  where
+    thunkOptionWith f = ThunkOption <$> NonEmpty.some1 thunkDirectoryParser <*> f
 
 data ShellOpts
   = ShellOpts
@@ -374,11 +383,13 @@ ob = \case
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run -> run
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
-  ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
-    ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
-    ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
-    ThunkCommand_Init thunks -> for_ thunks initThunk
+  ObCommand_Thunk to -> case _thunkOption_command to of
+    ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
+    ThunkCommand_Unpack -> for_ thunks unpackThunk
+    ThunkCommand_Pack config -> for_ thunks (packThunk config)
+    ThunkCommand_Init -> for_ thunks initThunk
+    where
+      thunks = _thunkOption_thunks to
   ObCommand_Repl -> runRepl
   ObCommand_Watch -> runWatch
   ObCommand_Shell so -> withProjectRoot "." $ \root ->
