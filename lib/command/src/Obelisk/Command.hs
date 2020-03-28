@@ -199,15 +199,6 @@ profileCommand = (,)
     <> showDefault
     ))
 
-
---TODO: Result should provide normalised path and also original user input for error reporting.
-thunkDirectoryParser :: Parser FilePath
-thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
-  [ action "directory"
-  , metavar "THUNKDIR"
-  , help "Path to directory containing thunk data"
-  ]
-
 thunkConfig :: Parser ThunkConfig
 thunkConfig = ThunkConfig
   <$>
@@ -240,13 +231,19 @@ data ThunkCommand
 
 thunkOption :: Parser ThunkOption
 thunkOption = hsubparser $ mconcat
-  [ command "update" $ info (thunkOptionWith $ ThunkCommand_Update <$> thunkUpdateConfig) $ progDesc "Update thunk to latest revision available"
+  [ command "update" $ info (thunkOptionWith $ ThunkCommand_Update <$> thunkUpdateConfig) $ progDesc "Update packed thunk to latest revision available on the tracked branch"
   , command "unpack" $ info (thunkOptionWith $ pure ThunkCommand_Unpack) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (thunkOptionWith $ ThunkCommand_Pack <$> thunkPackConfig) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
-  , command "init" $ info (thunkOptionWith $ pure ThunkCommand_Init) $ progDesc "Initialize a git checkout by converting it to an unpacked thunk"
+  , command "pack" $ info (thunkOptionWith $ ThunkCommand_Pack <$> thunkPackConfig) $ progDesc "Pack git checkout or unpacked thunk into thunk that points at the current branch's upstream"
+  , command "init" $ info (thunkOptionWith $ pure ThunkCommand_Init) $ progDesc "Initialize git checkout by converting it to an unpacked thunk"
   ]
   where
-    thunkOptionWith f = ThunkOption <$> NonEmpty.some1 thunkDirectoryParser <*> f
+    thunkOptionWith f = ThunkOption
+      <$> ((NonEmpty.:|)
+            <$> thunkDirArg (metavar "THUNKDIRS..." <> help "Paths to directories containing thunk data")
+            <*> many (thunkDirArg mempty)
+          )
+      <*> f
+    thunkDirArg opts = fmap (dropTrailingPathSeparator . normalise) $ strArgument $ action "directory" <> opts
 
 data ShellOpts
   = ShellOpts
