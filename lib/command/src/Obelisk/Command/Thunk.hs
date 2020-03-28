@@ -25,7 +25,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Containers.ListUtils (nubOrd)
 import Data.Default
 import Data.Either.Combinators (fromRight', rightToMaybe)
-import Data.Foldable (for_, toList)
+import Data.Foldable (toList)
 import Data.Function ((&))
 import Data.Functor ((<&>))
 import Data.Git.Ref (Ref)
@@ -352,7 +352,7 @@ overwriteThunk target thunk = do
 
   --TODO: Is there a safer way to do this overwriting?
   callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-r", target] -- target may be a symlink
-  createThunk True target thunk
+  createThunk target $ Right thunk
 
 thunkPtrToSpec :: ThunkPtr -> ThunkSpec
 thunkPtrToSpec thunk = case _thunkPtr_source thunk of
@@ -413,20 +413,22 @@ initThunk target = withSpinner [i|Initializing thunk at ${target}|] $ do
   let tempThunkDir = target <.> "thunk-init"
   whenM (liftIO $ doesPathExist tempThunkDir) $
     failWith [i|A previous 'thunk init' left unfinished state at ${tempThunkDir}. You will need to rename or remove that path before trying again.|]
-  createThunk False tempThunkDir ptr
+  createThunk tempThunkDir $ Left (thunkPtrToSpec ptr) -- Only write the skeleton, but skip the ptr itself since it's unpacked
   liftIO $ do
     renameDirectory target (tempThunkDir </> unpackedDirName)
     removePathForcibly target
     renameDirectory tempThunkDir target
 
-createThunk :: MonadObelisk m => Bool -> FilePath -> ThunkPtr -> m ()
-createThunk writePtr target ptr =
-  ifor_ (_thunkSpec_files $ thunkPtrToSpec ptr) $ \path -> \case
+createThunk :: MonadObelisk m => FilePath -> Either ThunkSpec ThunkPtr -> m ()
+createThunk target ptrInfo =
+  ifor_ (_thunkSpec_files spec) $ \path -> \case
     ThunkFileSpec_FileMatches content -> withReadyPath path $ \p -> liftIO $ T.writeFile p content
-    ThunkFileSpec_Ptr _ -> when writePtr $
-      withReadyPath path $ \p -> liftIO $ LBS.writeFile p (encodeThunkPtrData ptr)
+    ThunkFileSpec_Ptr _ -> case ptrInfo of
+      Left _ -> pure () -- We can't write the ptr without it
+      Right ptr -> withReadyPath path $ \p -> liftIO $ LBS.writeFile p (encodeThunkPtrData ptr)
     _ -> pure ()
   where
+    spec = either id thunkPtrToSpec ptrInfo
     withReadyPath path f = do
       let fullPath = target </> path
       putLog Debug $ "Writing thunk file " <> T.pack fullPath
@@ -436,7 +438,7 @@ createThunk writePtr target ptr =
 createThunkWithLatest :: MonadObelisk m => FilePath -> ThunkSource -> m ()
 createThunkWithLatest target s = do
   rev <- getLatestRev s
-  createThunk True target $ ThunkPtr
+  createThunk target $ Right $ ThunkPtr
     { _thunkPtr_source = s
     , _thunkPtr_rev = rev
     }
@@ -792,34 +794,31 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkD
   Left err -> failWith [i|Invalid thunk at ${thunkDir}: ${err}|]
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
-  Right (ThunkData_Packed thunkSpec tptr) -> do
+  Right (ThunkData_Packed _ tptr) -> do
     let (thunkParent, thunkName) = splitFileName thunkDir
-    withTempDirectory thunkParent thunkName $ \tmpRepo -> do
+    withTempDirectory thunkParent thunkName $ \tmpThunk -> do
       let
-        s = case _thunkPtr_source tptr of
-          ThunkSource_GitHub s' -> forgetGithub False s'
-          ThunkSource_Git s' -> s'
+        (gitSrc, newSpec) = case _thunkPtr_source tptr of
+          ThunkSource_GitHub s' -> (forgetGithub False s', NonEmpty.head gitHubThunkSpecs)
+          ThunkSource_Git s' -> (s', NonEmpty.head gitThunkSpecs)
       withSpinner' ("Fetching thunk " <> T.pack thunkName)
                    (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
-        let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
+        let git = callProcessAndLogOutput (Notice, Notice) . gitProc (tmpThunk </> unpackedDirName)
         git $ [ "clone" ]
-          ++  ["--recursive" | _gitSource_fetchSubmodules s]
-          ++  [ T.unpack $ gitUriToText $ _gitSource_url s ]
-          ++  do branch <- maybeToList $ _gitSource_branch s
+          ++  ["--recursive" | _gitSource_fetchSubmodules gitSrc]
+          ++  [ T.unpack $ gitUriToText $ _gitSource_url gitSrc ]
+          ++  do branch <- maybeToList $ _gitSource_branch gitSrc
                  [ "--branch", T.unpack $ untagName branch ]
         git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
-        when (_gitSource_fetchSubmodules s) $
+        when (_gitSource_fetchSubmodules gitSrc) $
           git ["submodule", "update", "--recursive", "--init"]
 
-        let unpackedPath = thunkDir </> unpackedDirName
-        liftIO $ createDirectoryIfMissing True (takeDirectory unpackedPath)
-        callProcessAndLogOutput (Notice, Error) $ proc mvPath [tmpRepo, unpackedPath]
+        createThunk tmpThunk $ Left newSpec
 
-        -- Remove thunk ptrs
-        let ptrFiles = Map.filter (\case ThunkFileSpec_Ptr _ -> True; _ -> False) $ _thunkSpec_files thunkSpec
-        liftIO $ for_ (Map.keys ptrFiles) $ \f -> do
-          let p = thunkDir </> f
-          whenM (doesFileExist p) $ removeFile p
+        liftIO $ do
+          removePathForcibly thunkDir
+          renameDirectory tmpThunk thunkDir
+
 
 --TODO: add a rollback mode to pack to the original thunk
 packThunk :: MonadObelisk m => ThunkPackConfig -> FilePath -> m ThunkPtr
@@ -834,7 +833,7 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
     do
       thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir (_thunkConfig_private thunkConfig)
       callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-rf", thunkDir] -- thunkDir may be a symlink
-      createThunk True thunkDir thunkPtr
+      createThunk thunkDir $ Right thunkPtr
       pure thunkPtr
 
 modifyThunkPtrByConfig :: ThunkConfig -> ThunkPtr -> ThunkPtr

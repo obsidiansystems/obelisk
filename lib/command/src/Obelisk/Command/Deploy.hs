@@ -78,7 +78,7 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
 
   let srcDir = deployDir </> "src"
   withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ do
-    createThunk True srcDir thunkPtr
+    createThunk srcDir $ Right thunkPtr
     setupObeliskImpl deployDir
 
   withSpinner "Writing deployment configuration" $ do
