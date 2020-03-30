@@ -9,7 +9,6 @@ library
                , obelisk-route
                , mtl
                , text
-
   exposed-modules:
     Common.Api
     Common.Route

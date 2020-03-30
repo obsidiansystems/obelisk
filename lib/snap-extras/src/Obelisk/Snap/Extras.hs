@@ -2,13 +2,13 @@
 module Obelisk.Snap.Extras
   ( cachePermanently
   , doNotCache
+  , ensureSecure
   , serveFileIfExists
   , serveFileIfExistsAs
   ) where
 
 import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
-import Data.Monoid
 import Data.String
 import Snap.Core
 import Snap.Util.FileServe

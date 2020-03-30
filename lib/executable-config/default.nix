@@ -4,7 +4,7 @@
 # platform.
 { lib
 , runCommand
-, cleanHaskellSource
+, obeliskCleanSource
 }:
 
 let
@@ -23,7 +23,10 @@ let
 in
 
 {
-  haskellPackage = self: self.callPackage (cleanHaskellSource ./lookup) {};
+  haskellOverlay = self: super: {
+    obelisk-executable-config-lookup = self.callCabal2nix "obelisk-executable-config-lookup" (obeliskCleanSource ./lookup) {};
+  };
+
   platforms = {
     android = {
       # Inject the given config directory into an android assets folder
@@ -34,7 +37,7 @@ in
       inject = injectConfig;
     };
     web = {
-      inject = self: self.callCabal2nix "obelisk-executable-config-inject" (cleanHaskellSource ./inject) {};
+      inject = self: self.callCabal2nix "obelisk-executable-config-inject" (obeliskCleanSource ./inject) {};
     };
   };
 }

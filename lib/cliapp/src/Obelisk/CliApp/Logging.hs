@@ -43,13 +43,15 @@ import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import GHC.IO.Encoding.Types
 import System.Console.ANSI (Color (Red, Yellow), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (SetColor, SetConsoleIntensity), clearLine)
 import System.Exit (ExitCode (..))
-import System.IO (BufferMode (NoBuffering), hFlush, hReady, hSetBuffering, stderr, stdin, stdout)
+import System.IO
 
 import qualified Obelisk.CliApp.TerminalString as TS
+import Obelisk.CliApp.Theme
 import Obelisk.CliApp.Types
 
 newCliConfig
@@ -63,7 +65,11 @@ newCliConfig sev noColor noSpinner errorLogExitCode = do
   lock <- newMVar False
   tipDisplayed <- newIORef False
   stack <- newIORef ([], [])
-  return $ CliConfig level noColor noSpinner lock tipDisplayed stack errorLogExitCode
+  textEncoding <- hGetEncoding stdout
+  let theme = if maybe False supportsUnicode textEncoding
+        then unicodeTheme
+        else noUnicodeTheme
+  return $ CliConfig level noColor noSpinner lock tipDisplayed stack errorLogExitCode theme
 
 runCli :: MonadIO m => CliConfig e -> CliT e m a -> m a
 runCli c =
@@ -126,7 +132,7 @@ handleLog' noColor output = do
       hFlush stdout
     Output_Overwrite ts -> liftIO $ do
       width <- TS.getTerminalWidth
-      T.putStr $ "\r" <> (TS.render (not noColor) width ts)
+      T.putStr $ "\r" <> TS.render (not noColor) width ts
       hFlush stdout
     Output_ClearLine -> liftIO $ do
       -- Go to the first column and clear the whole line
@@ -172,14 +178,16 @@ withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
 
 -- | Write log to stdout, with colors (unless `noColor`)
 writeLog :: (MonadIO m, MonadMask m) => Bool -> Bool -> WithSeverity Text -> m ()
-writeLog withNewLine noColor (WithSeverity severity s)
-  | noColor && severity <= Warning = liftIO $ putFn $ T.pack (show severity) <> ": " <> s
-  | not noColor && severity <= Error = TS.putStrWithSGR errorColors h withNewLine s
-  | not noColor && severity <= Warning = TS.putStrWithSGR warningColors h withNewLine s
-  | not noColor && severity >= Debug = TS.putStrWithSGR debugColors h withNewLine s
-  | otherwise = liftIO $ putFn s
+writeLog withNewLine noColor (WithSeverity severity s) = if T.null s then pure () else write
   where
-    putFn = if withNewLine then (T.hPutStrLn h) else (T.hPutStr h)
+    write
+      | noColor && severity <= Warning = liftIO $ putFn $ T.pack (show severity) <> ": " <> s
+      | not noColor && severity <= Error = TS.putStrWithSGR errorColors h withNewLine s
+      | not noColor && severity <= Warning = TS.putStrWithSGR warningColors h withNewLine s
+      | not noColor && severity >= Debug = TS.putStrWithSGR debugColors h withNewLine s
+      | otherwise = liftIO $ putFn s
+
+    putFn = if withNewLine then T.hPutStrLn h else T.hPutStr h
     h = if severity <= Error then stderr else stdout
     errorColors = [SetColor Foreground Vivid Red]
     warningColors = [SetColor Foreground Vivid Yellow]
@@ -226,3 +234,20 @@ fork :: (HasCliConfig e m, MonadIO m) => CliT e IO () -> m ThreadId
 fork f = do
   c <- getCliConfig
   liftIO $ forkIO $ runCli c f
+
+-- | Conservatively determines whether the encoding supports Unicode.
+--
+-- Currently this uses a whitelist of known-to-work encodings. In principle it
+-- could test dynamically by opening a file with this encoding, but it doesn't
+-- look like base exposes any way to determine this in a pure fashion.
+supportsUnicode :: TextEncoding -> Bool
+supportsUnicode enc = any ((textEncodingName enc ==) . textEncodingName)
+  [ utf8
+  , utf8_bom
+  , utf16
+  , utf16be
+  , utf16le
+  , utf32
+  , utf32be
+  , utf32le
+  ]

@@ -9,7 +9,9 @@ library
                , common
                , obelisk-frontend
                , obelisk-route
+               , jsaddle
                , reflex-dom
+               , obelisk-executable-config-lookup
                , obelisk-generated-static
                , text
   exposed-modules:

@@ -7,9 +7,11 @@ cabal-version: >=1.2
 library
   hs-source-dirs: src
   build-depends:
-      ansi-terminal
+      aeson
+    , ansi-terminal
     , base
     , bytestring
+    , containers
     , exceptions
     , io-streams
     , lens
@@ -23,11 +25,11 @@ library
     , transformers
   exposed-modules:
     Obelisk.CliApp
-    Obelisk.CliApp.Demo
   other-modules:
     Obelisk.CliApp.Logging
     Obelisk.CliApp.Process
     Obelisk.CliApp.Spinner
     Obelisk.CliApp.TerminalString
+    Obelisk.CliApp.Theme
     Obelisk.CliApp.Types
   ghc-options: -Wall -fobject-code
