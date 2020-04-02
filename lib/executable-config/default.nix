@@ -2,26 +2,31 @@
 # configuration information into a canonical location. It also provides a haskell
 # package that can be used to retrieve the injected configuration on each supported
 # platform.
-{ nixpkgs
-, filterGitSource # TODO define this in obelisk
+{ lib
+, runCommand
+, obeliskCleanSource
 }:
-let injectConfig = config: assets: nixpkgs.runCommand "inject-config" {} (''
-      set -x
-      mkdir -p $out
-      cp --no-preserve=mode -Lr "${assets}" $out/static
-      chmod +w "$out"
-    '' + nixpkgs.lib.optionalString (!(builtins.isNull config)) ''
-      if ! mkdir $out/config; then
-        2>&1 echo config directory already exists or could not be created
-        exit 1
-      fi
-      cp -a "${config}"/* "$out/config"
-      find "$out/config" -type f -printf '%P\0' >"$out/config.files"
-    '');
-in with nixpkgs.haskell.lib; {
+
+let
+  injectConfig = config: assets: runCommand "inject-config" {} (''
+    set -x
+    mkdir -p $out
+    cp --no-preserve=mode -Lr "${assets}" $out/static
+    chmod +w "$out"
+  '' + lib.optionalString (!(builtins.isNull config)) ''
+    if ! mkdir $out/config; then
+      2>&1 echo config directory already exists or could not be created
+      exit 1
+    fi
+    cp -a "${config}"/* "$out/config"
+  '');
+in
+
+{
   haskellOverlay = self: super: {
-    obelisk-executable-config-lookup = self.callCabal2nix "obelisk-executable-config-lookup" (filterGitSource ./lookup) {};
+    obelisk-executable-config-lookup = self.callCabal2nix "obelisk-executable-config-lookup" (obeliskCleanSource ./lookup) {};
   };
+
   platforms = {
     android = {
       # Inject the given config directory into an android assets folder
@@ -32,7 +37,7 @@ in with nixpkgs.haskell.lib; {
       inject = injectConfig;
     };
     web = {
-      inject = self: self.callCabal2nix "obelisk-executable-config-inject" (filterGitSource ./inject) {};
+      inject = self: self.callCabal2nix "obelisk-executable-config-inject" (obeliskCleanSource ./inject) {};
     };
   };
 }

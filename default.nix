@@ -5,103 +5,24 @@
 , reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
-  reflex-platform = getReflexPlatform system;
+  reflex-platform = getReflexPlatform { inherit system; };
   inherit (reflex-platform) hackGet nixpkgs;
   pkgs = nixpkgs;
 
   inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
 
-  cleanSource = src: gitignoreSource (pkgs.lib.cleanSource src);
-
-  commandRuntimeDeps = pkgs: with pkgs; [
-    coreutils
-    git
-    nix-prefetch-git
-    openssh
-  ];
-
-  getReflexPlatform = sys: reflex-platform-func {
-    inherit iosSdkVersion config;
-    system = sys;
-    enableLibraryProfiling = profiling;
+  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: reflex-platform-func {
+    inherit iosSdkVersion config system enableLibraryProfiling;
 
     nixpkgsOverlays = [
-      (self: super: {
-        obeliskExecutableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
-      })
+      (import ./nixpkgs-overlays)
     ];
 
     haskellOverlays = [
-
-      # Fix misc upstream packages
-      (self: super: let
-        pkgs = self.callPackage ({ pkgs }: pkgs) {};
-        haskellLib = pkgs.haskell.lib;
-      in {
-        hnix = haskellLib.dontCheck (haskellLib.doJailbreak (self.callCabal2nix "hnix" (hackGet dep/hnix) {}));
-        hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
-
-        ghcid = self.callCabal2nix "ghcid" (hackGet ./dep/ghcid) {};
-      })
-
+      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; })
       pkgs.obeliskExecutableConfig.haskellOverlay
-
-      # Add obelisk packages
-      (self: super: let
-        pkgs = self.callPackage ({ pkgs }: pkgs) {};
-        onLinux = pkg: f: if pkgs.stdenv.isLinux then f pkg else pkg;
-      in {
-        shelly = self.callHackage "shelly" "1.9.0" {};
-
-        obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
-
-        obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (cleanSource ./lib/asset/manifest) {};
-        obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (cleanSource ./lib/asset/serve-snap) {};
-        obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
-        obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-        obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) {
-          librarySystemDepends = [
-            pkgs.nix
-            (haskellLib.justStaticExecutables self.ghcid)
-          ];
-        };
-        obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
-        obelisk-run = onLinux (self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {}) (pkg:
-          haskellLib.overrideCabal pkg (drv: { librarySystemDepends = [ pkgs.iproute ]; })
-        );
-        obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
-        obelisk-selftest = haskellLib.overrideCabal (self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {}) {
-          librarySystemDepends = [
-            pkgs.cabal-install
-            pkgs.coreutils
-            pkgs.git
-            pkgs.nix
-          ];
-        };
-        obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
-        tabulation = self.callCabal2nix "tabulation" (cleanSource ./lib/tabulation) {};
-      })
-
-      (self: super: let
-        pkgs = self.callPackage ({ pkgs }: pkgs) {};
-        haskellLib = pkgs.haskell.lib;
-      in {
-        # Dynamic linking with split objects dramatically increases startup time (about
-        # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.
-        obelisk-command = haskellLib.overrideCabal
-          (haskellLib.generateOptparseApplicativeCompletion "ob"
-            (haskellLib.justStaticExecutables super.obelisk-command))
-          (drv: {
-            buildTools = (drv.buildTools or []) ++ [ pkgs.buildPackages.makeWrapper ];
-            postFixup = ''
-              ${drv.postFixup or ""}
-              # Make `ob` reference its runtime dependencies.
-              wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
-            '';
-          });
-        obelisk-selftest = haskellLib.justStaticExecutables super.obelisk-selftest;
-      })
-
+      (import ./haskell-overlays/obelisk.nix)
+      (import ./haskell-overlays/tighten-ob-exes.nix)
     ];
   };
 
@@ -124,7 +45,7 @@ in rec {
   obelisk = ghcObelisk;
   obeliskEnvs = pkgs.lib.filterAttrs (k: _: pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
-  shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs);
+  shell = pinBuildInputs "obelisk-shell" ([command] ++ command.commandRuntimeDeps);
 
   selftest = pkgs.writeScript "selftest" ''
     #!${pkgs.runtimeShell}
@@ -166,18 +87,28 @@ in rec {
   '';
 
   serverModules = {
-    mkBaseEc2 = { hostName, routeHost, enableHttps, adminEmail, ... }: {...}: {
+    mkBaseEc2 = { nixosPkgs, ... }: {...}: {
       imports = [
-        (pkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
+        (nixosPkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
       ];
+      ec2.hvm = true;
+    };
+
+    mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, ... }: {...}: {
       networking = {
         inherit hostName;
         firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
       };
+
+      # `amazon-image.nix` already sets these but if the user provides their own module then
+      # forgetting these can cause them to lose access to the server!
+      # https://github.com/NixOS/nixpkgs/blob/fab05f17d15e4e125def4fd4e708d205b41d8d74/nixos/modules/virtualisation/amazon-image.nix#L133-L136
+      services.openssh.enable = true;
+      services.openssh.permitRootLogin = "prohibit-password";
+
       security.acme.certs = if enableHttps then {
         "${routeHost}".email = adminEmail;
       } else {};
-      ec2.hvm = true;
     };
 
     mkObeliskApp =
@@ -234,6 +165,8 @@ in rec {
     };
   };
 
+  inherit mkAssets;
+
   serverExe = backend: frontend: assets: optimizationLevel: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
@@ -244,14 +177,15 @@ in rec {
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
       system = "x86_64-linux";
       configuration = {
         imports = [
-          (serverModules.mkBaseEc2 args)
+          (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
+          (serverModules.mkDefaultNetworking args)
           (serverModules.mkObeliskApp args)
         ];
       };
@@ -260,7 +194,7 @@ in rec {
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base': projectDefinition:
     let
-      projectOut = sys: let reflexPlatformProject = (getReflexPlatform sys).project; in reflexPlatformProject (args@{ nixpkgs, ... }:
+      projectOut = { system, enableLibraryProfiling ? profiling }: let reflexPlatformProject = (getReflexPlatform { inherit system enableLibraryProfiling; }).project; in reflexPlatformProject (args@{ nixpkgs, ... }:
         let
           inherit (lib.strings) hasPrefix;
           mkProject =
@@ -365,20 +299,48 @@ in rec {
               });
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
-      mainProjectOut = projectOut system;
+      mainProjectOut = projectOut { inherit system; };
       serverOn = projectInst: version: serverExe
         projectInst.ghc.backend
         mainProjectOut.ghcjs.frontend
         projectInst.passthru.staticFiles
         projectInst.passthru.__closureCompilerOptimizationLevel
         version;
-      linuxExe = serverOn (projectOut "x86_64-linux");
+      linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
     in mainProjectOut // {
+      __unstable__.profiledObRun = let
+        profiled = projectOut { inherit system; enableLibraryProfiling = true; };
+        exeSource = builtins.toFile "ob-run.hs" ''
+          module Main where
+
+          import Control.Exception
+          import Reflex.Profiled
+          import System.Environment
+
+          import qualified Obelisk.Run
+          import qualified Frontend
+          import qualified Backend
+
+          main :: IO ()
+          main = do
+            args <- getArgs
+            let port = read $ args !! 0
+                assets = args !! 1
+                profileFile = (args !! 2) <> ".rprof"
+            Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
+        '';
+      in nixpkgs.runCommand "ob-run" {
+        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+      } ''
+        mkdir -p $out/bin/
+        ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out/bin/ob-run
+      '';
+
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, version }:
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
     };

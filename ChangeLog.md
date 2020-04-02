@@ -2,6 +2,21 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
 
+## v0.7.0.1
+
+* Fix the version number for `ob` the command-line tool. ([#679](https://github.com/obsidiansystems/obelisk/pull/679))
+
+## v0.7.0.0
+
+* Fully support HTTP [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) requests on static assets to support Safari. ([#664](https://github.com/obsidiansystems/obelisk/pull/664))
+* Support non-EC2 deployments. ([#658](https://github.com/obsidiansystems/obelisk/pull/658))
+* Fix `ob deploy test android` to work. ([#645](https://github.com/obsidiansystems/obelisk/pull/645))
+* Fix vulnerability where Android deployments would leave signing keys in the nix store which is world readable. ([#645](https://github.com/obsidiansystems/obelisk/pull/645)) (Thanks to [kmicklas](https://github.com/kmicklas) for the report.)
+* Add `Obelisk.Backend.runBackendWith` to allow several customizations. ([#668](https://github.com/obsidiansystems/obelisk/pull/668), [#644](https://github.com/obsidiansystems/obelisk/pull/644))
+* Add `ob profile` command to run Obelisk projects with profiling. `ob profile` works like `ob run`, but instead of using `ghci`, it builds an executable that is built with profiling enabled. ([#654](https://github.com/obsidiansystems/obelisk/pull/654))
+* Obelisk's `default.nix` now exposes `mkAssets` function which is used to construct the assets served by an Obelisk application. ([#651](https://github.com/obsidiansystems/obelisk/pull/651))
+* Bump reflex-platform to v0.5.2.0. ([#671](https://github.com/obsidiansystems/obelisk/pull/671))
+
 ## v0.6.0.0 - 2020-02-21
 
 * Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave exactly like `<a href="...">` when run by JavaScript. These functions now scroll to the top of the page when the link is clicked. ([#540](https://github.com/obsidiansystems/obelisk/pull/540))
