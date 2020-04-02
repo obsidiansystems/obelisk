@@ -223,6 +223,7 @@ type (:.) = (,)
 pattern (:.) :: a -> b -> a :. b
 pattern a :. b = (a, b)
 
+-- TODO: Deprecate? Same as pathSegmentEncoder?
 addPathSegmentEncoder
   :: ( Applicative check
      , MonadError Text parse
@@ -236,23 +237,17 @@ addPathSegmentEncoder = unsafeMkEncoder $ EncoderImpl
   }
 
 pathParamEncoder
-  :: forall check parse item rest.
-     ( Applicative check
-     , MonadError Text parse
-     )
-  => Encoder check parse item Text
+  :: (Applicative check, MonadError Text parse)
+  => Encoder check parse first Text
   -> Encoder check parse rest PageName
-  -> Encoder check parse (item :. rest) PageName
-pathParamEncoder itemUnchecked restUnchecked = addPathSegmentEncoder . bimap itemUnchecked restUnchecked
+  -> Encoder check parse (first, rest) PageName
+pathParamEncoder firstE restE = pathSegmentEncoder . bimap firstE restE
 
 pathLiteralEncoder
-  :: ( Applicative check
-     , MonadError Text parse
-     )
-  => Text
-  -> Encoder check parse a PageName
-  -> Encoder check parse a PageName
-pathLiteralEncoder t e = addPathSegmentEncoder . bimap (unitEncoder t) e . coidl
+  :: (Applicative check, MonadError Text parse)
+  => Text -> Encoder check parse rest PageName
+  -> Encoder check parse rest PageName
+pathLiteralEncoder segment restE = pathParamEncoder (unitEncoder segment) restE . coidl
 
 --------------------------------------------------------------------------------
 -- Encoder fundamentals
