@@ -2,11 +2,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Lookup where
 
+import Control.Monad.IO.Class
+import Control.Monad.Fail (MonadFail)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base64 as B64
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, isJust)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import Data.Traversable (for)
@@ -19,7 +21,7 @@ import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
 import GHCJS.DOM.ParentNode (querySelectorAll)
 import GHCJS.DOM.Types (MonadJSM, Node(Node), castTo)
 
-getConfigs :: IO (Map Text ByteString)
+getConfigs :: (MonadJSM m, MonadFail m) => m (Map Text ByteString)
 getConfigs = do
   Just doc <- currentDocument
   Just hd <- getHead doc
