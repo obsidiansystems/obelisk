@@ -32,7 +32,7 @@ let
   # Development environments for obelisk packages.
   ghcObeliskEnvs = pkgs.lib.mapAttrs (n: v: reflex-platform.workOn ghcObelisk v) ghcObelisk;
 
-  inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
+  inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets mkAssetsWith gzipEncodings;
 
   haskellLib = pkgs.haskell.lib;
 
@@ -84,6 +84,25 @@ in rec {
       ${pkgs.closurecompiler}/bin/closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
       echo "//# sourceMappingURL=all.js.map" >> all.js
     ''}
+  '';
+  webabi = pkgs.callPackage ./dep/webabi {};
+  # wasm-opt seems to have no effect
+  stripWasm = frontend: pkgs.runCommand "stripWasm" {} ''
+    mkdir $out
+    cd $out
+    ln -s "${frontend}/bin/frontend" frontend.original.wasm
+    cp "${frontend}/bin/frontend" frontend.wasm
+    chmod u+rw frontend.wasm
+    chmod a-x frontend.wasm
+    ${pkgs.wabt}/bin/wasm-strip frontend.wasm
+    chmod u-r frontend.wasm
+  '';
+  wasm-assets = frontend : pkgs.runCommand "wasm-assets" {} ''
+    mkdir $out
+    cd $out
+    cp ${stripWasm frontend}/frontend.wasm $out/frontend.wasm
+    cp ${webabi}/lib/node_modules/webabi/jsaddleJS/* $out/
+    cp ${webabi}/lib/node_modules/webabi/build/worker_runner.js $out/worker_runner.js
   '';
 
   serverModules = {
@@ -165,15 +184,17 @@ in rec {
     };
   };
 
-  inherit mkAssets;
+  inherit mkAssets mkAssetsWith gzipEncodings;
 
-  serverExe = backend: frontend: assets: optimizationLevel: version:
+  # TODO add ghcjs back
+  # XXX the gzipEncodings helps faster debug cycles, use zopfliEncodings for best size
+  serverExe = backend: frontend: assets: optimizationLevel: wasm-frontend: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
-      ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      ln -s ${mkAssetsWith gzipEncodings (wasm-assets wasm-frontend)} $out/frontend.wasm.assets
       echo ${version} > $out/version
     '';
 
@@ -280,6 +301,7 @@ in rec {
                       lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
                     ghc = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghc;
                     ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
+                    wasm = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
                   };
                   android = self.__androidWithConfig (self.base + "/config");
                   ios = self.__iosWithConfig (self.base + "/config");
@@ -305,6 +327,7 @@ in rec {
         mainProjectOut.ghcjs.frontend
         projectInst.passthru.staticFiles
         projectInst.passthru.__closureCompilerOptimizationLevel
+        mainProjectOut.wasm.frontend
         version;
       linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";

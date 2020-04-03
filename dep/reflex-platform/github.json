@@ -1,8 +1,8 @@
 {
-  "owner": "reflex-frp",
+  "owner": "dfordivam",
   "repo": "reflex-platform",
-  "branch": "master",
+  "branch": "ob-1",
   "private": false,
-  "rev": "41be4d952b75515a037318aa344dd6b13ad29cfe",
-  "sha256": "132yqzyzd3c5fjy7wwnwa5d6pjxv5ap2xz0swwbv3h5pwi8jwv0a"
+  "rev": "58251d36cf10f200ac3b379b29a7edbd5d3fa53c",
+  "sha256": "1nikqdnx0npgbyw05490w7s0w32m8n2n4cvyhrf27xwf1zjwqlpd"
 }
