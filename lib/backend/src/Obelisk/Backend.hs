@@ -226,6 +226,8 @@ serveGhcjsApp urlEnc ghcjsWidgets app config = \case
   GhcjsAppRoute_App appRouteComponent :=> Identity appRouteRest -> do
     modifyResponse $ setContentType staticRenderContentType
     modifyResponse $ setHeader "Cache-Control" "no-store private"
+    modifyResponse $ setHeader "Cross-Origin-Opener-Policy" "same-origin"
+    modifyResponse $ setHeader "Cross-Origin-Embedder-Policy" "require-corp"
     writeBS <=< renderGhcjsFrontend urlEnc ghcjsWidgets (appRouteComponent :/ appRouteRest) config $ _ghcjsApp_value app
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
