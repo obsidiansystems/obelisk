@@ -279,7 +279,31 @@ renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
 preloadGhcjs :: GhcjsWasmAssets -> FrontendWidgetT r ()
 preloadGhcjs (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
   Nothing -> elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
-  Just _ -> pure ()
+  Just wasmAssets -> wasmScriptPreload allJsUrl wasmAssets
+
+wasmScriptPreload :: Text -> (Text, Text) -> FrontendWidgetT r ()
+wasmScriptPreload allJsUrl (jsaddleAssets, wasmUrl) = do
+  let sendMsgWorkerJs = jsaddleAssets <> "/jsaddle_sendMsgWorker.js"
+      jsaddleJs = jsaddleAssets <> "/jsaddle.js"
+      workerRunnerJs = jsaddleAssets <> "/worker_runner.js"
+
+  elAttr "script" ("type" =: "text/javascript") $ text $ mconcat $
+    [ "add_preload_tag = function (docSrc, docType) {       "
+    , "  var link_tag = document.createElement('link');     "
+    , "  link_tag.rel = 'preload';                          "
+    , "  link_tag.as = docType;                             "
+    , "  link_tag.href = docSrc;                            "
+    , "  document.head.appendChild(link_tag);               "
+    , "};                                                   "
+    , "if (typeof(SharedArrayBuffer) === 'undefined') {     "
+    , "  add_preload_tag('", allJsUrl, "', 'script');       "
+    , "} else {                                             "
+    , "  add_preload_tag('", jsaddleJs, "', 'script');      "
+    , "  add_preload_tag('", sendMsgWorkerJs, "', 'script');"
+    , "  add_preload_tag('", workerRunnerJs, "', 'script'); "
+    , "  add_preload_tag('", wasmUrl, "', 'script');        "
+    , "}"
+    ]
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
