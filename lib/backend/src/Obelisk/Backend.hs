@@ -286,22 +286,42 @@ preloadGhcjs (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
 deferredGhcjsScript :: GhcjsWasmAssets -> FrontendWidgetT r ()
 deferredGhcjsScript (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
   Nothing -> elAttr "script" ("type" =: "text/javascript" <> "src" =: allJsUrl <> "defer" =: "defer") blank
-  Just v -> wasmScript v
+  Just wasmAssets -> wasmScript allJsUrl wasmAssets
 
-wasmScript :: (Text, Text) -> FrontendWidgetT r ()
-wasmScript (jsaddleAssets, wasmUrl) = do
+wasmScript :: Text -> (Text, Text) -> FrontendWidgetT r ()
+wasmScript allJsUrl (jsaddleAssets, wasmUrl) = do
   let sendMsgWorkerJs = jsaddleAssets <> "/jsaddle_sendMsgWorker.js"
       jsaddleJs = jsaddleAssets <> "/jsaddle.js"
       workerRunnerJs = jsaddleAssets <> "/worker_runner.js"
-  elAttr "script" ("type" =: "text/javascript" ) $ text $
-    "var jsaddle_sendMsgWorkerPath = '" <> sendMsgWorkerJs <> "';"
-  elAttr "script" ("type" =: "text/javascript" <> "src" =: jsaddleJs) blank
+      startScript = mconcat $
+        [ "var jsaddleVals = jsaddleJsInit();"
+        , "const worker = new Worker(\"" <> workerRunnerJs <> "\");"
+        , "worker.postMessage({ url: \"" <> wasmUrl <> "\""
+        , "                   , jsaddleVals: jsaddleVals }"
+        , "                   , [jsaddleVals.jsaddleListener]);"
+        ]
+
   elAttr "script" ("type" =: "text/javascript") $ text $ mconcat $
-    [ "var jsaddleVals = jsaddleJsInit();"
-    , "const worker = new Worker(\"" <> workerRunnerJs <> "\");"
-    , "worker.postMessage({ url: \"" <> wasmUrl <> "\""
-    , "                   , jsaddleVals: jsaddleVals }"
-    , "                   , [jsaddleVals.jsaddleListener]);"
+    [ "if (typeof(SharedArrayBuffer) === 'undefined') {           "
+    , "  var all_js_tag = document.createElement('script');       "
+    , "  all_js_tag.type = 'text/javascript';                     "
+    , "  all_js_tag.src = '", allJsUrl, "';                       "
+    , "  all_js_tag.setAttribute = ('defer', 'defer');            "
+    , "  document.body.appendChild(all_js_tag);                   "
+    , "} else {                                                   "
+    , "  var jsaddle_sendMsgWorkerPath = '", sendMsgWorkerJs,"';  "
+    , "  var jsaddle_js_tag = document.createElement('script');   "
+    , "  jsaddle_js_tag.type = 'text/javascript';                 "
+    , "  jsaddle_js_tag.onload = function () {                    "
+    , "    var start_wasm_tag = document.createElement('script'); "
+    , "    start_wasm_tag.type = 'text/javascript';               "
+    , "    start_wasm_tag.innerHTML = '", startScript, "';        "
+    , "    document.body.appendChild(start_wasm_tag);             "
+    , "    };                                                     "
+    , "  jsaddle_js_tag.src = '", jsaddleJs, "';                  "
+    , "  jsaddle_js_tag.setAttribute = ('defer', 'defer');        "
+    , "  document.body.appendChild(jsaddle_js_tag);               "
+    , "}"
     ]
 
 -- | An all.js script which is loaded after waiting for some time to pass. This
