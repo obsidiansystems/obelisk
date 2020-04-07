@@ -99,7 +99,7 @@ data GhcjsWidgets a = GhcjsWidgets
 
 data GhcjsWasmAssets = GhcjsWasmAssets
   { _ghcjsWasmAssets_allJs :: Text
-  , _ghcjsWasmAssets_wasmPaths :: Maybe (Text, Text)
+  , _ghcjsWasmAssets_wasmPathRoot :: Maybe Text
   }
 
 -- | Given the URL of all.js, return the widgets which are responsible for
@@ -179,10 +179,9 @@ renderAllJsPath :: Encoder Identity Identity (R (FullRoute a b)) PageName -> Tex
 renderAllJsPath validFullEncoder =
   renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ ["all.js"]
 
-renderWasmPaths :: Encoder Identity Identity (R (FullRoute a b)) PageName -> (Text, Text)
-renderWasmPaths validFullEncoder = (,)
-  (renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ [])
-  (renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ ["frontend.wasm"])
+renderWasmPathRoot :: Encoder Identity Identity (R (FullRoute a b)) PageName -> Text
+renderWasmPathRoot validFullEncoder =
+  renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ []
 
 serveObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
@@ -266,7 +265,7 @@ runBackendWith (BackendConfig runSnap staticAssets ghcjsAssets ghcjsWidgets) bac
               where
                 routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
                 allJsUrl = renderAllJsPath validFullEncoder
-                mWasmUrls = if enableWasm then Just (renderWasmPaths validFullEncoder) else Nothing
+                mWasmUrls = if enableWasm then Just (renderWasmPathRoot validFullEncoder) else Nothing
                 widgets = ($ GhcjsWasmAssets allJsUrl mWasmUrls) <$> ghcjsWidgets
                 frontendApp = GhcjsApp
                   { _ghcjsApp_compiled = ghcjsAssets
@@ -296,30 +295,57 @@ renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
 preloadGhcjs :: GhcjsWasmAssets -> FrontendWidgetT r ()
 preloadGhcjs (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
   Nothing -> elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
-  Just _ -> pure ()
+  Just wasmAssets -> fst (wasmScripts allJsUrl wasmAssets)
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
 deferredGhcjsScript :: GhcjsWasmAssets -> FrontendWidgetT r ()
 deferredGhcjsScript (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
   Nothing -> elAttr "script" ("type" =: "text/javascript" <> "src" =: allJsUrl <> "defer" =: "defer") blank
-  Just v -> wasmScript v
+  Just wasmAssets -> snd (wasmScripts allJsUrl wasmAssets)
 
-wasmScript :: (Text, Text) -> FrontendWidgetT r ()
-wasmScript (jsaddleAssets, wasmUrl) = do
-  let sendMsgWorkerJs = jsaddleAssets <> "/jsaddle_sendMsgWorker.js"
-      jsaddleJs = jsaddleAssets <> "/jsaddle.js"
-      workerRunnerJs = jsaddleAssets <> "/worker_runner.js"
-  elAttr "script" ("type" =: "text/javascript" ) $ text $
-    "var jsaddle_sendMsgWorkerPath = '" <> sendMsgWorkerJs <> "';"
-  elAttr "script" ("type" =: "text/javascript" <> "src" =: jsaddleJs) blank
-  elAttr "script" ("type" =: "text/javascript") $ text $ mconcat $
-    [ "var jsaddleVals = jsaddleJsInit();"
-    , "const worker = new Worker(\"" <> workerRunnerJs <> "\");"
-    , "worker.postMessage({ url: \"" <> wasmUrl <> "\""
-    , "                   , jsaddleVals: jsaddleVals }"
-    , "                   , [jsaddleVals.jsaddleListener]);"
-    ]
+wasmScripts :: Text -> Text -> (FrontendWidgetT r (), FrontendWidgetT r ())
+wasmScripts allJsUrl wasmRoot = (script preloadScript, script runJsScript)
+  where
+    script t = elAttr "script" ("type" =: "text/javascript") $ text t
+    jsaddleJs = wasmRoot <> "/jsaddle_core.js"
+    interfaceJs = wasmRoot <> "/jsaddle_mainthread_interface.js"
+    runnerJs = wasmRoot <> "/mainthread_runner.js"
+    wasmUrl = wasmRoot <> "/frontend.wasm"
+
+    preloadScript =
+      "add_preload_tag = function (docSrc, docType) {          \
+      \  var link_tag = document.createElement('link');        \
+      \  link_tag.rel = 'preload';                             \
+      \  link_tag.as = docType;                                \
+      \  link_tag.href = docSrc;                               \
+      \  document.head.appendChild(link_tag);                  \
+      \};                                                      \
+      \if (typeof(WebAssembly) === 'undefined') {              \
+      \  add_preload_tag('" <> allJsUrl <> "', 'script');      \
+      \} else {                                                \
+      \  add_preload_tag('" <> wasmUrl <> "', 'script');       \
+      \  add_preload_tag('" <> jsaddleJs <> "', 'script');     \
+      \  add_preload_tag('" <> interfaceJs <> "', 'script');   \
+      \  add_preload_tag('" <> runnerJs <> "', 'script');      \
+      \}"
+
+    runJsScript =
+      "add_deferload_tag = function (docSrc) {       \
+      \  var tag = document.createElement('script'); \
+      \  tag.type = 'text/javascript';               \
+      \  tag.src = docSrc;                           \
+      \  tag.setAttribute = ('defer', 'defer');      \
+      \  document.body.appendChild(tag);             \
+      \};                                            \
+      \if (typeof(WebAssembly) === 'undefined') {    \
+      \  add_deferload_tag('" <> allJsUrl <> "');    \
+      \} else {                                      \
+      \  var wasmFile = '" <> wasmUrl <> "';         \
+      \  add_deferload_tag('" <> jsaddleJs <> "');   \
+      \  add_deferload_tag('" <> interfaceJs <> "'); \
+      \  add_deferload_tag('" <> runnerJs <> "');    \
+      \}"
 
 -- | An all.js script which is loaded after waiting for some time to pass. This
 -- is useful to ensure any CSS animations on the page can play smoothly before
