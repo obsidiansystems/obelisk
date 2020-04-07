@@ -3,14 +3,18 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 module Obelisk.Command where
 
 import Control.Monad
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
 import Data.Foldable (for_)
 import Data.List
+import Data.List.NonEmpty (nonEmpty)
+import qualified Data.Map as Map
 import qualified Data.Text as T
+import Data.Traversable (for)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (text, (<$$>))
 import System.Directory
@@ -80,11 +84,11 @@ initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run
+   | ObCommand_Run [(FilePath, HackOn)]
    | ObCommand_Profile String [String]
    | ObCommand_Thunk ThunkCommand
-   | ObCommand_Repl
-   | ObCommand_Watch
+   | ObCommand_Repl [(FilePath, HackOn)]
+   | ObCommand_Watch [(FilePath, HackOn)]
    | ObCommand_Shell ShellOpts
    | ObCommand_Doc String [String] -- shell and list of packages
    | ObCommand_Hoogle String Int -- shell and port
@@ -95,7 +99,7 @@ data ObInternal
    -- the preprocessor argument syntax is also handled outside
    -- optparse-applicative, but it shouldn't ever conflict with another syntax
    = ObInternal_ApplyPackages String String String [String]
-   | ObInternal_ExportGhciConfig
+   | ObInternal_ExportGhciConfig [(FilePath, HackOn)]
    deriving Show
 
 obCommand :: ArgsConfig -> Parser ObCommand
@@ -103,11 +107,11 @@ obCommand cfg = hsubparser
   (mconcat
     [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-    , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+    , command "run" $ info (ObCommand_Run <$> hackOnOpts) $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-    , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-    , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+    , command "repl" $ info (ObCommand_Repl <$> hackOnOpts) $ progDesc "Open an interactive interpreter"
+    , command "watch" $ info (ObCommand_Watch <$> hackOnOpts) $ progDesc "Watch current project for errors and warnings"
     , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
     , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
         progDesc "List paths to haddock documentation for specified packages"
@@ -120,7 +124,7 @@ obCommand cfg = hsubparser
 
 internalCommand :: Parser ObInternal
 internalCommand = hsubparser $ mconcat
-  [ command "export-ghci-configuration" $ info (pure ObInternal_ExportGhciConfig) $ progDesc "Export the GHCi configuration used by ob run, etc.; useful for IDE integration"
+  [ command "export-ghci-configuration" $ info (ObInternal_ExportGhciConfig <$> hackOnOpts) $ progDesc "Export the GHCi configuration used by ob run, etc.; useful for IDE integration"
   ]
 
 packageNames :: Parser [String]
@@ -247,7 +251,7 @@ thunkCommand = hsubparser $ mconcat
 data ShellOpts
   = ShellOpts
     { _shellOpts_shell :: String
-    , _shellOpts_forUnpacked :: Bool
+    , _shellOpts_hackPaths :: [(FilePath, HackOn)]
     , _shellOpts_command :: Maybe String
     }
   deriving Show
@@ -258,13 +262,27 @@ shellFlags =
   <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
   <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
 
-forUnpackedFlagName :: String
-forUnpackedFlagName = "for-unpacked"
+hackOnOpts :: Parser [(FilePath, HackOn)]
+hackOnOpts = many
+    (   (, HackOn_HackOn) <$>
+          strOption (common <> long "hack-on" <> help
+            "Don't pre-build packages found in DIR when constructing the package database. The default behavior is \
+            \'--hack-on <project-root>'. Use --hack-on and --no-hack-on multiple times to add or remove multiple trees \
+            \ from the environment. Right-most directories will override directories on the left in as much as they overlap."
+          )
+    <|> (, HackOn_NoHackOn) <$>
+          strOption (common <> long "no-hack-on" <> help
+            "Make packages found in DIR available in the package database (but only when they are used dependencies). \
+            \See help for --hack-on for how the two options are related."
+          )
+    )
+  where
+    common = action "directory" <> metavar "DIR"
 
 shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
   <$> shellFlags
-  <*> flag False True (long forUnpackedFlagName <> help "Configure the shell for working on all unpacked packages in the project directory")
+  <*> hackOnOpts
   <*> optional (strArgument (metavar "COMMAND"))
 
 portOpt :: Int -> Parser Int
@@ -389,26 +407,33 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> run
+  ObCommand_Run hackPathsList -> withHackPaths hackPathsList run
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
   ObCommand_Thunk tc -> case tc of
     ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
     ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
-  ObCommand_Repl -> runRepl
-  ObCommand_Watch -> runWatch
-  ObCommand_Shell (ShellOpts shell' forUnpacked cmd)
-    | forUnpacked && shell' == "ghc" -> nixShellForUnpackedPackages False cmd
-    | forUnpacked -> failWith $ "--" <> T.pack forUnpackedFlagName <> " is only available for ghc shells"
-    | otherwise -> withProjectRoot "." $ \root -> projectShell root False shell' cmd
-  ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
-    projectShell root False shell' (Just $ haddockCommand pkgs)
+  ObCommand_Repl hackPathsList -> withHackPaths hackPathsList runRepl
+  ObCommand_Watch hackPathsList -> withHackPaths hackPathsList runWatch
+  ObCommand_Shell (ShellOpts shellAttr hackPathsList cmd) -> withHackPaths hackPathsList $ \root hackPaths ->
+    nixShellForHackPaths False shellAttr root hackPaths cmd
+  ObCommand_Doc shellAttr pkgs -> withProjectRoot "." $ \root ->
+    nixShellForHackPaths True shellAttr root emptyPathTree $ Just $ haddockCommand pkgs
   ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
     nixShellWithHoogle root True shell' $ Just $ "hoogle server -p " <> show port <> " --local"
   ObCommand_Internal icmd -> case icmd of
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
-    ObInternal_ExportGhciConfig -> liftIO . putStrLn . unlines =<< exportGhciConfig
+    ObInternal_ExportGhciConfig hackPathsList -> liftIO . putStrLn . unlines =<< withHackPaths hackPathsList exportGhciConfig
+
+-- | A helper for the common case that the command you want to run needs the project root and a resolved
+-- set of hacking paths.
+withHackPaths :: MonadObelisk m => [(FilePath, HackOn)] -> (FilePath -> PathTree HackOn -> m a) -> m a
+withHackPaths hackPathsList f = withProjectRoot "." $ \root -> do
+  hackPaths' <- resolveHackPaths $ (root, HackOn_HackOn) : hackPathsList
+  case hackPaths' of
+    Nothing -> failWith "No paths provided for finding packages"
+    Just hackPaths -> f root hackPaths
 
 haddockCommand :: [String] -> String
 haddockCommand pkgs = unwords
@@ -422,3 +447,25 @@ haddockCommand pkgs = unwords
 
 getArgsConfig :: IO ArgsConfig
 getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = System.Info.os == "darwin" }
+
+
+-- | Resolves an ordered list of paths for use with @--hack-on@/@--no-hack-on@ by coalescing
+--   paths into a non-ambiguous set of paths. Ambiguity is resolved by chosing right-most paths
+--   over any preceeding paths where they overlap.
+--
+--   For example: @a/b=ON a/b/c=OFF@ produces @a/b=ON a/b/c=OFF@ (the same value) but flipping
+--   the order does not as @a/b/c=OFF a/b=ON@ produces @a/b=ON@ since @a/b/c@ is inside @a/b@ and
+--   @a/b@ is the right-most.
+--
+--   N.B. All the paths in the result will be canonicalized. It's impossible to determine path
+--   overlap otherwise.
+resolveHackPaths :: MonadIO m => [(FilePath, a)] -> m (Maybe (PathTree a))
+resolveHackPaths ps = do
+  trees <- liftIO $ for ps $ \(p, a) -> pathToTree a <$> canonicalizePath p
+  pure $ foldr1 mergeRightBias <$> nonEmpty trees
+  where
+    -- | Merge two 'PathTree's preferring paths on the right in as much as they overlap with paths on the left.
+    mergeRightBias :: PathTree a -> PathTree a -> PathTree a
+    mergeRightBias (PathTree_Node Nothing a) (PathTree_Node Nothing b) = PathTree_Node Nothing $ Map.unionWith mergeRightBias a b
+    mergeRightBias (PathTree_Node (Just v) _) (PathTree_Node Nothing b) = PathTree_Node (Just v) b
+    mergeRightBias _ b = b
