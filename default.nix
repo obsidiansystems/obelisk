@@ -11,105 +11,18 @@ let
 
   inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
 
-  cleanSource = src:
-    # WARNING: The order of application here seems to matter a great deal to
-    # how quickly `ghcid` is able to reload changes. As a rule of thumb,
-    # always apply `gitignoreSource` first.
-    # See https://github.com/obsidiansystems/obelisk/pull/666 and related.
-    pkgs.lib.cleanSource (gitignoreSource src);
-
-  commandRuntimeDeps = pkgs: with pkgs; [
-    coreutils
-    git
-    nix-prefetch-git
-    openssh
-  ];
-
   getReflexPlatform = { system, enableLibraryProfiling ? profiling }: reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
 
     nixpkgsOverlays = [
-      (self: super: {
-        obeliskExecutableConfig = import ./lib/executable-config { nixpkgs = pkgs; filterGitSource = cleanSource; };
-      })
+      (import ./nixpkgs-overlays)
     ];
 
     haskellOverlays = [
-
-      # Fix misc upstream packages
-      (self: super: let
-        pkgs = self.callPackage ({ pkgs }: pkgs) {};
-        haskellLib = pkgs.haskell.lib;
-      in {
-        hnix = haskellLib.dontCheck (haskellLib.doJailbreak (self.callCabal2nix "hnix" (hackGet dep/hnix) {}));
-        hnix-store-core = self.callHackage "hnix-store-core" "0.1.0.0" {};
-
-        ghcid = self.callCabal2nix "ghcid" (hackGet ./dep/ghcid) {};
-        # Exports more internals
-        snap-core = haskellLib.dontCheck (self.callCabal2nix "snap-core" (hackGet ./dep/snap-core) {});
-      })
-
+      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; })
       pkgs.obeliskExecutableConfig.haskellOverlay
-
-      # Add obelisk packages
-      (self: super: let
-        pkgs = self.callPackage ({ pkgs }: pkgs) {};
-        onLinux = pkg: f: if pkgs.stdenv.isLinux then f pkg else pkg;
-      in {
-        shelly = self.callHackage "shelly" "1.9.0" {};
-
-        obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
-
-        obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (cleanSource ./lib/asset/manifest) {};
-        obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (cleanSource ./lib/asset/serve-snap) {};
-        obelisk-backend = self.callCabal2nix "obelisk-backend" (cleanSource ./lib/backend) {};
-        obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (cleanSource ./lib/cliapp) {};
-        obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (cleanSource ./lib/command) {}) {
-          librarySystemDepends = [
-            pkgs.jre
-            pkgs.nix
-            (haskellLib.justStaticExecutables self.ghcid)
-          ];
-        };
-        obelisk-frontend = self.callCabal2nix "obelisk-frontend" (cleanSource ./lib/frontend) {};
-        obelisk-run = onLinux (self.callCabal2nix "obelisk-run" (cleanSource ./lib/run) {}) (pkg:
-          haskellLib.overrideCabal pkg (drv: { librarySystemDepends = [ pkgs.iproute ]; })
-        );
-        obelisk-route = self.callCabal2nix "obelisk-route" (cleanSource ./lib/route) {};
-        obelisk-selftest = haskellLib.overrideCabal (self.callCabal2nix "obelisk-selftest" (cleanSource ./lib/selftest) {}) {
-          librarySystemDepends = [
-            pkgs.cabal-install
-            pkgs.coreutils
-            pkgs.git
-            pkgs.nix
-            pkgs.nix-prefetch-git
-            pkgs.rsync
-          ];
-        };
-        obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (cleanSource ./lib/snap-extras) {};
-        tabulation = self.callCabal2nix "tabulation" (cleanSource ./lib/tabulation) {};
-      })
-
-      (self: super: let
-        pkgs = self.callPackage ({ pkgs }: pkgs) {};
-        haskellLib = pkgs.haskell.lib;
-      in {
-        # Dynamic linking with split objects dramatically increases startup time (about
-        # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.
-        obelisk-command = haskellLib.overrideCabal
-          (haskellLib.generateOptparseApplicativeCompletion "ob"
-            (haskellLib.justStaticExecutables super.obelisk-command))
-          (drv: {
-            buildTools = (drv.buildTools or []) ++ [ pkgs.buildPackages.makeWrapper ];
-            postFixup = ''
-              ${drv.postFixup or ""}
-              # Make `ob` reference its runtime dependencies.
-              wrapProgram "$out"/bin/ob --prefix PATH : ${pkgs.lib.makeBinPath (commandRuntimeDeps pkgs)}
-            '';
-          });
-        obelisk-selftest = haskellLib.justStaticExecutables super.obelisk-selftest;
-      })
-
+      (import ./haskell-overlays/obelisk.nix)
+      (import ./haskell-overlays/tighten-ob-exes.nix)
     ];
   };
 
@@ -132,7 +45,7 @@ in rec {
   obelisk = ghcObelisk;
   obeliskEnvs = pkgs.lib.filterAttrs (k: _: pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs;
   command = ghcObelisk.obelisk-command;
-  shell = pinBuildInputs "obelisk-shell" ([command] ++ commandRuntimeDeps pkgs);
+  shell = pinBuildInputs "obelisk-shell" ([command] ++ command.commandRuntimeDeps);
 
   selftest = pkgs.writeScript "selftest" ''
     #!${pkgs.runtimeShell}
