@@ -139,7 +139,7 @@ defaultStaticAssets = StaticAssets
 
 defaultFrontendGhcjsAssets :: StaticAssets
 defaultFrontendGhcjsAssets = StaticAssets
-  { _staticAssets_processed = "frontend.wasm.assets"
+  { _staticAssets_processed = "frontend.jsexe.assets"
   , _staticAssets_unprocessed = "frontend.jsexe"
   }
 
