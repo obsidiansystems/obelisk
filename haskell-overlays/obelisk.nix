@@ -34,6 +34,7 @@ in
       pkgs.coreutils
       pkgs.git
       pkgs.nix
+      pkgs.nix-prefetch-git
       pkgs.rsync
     ];
   };

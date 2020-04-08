@@ -9,6 +9,8 @@ library
   hs-source-dirs: src
   build-depends:
       base
+    , bytestring
+    , aeson
     , containers
     , directory
     , filepath
