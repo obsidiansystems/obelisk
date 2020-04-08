@@ -96,7 +96,9 @@ data CabalPackageInfo = CabalPackageInfo
 data HackOn = HackOn_HackOn | HackOn_NoHackOn deriving (Eq, Ord, Show)
 
 -- | Describe a set of 'FilePath's as a tree to facilitate merging them in a convenient way.
-data PathTree a = PathTree_Node (Maybe a) (Map FilePath (PathTree a))
+data PathTree a = PathTree_Node
+  (Maybe a) -- An optional leaf at this point in the tree
+  (Map FilePath (PathTree a)) -- Branches to deeper leaves
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
 
 emptyPathTree :: PathTree a

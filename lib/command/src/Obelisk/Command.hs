@@ -464,8 +464,9 @@ resolveHackPaths ps = do
   trees <- liftIO $ for ps $ \(p, a) -> pathToTree a <$> canonicalizePath p
   pure $ foldr1 mergeRightBias <$> nonEmpty trees
   where
-    -- | Merge two 'PathTree's preferring paths on the right in as much as they overlap with paths on the left.
+    -- | Merge two 'PathTree's preferring leaves on the right in as much as they overlap with paths on the left.
     mergeRightBias :: PathTree a -> PathTree a -> PathTree a
-    mergeRightBias (PathTree_Node Nothing a) (PathTree_Node Nothing b) = PathTree_Node Nothing $ Map.unionWith mergeRightBias a b
-    mergeRightBias (PathTree_Node (Just v) _) (PathTree_Node Nothing b) = PathTree_Node (Just v) b
-    mergeRightBias _ b = b
+    mergeRightBias = go
+      where
+        go _                   b@(PathTree_Node (Just _) _) = b -- When a leaf is present on the right, right always wins.
+        go (PathTree_Node v a)   (PathTree_Node Nothing b)  = PathTree_Node v $ Map.unionWith go a b
