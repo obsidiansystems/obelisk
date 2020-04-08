@@ -98,6 +98,7 @@ in rec {
     ${pkgs.wabt}/bin/wasm-strip frontend.wasm
   '';
 
+  # The ghcjs and wasm files are put in a single asset, as they need to be in sync and served together.
   combinedJsWasmAssets = frontendJs: optimizationLevel: frontendWasm: pkgs.runCommand "combinedJsWasmAssets" {} ''
     mkdir $out
     cd $out
