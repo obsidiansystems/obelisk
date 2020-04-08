@@ -40,6 +40,7 @@ module Obelisk.Backend
   , getPublicConfigs
   ) where
 
+import Control.Exception (try)
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Fail (MonadFail)
@@ -47,6 +48,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
 import Data.Dependent.Sum
+import Data.Either (isRight)
 import Data.Functor.Identity
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -64,6 +66,7 @@ import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, htt
             , rqPathInfo, rqQueryString, setContentType, writeBS, writeText
             , rqCookies, Cookie(..) , setHeader)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
+import System.FilePath ((</>))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 data Backend backendRoute frontendRoute = Backend
@@ -74,8 +77,9 @@ data Backend backendRoute frontendRoute = Backend
 data BackendConfig frontendRoute = BackendConfig
   { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
   , _backendConfig_staticAssets :: !StaticAssets -- ^ Static assets
+  , _backendConfig_ghcjsAssets :: !StaticAssets -- ^ Frontend ghcjs (and wasm) assets
   , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (GhcjsWasmAssets -> FrontendWidgetT (R frontendRoute) ()))
-    -- ^ Given the URL of all.js, return the widgets which are responsible for
+    -- ^ Given the URL of all.js and wasm files, return the widgets which are responsible for
     -- loading the script.
   } deriving (Generic)
 
@@ -95,7 +99,7 @@ data GhcjsWidgets a = GhcjsWidgets
 
 data GhcjsWasmAssets = GhcjsWasmAssets
   { _ghcjsWasmAssets_allJs :: Text
-  , _ghcjsWasmAssets_wasm :: Maybe (Text, Text)
+  , _ghcjsWasmAssets_wasmPaths :: Maybe (Text, Text)
   }
 
 -- | Given the URL of all.js, return the widgets which are responsible for
@@ -137,6 +141,9 @@ defaultStaticAssets = StaticAssets
   , _staticAssets_unprocessed = "static"
   }
 
+-- This has both ghcjs and wasm assets.
+-- The 'unprocessed' is a fallback path, and in case of wasm is invalid (does not contain wasm files)
+-- For the standard obelisk deployment the unprocessed path would not be used.
 defaultFrontendGhcjsAssets :: StaticAssets
 defaultFrontendGhcjsAssets = StaticAssets
   { _staticAssets_processed = "frontend.jsexe.assets"
@@ -231,7 +238,7 @@ serveGhcjsApp urlEnc ghcjsWidgets app config = \case
 
 -- | Default obelisk backend configuration.
 defaultBackendConfig :: BackendConfig frontendRoute
-defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets
+defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultFrontendGhcjsAssets defaultGhcjsWidgets
 
 -- | Run an obelisk backend with the default configuration.
 runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
@@ -243,22 +250,34 @@ runBackendWith
   -> Backend backendRoute frontendRoute
   -> Frontend (R frontendRoute)
   -> IO ()
-runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackendWith (BackendConfig runSnap staticAssets ghcjsAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
+    enableWasm <- checkWasmFile
     _backend_run backend $ \serveRoute ->
       runSnap $
         getRouteWith validFullEncoder >>= \case
           Identity r -> case r of
             FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
             FullRoute_Frontend obeliskRoute :/ a ->
-              serveDefaultObeliskApp routeToUrl (($ GhcjsWasmAssets allJsUrl (Just wasmUrls)) <$> ghcjsWidgets) (serveStaticAssets staticAssets) frontend publicConfigs $
+              serveObeliskApp routeToUrl widgets (serveStaticAssets staticAssets) frontendApp publicConfigs $
                 obeliskRoute :/ a
               where
                 routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
                 allJsUrl = renderAllJsPath validFullEncoder
-                wasmUrls = renderWasmPaths validFullEncoder
+                mWasmUrls = if enableWasm then Just (renderWasmPaths validFullEncoder) else Nothing
+                widgets = ($ GhcjsWasmAssets allJsUrl mWasmUrls) <$> ghcjsWidgets
+                frontendApp = GhcjsApp
+                  { _ghcjsApp_compiled = ghcjsAssets
+                  , _ghcjsApp_value = frontend
+                  }
+  where
+    checkWasmFile = do
+      let base = _staticAssets_processed ghcjsAssets
+          p = "frontend.wasm"
+      assetType :: (Either IOError ByteString) <- liftIO $ try $ BSC8.readFile $ base </> p </> "type"
+      pure $ isRight assetType
 
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
