@@ -109,7 +109,7 @@ in
 
       with subtest("obelisk can pack"):
           client.succeed("ob -v thunk pack ~/code/myapp")
-          client.succeed("grep -qF 'git.json' ~/code/myapp/src.nix")
+          client.succeed("grep -qF 'git.json' ~/code/myapp/thunk.nix")
           client.succeed("grep -qF 'myorg' ~/code/myapp/git.json")
           client.succeed("ob -v thunk unpack ~/code/myapp")
 
@@ -125,17 +125,17 @@ in
           client.succeed("ob -v thunk unpack ~/code/myapp")
 
       with subtest("building an invalid thunk fails"):
-          client.succeed("cd ~/code/myapp/unpacked && git checkout -b bad")
+          client.succeed("cd ~/code/myapp/local && git checkout -b bad")
           client.succeed(
-              "cp ${invalidThunkableSample} ~/code/myapp/unpacked/default.nix"
+              "cp ${invalidThunkableSample} ~/code/myapp/local/default.nix"
           )
-          client.succeed("cd ~/code/myapp/unpacked && git add .")
-          client.succeed('cd ~/code/myapp/unpacked && git commit -m "Bad commit"')
-          client.succeed("cd ~/code/myapp/unpacked && git push -u origin bad")
+          client.succeed("cd ~/code/myapp/local && git add .")
+          client.succeed('cd ~/code/myapp/local && git commit -m "Bad commit"')
+          client.succeed("cd ~/code/myapp/local && git push -u origin bad")
           client.succeed("ob -v thunk pack ~/code/myapp --public")
           client.fail("nix-build ~/code/myapp")
           client.succeed("ob -v thunk unpack ~/code/myapp")
-          client.succeed("cd ~/code/myapp/unpacked && git checkout master")
+          client.succeed("cd ~/code/myapp/local && git checkout master")
 
       with subtest("obelisk can detect private repos"):
           client.succeed("ob -v thunk pack ~/code/myapp")

@@ -203,7 +203,7 @@ data ReadThunkError
   deriving (Show)
 
 unpackedDirName :: FilePath
-unpackedDirName = "unpacked"
+unpackedDirName = "local"
 
 attrCacheFileName :: FilePath
 attrCacheFileName = ".attr-cache"
@@ -554,7 +554,7 @@ let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256
     inherit owner repo rev sha256 fetchSubmodules private;
   };
   json = builtins.fromJSON (builtins.readFile ./github.json);
-in if builtins.pathExists ./unpacked then ./unpacked else fetch json
+in if builtins.pathExists ./local then ./local else fetch json
 |]
 
 parseGitHubJsonBytes :: LBS.ByteString -> Either String ThunkPtr
@@ -646,7 +646,7 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
     url = realUrl; inherit rev sha256;
   };
   json = builtins.fromJSON (builtins.readFile ./git.json);
-in if builtins.pathExists ./unpacked then ./unpacked else fetch json
+in if builtins.pathExists ./local then ./local else fetch json
 |]
 
 parseGitJsonBytes :: LBS.ByteString -> Either String ThunkPtr
@@ -655,7 +655,7 @@ parseGitJsonBytes = parseJsonObject $ parseThunkPtr $ fmap ThunkSource_Git . par
 mkThunkSpec :: Text -> FilePath -> (LBS.ByteString -> Either String ThunkPtr) -> Text -> ThunkSpec
 mkThunkSpec name jsonFileName parser srcNix = ThunkSpec name $ Map.fromList
   [ ("default.nix", ThunkFileSpec_FileMatches defaultNixViaSrc)
-  , ("src.nix", ThunkFileSpec_FileMatches srcNix)
+  , ("thunk.nix", ThunkFileSpec_FileMatches srcNix)
   , (jsonFileName, ThunkFileSpec_Ptr parser)
   , (attrCacheFileName, ThunkFileSpec_AttrCache)
   , (unpackedDirName, ThunkFileSpec_CheckoutIndicator)
@@ -663,7 +663,7 @@ mkThunkSpec name jsonFileName parser srcNix = ThunkSpec name $ Map.fromList
   where
     defaultNixViaSrc = [here|
 # DO NOT HAND-EDIT THIS FILE
-import (import ./src.nix)
+import (import ./thunk.nix)
 |]
 
 
