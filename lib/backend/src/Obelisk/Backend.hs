@@ -302,27 +302,26 @@ preloadGhcjs (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
 
 wasmScriptPreload :: Text -> (Text, Text) -> FrontendWidgetT r ()
 wasmScriptPreload allJsUrl (jsaddleAssets, wasmUrl) = do
-  let sendMsgWorkerJs = jsaddleAssets <> "/jsaddle_sendMsgWorker.js"
+  let sendMsgJs = jsaddleAssets <> "/jsaddle_sendMsgWorker.js"
       jsaddleJs = jsaddleAssets <> "/jsaddle.js"
       workerRunnerJs = jsaddleAssets <> "/worker_runner.js"
 
-  elAttr "script" ("type" =: "text/javascript") $ text $ mconcat $
-    [ "add_preload_tag = function (docSrc, docType) {       "
-    , "  var link_tag = document.createElement('link');     "
-    , "  link_tag.rel = 'preload';                          "
-    , "  link_tag.as = docType;                             "
-    , "  link_tag.href = docSrc;                            "
-    , "  document.head.appendChild(link_tag);               "
-    , "};                                                   "
-    , "if (typeof(SharedArrayBuffer) === 'undefined') {     "
-    , "  add_preload_tag('", allJsUrl, "', 'script');       "
-    , "} else {                                             "
-    , "  add_preload_tag('", jsaddleJs, "', 'script');      "
-    , "  add_preload_tag('", sendMsgWorkerJs, "', 'script');"
-    , "  add_preload_tag('", workerRunnerJs, "', 'script'); "
-    , "  add_preload_tag('", wasmUrl, "', 'script');        "
-    , "}"
-    ]
+  elAttr "script" ("type" =: "text/javascript") $ text $
+    "add_preload_tag = function (docSrc, docType) {           \
+    \  var link_tag = document.createElement('link');         \
+    \  link_tag.rel = 'preload';                              \
+    \  link_tag.as = docType;                                 \
+    \  link_tag.href = docSrc;                                \
+    \  document.head.appendChild(link_tag);                   \
+    \};                                                       \
+    \if (typeof(SharedArrayBuffer) === 'undefined') {         \
+    \  add_preload_tag('" <> allJsUrl <> "', 'script');       \
+    \} else {                                                 \
+    \  add_preload_tag('" <> jsaddleJs <> "', 'script');      \
+    \  add_preload_tag('" <> sendMsgJs <> "', 'script');      \
+    \  add_preload_tag('" <> workerRunnerJs <> "', 'script'); \
+    \  add_preload_tag('" <> wasmUrl <> "', 'script');        \
+    \}"
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
@@ -333,39 +332,37 @@ deferredGhcjsScript (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
 
 wasmScript :: Text -> (Text, Text) -> FrontendWidgetT r ()
 wasmScript allJsUrl (jsaddleAssets, wasmUrl) = do
-  let sendMsgWorkerJs = jsaddleAssets <> "/jsaddle_sendMsgWorker.js"
+  let sendMsgJs = jsaddleAssets <> "/jsaddle_sendMsgWorker.js"
       jsaddleJs = jsaddleAssets <> "/jsaddle.js"
       workerRunnerJs = jsaddleAssets <> "/worker_runner.js"
-      startScript = mconcat $
-        [ "var jsaddleVals = jsaddleJsInit();"
-        , "const worker = new Worker(\"" <> workerRunnerJs <> "\");"
-        , "worker.postMessage({ url: \"" <> wasmUrl <> "\""
-        , "                   , jsaddleVals: jsaddleVals }"
-        , "                   , [jsaddleVals.jsaddleListener]);"
-        ]
+      startScript =
+        "var jsaddleVals = jsaddleJsInit();                      \
+        \const worker = new Worker(\"" <> workerRunnerJs <> "\");\
+        \worker.postMessage({ url: \"" <> wasmUrl <> "\"         \
+        \                   , jsaddleVals: jsaddleVals }         \
+        \                   , [jsaddleVals.jsaddleListener]);    "
 
-  elAttr "script" ("type" =: "text/javascript") $ text $ mconcat $
-    [ "if (typeof(SharedArrayBuffer) === 'undefined') {           "
-    , "  var all_js_tag = document.createElement('script');       "
-    , "  all_js_tag.type = 'text/javascript';                     "
-    , "  all_js_tag.src = '", allJsUrl, "';                       "
-    , "  all_js_tag.setAttribute = ('defer', 'defer');            "
-    , "  document.body.appendChild(all_js_tag);                   "
-    , "} else {                                                   "
-    , "  var jsaddle_sendMsgWorkerPath = '", sendMsgWorkerJs,"';  "
-    , "  var jsaddle_js_tag = document.createElement('script');   "
-    , "  jsaddle_js_tag.type = 'text/javascript';                 "
-    , "  jsaddle_js_tag.onload = function () {                    "
-    , "    var start_wasm_tag = document.createElement('script'); "
-    , "    start_wasm_tag.type = 'text/javascript';               "
-    , "    start_wasm_tag.innerHTML = '", startScript, "';        "
-    , "    document.body.appendChild(start_wasm_tag);             "
-    , "    };                                                     "
-    , "  jsaddle_js_tag.src = '", jsaddleJs, "';                  "
-    , "  jsaddle_js_tag.setAttribute = ('defer', 'defer');        "
-    , "  document.body.appendChild(jsaddle_js_tag);               "
-    , "}"
-    ]
+  elAttr "script" ("type" =: "text/javascript") $ text $
+    "if (typeof(SharedArrayBuffer) === 'undefined') {           \
+    \  var all_js_tag = document.createElement('script');       \
+    \  all_js_tag.type = 'text/javascript';                     \
+    \  all_js_tag.src = '" <> allJsUrl <> "';                   \
+    \  all_js_tag.setAttribute = ('defer', 'defer');            \
+    \  document.body.appendChild(all_js_tag);                   \
+    \} else {                                                   \
+    \  var jsaddle_sendMsgWorkerPath = '" <> sendMsgJs <> "';   \
+    \  var jsaddle_js_tag = document.createElement('script');   \
+    \  jsaddle_js_tag.type = 'text/javascript';                 \
+    \  jsaddle_js_tag.onload = function () {                    \
+    \    var start_wasm_tag = document.createElement('script'); \
+    \    start_wasm_tag.type = 'text/javascript';               \
+    \    start_wasm_tag.innerHTML = '" <> startScript <> "';    \
+    \    document.body.appendChild(start_wasm_tag);             \
+    \    };                                                     \
+    \  jsaddle_js_tag.src = '" <> jsaddleJs <> "';              \
+    \  jsaddle_js_tag.setAttribute = ('defer', 'defer');        \
+    \  document.body.appendChild(jsaddle_js_tag);               \
+    \}"
 
 -- | An all.js script which is loaded after waiting for some time to pass. This
 -- is useful to ensure any CSS animations on the page can play smoothly before
