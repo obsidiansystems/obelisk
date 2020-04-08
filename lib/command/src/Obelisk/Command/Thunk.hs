@@ -450,7 +450,7 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = spinner $ d
   case mBranch of
     Nothing -> do
       (overwrite, ptr) <- readThunk target >>= \case
-        Left err -> failWith $ T.pack $ "thunk update: " <> show err
+        Left err -> failWith [i|Thunk update: ${err}|]
         Right c -> case c of
           ThunkData_Packed _ t -> return (target, t)
           ThunkData_Checkout -> failWith "cannot update an unpacked thunk"
@@ -461,14 +461,14 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = spinner $ d
         , _thunkPtr_rev = rev
         }
     Just branch -> readThunk target >>= \case
-      Left err -> failWith $ T.pack $ "thunk update: " <> show err
+      Left err -> failWith [i|Thunk update: ${err}|]
       Right c -> case c of
         ThunkData_Packed _ t -> case _thunkPtr_source t of
           ThunkSource_Git tsg -> setThunk thunkConfig target tsg branch
           ThunkSource_GitHub tsgh -> do
             let tsg = forgetGithub False tsgh
             setThunk thunkConfig target tsg branch
-        ThunkData_Checkout -> failWith $ T.pack $ "thunk located at " <> show target <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
+        ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
   where
     spinner = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest")
 
