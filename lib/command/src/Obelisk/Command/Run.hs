@@ -279,14 +279,19 @@ parsePackagesOrFail dirs = do
         | _cabalPackageInfo_buildable packageInfo -> Right packageInfo
       _ -> Left dir
 
-  let packagesByName = Map.fromListWith (<>) [(_cabalPackageInfo_packageName p, p NE.:| []) | p <- packageInfos']
+  -- Sort duplicate packages such that we prefer shorter paths, but fall back to alphabetical ordering.
+  let packagesByName = Map.map (NE.sortBy $ comparing $ \p -> let n = _cabalPackageInfo_packageFile p in (length n, n))
+                     $ Map.fromListWith (<>) [(_cabalPackageInfo_packageName p, p NE.:| []) | p <- packageInfos']
   unambiguous <- ifor packagesByName $ \packageName ps -> case ps of
     p NE.:| [] -> pure p -- No ambiguity here
     p NE.:| _ -> do
-      putLog Warning $ T.pack $
-        "Packages named '" <> T.unpack packageName <> "' appear in " <> show (length ps) <> " different locations: "
-        <> intercalate ", " (map _cabalPackageInfo_packageFile $ toList ps)
-        <> "; Picking " <> _cabalPackageInfo_packageFile p
+      let chosenText = "  [Chosen] "
+          prefix p'
+            | _cabalPackageInfo_packageFile p' == _cabalPackageInfo_packageFile p = chosenText
+            | otherwise = T.map (const ' ') chosenText
+      putLog Warning $ T.unlines $
+        "Packages named '" <> packageName <> "' appear in " <> T.pack (show $ length ps) <> " different locations: "
+        : map (\p' -> prefix p' <> T.pack (_cabalPackageInfo_packageFile p')) (toList ps)
       pure p
 
   packageInfos <- case NE.nonEmpty $ toList unambiguous of
