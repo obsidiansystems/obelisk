@@ -279,7 +279,9 @@ parsePackagesOrFail dirs = do
         | _cabalPackageInfo_buildable packageInfo -> Right packageInfo
       _ -> Left dir
 
-  let packagesByName = Map.fromListWith (<>) [(_cabalPackageInfo_packageName p, p NE.:| []) | p <- packageInfos']
+  -- Sort duplicate packages such that we prefer shorter paths, but fall back to alphabetical ordering.
+  let packagesByName = Map.map (NE.sortBy $ comparing $ \p -> let n = _cabalPackageInfo_packageFile p in (length n, n))
+                     $ Map.fromListWith (<>) [(_cabalPackageInfo_packageName p, p NE.:| []) | p <- packageInfos']
   unambiguous <- ifor packagesByName $ \packageName ps -> case ps of
     p NE.:| [] -> pure p -- No ambiguity here
     p NE.:| _ -> do
