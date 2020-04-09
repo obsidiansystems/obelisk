@@ -56,7 +56,7 @@ deployInit deployOpts root = do
     failWith [i|Deploy directory ${deployDir} should not be the same as project root.|]
   thunkPtr <- readThunk root >>= \case
     Right (ThunkData_Packed _ ptr) -> return ptr
-    _ -> getThunkPtr False root Nothing
+    _ -> getThunkPtr True root Nothing
   deployInit' thunkPtr deployOpts
 
 deployInit'
