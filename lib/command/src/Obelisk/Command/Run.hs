@@ -64,7 +64,7 @@ import Obelisk.CliApp (
     withSpinner,
   )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithPkgs, toImplDir, withProjectRoot, findProjectAssets)
+import Obelisk.Command.Project (nixShellWithPkgs, withProjectRoot, findProjectAssets)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
@@ -164,7 +164,7 @@ getLocalPkgs root = do
   let exclusions = filter (/= root) $ map takeDirectory obeliskPaths
   fmap (map (makeRelative ".")) $ runFind $
     ["-L", root, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
-    <> concat [["-not", "-path", p </> "*"] | p <- (toImplDir "*" </> attrCacheFileName) : exclusions]
+    <> concat [["-not", "-path", p </> "*"] | p <- ("*" </> attrCacheFileName) : exclusions]
   where
     runFind args = do
       (_exitCode, out, err) <- readCreateProcessWithExitCode $ proc findExePath args
