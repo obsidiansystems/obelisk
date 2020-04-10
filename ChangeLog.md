@@ -2,6 +2,38 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
 
+## Unreleased
+
+* ([#674](https://github.com/obsidiansystems/obelisk/pull/674)) Introduce a new thunk format to support accessing the thunk's source directly. Previously thunks only supported sources that contained `default.nix`. With the latest format both packed and unpacked thunks have a similar directory structure:
+
+  Packed thunks look like
+
+      my-thunk/
+      ├── default.nix
+      ├── thunk.nix
+      └── github.json
+
+  and unpacked thunks look like
+
+      my-thunk/
+      ├── default.nix
+      ├── thunk.nix
+      └── local
+          └── ... # checkout of your dependency
+
+  Instead of unpacked thunks *replacing* your thunk files, the source is placed in `local`.
+
+  This format provides the new `thunk.nix` interface regardless of whether the thunk is packed or unpacked. With this you can always access the raw source of your thunk from nix with `import my-thunk/thunk.nix`. `thunk.nix` always uses your local copy if it's available or fetches the source described in `github.json`/`git.json` if it's not.
+
+  To convert a `git` checkout into a thunk you can use the new `ob thunk init` command. `ob thunk pack` will automatically perform `ob thunk init` on raw `git` checkouts.
+
+  Note that this format is backwards compatible since `import ./my-thunk` works the same way both before and after this change.
+* ([#665](https://github.com/obsidiansystems/obelisk/pull/665)) Add `--interpret` and `--no-interpret` options to `ob run`/`ob watch`/`ob repl`/`ob shell`. These options allow you to pick which paths will be pre-compiled by `nix` when entering the shell/session and which won't. For example `ob run --no-interpret dep` will ensure that any dependencies found in `./dep` will be built by `nix` before loading the rest of the project into the `ghci` session. The same configuration for `ob shell` will ensure that those packages are built and available in the `ghc` package database inside the shell.
+
+  **NOTE:** `ob shell`'s default behavior is now different. By default it now behaves like `ob run`/`ob watch`/`ob repl` in that it does *not* pre-build any packages whose `.cabal` or `package.yaml` files are found in the project. To regain the previous behavior, use `ob shell --no-interpret . --interpret backend --interpret common --interpret frontend` from the project root.
+* ([#695](https://github.com/obsidiansystems/obelisk/pull/695)) `ob deploy init` now requires that your obelisk project be a clean `git` checkout with pushed changes. It has always required that your obelisk project be a `git` repository, but it did not require that your local changes be committed and pushed. This new requirement is added to ensure users don't accidentally create a deployment pointing to an old version of the project.
+* ([#693](https://github.com/obsidiansystems/obelisk/pull/693)) Fix a bug where some packages in `.attr-cache` directories would be incorrectly picked up and used instead of the correct ones when using `ob run`/`ob watch`/`ob repl`.
+
 ## v0.7.0.1
 
 * Fix the version number for `ob` the command-line tool. ([#679](https://github.com/obsidiansystems/obelisk/pull/679))
