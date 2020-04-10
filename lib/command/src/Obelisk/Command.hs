@@ -283,7 +283,7 @@ interpretOpts = many
           strOption (common <> long "no-interpret" <> help
             "Make packages found in DIR available in the package database (but only when they are used dependencies). \
             \ This will build the packages in DIR before loading GHCi. \
-            \See help for ---on for how the two options are related."
+            \See help for --interpret for how the two options are related."
           )
     )
   where
