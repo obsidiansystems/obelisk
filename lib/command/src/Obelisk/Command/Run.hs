@@ -426,15 +426,21 @@ getGhciSessionSettings
   -> FilePath -- ^ All paths written to the .ghci file will be relative to this path
   -> m [String]
 getGhciSessionSettings (toList -> packageInfos) pathBase = do
-  selfExe <- liftIO getExecutablePath
-  -- TODO: Shell escape
+  -- N.B. ghci settings do NOT support escaping in any way. To minimize the likelihood that
+  -- paths-with-spaces ruin our day, we first canonicalize everything, and then relativize
+  -- all paths to 'pathBase'.
+  selfExe <- liftIO $ canonicalizePath =<< getExecutablePath
+  canonicalPathBase <- liftIO $ canonicalizePath pathBase
+
+  (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
+    canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
+    canonicalPkgFile <- canonicalizePath $ _cabalPackageInfo_packageFile pkg
+    pure (makeRelative canonicalPathBase canonicalPkgFile, makeRelative canonicalPathBase <$> canonicalSrcDirs)
+
   pure
     $  ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
-    <> concatMap (\p -> ["-optF", makeRelative pathBase $ _cabalPackageInfo_packageFile p]) packageInfos
-    <> [ "-i" <> intercalate ":" (packageInfos >>= rootedSourceDirs) ]
-  where
-    rootedSourceDirs pkg = NE.toList $
-      makeRelative pathBase . (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
+    <> concatMap (\p -> ["-optF", p]) pkgFiles
+    <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]
 
 -- | Run ghci repl
 runGhciRepl
