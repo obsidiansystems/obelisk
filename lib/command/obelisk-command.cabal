@@ -18,6 +18,7 @@ library
     , either
     , errors
     , exceptions
+    , extra
     , filepath
     , git
     , github

@@ -73,7 +73,7 @@ import Obelisk.CliApp (
     withSpinner,
   )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithPkgs, toImplDir, withProjectRoot, findProjectAssets)
+import Obelisk.Command.Project (nixShellWithPkgs, withProjectRoot, findProjectAssets)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
@@ -93,7 +93,12 @@ data CabalPackageInfo = CabalPackageInfo
   }
 
 -- | 'Bool' with a better name for it's purpose.
-data HackOn = HackOn_HackOn | HackOn_NoHackOn deriving (Eq, Ord, Show)
+data Interpret = Interpret_Interpret | Interpret_NoInterpret deriving (Eq, Ord, Show)
+
+textInterpret :: Interpret -> Text
+textInterpret = \case
+  Interpret_Interpret -> "Interpret"
+  Interpret_NoInterpret -> "NoInterpret"
 
 -- | Describe a set of 'FilePath's as a tree to facilitate merging them in a convenient way.
 data PathTree a = PathTree_Node
@@ -103,6 +108,17 @@ data PathTree a = PathTree_Node
 
 emptyPathTree :: PathTree a
 emptyPathTree = PathTree_Node Nothing mempty
+
+-- | 2D ASCII drawing of a 'PathTree'. Adapted from Data.Tree.draw.
+drawPathTree :: (a -> Text) -> PathTree a -> Text
+drawPathTree showA (PathTree_Node _ ts0) = T.intercalate "\n" $ goForest (Map.toList ts0)
+  where
+    annotated ma = maybe id (\a b -> b <> " [" <> showA a <> "]") ma . T.pack
+    goTree (fp, PathTree_Node ma forest) = annotated ma fp : goForest (Map.toList forest)
+    goForest [] = []
+    goForest [tree] = shift "└─ " "   " (goTree tree)
+    goForest (tree:forest) = shift "├─ " "│  " (goTree tree) <> goForest forest
+    shift first other = zipWith (<>) (first : repeat other)
 
 -- | Used to signal to obelisk that it's being invoked as a preprocessor
 preprocessorIdentifier :: String
@@ -142,9 +158,9 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
       <> [ "-RTS" ]
   void $ waitForProcess ph
 
-run :: MonadObelisk m => FilePath -> PathTree HackOn -> m ()
-run root hackPaths = do
-  pkgs <- getParsedLocalPkgs root hackPaths
+run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
+run root interpretPaths = do
+  pkgs <- getParsedLocalPkgs root interpretPaths
   withGhciScript pkgs root $ \dotGhciPath -> do
     freePort <- getFreePort
     assets <- findProjectAssets root
@@ -157,51 +173,52 @@ run root hackPaths = do
       , "Frontend.frontend"
       ]
 
-runRepl :: MonadObelisk m => FilePath -> PathTree HackOn -> m ()
-runRepl root hackPaths = do
-  pkgs <- getParsedLocalPkgs root hackPaths
+runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
+runRepl root interpretPaths = do
+  pkgs <- getParsedLocalPkgs root interpretPaths
   withGhciScript pkgs "." $ \dotGhciPath ->
     runGhciRepl root pkgs dotGhciPath
 
-runWatch :: MonadObelisk m => FilePath -> PathTree HackOn -> m ()
-runWatch root hackPaths = do
-  pkgs <- getParsedLocalPkgs root hackPaths
+runWatch :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
+runWatch root interpretPaths = do
+  pkgs <- getParsedLocalPkgs root interpretPaths
   withGhciScript pkgs root $ \dotGhciPath ->
     runGhcid root True dotGhciPath pkgs Nothing
 
-exportGhciConfig :: MonadObelisk m => FilePath -> PathTree HackOn -> m [String]
-exportGhciConfig root hackPaths = do
-  pkgs <- getParsedLocalPkgs root hackPaths
+exportGhciConfig :: MonadObelisk m => FilePath -> PathTree Interpret -> m [String]
+exportGhciConfig root interpretPaths = do
+  pkgs <- getParsedLocalPkgs root interpretPaths
   getGhciSessionSettings pkgs "."
 
-nixShellForHackPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree HackOn -> Maybe String -> m ()
-nixShellForHackPaths isPure shell root hackPaths cmd = do
-  pkgs <- getParsedLocalPkgs root hackPaths
+nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
+nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
+  pkgs <- getParsedLocalPkgs root interpretPaths
   nixShellWithPkgs root isPure False (packageInfoToNamePathMap pkgs) shell cmd
 
 -- | Like 'getLocalPkgs' but also parses them and fails if any of them can't be parsed.
-getParsedLocalPkgs :: MonadObelisk m => FilePath -> PathTree HackOn -> m (NonEmpty CabalPackageInfo)
-getParsedLocalPkgs root hackPaths = parsePackagesOrFail =<< getLocalPkgs root hackPaths
+getParsedLocalPkgs :: MonadObelisk m => FilePath -> PathTree Interpret -> m (NonEmpty CabalPackageInfo)
+getParsedLocalPkgs root interpretPaths = parsePackagesOrFail =<< getLocalPkgs root interpretPaths
 
 -- | Relative paths to local packages of an obelisk project.
 --
 -- These are a combination of the obelisk predefined local packages,
 -- and any packages that the user has set with the @packages@ argument
 -- to the Nix @project@ function.
-getLocalPkgs :: forall m. MonadObelisk m => FilePath -> PathTree HackOn -> m (Set FilePath)
-getLocalPkgs root hackPaths = do
-  putLog Debug [i|Finding packages with root ${root} and hacking paths ${hackPaths}|]
+getLocalPkgs :: forall m. MonadObelisk m => FilePath -> PathTree Interpret -> m (Set FilePath)
+getLocalPkgs root interpretPaths = do
+  putLog Debug $ [i|Finding packages with root ${root} and interpret paths:|] <> "\n" <> drawPathTree textInterpret interpretPaths
   obeliskPackagePaths <- runFind ["-L", root, "-name", ".obelisk", "-type", "d"]
 
   -- We do not want to find packages that are embedded inside other obelisk projects, unless that
   -- obelisk project is our own.
-  let obeliskPackageExclusions = Set.fromList $ filter (/= root) $ map takeDirectory obeliskPackagePaths
-      rootsAndExclusions = calcHackOnFinds "" hackPaths
+  obeliskPackageExclusions <- liftIO $ fmap Set.fromList $ traverse canonicalizePath $ filter (/= root) $ map takeDirectory obeliskPackagePaths
+  putLog Debug [i|Excluding obelisk packages: ${T.pack $ unwords $ Set.toList obeliskPackageExclusions}|]
+  let rootsAndExclusions = calcIntepretFinds "" interpretPaths
 
-  fmap fold $ for (Map.toAscList rootsAndExclusions) $ \(hackPathRoot, exclusions) ->
-    let allExclusions = obeliskPackageExclusions <> exclusions <> Set.singleton (toImplDir "*" </> attrCacheFileName)
+  fmap fold $ for (Map.toAscList rootsAndExclusions) $ \(interpretPathRoot, exclusions) ->
+    let allExclusions = obeliskPackageExclusions <> exclusions <> Set.singleton ("*" </> attrCacheFileName)
     in fmap (Set.fromList . map normalise) $ runFind $
-      ["-L", hackPathRoot, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
+      ["-L", interpretPathRoot, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
       <> concat [["-not", "-path", p </> "*"] | p <- toList allExclusions]
   where
     runFind args = do
@@ -211,12 +228,12 @@ getLocalPkgs root hackPaths = do
 
 -- | Calculates a set of root 'FilePath's along with each one's corresponding set of exclusions.
 --   This is used when constructing a set of @find@ commands to run to produce a set of packages
---   that matches the user's @--hack-on@/@--no-hack-on@ settings.
-calcHackOnFinds :: FilePath -> PathTree HackOn -> Map FilePath (Set FilePath)
-calcHackOnFinds treeRoot0 tree0 = runIdentity $ go treeRoot0 tree0
+--   that matches the user's @--interpret@/@--no-interpret@ settings.
+calcIntepretFinds :: FilePath -> PathTree Interpret -> Map FilePath (Set FilePath)
+calcIntepretFinds treeRoot0 tree0 = runIdentity $ go treeRoot0 tree0
   where
-    go treeRoot tree = foldPathTreeFor (== HackOn_HackOn) treeRoot tree $ \parent children -> do
-      exclusions <- foldPathTreeFor (== HackOn_NoHackOn) parent children $ \parent' children' ->
+    go treeRoot tree = foldPathTreeFor (== Interpret_Interpret) treeRoot tree $ \parent children -> do
+      exclusions <- foldPathTreeFor (== Interpret_NoInterpret) parent children $ \parent' children' ->
         pure $ Map.singleton parent' children'
       deeperFinds <- fmap fold $ Map.traverseWithKey go exclusions
       pure $ Map.singleton parent (Map.keysSet exclusions) <> deeperFinds
@@ -342,14 +359,19 @@ parsePackagesOrFail dirs' = do
         | _cabalPackageInfo_buildable packageInfo -> Right packageInfo
       _ -> Left dir
 
-  let packagesByName = Map.fromListWith (<>) [(_cabalPackageInfo_packageName p, p NE.:| []) | p <- packageInfos']
+  -- Sort duplicate packages such that we prefer shorter paths, but fall back to alphabetical ordering.
+  let packagesByName = Map.map (NE.sortBy $ comparing $ \p -> let n = _cabalPackageInfo_packageFile p in (length n, n))
+                     $ Map.fromListWith (<>) [(_cabalPackageInfo_packageName p, p NE.:| []) | p <- packageInfos']
   unambiguous <- ifor packagesByName $ \packageName ps -> case ps of
     p NE.:| [] -> pure p -- No ambiguity here
     p NE.:| _ -> do
-      putLog Warning $ T.pack $
-        "Packages named '" <> T.unpack packageName <> "' appear in " <> show (length ps) <> " different locations: "
-        <> intercalate ", " (map _cabalPackageInfo_packageFile $ toList ps)
-        <> "; Picking " <> _cabalPackageInfo_packageFile p
+      let chosenText = "  [Chosen] "
+          prefix p'
+            | _cabalPackageInfo_packageFile p' == _cabalPackageInfo_packageFile p = chosenText
+            | otherwise = T.map (const ' ') chosenText
+      putLog Warning $ T.unlines $
+        "Packages named '" <> packageName <> "' appear in " <> T.pack (show $ length ps) <> " different locations: "
+        : map (\p' -> prefix p' <> T.pack (_cabalPackageInfo_packageFile p')) (toList ps)
       pure p
 
   packageInfos <- case NE.nonEmpty $ toList unambiguous of
