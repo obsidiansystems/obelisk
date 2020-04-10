@@ -27,6 +27,7 @@ import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.Map.Monoidal as MMap
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -215,7 +216,7 @@ getLocalPkgs root interpretPaths = do
   putLog Debug [i|Excluding obelisk packages: ${T.pack $ unwords $ Set.toList obeliskPackageExclusions}|]
   let rootsAndExclusions = calcIntepretFinds "" interpretPaths
 
-  fmap fold $ for (Map.toAscList rootsAndExclusions) $ \(interpretPathRoot, exclusions) ->
+  fmap fold $ for (MMap.toAscList rootsAndExclusions) $ \(interpretPathRoot, exclusions) ->
     let allExclusions = obeliskPackageExclusions <> exclusions <> Set.singleton ("*" </> attrCacheFileName)
     in fmap (Set.fromList . map normalise) $ runFind $
       ["-L", interpretPathRoot, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
@@ -229,14 +230,14 @@ getLocalPkgs root interpretPaths = do
 -- | Calculates a set of root 'FilePath's along with each one's corresponding set of exclusions.
 --   This is used when constructing a set of @find@ commands to run to produce a set of packages
 --   that matches the user's @--interpret@/@--no-interpret@ settings.
-calcIntepretFinds :: FilePath -> PathTree Interpret -> Map FilePath (Set FilePath)
+calcIntepretFinds :: FilePath -> PathTree Interpret -> MMap.MonoidalMap FilePath (Set FilePath)
 calcIntepretFinds treeRoot0 tree0 = runIdentity $ go treeRoot0 tree0
   where
     go treeRoot tree = foldPathTreeFor (== Interpret_Interpret) treeRoot tree $ \parent children -> do
       exclusions <- foldPathTreeFor (== Interpret_NoInterpret) parent children $ \parent' children' ->
         pure $ Map.singleton parent' children'
-      deeperFinds <- fmap fold $ Map.traverseWithKey go exclusions
-      pure $ Map.singleton parent (Map.keysSet exclusions) <> deeperFinds
+      deeperFinds <- Map.traverseWithKey go exclusions
+      pure $ MMap.singleton parent (Map.keysSet exclusions) <> fold (MMap.MonoidalMap deeperFinds)
 
 -- | Traverses a 'PathTree' and folds all leaves matching a given predicate.
 foldPathTreeFor
