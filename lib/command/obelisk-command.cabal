@@ -31,6 +31,7 @@ library
     , megaparsec
     , modern-uri
     , monad-loops
+    , monoidal-containers
     , mtl
     , network
     , network-uri
