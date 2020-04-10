@@ -10,8 +10,9 @@ import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
 import Data.Foldable (for_)
-import Data.List
-import Data.List.NonEmpty (nonEmpty)
+import Data.List (isInfixOf, isPrefixOf)
+import Data.List.NonEmpty (NonEmpty, nonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import Data.Traversable (for)
@@ -86,7 +87,7 @@ data ObCommand
    | ObCommand_Deploy DeployCommand
    | ObCommand_Run [(FilePath, HackOn)]
    | ObCommand_Profile String [String]
-   | ObCommand_Thunk ThunkCommand
+   | ObCommand_Thunk ThunkOption
    | ObCommand_Repl [(FilePath, HackOn)]
    | ObCommand_Watch [(FilePath, HackOn)]
    | ObCommand_Shell ShellOpts
@@ -109,7 +110,7 @@ obCommand cfg = hsubparser
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
     , command "run" $ info (ObCommand_Run <$> hackOnOpts) $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
-    , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
+    , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (ObCommand_Repl <$> hackOnOpts) $ progDesc "Open an interactive interpreter"
     , command "watch" $ info (ObCommand_Watch <$> hackOnOpts) $ progDesc "Watch current project for errors and warnings"
     , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
@@ -208,15 +209,6 @@ profileCommand = (,)
     <> showDefault
     ))
 
-
---TODO: Result should provide normalised path and also original user input for error reporting.
-thunkDirectoryParser :: Parser FilePath
-thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
-  [ action "directory"
-  , metavar "THUNKDIR"
-  , help "Path to directory containing thunk data"
-  ]
-
 thunkConfig :: Parser ThunkConfig
 thunkConfig = ThunkConfig
   <$>
@@ -235,18 +227,33 @@ thunkPackConfig = ThunkPackConfig
   <$> switch (long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care.")
   <*> thunkConfig
 
+data ThunkOption = ThunkOption
+  { _thunkOption_thunks :: NonEmpty FilePath
+  , _thunkOption_command :: ThunkCommand
+  } deriving Show
+
 data ThunkCommand
-   = ThunkCommand_Update [FilePath] ThunkUpdateConfig
-   | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack   [FilePath] ThunkPackConfig
+  = ThunkCommand_Update ThunkUpdateConfig
+  | ThunkCommand_Unpack
+  | ThunkCommand_Pack ThunkPackConfig
+  | ThunkCommand_Init
   deriving Show
 
-thunkCommand :: Parser ThunkCommand
-thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> thunkUpdateConfig) $ progDesc "Update thunk to latest revision available"
-  , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> thunkPackConfig) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+thunkOption :: Parser ThunkOption
+thunkOption = hsubparser $ mconcat
+  [ command "update" $ info (thunkOptionWith $ ThunkCommand_Update <$> thunkUpdateConfig) $ progDesc "Update packed thunk to latest revision available on the tracked branch"
+  , command "unpack" $ info (thunkOptionWith $ pure ThunkCommand_Unpack) $ progDesc "Unpack thunk into git checkout of revision it points to"
+  , command "pack" $ info (thunkOptionWith $ ThunkCommand_Pack <$> thunkPackConfig) $ progDesc "Pack git checkout or unpacked thunk into thunk that points at the current branch's upstream"
+  , command "init" $ info (thunkOptionWith $ pure ThunkCommand_Init) $ progDesc "Initialize git checkout by converting it to an unpacked thunk"
   ]
+  where
+    thunkOptionWith f = ThunkOption
+      <$> ((NonEmpty.:|)
+            <$> thunkDirArg (metavar "THUNKDIRS..." <> help "Paths to directories containing thunk data")
+            <*> many (thunkDirArg mempty)
+          )
+      <*> f
+    thunkDirArg opts = fmap (dropTrailingPathSeparator . normalise) $ strArgument $ action "directory" <> opts
 
 data ShellOpts
   = ShellOpts
@@ -384,16 +391,9 @@ ob = \case
       when rootEqualsTarget $
         failWith $ "Deploy directory " <> T.pack deployDir <> " should not be the same as project root."
       thunkPtr <- readThunk root >>= \case
-        Left err -> failWith $ case err of
-          ReadThunkError_AmbiguousFiles ->
-            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
-          ReadThunkError_UnrecognizedFiles ->
-            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
-          _ -> "thunk read: " <> T.pack (show err)
-        Right (ThunkData_Packed ptr) -> return ptr
-        Right (ThunkData_Checkout (Just ptr)) -> return ptr
-        Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr False root Nothing
+        Left err -> failWith $ "Can't read thunk at: " <> T.pack root <> ": " <> T.pack (show err)
+        Right (ThunkData_Packed _ ptr) -> return ptr
+        Right ThunkData_Checkout -> getThunkPtr False root Nothing
       let sshKeyPath = _deployInitOpts_sshKey deployOpts
           hostname = _deployInitOpts_hostname deployOpts
           route = _deployInitOpts_route deployOpts
@@ -409,10 +409,13 @@ ob = \case
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run hackPathsList -> withHackPaths hackPathsList run
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
-  ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
-    ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
-    ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
+  ObCommand_Thunk to -> case _thunkOption_command to of
+    ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
+    ThunkCommand_Unpack -> for_ thunks unpackThunk
+    ThunkCommand_Pack config -> for_ thunks (packThunk config)
+    ThunkCommand_Init -> for_ thunks initThunk
+    where
+      thunks = _thunkOption_thunks to
   ObCommand_Repl hackPathsList -> withHackPaths hackPathsList runRepl
   ObCommand_Watch hackPathsList -> withHackPaths hackPathsList runWatch
   ObCommand_Shell (ShellOpts shellAttr hackPathsList cmd) -> withHackPaths hackPathsList $ \root hackPaths ->

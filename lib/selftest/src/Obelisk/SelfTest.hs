@@ -4,7 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell  #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.SelfTest where
@@ -13,13 +13,19 @@ import Control.Concurrent (threadDelay)
 import Control.Exception (bracket, throw, try)
 import Control.Monad
 import Control.Monad.IO.Class
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson
 import Data.Bool (bool)
+import qualified Data.ByteString.Lazy as LBS
+import Data.Foldable (for_)
 import Data.Function (fix)
+import qualified Data.Map as Map
 import Data.Semigroup ((<>))
 import qualified Data.Set as Set
 import Data.String
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types as HTTP
@@ -64,8 +70,14 @@ chmodPath = $(staticWhich "chmod")
 whoamiPath :: FilePath
 whoamiPath = $(staticWhich "whoami")
 
+nixInstantiatePath :: FilePath
+nixInstantiatePath = $(staticWhich "nix-instantiate")
+
 nixBuildPath :: FilePath
 nixBuildPath = $(staticWhich "nix-build")
+
+nixPrefetchGitPath :: FilePath
+nixPrefetchGitPath = $(staticWhich "nix-prefetch-git")
 
 lnPath :: FilePath
 lnPath = $(staticWhich "ln")
@@ -103,6 +115,17 @@ ob = "ob"
 augmentWithVerbosity :: (String -> [Text] -> a) -> String -> Bool -> [Text] -> a
 augmentWithVerbosity runner executable isVerbose args = runner executable $ (if isVerbose then ("-v" :) else id) args
 
+isolatedGitShell :: Bool -> FilePath -> (([Text] -> Sh Text) -> Sh a) -> IO a
+isolatedGitShell isVerbose dir f = shelly $ bool silently verbosely isVerbose $ do
+  setenv "HOME" "/dev/null"
+  setenv "GIT_CONFIG_NOSYSTEM" "1"
+  _ <- git ["init"]
+  _ <- git ["config", "user.name", "SelfTest"]
+  _ <- git ["config", "user.email", "self@test"]
+  f git
+  where
+    git args = run gitPath $ ["-C", toTextIgnore dir] <> args
+
 -- | Copies a git repo to a new location and "resets" the git history to include
 -- exactly one commit with all files added. It then restricts writing and reading
 -- for group and user to make the repo ideal for being a valid git remote for thunks.
@@ -110,21 +133,14 @@ augmentWithVerbosity runner executable isVerbose args = runner executable $ (if 
 -- Using this allows dirty repos to be used as git remotes during the test since 'git clone'ing
 -- a dirty repo will not include the uncommitted changes.
 copyForGitRemote :: Bool -> FilePath -> FilePath -> IO ()
-copyForGitRemote isVerbose origDir copyDir = shelly $ bool silently verbosely isVerbose $ do
-  setenv "HOME" "/dev/null"
-  setenv "GIT_CONFIG_NOSYSTEM" "1"
+copyForGitRemote isVerbose origDir copyDir = isolatedGitShell isVerbose copyDir $ \git -> do
   run_ rsyncPath
     [ "-r", "--no-perms", "--no-owner", "--no-group", "--exclude", ".git"
     , toTextIgnore (addTrailingPathSeparator origDir), toTextIgnore copyDir
     ]
-  git ["init"]
-  git ["config", "user.name", "SelfTest"]
-  git ["config", "user.email", "self@test"]
-  git ["add", "--all"]
-  git ["commit", "-m", "Copy repo"]
+  _ <- git ["add", "--all"]
+  _ <- git ["commit", "-m", "Copy repo"]
   run_ chmodPath ["-R", "u-w,g-rw,o-rw", toTextIgnore copyDir] -- Freeze this state
-  where
-    git args = run_ gitPath $ ["-C", toTextIgnore copyDir] <> args
 
 main :: IO ()
 main = do
@@ -241,7 +257,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       run_ gitPath ["clone", "https://github.com/reflex-frp/reflex.git", toTextIgnore dir, "--branch", branch]
       runOb_ ["thunk", "pack", toTextIgnore dir]
       runOb_ ["thunk", "unpack", toTextIgnore dir]
-      branch' <- chdir dir $ run gitPath ["rev-parse", "--abbrev-ref", "HEAD"]
+      branch' <- run gitPath ["-C", toTextIgnore $ dir </> unpackedDirName, "rev-parse", "--abbrev-ref", "HEAD"]
       liftIO $ assertEqual "" branch (T.strip branch')
 
     it "can pack and unpack plain git repos" $
@@ -253,10 +269,10 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
         runOb_ ["thunk", "pack", repo]
         packedFiles <- Set.fromList <$> ls (fromText repo)
         liftIO $ assertEqual "" packedFiles $ Set.fromList $ (repo </>) <$>
-          ["default.nix", "github.json", ".attr-cache" :: FilePath]
+          ["default.nix", "thunk.nix", "github.json" :: FilePath]
 
         runOb_ ["thunk", "unpack", repo]
-        chdir (fromText repo) $ do
+        chdir (fromText repo </> unpackedDirName) $ do
           unpackHash <- revParseHead
           assertRevEQ origHash unpackHash
 
@@ -264,6 +280,8 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
 
     it "aborts thunk pack when there are uncommitted files" $ inTmpObInitWithImplCopy $ \dir -> do
       testThunkPack' (dir </> thunk)
+
+    it "works on legacy git thunks" $ testLegacyGitThunks isVerbose
 
   describe "ob thunk update --branch" $ parallel $ do
     it "can change a thunk to the latest version of a desired branch" $ withTmp $ \dir -> do
@@ -309,10 +327,11 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
 
     withObeliskImplClean f =
       withSystemTempDirectory "obelisk-impl-clean" $ \obeliskImpl -> do
-        void . shellyOb verbosity $ chdir obeliskImpl $ do
+        void . shellyOb verbosity $ do
           dirtyFiles <- T.strip <$> run gitPath ["-C", toTextIgnore obeliskRepoReadOnly, "diff", "--stat"]
           () <- when (dirtyFiles /= "") $ error "SelfTest does not work correctly with dirty obelisk repos as remote"
           run_ gitPath ["clone", "file://" <> toTextIgnore obeliskRepoReadOnly, toTextIgnore obeliskImpl]
+          runOb_ ["thunk", "init", toTextIgnore obeliskImpl]
         f obeliskImpl
 
     withInitCache f =
@@ -374,28 +393,31 @@ testObRunInDir executable extraArgs mdir httpManager = maskExitSuccess $ do
       else exit 0
 
 testThunkPack :: String -> [Text] -> FilePath -> Sh ()
-testThunkPack executable args path' = withTempFile (T.unpack $ toTextIgnore path') "test-file" $ \file handle -> do
-  let pack' = readProcessWithExitCode executable (T.unpack <$> ["thunk", "pack", toTextIgnore path'] ++ args) ""
-      ensureThunkPackFails q = liftIO $ pack' >>= \case
-        (code, out, err)
-          | code == ExitSuccess -> fail $ "ob thunk pack succeeded when it should have failed with error '" <> show q <> "'"
-          | q `T.isInfixOf` T.pack (out <> err) -> pure ()
-          | otherwise -> fail $ "ob thunk pack failed for an unexpected reason, expecting '" <> show q <> "', received: " <> show out <> "\nstderr: " <> err
-      git = chdir path' . run gitPath
+testThunkPack executable args path' = withTempFile repoDir "test-file" $ \file handle -> do
+  let
+    pack' = readProcessWithExitCode executable (["thunk", "pack", path'] ++ map T.unpack args) ""
+    ensureThunkPackFails q = liftIO $ pack' >>= \case
+      (code, out, err)
+        | code == ExitSuccess -> fail $ "ob thunk pack succeeded when it should have failed with error '" <> show q <> "'"
+        | q `T.isInfixOf` T.pack (out <> err) -> pure ()
+        | otherwise -> fail $ "ob thunk pack failed for an unexpected reason, expecting '" <> show q <> "', received: " <> show out <> "\nstderr: " <> err
+    git = chdir repoDir . run_ gitPath
   -- Untracked files
   ensureThunkPackFails "Untracked files"
-  void $ git ["add", T.pack file]
+  git ["add", T.pack file]
   -- Uncommitted files (staged)
   ensureThunkPackFails "unsaved"
-  chdir path' $ commit "test commit"
+  chdir repoDir $ commit "test commit"
   -- Non-pushed commits in any branch
   ensureThunkPackFails "not yet pushed"
   -- Uncommitted files (unstaged)
   liftIO $ T.hPutStrLn handle "test file" >> hClose handle
   ensureThunkPackFails "modified"
   -- Existing stashes
-  void $ git $ gitUserConfig <> [ "stash" ]
+  git $ gitUserConfig <> [ "stash" ]
   ensureThunkPackFails "has stashes"
+  where
+    repoDir = path' </> unpackedDirName
 
 -- | Blocks until a non-empty line is available
 hGetLineSkipBlanks :: MonadIO m => Handle -> m Text
@@ -456,3 +478,126 @@ getFreePorts n = Socket.withSocketsDo $ do
       sock <- Socket.socket (Socket.addrFamily addr) (Socket.addrSocketType addr) (Socket.addrProtocol addr)
       Socket.bind sock (Socket.addrAddress addr)
       pure sock
+
+testLegacyGitThunks :: Bool -> IO ()
+testLegacyGitThunks isVerbose = withSystemTempDirectory "test-git-repo" $ \gitDir -> do
+  isolatedGitShell isVerbose gitDir $ \git -> do
+    writefile (gitDir </> ("default.nix" :: FilePath)) "{}: \"hello\""
+    _ <- git ["add", "--all"]
+    _ <- git ["commit", "-m", "Initial commit"]
+    rev <- T.strip <$> git ["rev-parse", "HEAD"]
+    sha256 :: Text
+      <-  either error pure
+      =<< (Aeson.parseEither (Aeson..: "sha256") <=< Aeson.eitherDecodeStrict . T.encodeUtf8)
+      <$> run nixPrefetchGitPath [toTextIgnore gitDir]
+
+    for_ (legacyGitThunks (GitThunkParams gitDir rev sha256)) $ \mkFiles ->
+      withSystemTempDirectory "test-thunks" $ \thunkDir -> do
+        let nixEval = run nixInstantiatePath ["--eval", toTextIgnore (thunkDir </> ("thunk.nix" :: FilePath))]
+        liftIO $ mkFiles thunkDir
+        run_ "ob" ["thunk", "unpack", toTextIgnore thunkDir]
+        unpackedEval <- nixEval
+        run_ "ob" ["thunk", "pack", toTextIgnore thunkDir]
+        packedEval <- nixEval
+        liftIO $ assertBool "Unpacked and packed thunk.nix should not eval to the same thing" $
+          unpackedEval /= packedEval
+
+data GitThunkParams = GitThunkParams
+  { _gitThunkParams_repo :: !FilePath
+  , _gitThunkParams_rev :: !Text
+  , _gitThunkParams_sha256 :: !Text
+  } deriving Show
+
+legacyGitThunks :: GitThunkParams -> [FilePath -> IO ()]
+legacyGitThunks (GitThunkParams repo' rev sha256) =
+  [ mkLegacyIO
+      (T.unlines
+        [ "# DO NOT HAND-EDIT THIS FILE"
+        , "let fetchGit = {url, rev, ref ? null, branch ? null, sha256 ? null, fetchSubmodules ? null}:"
+        , "  assert !fetchSubmodules; (import <nixpkgs> {}).fetchgit { inherit url rev sha256; };"
+        , "in import (fetchGit (builtins.fromJSON (builtins.readFile ./git.json)))"
+        ]
+      )
+      (Map.fromList
+        [ ("url", repo)
+        , ("rev", rev)
+        , ("branch", "master")
+        , ("sha256", sha256)
+        ]
+      )
+  , mkLegacyIO
+      (T.unlines
+        [ "# DO NOT HAND-EDIT THIS FILE"
+        , "let fetchGit = {url, rev, ref ? null, branch ? null, sha256 ? null, fetchSubmodules ? null}:"
+        , "  if builtins.hasAttr \"fetchGit\" builtins"
+        , "    then builtins.fetchGit ({ inherit url rev; } // (if branch == null then {} else { ref = branch; }))"
+        , "    else abort \"Plain Git repositories are only supported on nix 2.0 or higher.\";"
+        , "in import (fetchGit (builtins.fromJSON (builtins.readFile ./git.json)))"
+        ]
+      )
+      (Map.fromList
+        [ ("url", repo)
+        , ("rev", rev)
+        , ("branch", "master")
+        , ("sha256", sha256)
+        ]
+      )
+  , mkLegacyIO
+      (T.unlines
+        [ "# DO NOT HAND-EDIT THIS FILE"
+        , "let fetch = {url, rev, ref ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:"
+        , "  let realUrl = let firstChar = builtins.substring 0 1 url; in"
+        , "    if firstChar == \"/\" then /. + url"
+        , "    else if firstChar == \".\" then ./. + url"
+        , "    else url;"
+        , "  in if !fetchSubmodules && private then builtins.fetchGit {"
+        , "    url = realUrl; inherit rev;"
+        , "  } else (import <nixpkgs> {}).fetchgit {"
+        , "    url = realUrl; inherit rev sha256;"
+        , "  };"
+        , "in import (fetch (builtins.fromJSON (builtins.readFile ./git.json)))"
+        ]
+      )
+      (Map.fromList
+        [ ("url", Aeson.String repo)
+        , ("rev", Aeson.String rev)
+        , ("branch", Aeson.String "master")
+        , ("sha256", Aeson.String sha256)
+        , ("private", Aeson.Bool False)
+        ]
+      )
+  , mkLegacyIO
+      (T.unlines
+        [ "# DO NOT HAND-EDIT THIS FILE"
+        , "let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:"
+        , "  let realUrl = let firstChar = builtins.substring 0 1 url; in"
+        , "    if firstChar == \"/\" then /. + url"
+        , "    else if firstChar == \".\" then ./. + url"
+        , "    else url;"
+        , "  in if !fetchSubmodules && private then builtins.fetchGit {"
+        , "    url = realUrl; inherit rev;"
+        , "    ${if branch == null then null else \"ref\"} = branch;"
+        , "  } else (import <nixpkgs> {}).fetchgit {"
+        , "    url = realUrl; inherit rev sha256;"
+        , "  };"
+        , "in import (fetch (builtins.fromJSON (builtins.readFile ./git.json)))"
+        ]
+      )
+      (Map.fromList
+        [ ("url", Aeson.String repo)
+        , ("rev", Aeson.String rev)
+        , ("branch", Aeson.String "master")
+        , ("sha256", Aeson.String sha256)
+        , ("private", Aeson.Bool False)
+        ]
+      )
+  ]
+  where
+    repo = T.pack repo'
+    mkLegacyIO :: Aeson.ToJSON v => Text -> Map.Map Text v -> FilePath -> IO ()
+    mkLegacyIO defaultNix gitJson dir = do
+      T.writeFile (dir </> ("default.nix" :: FilePath)) defaultNix
+      LBS.writeFile (dir </> ("git.json" :: FilePath)) (Aeson.encode gitJson)
+
+unpackedDirName :: FilePath
+unpackedDirName = "local"

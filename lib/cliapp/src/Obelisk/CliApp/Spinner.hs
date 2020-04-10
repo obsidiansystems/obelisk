@@ -3,7 +3,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
 -- | Provides a simple CLI spinner that interoperates cleanly with the rest of the logging output.
 module Obelisk.CliApp.Spinner
   ( withSpinner

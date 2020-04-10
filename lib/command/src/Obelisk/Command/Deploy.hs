@@ -9,7 +9,7 @@ module Obelisk.Command.Deploy where
 import Control.Lens
 import Control.Monad
 import Control.Monad.Catch (Exception (displayException), MonadThrow, bracket, throwM, try)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
@@ -77,8 +77,8 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
                    ]
 
   let srcDir = deployDir </> "src"
-  withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ liftIO $ do
-    createThunk srcDir thunkPtr
+  withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ do
+    createThunk srcDir $ Right thunkPtr
     setupObeliskImpl deployDir
 
   withSpinner "Writing deployment configuration" $ do
@@ -92,8 +92,8 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
-setupObeliskImpl :: FilePath -> IO ()
-setupObeliskImpl deployDir = do
+setupObeliskImpl :: MonadIO m => FilePath -> m ()
+setupObeliskImpl deployDir = liftIO $ do
   let
     implDir = toImplDir deployDir
     goBackUp = foldr (</>) "" $ (".." <$) $ splitPath $ makeRelative deployDir implDir
@@ -109,8 +109,8 @@ deployPush deployPath getNixBuilders = do
   routeHost <- getHostFromRoute enableHttps route
   let srcPath = deployPath </> "src"
   thunkPtr <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed ptr) -> return ptr
-    Right (ThunkData_Checkout _) -> do
+    Right (ThunkData_Packed _ ptr) -> return ptr
+    Right ThunkData_Checkout -> do
       checkGitCleanStatus srcPath True >>= \case
         True -> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
