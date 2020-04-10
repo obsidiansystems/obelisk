@@ -6,7 +6,6 @@
 {-# LANGUAGE TupleSections #-}
 module Obelisk.Command where
 
-import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
 import Data.Foldable (for_)
@@ -179,16 +178,6 @@ data DeployCommand
   | DeployCommand_Push (Maybe RemoteBuilder)
   | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
-  deriving Show
-
-data DeployInitOpts = DeployInitOpts
-  { _deployInitOpts_outputDir :: FilePath
-  , _deployInitOpts_sshKey :: FilePath
-  , _deployInitOpts_hostname :: [String]
-  , _deployInitOpts_route :: String
-  , _deployInitOpts_adminEmail :: String
-  , _deployInitOpts_enableHttps :: Bool
-  }
   deriving Show
 
 profileCommand :: Parser (String, [String])
@@ -387,22 +376,7 @@ ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
   ObCommand_Init source force -> initProject source force
   ObCommand_Deploy dc -> case dc of
-    DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
-      let deployDir = _deployInitOpts_outputDir deployOpts
-      r <- liftIO $ canonicalizePath root
-      rootEqualsTarget <- liftIO $ equalFilePath r <$> canonicalizePath deployDir
-      when rootEqualsTarget $
-        failWith $ "Deploy directory " <> T.pack deployDir <> " should not be the same as project root."
-      thunkPtr <- readThunk root >>= \case
-        Left err -> failWith $ "Can't read thunk at: " <> T.pack root <> ": " <> T.pack (show err)
-        Right (ThunkData_Packed _ ptr) -> return ptr
-        Right ThunkData_Checkout -> getThunkPtr False root Nothing
-      let sshKeyPath = _deployInitOpts_sshKey deployOpts
-          hostname = _deployInitOpts_hostname deployOpts
-          route = _deployInitOpts_route deployOpts
-          adminEmail = _deployInitOpts_adminEmail deployOpts
-          enableHttps = _deployInitOpts_enableHttps deployOpts
-      deployInit thunkPtr deployDir sshKeyPath hostname route adminEmail enableHttps
+    DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployPush deployPath $ case remoteBuilder of

@@ -1,11 +1,13 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE DeriveGeneric #-}
 module Obelisk.Command.Deploy where
 
+import Control.Applicative (liftA2)
 import Control.Lens
 import Control.Monad
 import Control.Monad.Catch (Exception (displayException), MonadThrow, bracket, throwM, try)
@@ -16,6 +18,7 @@ import qualified Data.ByteString.Lazy as BSL
 import Data.Default
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.String.Here.Interpolated (i)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.Generics
@@ -36,18 +39,32 @@ import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
+data DeployInitOpts = DeployInitOpts
+  { _deployInitOpts_outputDir :: FilePath
+  , _deployInitOpts_sshKey :: FilePath
+  , _deployInitOpts_hostname :: [String]
+  , _deployInitOpts_route :: String
+  , _deployInitOpts_adminEmail :: String
+  , _deployInitOpts_enableHttps :: Bool
+  } deriving Show
 
-deployInit
+deployInit :: MonadObelisk m => DeployInitOpts -> FilePath -> m ()
+deployInit deployOpts root = do
+  let deployDir = _deployInitOpts_outputDir deployOpts
+  rootEqualsTarget <- liftIO $ liftA2 equalFilePath (canonicalizePath root) (canonicalizePath deployDir)
+  when rootEqualsTarget $
+    failWith [i|Deploy directory ${deployDir} should not be the same as project root.|]
+  thunkPtr <- readThunk root >>= \case
+    Right (ThunkData_Packed _ ptr) -> return ptr
+    _ -> getThunkPtr True root Nothing
+  deployInit' thunkPtr deployOpts
+
+deployInit'
   :: MonadObelisk m
   => ThunkPtr
-  -> FilePath
-  -> FilePath
-  -> [String] -- ^ hostnames
-  -> String -- ^ route
-  -> String -- ^ admin email
-  -> Bool -- ^ enable https
+  -> DeployInitOpts
   -> m ()
-deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps = do
+deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminEmail enableHttps) = do
   liftIO $ createDirectoryIfMissing True deployDir
   localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
