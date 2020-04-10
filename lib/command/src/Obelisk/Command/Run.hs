@@ -212,7 +212,8 @@ getLocalPkgs root interpretPaths = do
 
   -- We do not want to find packages that are embedded inside other obelisk projects, unless that
   -- obelisk project is our own.
-  obeliskPackageExclusions <- liftIO $ fmap Set.fromList $ traverse canonicalizePath $ filter (/= root) $ map takeDirectory obeliskPackagePaths
+  obeliskPackageExclusions <- liftIO $ fmap Set.fromList $ traverse canonicalizePath $
+    filter (/= root) $ map takeDirectory obeliskPackagePaths
   putLog Debug [i|Excluding obelisk packages: ${T.pack $ unwords $ Set.toList obeliskPackageExclusions}|]
   let rootsAndExclusions = calcIntepretFinds "" interpretPaths
 

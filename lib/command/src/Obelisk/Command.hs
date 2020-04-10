@@ -455,12 +455,12 @@ getArgsConfig :: IO ArgsConfig
 getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = System.Info.os == "darwin" }
 
 -- | Resolves an ordered list of paths for use with @--interpret@/@--no-interpret@ by coalescing
---   paths into a non-ambiguous set of paths. Ambiguity is resolved by chosing right-most paths
+--   paths into a non-ambiguous set of paths. Ambiguity is resolved by choosing right-most paths
 --   over any preceeding identical paths.
 --
 --   For example: @a/b=ON a/b/c=OFF@ and @a/b/c=OFF a/b=ON@ are the same.
---   @a/b=ON a/b=OFF@ is reduced to @a/b=OFF@. We prefer right-biased choice to
---   increase scriptability.
+--   @a/b=ON a/b=OFF@ is reduced to @a/b=OFF@. We prefer right-biased choice to increase
+--   scriptability.
 --
 --   N.B. All the paths in the result will be canonicalized. It's impossible to determine path
 --   overlap otherwise.
