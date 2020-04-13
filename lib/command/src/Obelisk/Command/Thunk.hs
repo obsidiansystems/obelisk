@@ -409,7 +409,7 @@ initThunk :: MonadObelisk m => FilePath -> m ()
 initThunk target = withSpinner [i|Initializing thunk at ${target}|] $ do
   checkThunkDirectory target
   unlessM (liftIO $ doesDirectoryExist $ target </> ".git") $ failWith [i|${target} is not a git checkout.|]
-  ptr <- getThunkPtr False target Nothing
+  ptr <- getThunkPtr CheckClean_NoCheck target Nothing
   let tempThunkDir = target <.> "thunk-init"
   whenM (liftIO $ doesPathExist tempThunkDir) $
     failWith [i|A previous 'thunk init' left unfinished state at ${tempThunkDir}. You will need to rename or remove that path before trying again.|]
@@ -831,7 +831,8 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
     ("Packing thunk " <> T.pack thunkDir)
     (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $
     do
-      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir (_thunkConfig_private thunkConfig)
+      let checkClean = if force then CheckClean_NoCheck else CheckClean_FullCheck
+      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
       callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-rf", thunkDir] -- thunkDir may be a symlink
       createThunk thunkDir $ Right thunkPtr
       pure thunkPtr
@@ -844,15 +845,27 @@ modifyThunkPtrByConfig (ThunkConfig markPrivate') ptr = case markPrivate' of
       ThunkSource_GitHub s -> ThunkSource_GitHub $ s { _gitHubSource_private = markPrivate }
     }
 
-getThunkPtr :: forall m. MonadObelisk m => Bool -> FilePath -> Maybe Bool -> m ThunkPtr
-getThunkPtr checkClean dir mPrivate = do
+data CheckClean
+  = CheckClean_FullCheck
+  -- ^ Check that the repo is clean, including .gitignored files
+  | CheckClean_NotIgnored
+  -- ^ Check that the repo is clean, not including .gitignored files
+  | CheckClean_NoCheck
+  -- ^ Don't check that the repo is clean
+
+getThunkPtr :: forall m. MonadObelisk m => CheckClean -> FilePath -> Maybe Bool -> m ThunkPtr
+getThunkPtr gitCheckClean dir mPrivate = do
   let repoLocations = [(".git", "."), (unpackedDirName, unpackedDirName)]
   repoLocation' <- liftIO $ flip findM repoLocations $ doesDirectoryExist . (dir </>) . fst
   thunkDir <- case repoLocation' of
     Nothing -> failWith [i|Can't find an unpacked thunk in ${dir}|]
     Just (_, path) -> pure $ normalise $ dir </> path
 
-  when checkClean $ ensureCleanGitRepo thunkDir True
+  let (checkClean, checkIgnored) = case gitCheckClean of
+        CheckClean_FullCheck -> (True, True)
+        CheckClean_NotIgnored -> (True, False)
+        CheckClean_NoCheck -> (False, False)
+  when checkClean $ ensureCleanGitRepo thunkDir checkIgnored
     "thunk pack: thunk checkout contains unsaved modifications"
 
   -- Check whether there are any stashes
