@@ -93,6 +93,11 @@ data ThunkSource
    | ThunkSource_Git GitSource
    deriving (Show, Eq, Ord)
 
+thunkSourceToGitSource :: ThunkSource -> GitSource
+thunkSourceToGitSource = \case
+  ThunkSource_GitHub s -> forgetGithub False s
+  ThunkSource_Git s -> s
+
 data GitHubSource = GitHubSource
   { _gitHubSource_owner :: Name Owner
   , _gitHubSource_repo :: Name Repo
@@ -463,11 +468,7 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = spinner $ d
     Just branch -> readThunk target >>= \case
       Left err -> failWith [i|Thunk update: ${err}|]
       Right c -> case c of
-        ThunkData_Packed _ t -> case _thunkPtr_source t of
-          ThunkSource_Git tsg -> setThunk thunkConfig target tsg branch
-          ThunkSource_GitHub tsgh -> do
-            let tsg = forgetGithub False tsgh
-            setThunk thunkConfig target tsg branch
+        ThunkData_Packed _ t -> setThunk thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
         ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
   where
     spinner = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest")
@@ -798,20 +799,13 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkD
     let (thunkParent, thunkName) = splitFileName thunkDir
     withTempDirectory thunkParent thunkName $ \tmpThunk -> do
       let
-        (gitSrc, newSpec) = case _thunkPtr_source tptr of
-          ThunkSource_GitHub s' -> (forgetGithub False s', NonEmpty.head gitHubThunkSpecs)
-          ThunkSource_Git s' -> (s', NonEmpty.head gitThunkSpecs)
+        gitSrc = thunkSourceToGitSource $ _thunkPtr_source tptr
+        newSpec = case _thunkPtr_source tptr of
+          ThunkSource_GitHub _ -> NonEmpty.head gitHubThunkSpecs
+          ThunkSource_Git _ -> NonEmpty.head gitThunkSpecs
       withSpinner' ("Fetching thunk " <> T.pack thunkName)
                    (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
-        let git = callProcessAndLogOutput (Notice, Notice) . gitProc (tmpThunk </> unpackedDirName)
-        git $ [ "clone" ]
-          ++  ["--recursive" | _gitSource_fetchSubmodules gitSrc]
-          ++  [ T.unpack $ gitUriToText $ _gitSource_url gitSrc ]
-          ++  do branch <- maybeToList $ _gitSource_branch gitSrc
-                 [ "--branch", T.unpack $ untagName branch ]
-        git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
-        when (_gitSource_fetchSubmodules gitSrc) $
-          git ["submodule", "update", "--recursive", "--init"]
+        gitCloneForThunkUnpack gitSrc (_thunkRev_commit $ _thunkPtr_rev tptr) (tmpThunk </> unpackedDirName)
 
         createThunk tmpThunk $ Left newSpec
 
@@ -819,6 +813,22 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkD
           removePathForcibly thunkDir
           renameDirectory tmpThunk thunkDir
 
+gitCloneForThunkUnpack
+  :: MonadObelisk m
+  => GitSource -- ^ Git source to use
+  -> Ref hash -- ^ Commit hash to reset to
+  -> FilePath -- ^ Directory to clone into
+  -> m ()
+gitCloneForThunkUnpack gitSrc commit dir = do
+  let git = callProcessAndLogOutput (Notice, Notice) . gitProc dir
+  git $ [ "clone" ]
+    ++  ["--recursive" | _gitSource_fetchSubmodules gitSrc]
+    ++  [ T.unpack $ gitUriToText $ _gitSource_url gitSrc ]
+    ++  do branch <- maybeToList $ _gitSource_branch gitSrc
+           [ "--branch", T.unpack $ untagName branch ]
+  git ["reset", "--hard", Ref.toHexString commit]
+  when (_gitSource_fetchSubmodules gitSrc) $
+    git ["submodule", "update", "--recursive", "--init"]
 
 --TODO: add a rollback mode to pack to the original thunk
 packThunk :: MonadObelisk m => ThunkPackConfig -> FilePath -> m ThunkPtr
@@ -981,9 +991,7 @@ getThunkPtr gitCheckClean dir mPrivate = do
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
 getLatestRev os = do
-  let gitS = case os of
-        ThunkSource_GitHub s -> forgetGithub False s
-        ThunkSource_Git s -> s
+  let gitS = thunkSourceToGitSource os
   (_, commit) <- gitGetCommitBranch (_gitSource_url gitS) (untagName <$> _gitSource_branch gitS)
   case os of
     ThunkSource_GitHub s -> githubThunkRev s commit

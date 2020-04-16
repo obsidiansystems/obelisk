@@ -194,6 +194,11 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
         configs <- getConfigs
         return (either (const Nothing) Just $ getConfigRoute configs) `shouldNotReturn` Nothing
 
+    it "can unpack and repack .obelisk/impl after init with master branch impl" $ inTmp $ \_ -> do
+      runOb_ ["init", "--branch", "master"]
+      runOb_ ["thunk", "unpack", ".obelisk/impl"]
+      runOb_ ["thunk", "pack", ".obelisk/impl"]
+
   -- These tests fail with "Could not find module 'Obelisk.Generated.Static'"
   -- when not run by 'nix-build --attr selftest'
   describe "ob run" $ {- NOT parallel $ -} do
