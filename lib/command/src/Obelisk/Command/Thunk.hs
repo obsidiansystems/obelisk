@@ -93,6 +93,11 @@ data ThunkSource
    | ThunkSource_Git GitSource
    deriving (Show, Eq, Ord)
 
+thunkSourceToGitSource :: ThunkSource -> GitSource
+thunkSourceToGitSource = \case
+  ThunkSource_GitHub s -> forgetGithub False s
+  ThunkSource_Git s -> s
+
 data GitHubSource = GitHubSource
   { _gitHubSource_owner :: Name Owner
   , _gitHubSource_repo :: Name Repo
@@ -803,15 +808,7 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkD
           ThunkSource_Git s' -> (s', NonEmpty.head gitThunkSpecs)
       withSpinner' ("Fetching thunk " <> T.pack thunkName)
                    (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
-        let git = callProcessAndLogOutput (Notice, Notice) . gitProc (tmpThunk </> unpackedDirName)
-        git $ [ "clone" ]
-          ++  ["--recursive" | _gitSource_fetchSubmodules gitSrc]
-          ++  [ T.unpack $ gitUriToText $ _gitSource_url gitSrc ]
-          ++  do branch <- maybeToList $ _gitSource_branch gitSrc
-                 [ "--branch", T.unpack $ untagName branch ]
-        git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
-        when (_gitSource_fetchSubmodules gitSrc) $
-          git ["submodule", "update", "--recursive", "--init"]
+        gitCloneForThunkUnpack gitSrc (_thunkRev_commit $ _thunkPtr_rev tptr) (tmpThunk </> unpackedDirName)
 
         createThunk tmpThunk $ Left newSpec
 
@@ -819,6 +816,22 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkD
           removePathForcibly thunkDir
           renameDirectory tmpThunk thunkDir
 
+gitCloneForThunkUnpack
+  :: MonadObelisk m
+  => GitSource -- ^ Git source to use
+  -> Ref hash -- ^ Commit hash to reset to
+  -> FilePath -- ^ Directory to clone into
+  -> m ()
+gitCloneForThunkUnpack gitSrc commit dir = do
+  let git = callProcessAndLogOutput (Notice, Notice) . gitProc dir
+  git $ [ "clone" ]
+    ++  ["--recursive" | _gitSource_fetchSubmodules gitSrc]
+    ++  [ T.unpack $ gitUriToText $ _gitSource_url gitSrc ]
+    ++  do branch <- maybeToList $ _gitSource_branch gitSrc
+           [ "--branch", T.unpack $ untagName branch ]
+  git ["reset", "--hard", Ref.toHexString commit]
+  when (_gitSource_fetchSubmodules gitSrc) $
+    git ["submodule", "update", "--recursive", "--init"]
 
 --TODO: add a rollback mode to pack to the original thunk
 packThunk :: MonadObelisk m => ThunkPackConfig -> FilePath -> m ThunkPtr

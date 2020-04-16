@@ -93,16 +93,22 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
       | otherwise -> failWith "ob init requires an empty directory. Use the flag --force to init anyway, potentially overwriting files."
   skeleton <- withSpinner "Setting up obelisk" $ do
     liftIO $ createDirectory obDir
+    -- Clone the git source and repack it with the init source obelisk
+    -- The purpose of this is to ensure we use the correct thunk spec.
+    let cloneAndRepack src = do
+          putLog Debug $ "Cloning obelisk into " <> T.pack implDir <> " and repacking using itself"
+          commit <- getLatestRev src
+          gitCloneForThunkUnpack (thunkSourceToGitSource src) (_thunkRev_commit commit) implDir
+          callHandoffOb implDir ["thunk", "pack", implDir]
     case source of
-      InitSource_Default -> createThunkWithLatest implDir obeliskSource
-      InitSource_Branch branch -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+      InitSource_Default -> cloneAndRepack obeliskSource
+      InitSource_Branch branch -> cloneAndRepack $ obeliskSourceWithBranch branch
       InitSource_Symlink path -> do
         let symlinkPath = if isAbsolute path
               then path
               else ".." </> path
         liftIO $ createSymbolicLink symlinkPath implDir
     _ <- nixBuildAttrWithCache implDir "command"
-    --TODO: We should probably handoff to the impl here
     skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
 
     callProcessAndLogOutput (Notice, Error) $
@@ -127,6 +133,24 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     let configDir = "config"
     createDirectoryIfMissing False configDir
     mapM_ (createDirectoryIfMissing False . (configDir </>)) ["backend", "common", "frontend"]
+
+callHandoffOb
+  :: MonadObelisk m
+  => FilePath -- ^ Directory of the obelisk we want to handoff to
+  -> [String] -- ^ Arguments to pass to ob
+  -> m ()
+callHandoffOb dir args = do
+  obeliskCommandPkg <- nixCmd $ NixCmd_Build $ def
+    & nixBuildConfig_outLink .~ OutLink_None
+    & nixCmdConfig_target .~ Target
+      { _target_path = Just dir
+      , _target_attr = Just "command"
+      , _target_expr = Nothing
+      }
+  let impl = obeliskCommandPkg </> "bin" </> "ob"
+  -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
+  putLog Debug $ "Running '" <> T.pack (unwords args) <> "' with " <> T.pack impl
+  callProcessAndLogOutput (Debug, Warning) (proc impl ("--no-handoff" : args))
 
 --TODO: Allow the user to ignore our security concerns
 -- | Find the Obelisk implementation for the project at the given path
