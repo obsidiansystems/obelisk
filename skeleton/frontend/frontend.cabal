@@ -19,7 +19,15 @@ library
   ghc-options: -Wall
 
 executable frontend
-  main-is: main.hs
+  if !arch(wasm32)
+    main-is: main.hs
+  else
+    main-is: wasm-main.c
+    build-depends: jsaddle-wasm
+    ghc-options: -no-hs-main
+    ld-options: -Wl,--export,jsaddleBufferMalloc -Wl,--export,jsaddleProcessResult
+    other-modules: WasmMain
+
   hs-source-dirs: src-bin
   build-depends: base
                , common

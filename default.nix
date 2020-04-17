@@ -102,11 +102,13 @@ in rec {
   combinedJsWasmAssets = frontendJs: optimizationLevel: frontendWasm: pkgs.runCommand "combinedJsWasmAssets" {} ''
     mkdir $out
     cd $out
-    ln -s ${compressedJs frontendJs optimizationLevel}/* .
+    ${if frontendJs != null then ''
+      ln -s ${compressedJs frontendJs optimizationLevel}/* .
+    '' else '' ''}
     ${if frontendWasm != null then ''
       ln -s ${stripWasm frontendWasm}/* .
       ln -s ${webabi}/lib/node_modules/webabi/jsaddleJS/* .
-      ln -s ${webabi}/lib/node_modules/webabi/build/worker_runner.js .
+      ln -s ${webabi}/lib/node_modules/webabi/build/mainthread_runner.js .
     '' else '' ''}
   '';
 
@@ -328,7 +330,7 @@ in rec {
       mainProjectOut = projectOut { inherit system; };
       serverOn = projectInst: version: serverExe
         projectInst.ghc.backend
-        mainProjectOut.ghcjs.frontend
+        (if enableWasm then null else mainProjectOut.ghcjs.frontend)
         projectInst.passthru.staticFiles
         projectInst.passthru.__closureCompilerOptimizationLevel
         (if enableWasm then mainProjectOut.wasm.frontend else null)
