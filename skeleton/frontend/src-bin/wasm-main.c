@@ -7,24 +7,17 @@
 // Copied from "stub.h" file
 
 extern HsStablePtr hsAppInit(void);
-extern HsInt64 hsJsaddleProcessResult(HsStablePtr a1, HsPtr a2, HsBool a3, HsInt a4);
-extern HsPtr hsMalloc(HsInt a1);
+extern HsInt64 hsJsaddleProcessResult(HsStablePtr a1, HsBool a3, HsInt a4);
+extern HsPtr hsMalloc(HsStablePtr a1, HsInt a2);
 
 HsStablePtr hsEnvPtr = NULL;
 
-char* jsaddleBuffer = NULL;
-
-char* jsaddleBufferMalloc(int size) {
-  if (size == 0) {
-    return NULL;
-  }
-  if (jsaddleBuffer) { return jsaddleBuffer;}
-  jsaddleBuffer = (char*) hsMalloc(size);
-  return jsaddleBuffer;
+HsPtr jsaddleBufferMalloc(int size) {
+  return hsMalloc(hsEnvPtr, size);
 }
 
 int jsaddleProcessResult (bool isSync, int dataLen) {
-  int ret = hsJsaddleProcessResult (hsEnvPtr, jsaddleBuffer, isSync, dataLen);
+  int ret = hsJsaddleProcessResult (hsEnvPtr, isSync, dataLen);
   return ret;
 }
 
