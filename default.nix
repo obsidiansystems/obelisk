@@ -207,13 +207,14 @@ in rec {
             , shellToolOverrides ? _: _: {}
             , withHoogle ? false # Setting this to `true` makes shell reloading far slower
             , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
+            , __withGhcide ? false
             }:
             let
               allConfig = nixpkgs.lib.makeExtensible (self: {
                 base = base';
                 inherit args;
                 userSettings = {
-                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel;
+                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel __withGhcide;
                   staticFiles = if staticFiles == null then self.base + /static else staticFiles;
                 };
                 frontendName = "frontend";
@@ -270,9 +271,17 @@ in rec {
                   self.frontendName
                 ];
 
+                shellToolOverrides = lib.composeExtensions
+                  self.userSettings.shellToolOverrides
+                  (if self.userSettings.__withGhcide
+                    then (import ./haskell-overlays/ghcide.nix)
+                    else (_: _: {})
+                  );
+
                 project = reflexPlatformProject ({...}: self.projectConfig);
                 projectConfig = {
-                  inherit (self.userSettings) shellToolOverrides tools withHoogle;
+                  inherit (self) shellToolOverrides;
+                  inherit (self.userSettings) tools withHoogle;
                   overrides = self.totalOverrides;
                   packages = self.combinedPackages;
                   shells = {
