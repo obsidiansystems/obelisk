@@ -10,7 +10,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Developing an Obelisk project](#developing-an-obelisk-project)
   - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
-  - [Running over https](#running-over-https)
+  - [Running over HTTPS](#running-over-https)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [Default EC2 Deployment](#default-ec2-deployment)
@@ -169,9 +169,10 @@ project ./. ({ pkgs, ... }: {
 
 ### Running over HTTPS
 
-To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+To run your app locally over HTTPS, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
 
-Since Obelisk generates a self-signed certificate for running https, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
+Since Obelisk generates a self-signed certificate for running HTTPS, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
+
 
 ## Deploying
 
