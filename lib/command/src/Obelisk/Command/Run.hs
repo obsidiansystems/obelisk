@@ -18,6 +18,8 @@ import Control.Monad (filterM, unless, void)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
+import Data.Bifoldable (bifoldr1)
+import Data.Bifunctor (bimap)
 import Data.Coerce (coerce)
 import Data.Default (def)
 import Data.Either (partitionEithers)
@@ -435,7 +437,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
   (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
     canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
     canonicalPkgFile <- canonicalizePath $ _cabalPackageInfo_packageFile pkg
-    pure (makeRelative canonicalPathBase canonicalPkgFile, makeRelative canonicalPathBase <$> canonicalSrcDirs)
+    pure (canonicalPkgFile `relativeTo` canonicalPathBase, (`relativeTo` canonicalPathBase) <$> canonicalSrcDirs)
 
   pure
     $  ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
@@ -504,3 +506,29 @@ pathToTree a p = go $ splitDirectories p
   where
     go [] = PathTree_Node (Just a) mempty
     go (x : xs) = PathTree_Node Nothing $ Map.singleton x $ go xs
+
+-- | Like 'zipWith' but pads with a padding value instead of stopping on the shortest list.
+zipDefaultWith :: a -> b -> (a -> b -> c) -> [a] -> [b] -> [c]
+zipDefaultWith _da _db _f []     []     = []
+zipDefaultWith  da  db  f (a:as) []     = f  a db : zipDefaultWith da db f as []
+zipDefaultWith  da  db  f []     (b:bs) = f da  b : zipDefaultWith da db f [] bs
+zipDefaultWith  da  db  f (a:as) (b:bs) = f  a  b : zipDefaultWith da db f as bs
+
+-- | Makes the first absolute path relative to the second absolute path.
+--
+-- Both input paths MUST be absolute.
+--
+-- Unlike 'makeRelative' this does not merely strip prefixes. It will introduce
+-- enough @..@ paths to make the resulting path truly relative in virtually every
+-- case. The only exception is on Windows when the two paths are on different
+-- drives. In this case the resulting path may be absolute.
+relativeTo :: FilePath -> FilePath -> FilePath
+relativeTo dir base
+  = bifoldr1 (</>)
+  $ bimap (collapse . (".." <$) . catMaybes) (collapse . catMaybes)
+  $ unzip
+  $ dropWhile (\(a,b) -> a == b)
+  $ zipDefaultWith Nothing Nothing (,)
+    (map Just $ splitDirectories base)
+    (map Just $ splitDirectories dir)
+  where collapse = foldr (</>) ""
