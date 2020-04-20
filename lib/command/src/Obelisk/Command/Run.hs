@@ -18,6 +18,8 @@ import Control.Monad (filterM, unless, void)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
+import Data.Bifoldable (bifoldr1)
+import Data.Bifunctor (bimap)
 import Data.Coerce (coerce)
 import Data.Default (def)
 import Data.Either (partitionEithers)
@@ -74,7 +76,7 @@ import Obelisk.CliApp (
     withSpinner,
   )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithPkgs, withProjectRoot, findProjectAssets)
+import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
@@ -162,11 +164,12 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
 run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 run root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  withGhciScript pkgs root $ \dotGhciPath -> do
-    freePort <- getFreePort
+  withGhciScript pkgs $ \dotGhciPath -> do
     assets <- findProjectAssets root
     putLog Debug $ "Assets impurely loaded from: " <> assets
-    runGhcid root True dotGhciPath pkgs $ Just $ unwords
+    ghciArgs <- getGhciSessionSettings pkgs root
+    freePort <- getFreePort
+    runGhcid root True (ghciArgs <> mkGhciScriptArg dotGhciPath) pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
@@ -177,14 +180,16 @@ run root interpretPaths = do
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runRepl root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  withGhciScript pkgs "." $ \dotGhciPath ->
-    runGhciRepl root pkgs dotGhciPath
+  ghciArgs <- getGhciSessionSettings pkgs "."
+  withGhciScript pkgs $ \dotGhciPath ->
+    runGhciRepl root pkgs (ghciArgs <> mkGhciScriptArg dotGhciPath)
 
 runWatch :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runWatch root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  withGhciScript pkgs root $ \dotGhciPath ->
-    runGhcid root True dotGhciPath pkgs Nothing
+  ghciArgs <- getGhciSessionSettings pkgs root
+  withGhciScript pkgs $ \dotGhciPath ->
+    runGhcid root True (ghciArgs <> mkGhciScriptArg dotGhciPath) pkgs Nothing
 
 exportGhciConfig :: MonadObelisk m => FilePath -> PathTree Interpret -> m [String]
 exportGhciConfig root interpretPaths = do
@@ -194,7 +199,7 @@ exportGhciConfig root interpretPaths = do
 nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
 nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  nixShellWithPkgs root isPure False (packageInfoToNamePathMap pkgs) shell cmd
+  nixShellWithoutPkgs root isPure False (packageInfoToNamePathMap pkgs) shell cmd
 
 -- | Like 'getLocalPkgs' but also parses them and fails if any of them can't be parsed.
 getParsedLocalPkgs :: MonadObelisk m => FilePath -> PathTree Interpret -> m (NonEmpty CabalPackageInfo)
@@ -395,12 +400,14 @@ packageInfoToNamePathMap = Map.fromList . map (_cabalPackageInfo_packageName &&&
 withGhciScript
   :: (MonadObelisk m, Foldable f)
   => f CabalPackageInfo -- ^ List of packages to load into ghci
-  -> FilePath -- ^ All paths written to the .ghci file will be relative to this path
   -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
   -> m ()
-withGhciScript (toList -> packageInfos) pathBase f = do
-  ghciSettings <- getGhciSessionSettings packageInfos pathBase
-  let
+withGhciScript (toList -> packageInfos) f =
+  withSystemTempDirectory "ob-ghci" $ \fp -> do
+    let dotGhciPath = fp </> ".ghci"
+    liftIO $ writeFile dotGhciPath dotGhci
+    f dotGhciPath
+  where
     packageNames = Set.fromList $ map _cabalPackageInfo_packageName packageInfos
     modulesToLoad = mconcat
       [ [ "Obelisk.Run" | "obelisk-run" `Set.member` packageNames ]
@@ -408,22 +415,18 @@ withGhciScript (toList -> packageInfos) pathBase f = do
       , [ "Frontend" | "frontend" `Set.member` packageNames ]
       ]
     dotGhci = unlines
-      [ ":set " <> unwords ghciSettings -- TODO: Shell escape
-      , if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
+      [ if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
       , "import qualified Obelisk.Run"
       , "import qualified Frontend"
-      , "import qualified Backend" ]
-  withSystemTempDirectory "ob-ghci" $ \fp -> do
-    let dotGhciPath = fp </> ".ghci"
-    liftIO $ writeFile dotGhciPath dotGhci
-    f dotGhciPath
+      , "import qualified Backend"
+      ]
 
 -- | Builds a list of options to pass to ghci or set in .ghci file that configures
 -- the preprocessor and source includes.
 getGhciSessionSettings
   :: (MonadObelisk m, Foldable f)
   => f CabalPackageInfo -- ^ List of packages to load into ghci
-  -> FilePath -- ^ All paths written to the .ghci file will be relative to this path
+  -> FilePath -- ^ All paths will be relative to this path
   -> m [String]
 getGhciSessionSettings (toList -> packageInfos) pathBase = do
   -- N.B. ghci settings do NOT support escaping in any way. To minimize the likelihood that
@@ -435,57 +438,62 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
   (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
     canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
     canonicalPkgFile <- canonicalizePath $ _cabalPackageInfo_packageFile pkg
-    pure (makeRelative canonicalPathBase canonicalPkgFile, makeRelative canonicalPathBase <$> canonicalSrcDirs)
+    pure (canonicalPkgFile `relativeTo` canonicalPathBase, (`relativeTo` canonicalPathBase) <$> canonicalSrcDirs)
 
   pure
-    $  ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
+    $  baseGhciOptions
+    <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
     <> concatMap (\p -> ["-optF", p]) pkgFiles
     <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]
+
+baseGhciOptions :: [String]
+baseGhciOptions =
+  [ "-ignore-dot-ghci"
+  , "-no-user-package-db"
+  , "-package-env", "-"
+  ]
 
 -- | Run ghci repl
 runGhciRepl
   :: (MonadObelisk m, Foldable f)
   => FilePath -- ^ Path to project root
-  -> f CabalPackageInfo
-  -> FilePath -- ^ Path to .ghci
+  -> f CabalPackageInfo -- ^ Packages to keep unbuilt
+  -> [String] -- ^ GHCi arguments
   -> m ()
-runGhciRepl root (toList -> packages) dotGhci =
+runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
-  nixShellWithPkgs root True False (packageInfoToNamePathMap packages) "ghc" $ Just $ "ghci " <> makeBaseGhciOptions dotGhci -- TODO: Shell escape
+  nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
+    Just $ unwords $ "ghci" : ghciArgs -- TODO: Shell escape
 
 -- | Run ghcid
 runGhcid
   :: (MonadObelisk m, Foldable f)
   => FilePath -- ^ Path to project root
   -> Bool -- ^ Should we chdir to root when running this process?
-  -> FilePath -- ^ Path to .ghci
-  -> f CabalPackageInfo
+  -> [String] -- ^ GHCi arguments
+  -> f CabalPackageInfo -- ^ Packages to keep unbuilt
   -> Maybe String -- ^ Optional command to run at every reload
   -> m ()
-runGhcid root chdirToRoot dotGhci (toList -> packages) mcmd =
-  nixShellWithPkgs root True chdirToRoot (packageInfoToNamePathMap packages) "ghc" $ Just $ unwords $ ghcidExePath : opts -- TODO: Shell escape
+runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
+  nixShellWithoutPkgs root True chdirToRoot (packageInfoToNamePathMap packages) "ghc" $
+    Just $ unwords $ ghcidExePath : opts -- TODO: Shell escape
   where
     opts =
       [ "-W"
-      , "--command='ghci -ignore-dot-ghci " <> makeBaseGhciOptions dotGhci <> "' "
       , "--outputfile=ghcid-output.txt"
       ] <> map (\x -> "--reload='" <> x <> "'") reloadFiles
         <> map (\x -> "--restart='" <> x <> "'") restartFiles
         <> testCmd
+        <> ["--command='" <> unwords ("ghci" : ghciArgs) <> "'"] -- TODO: Shell escape
     testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
 
     adjustRoot x = if chdirToRoot then makeRelative root x else x
     reloadFiles = map adjustRoot [root </> "config"]
     restartFiles = map (adjustRoot . _cabalPackageInfo_packageFile) packages
 
-makeBaseGhciOptions :: FilePath -> String
-makeBaseGhciOptions dotGhci =
-  unwords
-    [ "-no-user-package-db"
-    , "-package-env -"
-    , "-ghci-script " <> dotGhci
-    ]
+mkGhciScriptArg :: FilePath -> [String]
+mkGhciScriptArg dotGhci = ["-ghci-script", dotGhci]
 
 getFreePort :: MonadIO m => m PortNumber
 getFreePort = liftIO $ withSocketsDo $ do
@@ -504,3 +512,29 @@ pathToTree a p = go $ splitDirectories p
   where
     go [] = PathTree_Node (Just a) mempty
     go (x : xs) = PathTree_Node Nothing $ Map.singleton x $ go xs
+
+-- | Like 'zipWith' but pads with a padding value instead of stopping on the shortest list.
+zipDefaultWith :: a -> b -> (a -> b -> c) -> [a] -> [b] -> [c]
+zipDefaultWith _da _db _f []     []     = []
+zipDefaultWith  da  db  f (a:as) []     = f  a db : zipDefaultWith da db f as []
+zipDefaultWith  da  db  f []     (b:bs) = f da  b : zipDefaultWith da db f [] bs
+zipDefaultWith  da  db  f (a:as) (b:bs) = f  a  b : zipDefaultWith da db f as bs
+
+-- | Makes the first absolute path relative to the second absolute path.
+--
+-- Both input paths MUST be absolute.
+--
+-- Unlike 'makeRelative' this does not merely strip prefixes. It will introduce
+-- enough @..@ paths to make the resulting path truly relative in virtually every
+-- case. The only exception is on Windows when the two paths are on different
+-- drives. In this case the resulting path may be absolute.
+relativeTo :: FilePath -> FilePath -> FilePath
+relativeTo dir base
+  = bifoldr1 (</>)
+  $ bimap (collapse . (".." <$) . catMaybes) (collapse . catMaybes)
+  $ unzip
+  $ dropWhile (\(a,b) -> a == b)
+  $ zipDefaultWith Nothing Nothing (,)
+    (map Just $ splitDirectories base)
+    (map Just $ splitDirectories dir)
+  where collapse = foldr (</>) ""
