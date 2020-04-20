@@ -330,7 +330,7 @@ in rec {
       mainProjectOut = projectOut { inherit system; };
       serverOn = projectInst: version: serverExe
         projectInst.ghc.backend
-        (if enableWasm then null else mainProjectOut.ghcjs.frontend)
+        mainProjectOut.ghcjs.frontend
         projectInst.passthru.staticFiles
         projectInst.passthru.__closureCompilerOptimizationLevel
         (if enableWasm then mainProjectOut.wasm.frontend else null)

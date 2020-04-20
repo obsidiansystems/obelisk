@@ -308,24 +308,46 @@ deferredGhcjsScript (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
   Just wasmAssets -> snd (wasmScripts allJsUrl wasmAssets)
 
 wasmScripts :: Text -> (Text, Text) -> (FrontendWidgetT r (), FrontendWidgetT r ())
-wasmScripts allJsUrl (jsaddleAssets, wasmUrl) = (preloadStuff, runStuff)
+wasmScripts allJsUrl (jsaddleAssets, wasmUrl) = (script preloadScript, script runJsScript)
   where
+    script t = elAttr "script" ("type" =: "text/javascript") $ text t
     jsaddleJs = jsaddleAssets <> "/jsaddle_core.js"
     interfaceJs = jsaddleAssets <> "/jsaddle_mainthread_interface.js"
     runnerJs = jsaddleAssets <> "/mainthread_runner.js"
 
-    preloadStuff = do
-      elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: jsaddleJs) blank
-      elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: interfaceJs) blank
-      elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: runnerJs) blank
-      elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: wasmUrl) blank
+    preloadScript =
+      "add_preload_tag = function (docSrc, docType) {          \
+      \  var link_tag = document.createElement('link');        \
+      \  link_tag.rel = 'preload';                             \
+      \  link_tag.as = docType;                                \
+      \  link_tag.href = docSrc;                               \
+      \  document.head.appendChild(link_tag);                  \
+      \};                                                      \
+      \if (typeof(WebAssembly) === 'undefined') {              \
+      \  add_preload_tag('" <> allJsUrl <> "', 'script');      \
+      \} else {                                                \
+      \  add_preload_tag('" <> wasmUrl <> "', 'script');       \
+      \  add_preload_tag('" <> jsaddleJs <> "', 'script');     \
+      \  add_preload_tag('" <> interfaceJs <> "', 'script');   \
+      \  add_preload_tag('" <> runnerJs <> "', 'script');      \
+      \}"
 
-    runStuff = do
-      elAttr "script" ("type" =: "text/javascript") $
-        text $ "var wasmFile = '" <> wasmUrl <> "';"
-      elAttr "script" ("type" =: "text/javascript" <> "src" =: jsaddleJs <> "defer" =: "defer") blank
-      elAttr "script" ("type" =: "text/javascript" <> "src" =: interfaceJs <> "defer" =: "defer") blank
-      elAttr "script" ("type" =: "text/javascript" <> "src" =: runnerJs <> "defer" =: "defer") blank
+    runJsScript =
+      "add_deferload_tag = function (docSrc) {       \
+      \  var tag = document.createElement('script'); \
+      \  tag.type = 'text/javascript';               \
+      \  tag.src = docSrc;                           \
+      \  tag.setAttribute = ('defer', 'defer');      \
+      \  document.body.appendChild(tag);             \
+      \};                                            \
+      \if (typeof(WebAssembly) === 'undefined') {    \
+      \  add_deferload_tag('" <> allJsUrl <> "');    \
+      \} else {                                      \
+      \  var wasmFile = '" <> wasmUrl <> "';         \
+      \  add_deferload_tag('" <> jsaddleJs <> "');   \
+      \  add_deferload_tag('" <> interfaceJs <> "'); \
+      \  add_deferload_tag('" <> runnerJs <> "');    \
+      \}"
 
 -- | An all.js script which is loaded after waiting for some time to pass. This
 -- is useful to ensure any CSS animations on the page can play smoothly before
