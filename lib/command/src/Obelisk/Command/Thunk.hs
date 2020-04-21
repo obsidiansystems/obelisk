@@ -699,7 +699,7 @@ nixBuildThunkAttrWithCache thunkSpec thunkDir attr = do
   for cachePaths' $ \cachePaths ->
     fmap NonEmpty.head $ for cachePaths $ \cacheDir -> do
       let
-        cachePath = cacheDir </> attr <.> "out"
+        cachePath = thunkDir </> cacheDir </> attr <.> "out"
         cacheErrHandler e
           | isDoesNotExistError e = pure Nothing -- expected from a cache miss
           | otherwise = Nothing <$ putLog Error (T.pack $ displayException e)
