@@ -336,7 +336,6 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
           dirtyFiles <- T.strip <$> run gitPath ["-C", toTextIgnore obeliskRepoReadOnly, "diff", "--stat"]
           () <- when (dirtyFiles /= "") $ error "SelfTest does not work correctly with dirty obelisk repos as remote"
           run_ gitPath ["clone", "file://" <> toTextIgnore obeliskRepoReadOnly, toTextIgnore obeliskImpl]
-          runOb_ ["thunk", "init", toTextIgnore obeliskImpl]
         f obeliskImpl
 
     withInitCache f =
@@ -605,4 +604,4 @@ legacyGitThunks (GitThunkParams repo' rev sha256) =
       LBS.writeFile (dir </> ("git.json" :: FilePath)) (Aeson.encode gitJson)
 
 unpackedDirName :: FilePath
-unpackedDirName = "local"
+unpackedDirName = "."

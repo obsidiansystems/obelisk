@@ -225,7 +225,6 @@ data ThunkCommand
   = ThunkCommand_Update ThunkUpdateConfig
   | ThunkCommand_Unpack
   | ThunkCommand_Pack ThunkPackConfig
-  | ThunkCommand_Init
   deriving Show
 
 thunkOption :: Parser ThunkOption
@@ -233,7 +232,6 @@ thunkOption = hsubparser $ mconcat
   [ command "update" $ info (thunkOptionWith $ ThunkCommand_Update <$> thunkUpdateConfig) $ progDesc "Update packed thunk to latest revision available on the tracked branch"
   , command "unpack" $ info (thunkOptionWith $ pure ThunkCommand_Unpack) $ progDesc "Unpack thunk into git checkout of revision it points to"
   , command "pack" $ info (thunkOptionWith $ ThunkCommand_Pack <$> thunkPackConfig) $ progDesc "Pack git checkout or unpacked thunk into thunk that points at the current branch's upstream"
-  , command "init" $ info (thunkOptionWith $ pure ThunkCommand_Init) $ progDesc "Initialize git checkout by converting it to an unpacked thunk"
   ]
   where
     thunkOptionWith f = ThunkOption
@@ -390,7 +388,6 @@ ob = \case
     ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack -> for_ thunks unpackThunk
     ThunkCommand_Pack config -> for_ thunks (packThunk config)
-    ThunkCommand_Init -> for_ thunks initThunk
     where
       thunks = _thunkOption_thunks to
   ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
