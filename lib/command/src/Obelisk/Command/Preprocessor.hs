@@ -11,13 +11,14 @@ import qualified Data.Text.Lazy.Builder as TL
 import qualified Data.Text.Lazy.Encoding as TL
 import Distribution.Compiler (CompilerFlavor (..))
 import Language.Haskell.Extension (Extension (..), Language(..))
+import System.Directory (canonicalizePath)
 import System.IO (IOMode (..), hClose, hPutStrLn, openFile, stderr)
-import System.FilePath (hasTrailingPathSeparator, joinPath, normalise, splitPath)
+import System.FilePath (hasTrailingPathSeparator, joinPath, splitPath)
 
 import Obelisk.Command.Run (CabalPackageInfo (..), parseCabalPackage')
 
 applyPackages :: FilePath -> FilePath -> FilePath -> [FilePath] -> IO ()
-applyPackages origPath inPath outPath packagePaths = do
+applyPackages origPath inPath outPath packagePaths' = do
   -- This code is intended to be executed via ghci's -pgmF preprocessor option
   -- The command line arguments are passed in via ghc, which dictates the first three options and meanings
   -- In order for this code to execute,  origPath must contain either a '.' character or a '/' character.
@@ -35,9 +36,12 @@ applyPackages origPath inPath outPath packagePaths = do
 
   -- Thus we must select among the packagePaths for the file we are going to parse.
 
+  origPathCanonical <- canonicalizePath origPath
+  packagePaths <- traverse canonicalizePath packagePaths'
+
   let takeDirs = takeWhile hasTrailingPathSeparator
-      packageDirs = sortOn (negate . length . takeDirs) $ map (splitPath . normalise) packagePaths
-      origDir = splitPath $ normalise origPath
+      packageDirs = sortOn (negate . length . takeDirs) $ map splitPath packagePaths
+      origDir = splitPath origPathCanonical
       matches = [ joinPath d | d <- packageDirs, takeDirs d `isPrefixOf` origDir ]
 
   -- So the first element of matches is going to be the deepest path to a package spec that contains
