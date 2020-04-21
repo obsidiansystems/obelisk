@@ -10,7 +10,10 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 - [Developing an Obelisk project](#developing-an-obelisk-project)
   - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
-  - [Running over https](#running-over-https)
+  - [Running over HTTPS](#running-over-https)
+  - [IDE Support](#ide-support)
+    - [Terminal-based feedback](#terminal-based-feedback)
+    - [Experimental `ghcide` support](#experimental-ghcide-support)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [Default EC2 Deployment](#default-ec2-deployment)
@@ -169,9 +172,46 @@ project ./. ({ pkgs, ... }: {
 
 ### Running over HTTPS
 
-To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+To run your app locally over HTTPS, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
 
-Since Obelisk generates a self-signed certificate for running https, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
+Since Obelisk generates a self-signed certificate for running HTTPS, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
+
+### IDE Support
+
+#### Terminal-based feedback
+
+Obelisk officially supports terminal-based feedback (akin to [`ghcid`](https://github.com/ndmitchell/ghcid)) in `ob run` and `ob watch`.
+
+#### **Experimental** `ghcide` support
+
+> **NOTE:** `ghcide` support is strictly **experimental** and **not officially supported**. There is no guarantee that it will work for you or that this support will be maintained over time.
+
+To try out the **experimental** [`ghcide`](https://github.com/digital-asset/ghcide) support:
+
+  * Install a `ghcide` plugin for your editor.
+  * Add `__withGhcide = true;` to your Obelisk project's `default.nix` (inside the call to `project`). With this setting, `ob shell` will provide `ghcide` as well.
+  * Add `hie-bios.sh` to the root of your project:
+      ```shell
+      cat > hie-bios.sh <<'EOF'
+      #!/usr/bin/env bash
+      source "$HOME/.bash_profile"; # NOTE: Some editors need help finding 'ob' and this assumes that `ob` is made available on your `$PATH` in `.bash_profile`
+      ob internal export-ghci-configuration > "$HIE_BIOS_OUTPUT"
+      EOF
+      chmod +x hie-bios.sh
+      ```
+  * Add `hie.yaml` to the root of your project:
+      ```shell
+      echo 'cradle: { bios: { program: hie-bios.sh } }' > hie.yaml
+      ```
+  * Test the configuration with `ob shell ghcide`. Assuming your project compiles and works with `ghcide` otherwise, this should succeed.
+  * Start your editor in a way that it can access the appropriate `ghcide`:
+      * This can sometimes be achieved with `ob shell 'start my editor'`.
+      * If you can't easily start your editor in a way that it inherits your shell, you may need to customize how your `ghcide` plugin finds `ghcide` or create a custom `ghcide` replacement script that you install globally. For example, for Visual Studio Code on macOS adding a script called `ghcide` to your `PATH` like the one below will cause `ghcide` from each project's `ob shell` to be used:
+          ```shell
+          #!/usr/bin/env bash
+          source "$HOME/.bash_profile"  # NOTE: This assumes that `ob` is made available on your `$PATH` in `.bash_profile`
+          ob shell "ghcide $@"
+          ```
 
 ## Deploying
 
