@@ -13,7 +13,7 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
   - [Running over HTTPS](#running-over-https)
   - [IDE Support](#ide-support)
     - [Terminal-based feedback](#terminal-based-feedback)
-    - [**Experimental** `ghcide` support](#experimental-ghcide-support)
+    - [Experimental `ghcide` support](#experimental-ghcide-support)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [Default EC2 Deployment](#default-ec2-deployment)
