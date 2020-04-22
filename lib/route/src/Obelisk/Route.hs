@@ -68,7 +68,7 @@ module Obelisk.Route
   , joinPairTextEncoder
   , toListMapEncoder
   , shadowEncoder
-  , prismEncoder
+  , prismDecoder
   , rPrism
   , _R
   , obeliskRouteEncoder
@@ -469,11 +469,11 @@ maybeEncoder f g = shadowEncoder f g . maybeToEitherEncoder
 
 -- | Encode a value by simply applying 'Just'
 justEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a (Maybe a)
-justEncoder = prismEncoder _Just
+justEncoder = prismDecoder _Just
 
 -- | Encode () to 'Nothing'.
 nothingEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse () (Maybe a)
-nothingEncoder = prismEncoder _Nothing
+nothingEncoder = prismDecoder _Nothing
 
 someConstEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Const a)) a
 someConstEncoder = unsafeMkEncoder $ EncoderImpl
@@ -825,6 +825,7 @@ _R
   -> Prism' (R f) a
 _R variant = dSumGEqPrism variant . iso runIdentity Identity
 
+{-# DEPRECATED "Use prismDecoder" #-}
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
 prismEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
@@ -833,6 +834,16 @@ prismEncoder p = unsafeMkEncoder $ EncoderImpl
   , _encoderImpl_decode = \r -> case r ^? p of
       Just a -> pure a
       Nothing -> throwError "prismEncoder: value is not present in the prism"
+  }
+
+-- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
+-- if the prism doesn't match.
+prismDecoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
+prismDecoder p = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode= view (re p)
+  , _encoderImpl_decode = \r -> case r ^? p of
+      Just a -> pure a
+      Nothing -> throwError "prismDecoder: value is not present in the prism"
   }
 
 -- | A URL path and query string, in which trailing slashes don't matter in the path
@@ -1071,11 +1082,11 @@ readShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) =>
 readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
 
 integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
-integralEncoder = prismEncoder (Numeric.Lens.integral)
+integralEncoder = prismDecoder (Numeric.Lens.integral)
 
 pathSegmentEncoder :: (MonadError Text parse, Applicative check, Cons as as a a) =>
   Encoder check parse (a, (as, b)) (as, b)
-pathSegmentEncoder = first (prismEncoder _Cons) . disassociate
+pathSegmentEncoder = first (prismDecoder _Cons) . disassociate
 
 newtype Decoder check parse b a = Decoder { toEncoder :: Encoder check parse a b }
 
