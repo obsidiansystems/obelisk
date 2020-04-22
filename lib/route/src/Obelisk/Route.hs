@@ -60,6 +60,7 @@ module Obelisk.Route
   , maybeToEitherEncoder
   , justEncoder
   , nothingEncoder
+  , isoEncoder
   , isoDecoder
   , wrappedEncoder
   , unwrappedEncoder
@@ -68,6 +69,7 @@ module Obelisk.Route
   , joinPairTextEncoder
   , toListMapEncoder
   , shadowEncoder
+  , prismEncoder
   , prismDecoder
   , rPrism
   , _R
