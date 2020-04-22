@@ -167,7 +167,7 @@ run root interpretPaths = do
   withGhciScript pkgs $ \dotGhciPath -> do
     assets <- findProjectAssets root
     putLog Debug $ "Assets impurely loaded from: " <> assets
-    ghciArgs <- getGhciSessionSettings pkgs root
+    ghciArgs <- getGhciSessionSettings pkgs root True
     freePort <- getFreePort
     runGhcid root True (ghciArgs <> mkGhciScriptArg dotGhciPath) pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
@@ -180,21 +180,21 @@ run root interpretPaths = do
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runRepl root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs "."
+  ghciArgs <- getGhciSessionSettings pkgs "." True
   withGhciScript pkgs $ \dotGhciPath ->
     runGhciRepl root pkgs (ghciArgs <> mkGhciScriptArg dotGhciPath)
 
 runWatch :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runWatch root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs root
+  ghciArgs <- getGhciSessionSettings pkgs root True
   withGhciScript pkgs $ \dotGhciPath ->
     runGhcid root True (ghciArgs <> mkGhciScriptArg dotGhciPath) pkgs Nothing
 
-exportGhciConfig :: MonadObelisk m => FilePath -> PathTree Interpret -> m [String]
-exportGhciConfig root interpretPaths = do
+exportGhciConfig :: MonadObelisk m => Bool -> FilePath -> PathTree Interpret -> m [String]
+exportGhciConfig useRelativePaths root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  getGhciSessionSettings pkgs "."
+  getGhciSessionSettings pkgs "." useRelativePaths
 
 nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
 nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
@@ -427,8 +427,9 @@ getGhciSessionSettings
   :: (MonadObelisk m, Foldable f)
   => f CabalPackageInfo -- ^ List of packages to load into ghci
   -> FilePath -- ^ All paths will be relative to this path
+  -> Bool -- ^ Use relative paths
   -> m [String]
-getGhciSessionSettings (toList -> packageInfos) pathBase = do
+getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
   -- N.B. ghci settings do NOT support escaping in any way. To minimize the likelihood that
   -- paths-with-spaces ruin our day, we first canonicalize everything, and then relativize
   -- all paths to 'pathBase'.
@@ -438,13 +439,15 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
   (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
     canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
     canonicalPkgFile <- canonicalizePath $ _cabalPackageInfo_packageFile pkg
-    pure (canonicalPkgFile `relativeTo` canonicalPathBase, (`relativeTo` canonicalPathBase) <$> canonicalSrcDirs)
+    pure (canonicalPkgFile `relativeTo'` canonicalPathBase, (`relativeTo'` canonicalPathBase) <$> canonicalSrcDirs)
 
   pure
     $  baseGhciOptions
     <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
     <> concatMap (\p -> ["-optF", p]) pkgFiles
     <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]
+  where
+    relativeTo' = if useRelativePaths then relativeTo else const
 
 baseGhciOptions :: [String]
 baseGhciOptions =

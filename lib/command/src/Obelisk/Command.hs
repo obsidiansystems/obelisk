@@ -99,7 +99,9 @@ data ObInternal
    -- the preprocessor argument syntax is also handled outside
    -- optparse-applicative, but it shouldn't ever conflict with another syntax
    = ObInternal_ApplyPackages String String String [String]
-   | ObInternal_ExportGhciConfig [(FilePath, Interpret)]
+   | ObInternal_ExportGhciConfig
+      [(FilePath, Interpret)]
+      Bool -- ^ Use relative paths
    deriving Show
 
 obCommand :: ArgsConfig -> Parser ObCommand
@@ -124,8 +126,11 @@ obCommand cfg = hsubparser
 
 internalCommand :: Parser ObInternal
 internalCommand = hsubparser $ mconcat
-  [ command "export-ghci-configuration" $ info (ObInternal_ExportGhciConfig <$> interpretOpts) $ progDesc "Export the GHCi configuration used by ob run, etc.; useful for IDE integration"
+  [ command "export-ghci-configuration" $ info (ObInternal_ExportGhciConfig <$> interpretOpts <*> useRelativePathsFlag)
+      $ progDesc "Export the GHCi configuration used by ob run, etc.; useful for IDE integration"
   ]
+  where
+    useRelativePathsFlag = switch (long "use-relative-paths" <> help "Use relative paths")
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
@@ -401,7 +406,8 @@ ob = \case
   ObCommand_Internal icmd -> case icmd of
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
-    ObInternal_ExportGhciConfig interpretPathsList -> liftIO . putStrLn . unlines =<< withInterpretPaths interpretPathsList exportGhciConfig
+    ObInternal_ExportGhciConfig interpretPathsList useRelativePaths ->
+      liftIO . putStrLn . unlines =<< withInterpretPaths interpretPathsList (exportGhciConfig useRelativePaths)
 
 -- | A helper for the common case that the command you want to run needs the project root and a resolved
 -- set of interpret paths.
