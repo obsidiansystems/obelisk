@@ -14,13 +14,14 @@ import Control.Applicative
 import Control.Exception (displayException, try)
 import Control.Lens (ifor, ifor_, (.~))
 import Control.Monad
-import Control.Monad.Extra (findM, unlessM, whenM)
+import Control.Monad.Extra (findM)
 import Control.Monad.Catch (MonadCatch, handle)
 import Control.Monad.Except
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.Aeson.Types as Aeson
+import Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Containers.ListUtils (nubOrd)
 import Data.Default
@@ -208,7 +209,7 @@ data ReadThunkError
   deriving (Show)
 
 unpackedDirName :: FilePath
-unpackedDirName = "local"
+unpackedDirName = "."
 
 attrCacheFileName :: FilePath
 attrCacheFileName = ".attr-cache"
@@ -356,7 +357,7 @@ overwriteThunk target thunk = do
     Right _ -> pure ()
 
   --TODO: Is there a safer way to do this overwriting?
-  callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-r", target] -- target may be a symlink
+  liftIO $ removePathForcibly target
   createThunk target $ Right thunk
 
 thunkPtrToSpec :: ThunkPtr -> ThunkSpec
@@ -408,21 +409,6 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
         ] <> compare
     , confTrailingNewline = True
     }
-
--- | Initialize a git repository to an unpacked thunk.
-initThunk :: MonadObelisk m => FilePath -> m ()
-initThunk target = withSpinner [i|Initializing thunk at ${target}|] $ do
-  checkThunkDirectory target
-  unlessM (liftIO $ doesDirectoryExist $ target </> ".git") $ failWith [i|${target} is not a git checkout.|]
-  ptr <- getThunkPtr CheckClean_NoCheck target Nothing
-  let tempThunkDir = target <.> "thunk-init"
-  whenM (liftIO $ doesPathExist tempThunkDir) $
-    failWith [i|A previous 'thunk init' left unfinished state at ${tempThunkDir}. You will need to rename or remove that path before trying again.|]
-  createThunk tempThunkDir $ Left (thunkPtrToSpec ptr) -- Only write the skeleton, but skip the ptr itself since it's unpacked
-  liftIO $ do
-    renameDirectory target (tempThunkDir </> unpackedDirName)
-    removePathForcibly target
-    renameDirectory tempThunkDir target
 
 createThunk :: MonadObelisk m => FilePath -> Either ThunkSpec ThunkPtr -> m ()
 createThunk target ptrInfo =
@@ -555,7 +541,7 @@ let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256
     inherit owner repo rev sha256 fetchSubmodules private;
   };
   json = builtins.fromJSON (builtins.readFile ./github.json);
-in if builtins.pathExists ./local then ./local else fetch json
+in fetch json
 |]
 
 parseGitHubJsonBytes :: LBS.ByteString -> Either String ThunkPtr
@@ -647,7 +633,7 @@ let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, pr
     url = realUrl; inherit rev sha256;
   };
   json = builtins.fromJSON (builtins.readFile ./git.json);
-in if builtins.pathExists ./local then ./local else fetch json
+in fetch json
 |]
 
 parseGitJsonBytes :: LBS.ByteString -> Either String ThunkPtr
@@ -659,7 +645,7 @@ mkThunkSpec name jsonFileName parser srcNix = ThunkSpec name $ Map.fromList
   , ("thunk.nix", ThunkFileSpec_FileMatches srcNix)
   , (jsonFileName, ThunkFileSpec_Ptr parser)
   , (attrCacheFileName, ThunkFileSpec_AttrCache)
-  , (unpackedDirName, ThunkFileSpec_CheckoutIndicator)
+  , (normalise $ unpackedDirName </> ".git", ThunkFileSpec_CheckoutIndicator)
   ]
   where
     defaultNixViaSrc = [here|
@@ -773,9 +759,6 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
 finalMsg :: Bool -> (a -> Text) -> Maybe (a -> Text)
 finalMsg noTrail s = if noTrail then Nothing else Just s
 
-unpackThunk :: MonadObelisk m => FilePath -> m ()
-unpackThunk = unpackThunk' False
-
 -- | Check that we are not somewhere inside the thunk directory
 checkThunkDirectory :: MonadObelisk m => FilePath -> m ()
 checkThunkDirectory thunkDir = do
@@ -789,6 +772,9 @@ checkThunkDirectory thunkDir = do
     readThunk (takeDirectory thunkDir) >>= \case
       Right _ -> failWith [i|Refusing to perform thunk operation on ${thunkDir} because it is a thunk's unpacked source|]
       Left _ -> pure ()
+
+unpackThunk :: MonadObelisk m => FilePath -> m ()
+unpackThunk = unpackThunk' False
 
 unpackThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
 unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
@@ -805,9 +791,12 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkD
           ThunkSource_Git _ -> NonEmpty.head gitThunkSpecs
       withSpinner' ("Fetching thunk " <> T.pack thunkName)
                    (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
-        gitCloneForThunkUnpack gitSrc (_thunkRev_commit $ _thunkPtr_rev tptr) (tmpThunk </> unpackedDirName)
+        let unpackedPath = tmpThunk </> unpackedDirName
+        gitCloneForThunkUnpack gitSrc (_thunkRev_commit $ _thunkPtr_rev tptr) unpackedPath
 
-        createThunk tmpThunk $ Left newSpec
+        let normalizeMore = dropTrailingPathSeparator . normalise
+        when (normalizeMore unpackedPath /= normalizeMore tmpThunk) $ -- Only write meta data if the checkout is not inplace
+          createThunk tmpThunk $ Left newSpec
 
         liftIO $ do
           removePathForcibly thunkDir
@@ -843,7 +832,7 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
     do
       let checkClean = if force then CheckClean_NoCheck else CheckClean_FullCheck
       thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
-      callProcessAndLogOutput (Debug, Error) $ proc rmPath ["-rf", thunkDir] -- thunkDir may be a symlink
+      liftIO $ removePathForcibly thunkDir
       createThunk thunkDir $ Right thunkPtr
       pure thunkPtr
 
@@ -865,7 +854,8 @@ data CheckClean
 
 getThunkPtr :: forall m. MonadObelisk m => CheckClean -> FilePath -> Maybe Bool -> m ThunkPtr
 getThunkPtr gitCheckClean dir mPrivate = do
-  let repoLocations = [(".git", "."), (unpackedDirName, unpackedDirName)]
+  let repoLocations = nubOrd $ map (first normalise)
+        [(".git", "."), (unpackedDirName </> ".git", unpackedDirName)]
   repoLocation' <- liftIO $ flip findM repoLocations $ doesDirectoryExist . (dir </>) . fst
   thunkDir <- case repoLocation' of
     Nothing -> failWith [i|Can't find an unpacked thunk in ${dir}|]
