@@ -60,7 +60,7 @@ module Obelisk.Route
   , maybeToEitherEncoder
   , justEncoder
   , nothingEncoder
-  , isoEncoder
+  , isoDecoder
   , wrappedEncoder
   , unwrappedEncoder
   , listToNonEmptyEncoder
@@ -340,7 +340,7 @@ instance Monad parse => Bifunctor (,) (EncoderImpl parse) (EncoderImpl parse) (E
     }
 
 instance (Monad parse, Applicative check) => Braided (Encoder check parse) (,) where
-  braid = isoEncoder (iso swap swap)
+  braid = isoDecoder (iso swap swap)
 
 
 instance (Applicative check, Monad parse) => PFunctor (,) (Encoder check parse) (Encoder check parse) where
@@ -376,11 +376,11 @@ instance (Monad parse, Applicative check) => Bifunctor Either (Encoder check par
   bimap f g = Encoder $ liftA2 bimap (unEncoder f) (unEncoder g)
 
 instance (Applicative check, Monad parse) => Associative (Encoder check parse) Either where
-  associate = isoEncoder (iso (associate @(->) @Either) disassociate)
-  disassociate = isoEncoder (iso disassociate associate)
+  associate = isoDecoder (iso (associate @(->) @Either) disassociate)
+  disassociate = isoDecoder (iso disassociate associate)
 
 instance (Monad parse, Applicative check) => Braided (Encoder check parse) Either where
-  braid = isoEncoder (iso swap swap)
+  braid = isoDecoder (iso swap swap)
 
 
 
@@ -433,6 +433,7 @@ instance (Applicative check, Monad parse) => Monoidal (Encoder check parse) (,) 
 -- Specific instances of encoders
 --------------------------------------------------------------------------------
 
+{-# DEPRECATED isoEncoder "Use isoDecoder" #-}
 -- | Given a valid 'Iso' from lens, construct an 'Encoder'
 isoEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
 isoEncoder f = unsafeMkEncoder $ EncoderImpl
@@ -440,11 +441,18 @@ isoEncoder f = unsafeMkEncoder $ EncoderImpl
   , _encoderImpl_decode = pure . view (from f)
   }
 
+-- | Given a valid 'Iso' from lens, construct an 'Encoder'
+isoDecoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
+isoDecoder f = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = view f
+  , _encoderImpl_decode = pure . view (from f)
+  }
+
 wrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse (Unwrapped a) a
-wrappedEncoder = isoEncoder $ from _Wrapped'
+wrappedEncoder = isoDecoder $ from _Wrapped'
 
 unwrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse a (Unwrapped a)
-unwrappedEncoder = isoEncoder _Wrapped'
+unwrappedEncoder = isoDecoder _Wrapped'
 
 maybeToEitherEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Maybe a) (Either () a)
 maybeToEitherEncoder = unsafeMkEncoder $ EncoderImpl
@@ -825,7 +833,7 @@ _R
   -> Prism' (R f) a
 _R variant = dSumGEqPrism variant . iso runIdentity Identity
 
-{-# DEPRECATED "Use prismDecoder" #-}
+{-# DEPRECATED prismEncoder "Use prismDecoder" #-}
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
 prismEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
