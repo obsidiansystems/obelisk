@@ -497,14 +497,9 @@ testLegacyGitThunks isVerbose = withSystemTempDirectory "test-git-repo" $ \gitDi
 
     for_ (legacyGitThunks (GitThunkParams gitDir rev sha256)) $ \mkFiles ->
       withSystemTempDirectory "test-thunks" $ \thunkDir -> do
-        let nixEval = run nixInstantiatePath ["--eval", toTextIgnore (thunkDir </> ("thunk.nix" :: FilePath))]
         liftIO $ mkFiles thunkDir
         run_ "ob" ["thunk", "unpack", toTextIgnore thunkDir]
-        unpackedEval <- nixEval
         run_ "ob" ["thunk", "pack", toTextIgnore thunkDir]
-        packedEval <- nixEval
-        liftIO $ assertBool "Unpacked and packed thunk.nix should not eval to the same thing" $
-          unpackedEval /= packedEval
 
 data GitThunkParams = GitThunkParams
   { _gitThunkParams_repo :: !FilePath
