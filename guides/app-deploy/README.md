@@ -267,7 +267,14 @@ ob deploy update
 ob deploy test android -v
 ```
 
-This deployment will ask you to create a password (at least 6 characters long) and then ask you a series of questions. You can pick arbitrary answers. If the deployment fails, try using different USB ports on your computer and running `ob deploy test android -v` again. The USB cable you use can also make a difference.
+This deployment will ask you to create a password (at least 6 characters long) and then ask you a series of questions. You can pick arbitrary answers. When you are presented with prompt like:
+
+```
+Is CN=a, OU=b, O=c, L=d, ST=e, C=f correct?
+  [no]:
+```
+
+You can enter `yes` to continue. If the deployment fails, try using different USB ports on your computer and running `ob deploy test android -v` again. The USB cable you use can also make a difference.
 
 When connecting your Android device you may be asked to "Allow USB debugging". You need to allow it.
 ![](assets/android-confirm-usb-debugging.jpg)
