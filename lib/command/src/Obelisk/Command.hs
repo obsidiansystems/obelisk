@@ -74,8 +74,8 @@ argsInfo cfg = info (args cfg <**> helper) $ mconcat
 initSource :: Parser InitSource
 initSource = foldl1 (<|>)
   [ pure InitSource_Default
-  , InitSource_Branch <$> strOption (long "branch" <> metavar "BRANCH")
-  , InitSource_Symlink <$> strOption (long "symlink" <> action "directory" <> metavar "PATH")
+  , InitSource_Branch <$> strOption (long "branch" <> metavar "BRANCH" <> help "Initialize the project using the given BRANCH of Obelisk's official repository")
+  , InitSource_Symlink <$> strOption (long "symlink" <> action "directory" <> metavar "PATH" <> help "(Use with caution) Initialize the project using the copy of Obelisk found at the given PATH")
   ]
 
 initForce :: Parser Bool
