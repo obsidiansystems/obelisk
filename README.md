@@ -199,6 +199,7 @@ To try out the **experimental** [`ghcide`](https://github.com/digital-asset/ghci
       EOF
       chmod +x hie-bios.sh
       ```
+      * **Note:** In some projects you need to use `ob internal export-ghci-configuration --use-relative-paths` in this script instead. This is known to happen when your project contains symlinks to other packages.
   * Add `hie.yaml` to the root of your project:
       ```shell
       echo 'cradle: { bios: { program: hie-bios.sh } }' > hie.yaml
