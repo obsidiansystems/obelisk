@@ -19,6 +19,8 @@ let
       exit 1
     fi
     cp -a "${config}"/* "$out/config"
+    # Needed for android deployments
+    find "$out/config" -type f -printf '%P\0' > "$out/config.files"
   '');
 in
 
