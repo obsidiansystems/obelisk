@@ -207,7 +207,7 @@ nixCmdProc' cmdCfg = (proc (T.unpack cmd) options, cmd)
         )
 
 nixCmd :: MonadObelisk m => NixCmd -> m FilePath
-nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built " <> desc) $ do
+nixCmd cmdCfg = withSpinner' (T.unwords $ "Running" : cmd : desc) (Just $ const $ T.unwords $ "Built" : desc) $ do
   output <- readProcessAndLogStderr Debug cmdProc
   -- Remove final newline that Nix appends
   Just (outPath, '\n') <- pure $ T.unsnoc output
@@ -218,7 +218,7 @@ nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built 
       NixCmd_Build cfg' -> cfg' ^. nixCommonConfig
       NixCmd_Instantiate cfg' -> cfg' ^. nixCommonConfig
     path = commonCfg ^. nixCmdConfig_target . target_path
-    desc = T.pack $ mconcat $ catMaybes
-      [ ("on " <>) <$> path
-      , (\a -> " [" <> a <> "]") <$> (commonCfg ^. nixCmdConfig_target . target_attr)
+    desc = concat $ catMaybes
+      [ (\x -> ["on", T.pack x]) <$> path
+      , (\a -> ["[" <> T.pack a <> "]"]) <$> (commonCfg ^. nixCmdConfig_target . target_attr)
       ]
