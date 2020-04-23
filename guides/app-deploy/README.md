@@ -257,7 +257,7 @@ git commit -m"Accept license"
 git push
 ```
 
-Make sure *USB debugging* is enabled in your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options) and connect the device using USB. Be sure to confirm any security prompts on the device.
+Make sure *USB debugging* is enabled in your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options)) and connect the device using USB. Be sure to confirm any security prompts on the device.
 
 Now update your deployment and deploy to Android:
 
