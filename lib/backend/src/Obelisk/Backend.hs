@@ -44,6 +44,7 @@ import Control.Exception (try)
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Fail (MonadFail)
+import Control.Lens (view, _1, _2, _3)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
@@ -295,19 +296,21 @@ renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
 preloadGhcjs :: GhcjsWasmAssets -> FrontendWidgetT r ()
 preloadGhcjs (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
   Nothing -> elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
-  Just wasmAssets -> fst (wasmScripts allJsUrl wasmAssets)
+  Just wasmAssets -> scriptTag $ view _1 (wasmScripts allJsUrl wasmAssets)
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
 deferredGhcjsScript :: GhcjsWasmAssets -> FrontendWidgetT r ()
 deferredGhcjsScript (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
   Nothing -> elAttr "script" ("type" =: "text/javascript" <> "src" =: allJsUrl <> "defer" =: "defer") blank
-  Just wasmAssets -> snd (wasmScripts allJsUrl wasmAssets)
+  Just wasmAssets -> scriptTag $ view _2 (wasmScripts allJsUrl wasmAssets)
 
-wasmScripts :: Text -> Text -> (FrontendWidgetT r (), FrontendWidgetT r ())
-wasmScripts allJsUrl wasmRoot = (script preloadScript, script runJsScript)
+scriptTag :: DomBuilder t m => Text -> m ()
+scriptTag t = elAttr "script" ("type" =: "text/javascript") $ text t
+
+wasmScripts :: Text -> Text -> (Text, Text, (Int -> Text))
+wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
   where
-    script t = elAttr "script" ("type" =: "text/javascript") $ text t
     jsaddleJs = wasmRoot <> "/jsaddle_core.js"
     interfaceJs = wasmRoot <> "/jsaddle_mainthread_interface.js"
     runnerJs = wasmRoot <> "/mainthread_runner.js"
@@ -347,21 +350,43 @@ wasmScripts allJsUrl wasmRoot = (script preloadScript, script runJsScript)
       \  add_deferload_tag('" <> runnerJs <> "');    \
       \}"
 
+    delayedJsScript n =
+      "var wasmFile = '" <> wasmUrl <> "';            \
+      \setTimeout(function() {                        \
+      \  add_load_tag = function (docSrc) {           \
+      \    var tag = document.createElement('script');\
+      \    tag.type = 'text/javascript';              \
+      \    tag.src = docSrc;                          \
+      \    document.body.appendChild(tag);            \
+      \  };                                           \
+      \  if (typeof(WebAssembly) === 'undefined') {   \
+      \    add_load_tag('" <> allJsUrl <> "');        \
+      \  } else {                                     \
+      \    add_load_tag('" <> jsaddleJs <> "');       \
+      \    add_load_tag('" <> interfaceJs <> "');     \
+      \    add_load_tag('" <> runnerJs <> "');        \
+      \  }                                            \
+      \}, " <> T.pack (show n) <> ");"
+
 -- | An all.js script which is loaded after waiting for some time to pass. This
 -- is useful to ensure any CSS animations on the page can play smoothly before
 -- blocking the UI thread by running all.js.
 delayedGhcjsScript
   :: Int -- ^ The number of milliseconds to delay loading by
-  -> Text -- ^ URL to GHCJS app JavaScript
+  -> GhcjsWasmAssets
   -> FrontendWidgetT r ()
-delayedGhcjsScript n allJsUrl = elAttr "script" ("type" =: "text/javascript") $ text $ T.unlines
-  [ "setTimeout(function() {"
-  , "  var all_js_script = document.createElement('script');"
-  , "  all_js_script.type = 'text/javascript';"
-  , "  all_js_script.src = '" <> allJsUrl <> "';"
-  , "  document.body.appendChild(all_js_script);"
-  , "}, " <> T.pack (show n) <> ");"
-  ]
+delayedGhcjsScript n (GhcjsWasmAssets allJsUrl mWasm) = scriptTag scriptToRun
+  where
+    scriptToRun = case mWasm of
+      Nothing -> T.unlines
+        [ "setTimeout(function() {"
+        , "  var all_js_script = document.createElement('script');"
+        , "  all_js_script.type = 'text/javascript';"
+        , "  all_js_script.src = '" <> allJsUrl <> "';"
+        , "  document.body.appendChild(all_js_script);"
+        , "}, " <> T.pack (show n) <> ");"
+        ]
+      Just wasmAssets -> (view _3 (wasmScripts allJsUrl wasmAssets)) n
 
 instance HasCookies Snap where
   askCookies = map (\c -> (cookieName c, cookieValue c)) <$> getsRequest rqCookies
