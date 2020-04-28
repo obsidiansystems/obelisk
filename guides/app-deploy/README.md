@@ -232,7 +232,7 @@ xdg-open http://$VM_IP
 If that fails, just get the URL by running
 
 ```bash
-echo http://$VM_IP`
+echo http://$VM_IP
 ```
 
 and copy/paste that URL into your browser navigation input.
@@ -257,7 +257,7 @@ git commit -m"Accept license"
 git push
 ```
 
-Make sure *USB debugging* is enabled in your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options) and connect the device using USB. Be sure to confirm any security prompts on the device.
+Make sure *USB debugging* is enabled in your Android device ([instructions here](https://developer.android.com/studio/debug/dev-options)) and connect the device using USB. Be sure to confirm any security prompts on the device.
 
 Now update your deployment and deploy to Android:
 
@@ -267,7 +267,14 @@ ob deploy update
 ob deploy test android -v
 ```
 
-This deployment will ask you to create a password (at least 6 characters long) and then ask you a series of questions. You can pick arbitrary answers. If the deployment fails, try using different USB ports on your computer and running `ob deploy test android -v` again. The USB cable you use can also make a difference.
+This deployment will ask you to create a password (at least 6 characters long) and then ask you a series of questions. You can pick arbitrary answers. When you are presented with prompt like:
+
+```
+Is CN=a, OU=b, O=c, L=d, ST=e, C=f correct?
+  [no]:
+```
+
+You can enter `yes` to continue. If the deployment fails, try using different USB ports on your computer and running `ob deploy test android -v` again. The USB cable you use can also make a difference.
 
 When connecting your Android device you may be asked to "Allow USB debugging". You need to allow it.
 ![](assets/android-confirm-usb-debugging.jpg)

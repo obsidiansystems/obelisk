@@ -50,6 +50,7 @@ module Obelisk.Route
   , pathParamEncoder
   , pathLiteralEncoder
   , singletonListEncoder
+  , packTextEncoder
   , unpackTextEncoder
   , prefixTextEncoder
   , unsafeTshowEncoder
@@ -159,6 +160,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Some (Some(Some))
 import Data.Text (Text)
+import Data.Text.Lens (IsText, packed, unpacked)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Universe
@@ -756,11 +758,11 @@ prefixNonemptyTextEncoder p = Encoder $ pure $ EncoderImpl
         Just stripped -> pure stripped
   }
 
-unpackTextEncoder :: (Applicative check, Applicative parse) => Encoder check parse Text String
-unpackTextEncoder = Encoder $ pure $ EncoderImpl
-  { _encoderImpl_encode = T.unpack
-  , _encoderImpl_decode = pure . T.pack
-  }
+packTextEncoder :: (Applicative check, Applicative parse, IsText text) => Encoder check parse String text
+packTextEncoder = isoEncoder packed
+
+unpackTextEncoder :: (Applicative check, Applicative parse, IsText text) => Encoder check parse text String
+unpackTextEncoder = isoEncoder unpacked
 
 toListMapEncoder :: (Applicative check, Applicative parse, Ord k) => Encoder check parse (Map k v) [(k, v)]
 toListMapEncoder = Encoder $ pure $ EncoderImpl

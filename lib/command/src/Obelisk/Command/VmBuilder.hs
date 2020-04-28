@@ -21,6 +21,7 @@ import qualified System.Info
 
 import Obelisk.App (MonadObelisk, getObeliskUserStateDir)
 import Obelisk.CliApp
+import Obelisk.Command.Utils (rmPath)
 
 -- | Generate the `--builders` argument string to enable the VM builder after ensuring it is available.
 getNixBuildersArg :: MonadObelisk m => m String
@@ -95,7 +96,7 @@ setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> con
 
   -- Create new SSH keys for this container
   callProcessAndLogOutput (Debug, Error) $
-    proc "rm" ["-f", stateDir </> sshKeyFileName, stateDir </> sshKeyFileName <.> "pub"]
+    proc rmPath ["-f", stateDir </> sshKeyFileName, stateDir </> sshKeyFileName <.> "pub"]
   callProcessAndLogOutput (Debug, Error) $
     proc "ssh-keygen" ["-t", "ed25519", "-f", stateDir </> sshKeyFileName, "-P", ""]
 
