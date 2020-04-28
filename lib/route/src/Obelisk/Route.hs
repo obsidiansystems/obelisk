@@ -61,7 +61,7 @@ module Obelisk.Route
   , justEncoder
   , nothingEncoder
   , isoEncoder
-  , isoDecoder
+  , viewEncoder
   , wrappedEncoder
   , unwrappedEncoder
   , listToNonEmptyEncoder
@@ -70,7 +70,7 @@ module Obelisk.Route
   , toListMapEncoder
   , shadowEncoder
   , prismEncoder
-  , prismDecoder
+  , reviewEncoder
   , rPrism
   , _R
   , obeliskRouteEncoder
@@ -342,7 +342,7 @@ instance Monad parse => Bifunctor (,) (EncoderImpl parse) (EncoderImpl parse) (E
     }
 
 instance (Monad parse, Applicative check) => Braided (Encoder check parse) (,) where
-  braid = isoDecoder (iso swap swap)
+  braid = viewEncoder (iso swap swap)
 
 
 instance (Applicative check, Monad parse) => PFunctor (,) (Encoder check parse) (Encoder check parse) where
@@ -378,11 +378,11 @@ instance (Monad parse, Applicative check) => Bifunctor Either (Encoder check par
   bimap f g = Encoder $ liftA2 bimap (unEncoder f) (unEncoder g)
 
 instance (Applicative check, Monad parse) => Associative (Encoder check parse) Either where
-  associate = isoDecoder (iso (associate @(->) @Either) disassociate)
-  disassociate = isoDecoder (iso disassociate associate)
+  associate = viewEncoder (iso disassociate (associate @(->) @Either))
+  disassociate = viewEncoder (iso associate disassociate)
 
 instance (Monad parse, Applicative check) => Braided (Encoder check parse) Either where
-  braid = isoDecoder (iso swap swap)
+  braid = viewEncoder (iso swap swap)
 
 
 
@@ -435,26 +435,23 @@ instance (Applicative check, Monad parse) => Monoidal (Encoder check parse) (,) 
 -- Specific instances of encoders
 --------------------------------------------------------------------------------
 
-{-# DEPRECATED isoEncoder "Use isoDecoder" #-}
+{-# DEPRECATED isoEncoder "Use viewEncoder instead" #-}
 -- | Given a valid 'Iso' from lens, construct an 'Encoder'
 isoEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
-isoEncoder f = unsafeMkEncoder $ EncoderImpl
-  { _encoderImpl_encode = view f
-  , _encoderImpl_decode = pure . view (from f)
-  }
+isoEncoder p = viewEncoder (from p)
 
 -- | Given a valid 'Iso' from lens, construct an 'Encoder'
-isoDecoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
-isoDecoder f = unsafeMkEncoder $ EncoderImpl
-  { _encoderImpl_encode = view f
-  , _encoderImpl_decode = pure . view (from f)
+viewEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse b a
+viewEncoder f = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = view (from f)
+  , _encoderImpl_decode = pure . view f
   }
 
 wrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse (Unwrapped a) a
-wrappedEncoder = isoDecoder $ from _Wrapped'
+wrappedEncoder = viewEncoder _Wrapped'
 
 unwrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse a (Unwrapped a)
-unwrappedEncoder = isoDecoder _Wrapped'
+unwrappedEncoder = viewEncoder $ from _Wrapped'
 
 maybeToEitherEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Maybe a) (Either () a)
 maybeToEitherEncoder = unsafeMkEncoder $ EncoderImpl
@@ -479,11 +476,11 @@ maybeEncoder f g = shadowEncoder f g . maybeToEitherEncoder
 
 -- | Encode a value by simply applying 'Just'
 justEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a (Maybe a)
-justEncoder = prismDecoder _Just
+justEncoder = reviewEncoder _Just
 
 -- | Encode () to 'Nothing'.
 nothingEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse () (Maybe a)
-nothingEncoder = prismDecoder _Nothing
+nothingEncoder = reviewEncoder _Nothing
 
 someConstEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Const a)) a
 someConstEncoder = unsafeMkEncoder $ EncoderImpl
@@ -835,25 +832,20 @@ _R
   -> Prism' (R f) a
 _R variant = dSumGEqPrism variant . iso runIdentity Identity
 
-{-# DEPRECATED prismEncoder "Use prismDecoder" #-}
+{-# DEPRECATED prismEncoder "Use reviewEncoder instead" #-}
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
 prismEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
-prismEncoder p = unsafeMkEncoder $ EncoderImpl
-  { _encoderImpl_encode = (^. re p)
-  , _encoderImpl_decode = \r -> case r ^? p of
-      Just a -> pure a
-      Nothing -> throwError "prismEncoder: value is not present in the prism"
-  }
+prismEncoder = reviewEncoder
 
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
-prismDecoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
-prismDecoder p = unsafeMkEncoder $ EncoderImpl
+reviewEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
+reviewEncoder p = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode= view (re p)
   , _encoderImpl_decode = \r -> case r ^? p of
       Just a -> pure a
-      Nothing -> throwError "prismDecoder: value is not present in the prism"
+      Nothing -> throwError "reviewEncoder: value is not present in the prism"
   }
 
 -- | A URL path and query string, in which trailing slashes don't matter in the path
@@ -1092,11 +1084,11 @@ readShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) =>
 readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
 
 integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
-integralEncoder = prismDecoder (Numeric.Lens.integral)
+integralEncoder = reviewEncoder (Numeric.Lens.integral)
 
 pathSegmentEncoder :: (MonadError Text parse, Applicative check, Cons as as a a) =>
   Encoder check parse (a, (as, b)) (as, b)
-pathSegmentEncoder = first (prismDecoder _Cons) . disassociate
+pathSegmentEncoder = first (reviewEncoder _Cons) . disassociate
 
 newtype Decoder check parse b a = Decoder { toEncoder :: Encoder check parse a b }
 
