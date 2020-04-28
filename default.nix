@@ -2,6 +2,7 @@
 , profiling ? false
 , iosSdkVersion ? "10.2"
 , config ? {}
+, enableWasm ? true
 , reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
@@ -85,6 +86,31 @@ in rec {
       echo "//# sourceMappingURL=all.js.map" >> all.js
     ''}
   '';
+  webabi = pkgs.callPackage ./dep/webabi {};
+  # wasm-opt seems to have no effect
+  stripWasm = frontend: pkgs.runCommand "stripWasm" {} ''
+    mkdir $out
+    cd $out
+    ln -s "${frontend}/bin/frontend" frontend.original.wasm
+    cp "${frontend}/bin/frontend" frontend.wasm
+    chmod u+rw frontend.wasm
+    chmod a-x frontend.wasm
+    ${pkgs.wabt}/bin/wasm-strip frontend.wasm
+  '';
+
+  # The ghcjs and wasm files are put in a single asset, as they need to be in sync and served together.
+  combinedJsWasmAssets = frontendJs: optimizationLevel: frontendWasm: pkgs.runCommand "combinedJsWasmAssets" {} ''
+    mkdir $out
+    cd $out
+    ${if frontendJs != null then ''
+      ln -s ${compressedJs frontendJs optimizationLevel}/* .
+    '' else '' ''}
+    ${if frontendWasm != null then ''
+      ln -s ${stripWasm frontendWasm}/* .
+      ln -s ${webabi}/lib/node_modules/webabi/jsaddleJS/* .
+      ln -s ${webabi}/lib/node_modules/webabi/build/mainthread_runner.js .
+    '' else '' ''}
+  '';
 
   serverModules = {
     mkBaseEc2 = { nixosPkgs, ... }: {...}: {
@@ -167,13 +193,13 @@ in rec {
 
   inherit mkAssets;
 
-  serverExe = backend: frontend: assets: optimizationLevel: version:
+  serverExe = backend: frontendJs: assets: optimizationLevel: frontendWasm: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
-      ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      ln -s ${mkAssets (combinedJsWasmAssets frontendJs optimizationLevel frontendWasm)} $out/frontend.jsexe.assets
       echo ${version} > $out/version
     '';
 
@@ -289,6 +315,7 @@ in rec {
                       lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
                     ghc = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghc;
                     ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
+                    wasm = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
                   };
                   android = self.__androidWithConfig (self.base + "/config");
                   ios = self.__iosWithConfig (self.base + "/config");
@@ -314,6 +341,7 @@ in rec {
         mainProjectOut.ghcjs.frontend
         projectInst.passthru.staticFiles
         projectInst.passthru.__closureCompilerOptimizationLevel
+        (if enableWasm then mainProjectOut.wasm.frontend else null)
         version;
       linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
