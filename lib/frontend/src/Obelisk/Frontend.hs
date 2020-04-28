@@ -180,7 +180,7 @@ runFrontendWithConfigsAndCurrentRoute
   -> Frontend (R frontendRoute)
   -> JSM ()
 runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = do
-  let ve = validFullEncoder . hoistParse errorLeft (prismDecoder (rPrism $ _FullRoute_Frontend . _ObeliskRoute_App))
+  let ve = validFullEncoder . hoistParse errorLeft (reviewEncoder (rPrism $ _FullRoute_Frontend . _ObeliskRoute_App))
       errorLeft = \case
         Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
         Right x -> Identity x
