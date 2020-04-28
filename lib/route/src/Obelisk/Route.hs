@@ -836,7 +836,7 @@ _R variant = dSumGEqPrism variant . iso runIdentity Identity
 -- just like 'review' produces a function @b -> a@. This is because 'Prism's extract values, in a way that might
 -- fail, in their forward direction and inject values, in a way that cannot fail, in their reverse direction;
 -- whereas 'Encoder's encode, which cannot fail, in their forward direction, and decode, which can fail, in their
--- reverse direction. In short @reviewEncoder (f . g) = prismEncoder g . reviewEncoder f@.
+-- reverse direction. In short @reviewEncoder (f . g) = reviewEncoder g . reviewEncoder f@.
 reviewEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
 reviewEncoder p = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode = review p
