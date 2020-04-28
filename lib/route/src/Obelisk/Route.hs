@@ -835,13 +835,13 @@ _R variant = dSumGEqPrism variant . iso runIdentity Identity
 {-# DEPRECATED prismEncoder "Use reviewEncoder instead" #-}
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
--- This encoder is contravariant like 'review': prismEncoder (f . g) = prismEncoder g . prismEncoder 
+-- This encoder is contravariant like 'review': prismEncoder (f . g) = prismEncoder g . prismEncoder f
 prismEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
 prismEncoder = reviewEncoder
 
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
--- This encoder is contravariant like 'review': prismEncoder (f . g) = prismEncoder g . prismEncoder 
+-- This encoder is contravariant like 'review': prismEncoder (f . g) = prismEncoder g . prismEncoder f
 reviewEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
 reviewEncoder p = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode= view (re p)
