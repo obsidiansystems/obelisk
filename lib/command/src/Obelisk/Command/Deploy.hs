@@ -1,63 +1,77 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE DeriveGeneric #-}
 module Obelisk.Command.Deploy where
 
+import Control.Applicative (liftA2)
 import Control.Lens
 import Control.Monad
-import Control.Monad.Catch (Exception (displayException), MonadThrow, throwM, try, bracket_)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Catch (Exception (displayException), MonadThrow, bracket, throwM, try)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
-import Data.Text (Text)
 import qualified Data.Set as Set
+import Data.String.Here.Interpolated (i)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.Generics
-import Nix.Pretty
-import Nix.String (principledMakeNixStringWithoutContext)
-import Nix.Value
 import System.Directory
-import System.Environment (getEnvironment)
 import System.FilePath
 import System.IO
 import System.Posix.Files
-import System.Process (delegate_ctlc, env, proc, cwd)
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (Severity (..), callProcessAndLogOutput, failWith, putLog, withSpinner)
+import Obelisk.CliApp (
+  Severity (..), callProcessAndLogOutput, failWith, proc, putLog,
+  setCwd, setDelegateCtlc, setEnvOverride, withSpinner)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
-deployInit
+data DeployInitOpts = DeployInitOpts
+  { _deployInitOpts_outputDir :: FilePath
+  , _deployInitOpts_sshKey :: FilePath
+  , _deployInitOpts_hostname :: [String]
+  , _deployInitOpts_route :: String
+  , _deployInitOpts_adminEmail :: String
+  , _deployInitOpts_enableHttps :: Bool
+  } deriving Show
+
+deployInit :: MonadObelisk m => DeployInitOpts -> FilePath -> m ()
+deployInit deployOpts root = do
+  let deployDir = _deployInitOpts_outputDir deployOpts
+  rootEqualsTarget <- liftIO $ liftA2 equalFilePath (canonicalizePath root) (canonicalizePath deployDir)
+  when rootEqualsTarget $
+    failWith [i|Deploy directory ${deployDir} should not be the same as project root.|]
+  thunkPtr <- readThunk root >>= \case
+    Right (ThunkData_Packed _ ptr) -> return ptr
+    _ -> getThunkPtr CheckClean_NotIgnored root Nothing
+  deployInit' thunkPtr deployOpts
+
+deployInit'
   :: MonadObelisk m
   => ThunkPtr
-  -> FilePath
-  -> FilePath
-  -> [String] -- ^ hostnames
-  -> String -- ^ route
-  -> String -- ^ admin email
-  -> Bool -- ^ enable https
+  -> DeployInitOpts
   -> m ()
-deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps = do
+deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminEmail enableHttps) = do
+  liftIO $ createDirectoryIfMissing True deployDir
   localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
       False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
       True -> pure $ deployDir </> "ssh_key"
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp" [sshKeyPath, localKey]
+      proc cp [sshKeyPath, localKey]
     liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
     return localKey
   withSpinner "Validating configuration" $ do
@@ -78,22 +92,30 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
                    , deployDir </> "config" </> "common"
                    , deployDir </> "config" </> "frontend"
                    ]
+
+  let srcDir = deployDir </> "src"
+  withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ do
+    createThunk srcDir $ Right thunkPtr
+    setupObeliskImpl deployDir
+
   withSpinner "Writing deployment configuration" $ do
     writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
     writeDeployConfig deployDir "enable_https" $ show enableHttps
     writeDeployConfig deployDir "admin_email" adminEmail
-    writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
-  withSpinner "Creating source thunk (./src)" $ liftIO $ do
-    createThunk (deployDir </> "src") thunkPtr
-    setupObeliskImpl deployDir
+    writeDeployConfig deployDir ("config" </> "common" </> "route") route
+    writeDeployConfig deployDir "module.nix" $
+      "(import " <> toNixPath (makeRelative deployDir srcDir) <> " {}).obelisk.serverModules.mkBaseEc2"
+
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
-setupObeliskImpl :: FilePath -> IO ()
-setupObeliskImpl deployDir = do
-  let implDir = toImplDir deployDir
+setupObeliskImpl :: MonadIO m => FilePath -> m ()
+setupObeliskImpl deployDir = liftIO $ do
+  let
+    implDir = toImplDir deployDir
+    goBackUp = foldr (</>) "" $ (".." <$) $ splitPath $ makeRelative deployDir implDir
   createDirectoryIfMissing True implDir
-  writeFile (implDir </> "default.nix") "(import ../../src {}).obelisk"
+  writeFile (implDir </> "default.nix") $ "(import " <> toNixPath (goBackUp </> "src") <> " {}).obelisk"
 
 deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
 deployPush deployPath getNixBuilders = do
@@ -104,14 +126,16 @@ deployPush deployPath getNixBuilders = do
   routeHost <- getHostFromRoute enableHttps route
   let srcPath = deployPath </> "src"
   thunkPtr <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed ptr) -> return ptr
-    Right (ThunkData_Checkout _) -> do
+    Right (ThunkData_Packed _ ptr) -> return ptr
+    Right ThunkData_Checkout -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> packThunk False srcPath
+        True -> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   builders <- getNixBuilders
+  let moduleFile = deployPath </> "module.nix"
+  moduleFileExists <- liftIO $ doesFileExist moduleFile
   buildOutputByHost <- ifor (Map.fromSet (const ()) hosts) $ \host () -> do
     --TODO: What does it mean if this returns more or less than 1 line of output?
     [result] <- fmap lines $ nixCmd $ NixCmd_Build $ def
@@ -121,13 +145,13 @@ deployPush deployPath getNixBuilders = do
         , _target_expr = Nothing
         }
       & nixBuildConfig_outLink .~ OutLink_None
-      & nixCmdConfig_args .~
+      & nixCmdConfig_args .~ (
         [ strArg "hostName" host
         , strArg "adminEmail" adminEmail
         , strArg "routeHost" routeHost
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
-        ]
+        ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
     pure result
   let knownHostsPath = deployPath </> "backend_known_hosts"
@@ -157,7 +181,7 @@ deployPush deployPath getNixBuilders = do
         ]
   isClean <- checkGitCleanStatus deployPath True
   when (not isClean) $ do
-    withSpinner "Commiting changes to Git" $ do
+    withSpinner "Committing changes to Git" $ do
       callProcessAndLogOutput (Debug, Error) $ proc "git"
         ["-C", deployPath, "add", "."]
       callProcessAndLogOutput (Debug, Error) $ proc "git"
@@ -165,26 +189,11 @@ deployPush deployPath getNixBuilders = do
   putLog Notice $ "Deployed => " <> T.pack route
   where
     callProcess' envMap cmd args = do
-      processEnv <- Map.toList . (envMap <>) . Map.fromList <$> liftIO getEnvironment
-      let p = (proc cmd args) { delegate_ctlc = True, env = Just processEnv }
+      let p = setEnvOverride (envMap <>) $ setDelegateCtlc True $ proc cmd args
       callProcessAndLogOutput (Notice, Notice) p
 
 deployUpdate :: MonadObelisk m => FilePath -> m ()
-deployUpdate deployPath = updateThunkToLatest (deployPath </> "src") Nothing
-
-keytoolToAndroidConfig :: KeytoolConfig -> HM.HashMap Text (NValue  t Identity m)
-keytoolToAndroidConfig conf =
-  let path = nvPath $ _keytoolConfig_keystore conf
-      fromStr = nvStr . principledMakeNixStringWithoutContext . T.pack
-      storepass = fromStr $ _keytoolConfig_storepass conf
-      alias = fromStr $ _keytoolConfig_alias conf
-      keypass = fromStr $ _keytoolConfig_keypass conf
-  in HM.fromList
-    [ ("storeFile", path)
-    , ("storePassword", storepass)
-    , ("keyAlias", alias)
-    , ("keyPassword", keypass)
-    ]
+deployUpdate deployPath = updateThunkToLatest (ThunkUpdateConfig Nothing (ThunkConfig Nothing)) (deployPath </> "src")
 
 data PlatformDeployment = Android | IOS
   deriving (Show, Eq)
@@ -200,7 +209,7 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
       configDir = root </> "config"
   exists <- liftIO $ doesDirectoryExist srcDir
   unless exists $ failWith "ob test should be run inside of a deploy directory"
-  nixBuildTarget <- case platform of
+  (nixBuildTarget, extraArgs) <- case platform of
     Android -> do
       let keystorePath = root </> "android_keystore.jks"
           keytoolConfPath = root </> "android_keytool_config.json"
@@ -219,48 +228,60 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
               , _keytoolConfig_storepass = keyStorePassword
               , _keytoolConfig_keypass = keyStorePassword
               }
-        createKeystore root $ keyToolConf
+        createKeystore root keyToolConf
         liftIO $ BSL.writeFile keytoolConfPath $ encode keyToolConf
       checkKeytoolConfExist <- liftIO $ doesFileExist keytoolConfPath
       unless checkKeytoolConfExist $ failWith "Missing android KeytoolConfig"
       keytoolConfContents <- liftIO $ BSL.readFile keytoolConfPath
-      liftIO $ print keytoolConfContents
-      releaseKey :: String <- case eitherDecode keytoolConfContents :: Either String KeytoolConfig of
+      keyArgs <- case eitherDecode keytoolConfContents :: Either String KeytoolConfig of
         Left err -> failWith $ T.pack err
-        Right conf -> return $
-          (printNix :: MonadObelisk m => NValue t Identity m -> String) $
-            nvSet (keytoolToAndroidConfig conf) HM.empty
+        Right conf -> pure
+          [ "--sign"
+          , "--store-file", _keytoolConfig_keystore conf
+          , "--store-password", _keytoolConfig_storepass conf
+          , "--key-alias", _keytoolConfig_alias conf
+          , "--key-password", _keytoolConfig_keypass conf
+          ]
       let expr = mconcat
-            [ "with (import ", srcDir, " {});"
-            , "android.frontend.override (drv: { "
-            , "releaseKey = (if builtins.isNull drv.releaseKey then {} else drv.releaseKey) // " <> releaseKey <> "; "
+            [ "with (import ", toNixPath srcDir, " {});"
+            , "android.frontend.override (drv: {"
+            , "isRelease = true;"
             , "staticSrc = (passthru.__androidWithConfig ", configDir, ").frontend.staticSrc;"
+            , "assets = (passthru.__androidWithConfig ", configDir, ").frontend.assets;"
             , "})"
             ]
-      return $ Target
+      return (Target
         { _target_path = Nothing
         , _target_attr = Nothing
         , _target_expr = Just expr
-        }
+        }, keyArgs)
     IOS -> do
       let expr = mconcat
-            [ "with (import ", srcDir, " {});"
-            , "ios.frontend.override (_: { staticSrc = (passthru.__iosWithConfig ", configDir, ").frontend.staticSrc; })"
+            [ "with (import ", toNixPath srcDir, " {});"
+            , "ios.frontend.override (_: { staticSrc = (passthru.__iosWithConfig ", toNixPath configDir, ").frontend.staticSrc; })"
             ]
-      return $ Target
+      return (Target
         { _target_path = Nothing
         , _target_attr = Nothing
         , _target_expr = Just expr
-        }
+        }, [])
   result <- nixCmd $ NixCmd_Build $ def
     & nixBuildConfig_outLink .~ OutLink_None
     & nixCmdConfig_target .~ nixBuildTarget
-  putLog Notice $ T.pack $ "Your recently built android apk can be found at the following path: " <> show result
-  callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") mobileArgs
+  let mobileArtifact = case platform of
+                         IOS -> "iOS App"
+                         Android -> "Android APK"
+  putLog Notice $ T.pack $ unwords ["Your recently built", mobileArtifact, "can be found at the following path:", show result]
+  callProcessAndLogOutput (Notice, Error) $ proc (result </> "bin" </> "deploy") (mobileArgs ++ extraArgs)
   where
-    withEcho showEcho f = do
-      prevEcho <- hGetEcho stdin
-      bracket_ (hSetEcho stdin showEcho) (hSetEcho stdin prevEcho) f
+    withEcho showEcho f = bracket
+      (do
+        prevEcho <- hGetEcho stdin
+        hSetEcho stdin showEcho
+        pure prevEcho
+      )
+      (hSetEcho stdin)
+      (const f)
 
 data KeytoolConfig = KeytoolConfig
   { _keytoolConfig_keystore :: FilePath
@@ -273,19 +294,16 @@ instance FromJSON KeytoolConfig
 instance ToJSON KeytoolConfig
 
 createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
-createKeystore root config = do
-  let expr = "with (import " <> toImplDir root <> ").reflex-platform.nixpkgs; pkgs.mkShell { buildInputs = [ pkgs.jdk ]; }"
-  callProcessAndLogOutput (Notice,Notice) $ (proc "nix-shell" ["default.nix", "-E" , expr, "--run" , keytoolCmd]) { cwd = Just root }
-  where
-    keytoolCmd = processToShellString "keytool"
-      [ "-genkeypair", "-noprompt"
-      , "-keystore", _keytoolConfig_keystore config
-      , "-keyalg", "RSA", "-keysize", "2048"
-      , "-validity", "1000000"
-      , "-storepass", _keytoolConfig_storepass config
-      , "-alias", _keytoolConfig_alias config
-      , "-keypass", _keytoolConfig_keypass config
-      ]
+createKeystore root config =
+  callProcessAndLogOutput (Notice, Notice) $ setCwd (Just root) $ proc jreKeyToolPath
+    [ "-genkeypair", "-noprompt"
+    , "-keystore", _keytoolConfig_keystore config
+    , "-keyalg", "RSA", "-keysize", "2048"
+    , "-validity", "1000000"
+    , "-storepass", _keytoolConfig_storepass config
+    , "-alias", _keytoolConfig_alias config
+    , "-keypass", _keytoolConfig_keypass config
+    ]
 
 -- | Simplified deployment configuration mechanism. At one point we may revisit this.
 writeDeployConfig :: MonadObelisk m => FilePath -> FilePath -> String -> m ()

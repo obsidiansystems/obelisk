@@ -1,9 +1,85 @@
 # Revision history for obelisk
 
-This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
+This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
+
+## v0.8.0.0
+
+* ([#674](https://github.com/obsidiansystems/obelisk/pull/674), [#711](https://github.com/obsidiansystems/obelisk/pull/711)) Introduce a new thunk format to support accessing the thunk's source directly when packed. When packed, thunks have an additional file called `thunk.nix` and `default.nix` is now a think wrapper around that.
+* ([#665](https://github.com/obsidiansystems/obelisk/pull/665)) Add `--interpret` and `--no-interpret` options to `ob run`/`ob watch`/`ob repl`/`ob shell`. These options allow you to pick which paths will be pre-compiled by `nix` when entering the shell/session and which won't. For example `ob run --no-interpret dep` will ensure that any dependencies found in `./dep` will be built by `nix` before loading the rest of the project into the `ghci` session. The same configuration for `ob shell` will ensure that those packages are built and available in the `ghc` package database inside the shell.
+
+  **NOTE:** `ob shell`'s default behavior is now different. By default it now behaves like `ob run`/`ob watch`/`ob repl` in that it does *not* pre-build any packages whose `.cabal` or `package.yaml` files are found in the project. To regain the previous behavior, use `ob shell --no-interpret . --interpret backend --interpret common --interpret frontend` from the project root.
+* ([#695](https://github.com/obsidiansystems/obelisk/pull/695)) `ob deploy init` now requires that your obelisk project be a clean `git` checkout with pushed changes. It has always required that your obelisk project be a `git` repository, but it did not require that your local changes be committed and pushed. This new requirement is added to ensure users don't accidentally create a deployment pointing to an old version of the project.
+* ([#705](https://github.com/obsidiansystems/obelisk/pull/705)) Add `Obelisk.Route.packTextEncoder` and generalize `Obelisk.Route.unpackTextEncoder` over any `Data.Text.Lens.IsText`.
+* ([#712](https://github.com/obsidiansystems/obelisk/pull/712)) Update [`reflex-platform`](https://github.com/reflex-frp/reflex-platform) to version 0.5.3.0.
+* ([#700](https://github.com/obsidiansystems/obelisk/pull/700)) Ensure `ob init` uses the thunk format of the target obelisk rather than the one currently running the init command. If a user had installed a version of obelisk with a new thunk format, a newly initialized skeleton of an older version would not be able to unpack it's own `.obelisk/impl`.
+* ([#693](https://github.com/obsidiansystems/obelisk/pull/693)) Fix a bug where some packages in `.attr-cache` directories would be incorrectly picked up and used instead of the correct ones when using `ob run`/`ob watch`/`ob repl`.
+* ([#709](https://github.com/obsidiansystems/obelisk/pull/709)) Fix a bug in obelisk's preprocessor causing it to incorrectly skip files in some circumstances.
+* ([#663](https://github.com/obsidiansystems/obelisk/pull/663)) Add **experimental** support for [`ghcide`](https://github.com/digital-asset/ghcide). See the README for more information.
+* ([#714](https://github.com/obsidiansystems/obelisk/pull/714)) Miscellaneous improvements to CLI help and logging.
+
+## v0.7.0.1
+
+* Fix the version number for `ob` the command-line tool. ([#679](https://github.com/obsidiansystems/obelisk/pull/679))
+
+## v0.7.0.0
+
+* Fully support HTTP [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) requests on static assets to support Safari. ([#664](https://github.com/obsidiansystems/obelisk/pull/664))
+* Support non-EC2 deployments. ([#658](https://github.com/obsidiansystems/obelisk/pull/658))
+* Fix `ob deploy test android` to work. ([#645](https://github.com/obsidiansystems/obelisk/pull/645))
+* Fix vulnerability where Android deployments would leave signing keys in the nix store which is world readable. ([#645](https://github.com/obsidiansystems/obelisk/pull/645)) (Thanks to [kmicklas](https://github.com/kmicklas) for the report.)
+* Add `Obelisk.Backend.runBackendWith` to allow several customizations. ([#668](https://github.com/obsidiansystems/obelisk/pull/668), [#644](https://github.com/obsidiansystems/obelisk/pull/644))
+* Add `ob profile` command to run Obelisk projects with profiling. `ob profile` works like `ob run`, but instead of using `ghci`, it builds an executable that is built with profiling enabled. ([#654](https://github.com/obsidiansystems/obelisk/pull/654))
+* Obelisk's `default.nix` now exposes `mkAssets` function which is used to construct the assets served by an Obelisk application. ([#651](https://github.com/obsidiansystems/obelisk/pull/651))
+* Bump reflex-platform to v0.5.2.0. ([#671](https://github.com/obsidiansystems/obelisk/pull/671))
+
+## v0.6.0.0 - 2020-02-21
+
+* Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave exactly like `<a href="...">` when run by JavaScript. These functions now scroll to the top of the page when the link is clicked. ([#540](https://github.com/obsidiansystems/obelisk/pull/540))
+* Fix a bug in `ob run`/`ob watch`/`ob repl` where nested Obelisk projects would also be loaded into the session. These are now ignored. ([#652](https://github.com/obsidiansystems/obelisk/pull/652))
+* Improve behavior of `ob run`/`ob watch`/`ob repl` when multiple packages with the same name are encountered. Obelisk now issues a warning and tells you which one it will use. ([#653](https://github.com/obsidiansystems/obelisk/pull/653))
+* Removed `Obelisk.Backend.mkRouteToUrl` since it is easily written in terms of `Obelisk.Route.renderObeliskRoute`:
+
+      mkRouteToUrl validFullEncoder (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
+
+* Add `Obelisk.Backend.renderAllJsPath` to expose URL path to `ghcjs/all.js`. ([#545](https://github.com/obsidiansystems/obelisk/pull/545))
+* Add argument to `serveDefaultObeliskApp`, `serveObeliskApp`, and `serveGhcjsApp` to take the path to `all.js` instead of hard-coding it. ([#545](https://github.com/obsidiansystems/obelisk/pull/545))
+
+## v0.5.0.0 - 2020-02-07
+
+* Add `Obelisk.Route.(?/)`, a convenience function for constructing routes nested in `Maybe`. ([#457](https://github.com/obsidiansystems/obelisk/pull/457))
+* Add local unpacked packages to the `ob run`, `ob watch`, and `ob repl` sessions. Any `.cabal` or hpack package inside the current obelisk project will be loaded into the session. For `ob run`/`ob watch` this means the session will automatically reload when you save a source file in any of those packages. For `ob repl` it means that `:r` will reload changes to any of those packages. There are some edge cases where this integration is still rough. Report any issues you encounter. ([#489](https://github.com/obsidiansystems/obelisk/pull/489))
+* Add `ob hoogle` command to start a local [Hoogle](https://hoogle.haskell.org/) server for the project. ([#628](https://github.com/obsidiansystems/obelisk/pull/628))
+* `ob thunk pack` will now attempt to automatically detect if the thunk is a private or public repo. To avoid this detection, specify `--private` or `--public` manually. ([#607](https://github.com/obsidiansystems/obelisk/pull/607))
+* Fix a bug in the plain git thunk loader for thunks marked as 'private' when the revision is not in the default branch. ([#648](https://github.com/obsidiansystems/obelisk/pull/648))
+* Improve handling of runtime nix dependencies. This may fix some issues encountered particularly by users on systems other than NixOS.
+
+## v0.4.0.0 - 2020-01-10
+
+* Bump reflex-platform which, notably, bumps nixpkgs to 19.09. ([#585](https://github.com/obsidiansystems/obelisk/pull/585))
+* Add new thunk loader for Git repositories that supports `file://` Git remotes and supports private repositories via `builtins.fetchGit` for private repositories (when the `git.json` file specifies `"private": true`). ([#594](https://github.com/obsidiansystems/obelisk/pull/594))
+* Add a new thunk loader for GitHub repositories that uses `builtins.fetchTarball` for public repositories to increase loader performance and uses `fetchFromGitHub` for private repositories (when the `github.json` file specifies `"private": true`). Note that `fetchFromGitHub` requires some Nix configuration for the Nix builder to access the repository. If `ob thunk pack` fails in this case, use `-v` to see Nix's helpful message. ([#594](https://github.com/obsidiansystems/obelisk/pull/594))
+* Add `--public`/`--private` options to `ob thunk pack` to specify if a repository should be treated as a public or private. ([#594](https://github.com/obsidiansystems/obelisk/pull/594))
+* Improve error messaging when a dependency doesn't have the expected `.cabal` or `package.yaml` file. ([#597](https://github.com/obsidiansystems/obelisk/pull/597))
+* Improve the skeleton in small ways. ([#593](https://github.com/obsidiansystems/obelisk/pull/593), [#589](https://github.com/obsidiansystems/obelisk/pull/589))
+* Fix `ob` commands to again support running from any subdirectory of an obelisk project ([#591](https://github.com/obsidiansystems/obelisk/pull/591))
+* Add `reflex-platform-func` argument to Obelisk's `default.nix`. It defaults to it's prior behavior of using the reflex-platform in in `dep`. ([#612](https://github.com/obsidiansystems/obelisk/pull/612))
 
 ## v0.3.0.0 - 2019-12-20
 
+* Change the structure of Obelisk routes to use a designated
+  `FullRoute` type. This combines frontend and backend routes into one
+  structure. This is a **breaking** change which requires Obelisk apps
+  to take specific migrations. They are:
+    * Rewrite the implementation of `_backend_routeEncoder` in
+      `Backend` to use `mkFullRouteEncoder` instead of
+      `handleEncoder`. Specifically, the backend and frontend cases of
+      the top-level `pathComponentEncoder` become the second and third
+      arguments of `mkFullRouteEncoder` respectively, while the
+      missing route becomes the first argument. An example of how to
+      do this is available in [a reflex-examples
+      commit](https://github.com/reflex-frp/reflex-examples/commits/28f566c3e7dc615578dc74297b7c620c1f13683e).
+    * Replace type constructions of `InL` with `FullRoute_Backend` and
+      `InR` with `FullRoute_Frontend`.
 * Generalised `pathSegmentEncoder`, added `pathFieldEncoder`.
 * Added some `Prism`s to the encoder library for manipulating `DSum`s.
 * Add `ob doc` command, which lists paths to haddock documentation for specified packages.

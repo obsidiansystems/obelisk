@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -19,6 +20,7 @@ module Obelisk.Frontend
   , renderFrontendHtml
   , removeHTMLConfigs
   , FrontendMode (..)
+  , FrontendWidgetT
   , module Obelisk.Frontend.Cookie
   ) where
 
@@ -45,7 +47,7 @@ import qualified GHCJS.DOM.History as DOM
 import qualified GHCJS.DOM.Window as DOM
 import Language.Javascript.JSaddle (MonadJSM, JSM, jsNull)
 import GHCJS.DOM (currentDocument)
-import GHCJS.DOM.Document (getHead)
+import "ghcjs-dom" GHCJS.DOM.Document (getHead)
 import GHCJS.DOM.Node (Node, removeChild_)
 import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
 import GHCJS.DOM.ParentNode (querySelectorAll)
@@ -197,7 +199,6 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , PrimMonad m
            , MonadSample DomTimeline (Performable m)
            , DOM.MonadJSM m
-           , Monad (Performable (Client (HydrationDomBuilderT s DomTimeline m)))
            , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
            , MonadFix (Performable m)
            , MonadFix m
@@ -226,18 +227,17 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
     then runHydrationWidgetWithHeadAndBody (pure ()) w
     else runImmediateWidgetWithHeadAndBody w
 
+type FrontendWidgetT r = RoutedT DomTimeline r (SetRouteT DomTimeline r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost))))))))
+
 renderFrontendHtml
-  :: ( t ~ DomTimeline
-     , MonadIO m
-     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost))))))))
-     )
+  :: MonadIO m
   => Map Text ByteString
   -> Cookies
   -> (r -> Text)
   -> r
   -> Frontend r
-  -> widget ()
-  -> widget ()
+  -> FrontendWidgetT r ()
+  -> FrontendWidgetT r ()
   -> m ByteString
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
