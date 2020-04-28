@@ -135,6 +135,7 @@ import Control.Lens
   , Prism'
   , prism'
   , re
+  , review
   , view
   , Wrapped (..)
   )
@@ -378,8 +379,8 @@ instance (Monad parse, Applicative check) => Bifunctor Either (Encoder check par
   bimap f g = Encoder $ liftA2 bimap (unEncoder f) (unEncoder g)
 
 instance (Applicative check, Monad parse) => Associative (Encoder check parse) Either where
-  associate = viewEncoder (iso disassociate (associate @(->) @Either))
-  disassociate = viewEncoder (iso associate disassociate)
+  associate = viewEncoder (iso (associate @(->) @Either) disassociate)
+  disassociate = viewEncoder (iso disassociate associate)
 
 instance (Monad parse, Applicative check) => Braided (Encoder check parse) Either where
   braid = viewEncoder (iso swap swap)
@@ -435,23 +436,18 @@ instance (Applicative check, Monad parse) => Monoidal (Encoder check parse) (,) 
 -- Specific instances of encoders
 --------------------------------------------------------------------------------
 
-{-# DEPRECATED isoEncoder "Use viewEncoder instead" #-}
 -- | Given a valid 'Iso' from lens, construct an 'Encoder'
-isoEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
-isoEncoder p = viewEncoder (from p)
-
--- | Given a valid 'Iso' from lens, construct an 'Encoder'
-viewEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse b a
+viewEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
 viewEncoder f = unsafeMkEncoder $ EncoderImpl
-  { _encoderImpl_encode = view (from f)
-  , _encoderImpl_decode = pure . view f
+  { _encoderImpl_encode = view f
+  , _encoderImpl_decode = pure . view (from f)
   }
 
 wrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse (Unwrapped a) a
-wrappedEncoder = viewEncoder _Wrapped'
+wrappedEncoder = viewEncoder $ from _Wrapped'
 
 unwrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse a (Unwrapped a)
-unwrappedEncoder = viewEncoder $ from _Wrapped'
+unwrappedEncoder = viewEncoder $ _Wrapped'
 
 maybeToEitherEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Maybe a) (Either () a)
 maybeToEitherEncoder = unsafeMkEncoder $ EncoderImpl
@@ -832,19 +828,18 @@ _R
   -> Prism' (R f) a
 _R variant = dSumGEqPrism variant . iso runIdentity Identity
 
-{-# DEPRECATED prismEncoder "Use reviewEncoder instead" #-}
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
--- This encoder is contravariant like 'review': @prismEncoder (f . g) = prismEncoder g . prismEncoder f@
-prismEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
-prismEncoder = reviewEncoder
-
--- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
--- if the prism doesn't match.
--- This encoder is contravariant like 'review': @reviewEncoder (f . g) = reviewEncoder g . reviewEncoder f@
+--
+-- Note that a 'Prism' from @a@ to @b@ will produce an 'Encoder' from @b@ to @a@
+-- (i.e. 'reviewEncoder' is a contravariant functor from the category of prisms to the category of encoders),
+-- just like 'review' produces a function @b -> a@. This is because 'Prism's extract values, in a way that might
+-- fail, in their forward direction and inject values, in a way that cannot fail, in their reverse direction;
+-- whereas 'Encoder's encode, which cannot fail, in their forward direction, and decode, which can fail, in their
+-- reverse direction. In short @reviewEncoder (f . g) = prismEncoder g . reviewEncoder f@.
 reviewEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
 reviewEncoder p = unsafeMkEncoder $ EncoderImpl
-  { _encoderImpl_encode= view (re p)
+  { _encoderImpl_encode = review p
   , _encoderImpl_decode = \r -> case r ^? p of
       Just a -> pure a
       Nothing -> throwError "reviewEncoder: value is not present in the prism"
@@ -1043,17 +1038,6 @@ void1Encoder = Encoder $ pure $ EncoderImpl
 instance GShow Void1 where
   gshowsPrec _ = \case {}
 
-concat <$> mapM deriveRouteComponent
-  [ ''ResourceRoute
-  , ''JSaddleWarpRoute
-  , ''IndexOnlyRoute
-  ]
-
-makePrisms ''ObeliskRoute
-makePrisms ''FullRoute
-deriveGEq ''Void1
-deriveGCompare ''Void1
-
 -- | Given a backend route and a checked route encoder, render the route (path
 -- and query string). See 'checkEncoder' for how to produce a checked encoder.
 renderBackendRoute
@@ -1197,3 +1181,34 @@ byteStringsToPageName p q =
   in decode pageNameEncoder' (T.unpack (T.decodeUtf8 p), T.unpack (T.decodeUtf8 q))
 
 --TODO: decodeURIComponent as appropriate
+
+
+{-# DEPRECATED isoEncoder "Instead of 'isoEncoder f', use 'viewEncoder f'" #-}
+-- | Given a valid 'Iso' from lens, construct an 'Encoder'
+isoEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
+isoEncoder = viewEncoder
+
+{-# DEPRECATED prismEncoder "Instead of 'prismEncoder f', use 'reviewEncoder f'" #-}
+-- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
+-- if the prism doesn't match.
+--
+-- Note that a 'Prism' from @a@ to @b@ will produce an 'Encoder' from @b@ to @a@
+-- (i.e. 'prismEncoder' is a contravariant functor from the category of prisms to the category of encoders),
+-- just like 'review' produces a function @b -> a@. This is because 'Prism's extract values, in a way that might
+-- fail, in their forward direction and inject values, in a way that cannot fail, in their reverse direction;
+-- whereas 'Encoder's encode, which cannot fail, in their forward direction, and decode, which can fail, in their
+-- reverse direction. In short @prismEncoder (f . g) = prismEncoder g . prismEncoder f@.
+prismEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
+prismEncoder = reviewEncoder
+
+
+concat <$> mapM deriveRouteComponent
+  [ ''ResourceRoute
+  , ''JSaddleWarpRoute
+  , ''IndexOnlyRoute
+  ]
+
+makePrisms ''ObeliskRoute
+makePrisms ''FullRoute
+deriveGEq ''Void1
+deriveGCompare ''Void1
