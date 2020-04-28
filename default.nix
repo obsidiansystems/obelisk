@@ -87,15 +87,17 @@ in rec {
     ''}
   '';
   webabi = pkgs.callPackage ./dep/webabi {};
-  # wasm-opt seems to have no effect
+  # wasm-opt -Oz seems to create a slightly larger binary
   stripWasm = frontend: pkgs.runCommand "stripWasm" {} ''
     mkdir $out
     cd $out
     ln -s "${frontend}/bin/frontend" frontend.original.wasm
-    cp "${frontend}/bin/frontend" frontend.wasm
-    chmod u+rw frontend.wasm
-    chmod a-x frontend.wasm
-    ${pkgs.wabt}/bin/wasm-strip frontend.wasm
+    cp "${frontend}/bin/frontend" frontend.wasm.tmp
+    chmod u+rw frontend.wasm.tmp
+    chmod a-x frontend.wasm.tmp
+    ${pkgs.wabt}/bin/wasm-strip frontend.wasm.tmp
+    ${pkgs.binaryen}/bin/wasm-opt -Os -o frontend.wasm frontend.wasm.tmp
+    rm frontend.wasm.tmp
   '';
 
   # The ghcjs and wasm files are put in a single asset, as they need to be in sync and served together.
