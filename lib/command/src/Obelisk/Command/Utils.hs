@@ -42,9 +42,6 @@ rmPath = $(staticWhich "rm")
 ghcidExePath :: FilePath
 ghcidExePath = $(staticWhich "ghcid")
 
-findExePath :: FilePath
-findExePath = $(staticWhich "find")
-
 nixExePath :: FilePath
 nixExePath = $(staticWhich "nix")
 

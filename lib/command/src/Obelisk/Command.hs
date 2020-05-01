@@ -12,7 +12,6 @@ import Data.Foldable (for_)
 import Data.List (isInfixOf, isPrefixOf)
 import Data.List.NonEmpty (NonEmpty, nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Map as Map
 import qualified Data.Text as T
 import Data.Traversable (for)
 import Options.Applicative
@@ -27,6 +26,7 @@ import System.Posix.Process (executeFile)
 import Obelisk.App
 import Obelisk.CliApp
 import Obelisk.Command.Deploy
+import Obelisk.Command.Path (PathTree, emptyPathTree, mergePathTreesRightBias, pathToTree)
 import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
@@ -444,8 +444,4 @@ getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = Syste
 resolveInterpretPaths :: MonadIO m => [(FilePath, a)] -> m (Maybe (PathTree a))
 resolveInterpretPaths ps = do
   trees <- liftIO $ for ps $ \(p, a) -> pathToTree a <$> canonicalizePath p
-  pure $ foldr1 mergeTrees <$> nonEmpty trees
-  where
-    -- | Merge two 'PathTree's preferring leaves on the right in as much as they overlap with paths on the left.
-    mergeTrees :: PathTree a -> PathTree a -> PathTree a
-    mergeTrees (PathTree_Node ax x) (PathTree_Node ay y) = PathTree_Node (ay <|> ax) $ Map.unionWith mergeTrees x y
+  pure $ foldr1 mergePathTreesRightBias <$> nonEmpty trees
