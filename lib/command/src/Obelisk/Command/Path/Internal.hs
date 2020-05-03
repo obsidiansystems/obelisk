@@ -36,6 +36,8 @@ instance Show (Path t) where
   show (Path p) = show p
 
 -- | A 'Path' tag indicating that the path is canonical
+-- A key property of 'Canonical' 'Path's is that when two are equal they represent
+-- the same location on the file system.
 data Canonical
 
 -- | A 'Path' tag indicating that the path is absolute
@@ -44,17 +46,19 @@ data Absolute
 -- | A 'Path' tag indicating that the path is relative
 data Relative
 
--- | A 'Path' tag indicating the kind of path is unknown
-data Unknown
-
 class IsPath path where
   toFilePath :: path -> FilePath
 
+  -- Lift *any* 'FilePath' into the path type.
+  unsafeFromFilePath :: FilePath -> path
+
 instance IsPath FilePath where
   toFilePath = id
+  unsafeFromFilePath = id
 
 instance IsPath (Path t) where
   toFilePath = coerce
+  unsafeFromFilePath = coerce
 
 unsafeConcatPath :: (IsPath path1, IsPath path2, Coercible FilePath path3) => path1 -> path2 -> path3
 unsafeConcatPath a b = coerce $ toFilePath a FilePath.</> toFilePath b
@@ -68,34 +72,25 @@ class PathConcat path1 path2 where
   (</>) = unsafeConcatPath
 
 
+-- How these instances work:
+--   If we know *anything* about the path, we will produce a 'Path' with some known tag.
+--   If we don't know anything about the path, we use 'FilePath' directly.
+
 -- 'Absolute' paths on the right *always* win.
 instance IsPath path => PathConcat path (Path Canonical) where type PathConcatResult path (Path Canonical) = Path Canonical
 instance IsPath path => PathConcat path (Path Absolute) where type PathConcatResult path (Path Absolute) = Path Absolute
 
 instance PathConcat (Path Canonical) (Path Relative) where type PathConcatResult (Path Canonical) (Path Relative) = Path Absolute -- The 'Relative' path may be a symlink making the path no longer 'Canonical'
-instance PathConcat (Path Canonical) (Path Unknown) where type PathConcatResult (Path Canonical) (Path Unknown) = Path Absolute -- 'Unknown' could be canonical, but that's just a form of being 'Absolute'
-instance PathConcat (Path Canonical) FilePath where type PathConcatResult (Path Canonical) FilePath = PathConcatResult (Path Canonical) (Path Unknown)
+instance PathConcat (Path Canonical) FilePath where type PathConcatResult (Path Canonical) FilePath = Path Absolute -- Unknown could be 'Canonical', but that's just a form of being 'Absolute'
 
 instance PathConcat (Path Absolute) (Path Relative) where type PathConcatResult (Path Absolute) (Path Relative) = Path Absolute
-instance PathConcat (Path Absolute) (Path Unknown) where type PathConcatResult (Path Absolute) (Path Unknown) = Path Absolute -- 'Unknown' could be canonical, but that's just a form of being 'Absolute'
-instance PathConcat (Path Absolute) FilePath where type PathConcatResult (Path Absolute) FilePath = PathConcatResult (Path Absolute) (Path Unknown)
+instance PathConcat (Path Absolute) FilePath where type PathConcatResult (Path Absolute) FilePath = Path Absolute -- Unknown could be 'Canonical', but that's just a form of being 'Absolute'
 
 instance PathConcat (Path Relative) (Path Relative) where type PathConcatResult (Path Relative) (Path Relative) = Path Relative
-instance PathConcat (Path Relative) (Path Unknown) where type PathConcatResult (Path Relative) (Path Unknown) = Path Unknown
-instance PathConcat (Path Relative) FilePath where type PathConcatResult (Path Relative) FilePath = PathConcatResult (Path Relative) (Path Unknown)
+instance PathConcat (Path Relative) FilePath where type PathConcatResult (Path Relative) FilePath = FilePath
 
-instance PathConcat (Path Unknown) (Path Relative) where type PathConcatResult (Path Unknown) (Path Relative) = Path Unknown
-instance PathConcat (Path Unknown) (Path Unknown) where type PathConcatResult (Path Unknown) (Path Unknown) = Path Unknown
-instance PathConcat (Path Unknown) FilePath where type PathConcatResult (Path Unknown) FilePath = PathConcatResult (Path Unknown) (Path Unknown)
-
-instance PathConcat FilePath (Path Relative) where type PathConcatResult FilePath (Path Relative) = PathConcatResult (Path Unknown) (Path Relative)
-instance PathConcat FilePath (Path Unknown) where type PathConcatResult FilePath (Path Unknown) = PathConcatResult (Path Unknown) (Path Unknown)
+instance PathConcat FilePath (Path Relative) where type PathConcatResult FilePath (Path Relative) = FilePath
 instance PathConcat FilePath FilePath where type PathConcatResult FilePath FilePath = FilePath
-
-
-
-mkPath :: FilePath -> Path Unknown
-mkPath = coerce
 
 rel :: FilePath -> Path Relative
 rel = coerce
@@ -124,8 +119,8 @@ doesDirectoryExist p = liftIO $ Directory.doesDirectoryExist (toFilePath p)
 doesFileExist :: (MonadIO m, IsPath path) => path -> m Bool
 doesFileExist p = liftIO $ Directory.doesFileExist (toFilePath p)
 
-takeDirectory :: Path t -> Path t
-takeDirectory (Path p) = Path $ FilePath.takeDirectory p
+takeDirectory :: (IsPath path) => path -> path
+takeDirectory p = unsafeFromFilePath $ FilePath.takeDirectory (toFilePath p)
 
 takeFileName :: IsPath path => path -> Path Relative
 takeFileName p = Path $ FilePath.takeFileName (toFilePath p)
@@ -147,14 +142,14 @@ findFiles'
   => (FilePath -> Path Canonical -> m (FindMatch a)) -- ^ Decide how to handle an encountered path.
   -> path -- ^ Root path to start searching
   -> m a -- ^ Matches
-findFiles' match root = go mempty (mkPath $ toFilePath root)
+findFiles' match root = go mempty (toFilePath root)
   where
-    go :: Set (Path Canonical) -> Path Unknown -> m a
+    go :: Set (Path Canonical) -> FilePath -> m a
     go visited path = do
       canonicalPath <- canonicalizePath path
       if canonicalPath `Set.member` visited
         then pure mempty
-        else match (toFilePath path) canonicalPath >>= \case
+        else match path canonicalPath >>= \case
           FindMatch_SkipTree -> pure mempty
           FindMatch_Match x -> pure x
           FindMatch_SearchTree -> do

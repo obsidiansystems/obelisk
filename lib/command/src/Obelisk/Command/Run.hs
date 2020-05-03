@@ -124,7 +124,7 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
   putLog Debug $ "Assets impurely loaded from: " <> assets
   time <- liftIO getCurrentTime
   let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
-  createDirectoryIfMissing True $ takeDirectory $ mkPath root </> rel profileBaseName
+  createDirectoryIfMissing True $ takeDirectory $ root </> rel profileBaseName
   putLog Debug [i|Storing profiled data under base name of ${root </> profileBaseName}|]
   freePort <- getFreePort
   (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc (toFilePath $ outPath </> rel "bin" </> rel "ob-run") $
@@ -156,7 +156,7 @@ run root interpretPaths = do
 runRepl :: MonadObelisk m => FilePath -> Map (Path Canonical) Interpret -> m ()
 runRepl root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs (mkPath ".") True
+  ghciArgs <- getGhciSessionSettings pkgs (rel ".") True
   withGhciScript pkgs $ \dotGhciPath ->
     runGhciRepl root pkgs (ghciArgs <> mkGhciScriptArg dotGhciPath)
 
@@ -236,7 +236,7 @@ guessCabalPackageFile (toFilePath -> pkg) = do
       (Just cabal@(Left (CabalFilePath cabalFilePath))) -> do
         -- If the cabal file has a sibling hpack file, we use that instead
         -- since running hpack often generates a sibling cabal file
-        let possibleHpackSibling = takeDirectory $ mkPath cabalFilePath </> hpackFileName
+        let possibleHpackSibling = takeDirectory $ cabalFilePath </> hpackFileName
         hasHpackSibling <- liftIO $ doesFileExist possibleHpackSibling
         pure $ Right $ if hasHpackSibling then Right (HPackFilePath $ toFilePath possibleHpackSibling) else cabal
       Nothing -> pure $ Left GuessPackageFileError_NotFound
@@ -303,7 +303,7 @@ parseCabalPackage' (toFilePath -> pkg) = runExceptT $ do
       pure $ (warnings,) $ CabalPackageInfo
         { _cabalPackageInfo_packageName = T.pack packageName
         , _cabalPackageInfo_packageFile = packageFile
-        , _cabalPackageInfo_packageRoot = unPath $ takeDirectory (mkPath packageFile)
+        , _cabalPackageInfo_packageRoot = takeDirectory packageFile
         , _cabalPackageInfo_buildable = buildable $ libBuildInfo lib
         , _cabalPackageInfo_sourceDirs =
             fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
