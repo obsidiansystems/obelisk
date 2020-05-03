@@ -20,12 +20,12 @@ import Data.Default (def)
 import Data.Either (partitionEithers)
 import Data.Foldable (fold, for_, toList)
 import Data.Functor ((<&>))
-import Data.Functor.Identity (runIdentity)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Semigroup (Last (..))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String.Here.Interpolated (i)
@@ -72,6 +72,9 @@ import Obelisk.Command.Path
 import Obelisk.Command.Project (findProjectAssets, nixShellWithoutPkgs, obeliskDirName, withProjectRoot)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (ghcidExePath)
+
+hpackFileName :: Path Relative
+hpackFileName = rel Hpack.packageConfig
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -121,10 +124,10 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
   putLog Debug $ "Assets impurely loaded from: " <> assets
   time <- liftIO getCurrentTime
   let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
-  createDirectoryIfMissing True $ takeDirectory $ Path $ root </> profileBaseName
+  createDirectoryIfMissing True $ takeDirectory $ mkPath root </> rel profileBaseName
   putLog Debug [i|Storing profiled data under base name of ${root </> profileBaseName}|]
   freePort <- getFreePort
-  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc (outPath </> rel "bin" </> rel "ob-run") $
+  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc (toFilePath $ outPath </> rel "bin" </> rel "ob-run") $
     [ show freePort
     , T.unpack assets
     , profileBaseName
@@ -134,7 +137,7 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
       <> [ "-RTS" ]
   void $ waitForProcess ph
 
-run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
+run :: MonadObelisk m => FilePath -> Map (Path Canonical) Interpret -> m ()
 run root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   withGhciScript pkgs $ \dotGhciPath -> do
@@ -150,32 +153,32 @@ run root interpretPaths = do
       , "Frontend.frontend"
       ]
 
-runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
+runRepl :: MonadObelisk m => FilePath -> Map (Path Canonical) Interpret -> m ()
 runRepl root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs (rel ".") True
+  ghciArgs <- getGhciSessionSettings pkgs (mkPath ".") True
   withGhciScript pkgs $ \dotGhciPath ->
     runGhciRepl root pkgs (ghciArgs <> mkGhciScriptArg dotGhciPath)
 
-runWatch :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
+runWatch :: MonadObelisk m => FilePath -> Map (Path Canonical) Interpret -> m ()
 runWatch root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   ghciArgs <- getGhciSessionSettings pkgs root True
   withGhciScript pkgs $ \dotGhciPath ->
     runGhcid root True (ghciArgs <> mkGhciScriptArg dotGhciPath) pkgs Nothing
 
-exportGhciConfig :: MonadObelisk m => Bool -> FilePath -> PathTree Interpret -> m [String]
+exportGhciConfig :: MonadObelisk m => Bool -> FilePath -> Map (Path Canonical) Interpret -> m [String]
 exportGhciConfig useRelativePaths root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   getGhciSessionSettings pkgs (rel ".") useRelativePaths
 
-nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
+nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> Map (Path Canonical) Interpret -> Maybe String -> m ()
 nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   nixShellWithoutPkgs root isPure False (packageInfoToNamePathMap pkgs) shell cmd
 
 -- | Like 'getLocalPkgs' but also parses them and fails if any of them can't be parsed.
-getParsedLocalPkgs :: MonadObelisk m => FilePath -> PathTree Interpret -> m (NonEmpty CabalPackageInfo)
+getParsedLocalPkgs :: MonadObelisk m => FilePath -> Map (Path Canonical) Interpret -> m (NonEmpty CabalPackageInfo)
 getParsedLocalPkgs root interpretPaths = parsePackagesOrFail =<< getLocalPkgs root interpretPaths
 
 -- | Relative paths to local packages of an obelisk project.
@@ -183,15 +186,16 @@ getParsedLocalPkgs root interpretPaths = parsePackagesOrFail =<< getLocalPkgs ro
 -- These are a combination of the obelisk predefined local packages,
 -- and any packages that the user has set with the @packages@ argument
 -- to the Nix @project@ function.
-getLocalPkgs :: forall m. MonadObelisk m => FilePath -> PathTree Interpret -> m (Set (Path Canonical))
+getLocalPkgs :: forall m. MonadObelisk m => FilePath -> Map (Path Canonical) Interpret -> m (Set (Path Canonical))
 getLocalPkgs root interpretPaths = do
-  putLog Debug $ [i|Finding packages with root ${root} and interpret paths:|] <> "\n" <> drawPathTree textInterpret interpretPaths
+  let pathTree :: PathTree Interpret = coerce $ foldMap (\(p, x) -> pathToTree (Last x) p) $ Map.toList interpretPaths
+  putLog Debug $ [i|Finding packages with root ${root} and interpret paths:|] <> "\n" <> drawPathTree textInterpret pathTree
 
   -- We do not want to find packages that are embedded inside other obelisk projects, unless that
   -- obelisk project is our own.
   canonicalRoot <- canonicalizePath root
   obeliskPackageExclusions <- findFiles'
-    (\_ p -> if takeFileName p == Path obeliskDirName && p /= canonicalRoot
+    (\_ p -> if takeFileName p == rel obeliskDirName && p /= canonicalRoot
       then liftIO (doesDirectoryExist p) <&> \case
             True -> FindMatch_Match $ Set.singleton p
             False -> FindMatch_SearchTree
@@ -199,18 +203,16 @@ getLocalPkgs root interpretPaths = do
     )
     root
 
-  putLog Debug [i|Excluding obelisk packages: ${T.pack $ unwords $ map show $ Set.toList obeliskPackageExclusions}|]
-
   let
-    findRoots = runIdentity $ foldPathTreeFor (== Interpret_Interpret) "" interpretPaths (\p _ -> pure $ Set.singleton $ Path p)
-    exclusions = runIdentity $ foldPathTreeFor (== Interpret_NoInterpret) "" interpretPaths (\p _ -> pure $ Set.singleton $ Path p)
+    findRoots = Map.keysSet $ Map.filter (== Interpret_Interpret) interpretPaths
+    exclusions = Map.keysSet $ Map.filter (== Interpret_NoInterpret) interpretPaths
+      <> Map.fromSet (const Interpret_NoInterpret) obeliskPackageExclusions -- Add these last because we want left side to override
 
   fmap fold $ for (toList findRoots) $ \interpretPathRoot -> do
-    let allExclusions = obeliskPackageExclusions <> exclusions
     findFiles'
         (\_ p -> pure $ case () of
-          _ | p `Set.member` allExclusions || attrCacheFileName `elem` splitDirectories p -> FindMatch_SkipTree
-            | takeExtension p == ".cabal" || takeFileName p == rel Hpack.packageConfig -> FindMatch_Match $ Set.singleton p
+          _ | p `Set.member` exclusions || attrCacheFileName `elem` splitDirectories p -> FindMatch_SkipTree
+            | takeExtension p == ".cabal" || takeFileName p == hpackFileName -> FindMatch_Match $ Set.singleton p
             | otherwise -> FindMatch_SearchTree
         )
         interpretPathRoot
@@ -227,21 +229,21 @@ guessCabalPackageFile
   :: (MonadIO m, IsPath path)
   => path -- ^ Directory or path to search for cabal package
   -> m (Either GuessPackageFileError (Either CabalFilePath HPackFilePath))
-guessCabalPackageFile (coerce -> pkg) = do
+guessCabalPackageFile (toFilePath -> pkg) = do
   liftIO (doesDirectoryExist pkg) >>= \case
     False -> case cabalOrHpackFile pkg of
       (Just hpack@(Right _)) -> pure $ Right hpack
       (Just cabal@(Left (CabalFilePath cabalFilePath))) -> do
         -- If the cabal file has a sibling hpack file, we use that instead
         -- since running hpack often generates a sibling cabal file
-        let possibleHpackSibling = takeDirectory (Path cabalFilePath) </> Hpack.packageConfig
+        let possibleHpackSibling = takeDirectory $ mkPath cabalFilePath </> hpackFileName
         hasHpackSibling <- liftIO $ doesFileExist possibleHpackSibling
-        pure $ Right $ if hasHpackSibling then Right (HPackFilePath possibleHpackSibling) else cabal
+        pure $ Right $ if hasHpackSibling then Right (HPackFilePath $ toFilePath possibleHpackSibling) else cabal
       Nothing -> pure $ Left GuessPackageFileError_NotFound
     True -> do
       candidates <- liftIO $
             filterM (doesFileExist . either unCabalFilePath unHPackFilePath)
-        =<< mapMaybe (cabalOrHpackFile . (pkg </>)) <$> listDirectory pkg
+        =<< mapMaybe (cabalOrHpackFile . toFilePath . (pkg </>)) <$> listDirectory pkg
       pure $ case partitionEithers candidates of
         ([hpack], _) -> Right $ Left hpack
         ([], [cabal]) -> Right $ Right cabal
@@ -251,7 +253,7 @@ guessCabalPackageFile (coerce -> pkg) = do
 cabalOrHpackFile :: FilePath -> Maybe (Either CabalFilePath HPackFilePath)
 cabalOrHpackFile = \case
   x | takeExtension x == ".cabal" -> Just (Left $ CabalFilePath x)
-    | takeFileName x == rel Hpack.packageConfig -> Just (Right $ HPackFilePath x)
+    | takeFileName x == hpackFileName -> Just (Right $ HPackFilePath x)
     | otherwise -> Nothing
 
 -- | Parses the cabal package in a given directory.
@@ -271,10 +273,10 @@ parseCabalPackage'
   :: (MonadIO m, IsPath path)
   => path -- ^ Package directory
   -> m (Either T.Text ([Dist.PWarning], CabalPackageInfo))
-parseCabalPackage' (coerce -> pkg) = runExceptT $ do
+parseCabalPackage' (toFilePath -> pkg) = runExceptT $ do
   (cabalContents, packageFile, packageName) <- guessCabalPackageFile pkg >>= \case
-    Left GuessPackageFileError_NotFound -> throwError $ "No .cabal or package.yaml file found in " <> T.pack pkg
-    Left (GuessPackageFileError_Ambiguous _) -> throwError $ "Unable to determine which .cabal file to use in " <> T.pack pkg
+    Left GuessPackageFileError_NotFound -> throwError [i|No .cabal or package.yaml file found in ${pkg}|]
+    Left (GuessPackageFileError_Ambiguous _) -> throwError [i|Unable to determine which .cabal file to use in ${pkg}|]
     Right (Left (CabalFilePath file)) -> (, file, takeBaseName file) <$> liftIO (readUTF8File file)
     Right (Right (HPackFilePath file)) -> do
       let
@@ -301,7 +303,7 @@ parseCabalPackage' (coerce -> pkg) = runExceptT $ do
       pure $ (warnings,) $ CabalPackageInfo
         { _cabalPackageInfo_packageName = T.pack packageName
         , _cabalPackageInfo_packageFile = packageFile
-        , _cabalPackageInfo_packageRoot = unPath $ takeDirectory (Path packageFile)
+        , _cabalPackageInfo_packageRoot = unPath $ takeDirectory (mkPath packageFile)
         , _cabalPackageInfo_buildable = buildable $ libBuildInfo lib
         , _cabalPackageInfo_sourceDirs =
             fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
@@ -340,11 +342,11 @@ parsePackagesOrFail dirs' = do
 
   packageInfos <- case NE.nonEmpty $ toList unambiguous of
     Nothing -> failWith $ T.pack $
-      "No valid, buildable packages found" <> (if null dirs then "" else " in " <> intercalate ", " (coerce dirs))
+      "No valid, buildable packages found" <> (if null dirs then "" else " in " <> intercalate ", " (map toFilePath dirs))
     Just xs -> pure xs
 
   unless (null pkgDirErrs) $
-    putLog Warning $ T.pack $ "Failed to find buildable packages in " <> intercalate ", " (coerce pkgDirErrs)
+    putLog Warning $ T.pack $ "Failed to find buildable packages in " <> intercalate ", " (map toFilePath pkgDirErrs)
 
   pure packageInfos
   where
@@ -361,7 +363,7 @@ withGhciScript
   -> m ()
 withGhciScript (toList -> packageInfos) f =
   withSystemTempDirectory "ob-ghci" $ \fp -> do
-    let dotGhciPath = fp </> rel ".ghci"
+    let dotGhciPath = toFilePath $ fp </> rel ".ghci"
     liftIO $ writeFile dotGhciPath dotGhci
     f dotGhciPath
   where
@@ -400,11 +402,12 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
 
   pure
     $  baseGhciOptions
-    <> ["-F", "-pgmF", unPath selfExe, "-optF", preprocessorIdentifier]
+    <> ["-F", "-pgmF", toFilePath selfExe, "-optF", preprocessorIdentifier]
     <> concatMap (\p -> ["-optF", p]) pkgFiles
     <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]
   where
-    relativeTo' = if useRelativePaths then relativeTo else const . unPath
+    relativeTo' :: Path Canonical -> Path Canonical -> FilePath
+    relativeTo' a b = if useRelativePaths then toFilePath $ relativeTo a b else toFilePath a
 
 baseGhciOptions :: [String]
 baseGhciOptions =
@@ -449,11 +452,11 @@ runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
     testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
 
     adjustRoot x = if chdirToRoot then makeRelative root x else x
-    reloadFiles = map adjustRoot [root </> rel "config"]
+    reloadFiles = map adjustRoot [toFilePath $ root </> rel "config"]
     restartFiles = map (adjustRoot . _cabalPackageInfo_packageFile) packages
 
 mkGhciScriptArg :: IsPath path => path -> [String]
-mkGhciScriptArg dotGhci = ["-ghci-script", coerce dotGhci]
+mkGhciScriptArg dotGhci = ["-ghci-script", toFilePath dotGhci]
 
 getFreePort :: MonadIO m => m PortNumber
 getFreePort = liftIO $ withSocketsDo $ do

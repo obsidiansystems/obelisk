@@ -6,12 +6,14 @@
 {-# LANGUAGE TupleSections #-}
 module Obelisk.Command where
 
-import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.IO.Class (liftIO)
 import Data.Bool (bool)
 import Data.Foldable (for_)
 import Data.List (isInfixOf, isPrefixOf)
-import Data.List.NonEmpty (NonEmpty, nonEmpty)
+import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
+import Data.Map (Map)
+import qualified Data.Map as Map
 import qualified Data.Text as T
 import Data.Traversable (for)
 import Options.Applicative
@@ -26,7 +28,8 @@ import System.Posix.Process (executeFile)
 import Obelisk.App
 import Obelisk.CliApp
 import Obelisk.Command.Deploy
-import Obelisk.Command.Path (PathTree, emptyPathTree, mergePathTreesRightBias, pathToTree)
+import Obelisk.Command.Path (Path, Canonical)
+import qualified Obelisk.Command.Path as Path
 import Obelisk.Command.Project
 import Obelisk.Command.Run
 import Obelisk.Command.Thunk
@@ -400,7 +403,7 @@ ob = \case
   ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths ->
     nixShellForInterpretPaths False shellAttr root interpretPaths cmd
   ObCommand_Doc shellAttr pkgs -> withProjectRoot "." $ \root ->
-    nixShellForInterpretPaths True shellAttr root emptyPathTree $ Just $ haddockCommand pkgs
+    nixShellForInterpretPaths True shellAttr root mempty $ Just $ haddockCommand pkgs
   ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
     nixShellWithHoogle root True shell' $ Just $ "hoogle server -p " <> show port <> " --local"
   ObCommand_Internal icmd -> case icmd of
@@ -411,12 +414,11 @@ ob = \case
 
 -- | A helper for the common case that the command you want to run needs the project root and a resolved
 -- set of interpret paths.
-withInterpretPaths :: MonadObelisk m => [(FilePath, Interpret)] -> (FilePath -> PathTree Interpret -> m a) -> m a
+withInterpretPaths :: MonadObelisk m => [(FilePath, Interpret)] -> (FilePath -> Map (Path Canonical) Interpret -> m a) -> m a
 withInterpretPaths interpretPathsList f = withProjectRoot "." $ \root -> do
-  interpretPaths' <- resolveInterpretPaths $ (root, Interpret_Interpret) : interpretPathsList
-  case interpretPaths' of
-    Nothing -> failWith "No paths provided for finding packages"
-    Just interpretPaths -> f root interpretPaths
+  let fullList = (root, Interpret_Interpret) : interpretPathsList
+  interpretPaths <- fmap Map.fromList $ for fullList $ \(p, i) -> (,i) <$> Path.canonicalizePath p
+  f root interpretPaths
 
 haddockCommand :: [String] -> String
 haddockCommand pkgs = unwords
@@ -430,18 +432,3 @@ haddockCommand pkgs = unwords
 
 getArgsConfig :: IO ArgsConfig
 getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = System.Info.os == "darwin" }
-
--- | Resolves an ordered list of paths for use with @--interpret@/@--no-interpret@ by coalescing
---   paths into a non-ambiguous set of paths. Ambiguity is resolved by choosing right-most paths
---   over any preceeding identical paths.
---
---   For example: @a/b=ON a/b/c=OFF@ and @a/b/c=OFF a/b=ON@ are the same.
---   @a/b=ON a/b=OFF@ is reduced to @a/b=OFF@. We prefer right-biased choice to increase
---   scriptability.
---
---   N.B. All the paths in the result will be canonicalized. It's impossible to determine path
---   overlap otherwise.
-resolveInterpretPaths :: MonadIO m => [(FilePath, a)] -> m (Maybe (PathTree a))
-resolveInterpretPaths ps = do
-  trees <- liftIO $ for ps $ \(p, a) -> pathToTree a <$> canonicalizePath p
-  pure $ foldr1 mergePathTreesRightBias <$> nonEmpty trees
