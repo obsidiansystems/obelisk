@@ -86,7 +86,7 @@ in rec {
       echo "//# sourceMappingURL=all.js.map" >> all.js
     ''}
   '';
-  webabi = pkgs.callPackage ./dep/webabi {};
+  webabi = pkgs.callPackage (hackGet (reflex-platform.wasmCross + /webabi)) {};
   # wasm-opt -Oz seems to create a slightly larger binary
   stripWasm = frontend: pkgs.runCommand "stripWasm" {} ''
     mkdir $out

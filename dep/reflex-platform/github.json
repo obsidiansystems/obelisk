@@ -1,8 +1,8 @@
 {
-  "owner": "dfordivam",
+  "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "wasm-support-1",
+  "branch": "develop",
   "private": false,
-  "rev": "787f65f96158c1d568ca0725307668b6a5eb3388",
-  "sha256": "0wc6ly86slk5nnf23dvspc6ynsc4is1m8dgn9kpzjn05400zkcxx"
+  "rev": "df43a921befd11e5635dc604e9911c2822ac42ec",
+  "sha256": "19c31sz29ik0h64b1g270l60j562f2iaxk0hqy9gi46rl0vlgbgg"
 }
