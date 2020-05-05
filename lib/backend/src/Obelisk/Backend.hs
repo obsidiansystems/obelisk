@@ -40,7 +40,6 @@ module Obelisk.Backend
   , getPublicConfigs
   ) where
 
-import Control.Exception (try)
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Fail (MonadFail)
@@ -49,15 +48,15 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
 import Data.Dependent.Sum
-import Data.Either (isRight)
 import Data.Functor.Identity
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (isJust)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
-import Obelisk.Asset.Serve.Snap (serveAsset)
+import Obelisk.Asset.Serve.Snap (serveAsset, getAssetPath)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
 import Obelisk.Route
@@ -67,7 +66,6 @@ import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, htt
             , rqPathInfo, rqQueryString, setContentType, writeBS, writeText
             , rqCookies, Cookie(..) , setHeader)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
-import System.FilePath ((</>))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 data Backend backendRoute frontendRoute = Backend
@@ -298,8 +296,7 @@ runBackendWith (BackendConfig runSnap staticAssets ghcjsAssets ghcjsWidgets) bac
     checkWasmFile = do
       let base = _staticAssets_processed ghcjsAssets
           p = T.unpack $ _wasmAssets_wasmFile defaultWasmAssets
-      assetType :: (Either IOError ByteString) <- liftIO $ try $ BSC8.readFile $ base </> p </> "type"
-      pure $ isRight assetType
+      isJust <$> getAssetPath base p
 
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
