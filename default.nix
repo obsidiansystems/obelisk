@@ -195,7 +195,10 @@ in rec {
 
   inherit mkAssets;
 
-  serverExe = backend: frontendJs: assets: optimizationLevel: frontendWasm: version:
+  serverExe = { backend, assets, version
+    , frontendJs ? null, optimizationLevel ? null
+    , frontendWasm ? null
+    } :
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
@@ -339,13 +342,14 @@ in rec {
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
       mainProjectOut = projectOut { inherit system; };
-      serverOn = projectInst: version: serverExe
-        projectInst.ghc.backend
-        mainProjectOut.ghcjs.frontend
-        projectInst.passthru.staticFiles
-        projectInst.passthru.__closureCompilerOptimizationLevel
-        (if enableWasm then mainProjectOut.wasm.frontend else null)
-        version;
+      serverOn = projectInst: version: serverExe {
+        backend = projectInst.ghc.backend;
+        frontendJs = mainProjectOut.ghcjs.frontend;
+        assets = projectInst.passthru.staticFiles;
+        optimizationLevel = projectInst.passthru.__closureCompilerOptimizationLevel;
+        frontendWasm = if enableWasm then mainProjectOut.wasm.frontend else null;
+        inherit version;
+      };
       linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
     in mainProjectOut // {
