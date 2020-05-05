@@ -326,20 +326,20 @@ wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
     wasmUrl = wasmRoot <> "/frontend.wasm"
 
     preloadScript =
-      "add_preload_tag = function (docSrc, docType) {\
+      "add_preload_tag = function (docSrc) {\
         \var link_tag = document.createElement('link');\
         \link_tag.rel = 'preload';\
-        \link_tag.as = docType;\
+        \link_tag.as = 'script';\
         \link_tag.href = docSrc;\
         \document.head.appendChild(link_tag);\
       \};\
       \if (typeof(WebAssembly) === 'undefined') {\
-        \add_preload_tag('" <> allJsUrl <> "', 'script');\
+        \add_preload_tag('" <> allJsUrl <> "');\
       \} else {\
-        \add_preload_tag('" <> wasmUrl <> "', 'script');\
-        \add_preload_tag('" <> jsaddleJs <> "', 'script');\
-        \add_preload_tag('" <> interfaceJs <> "', 'script');\
-        \add_preload_tag('" <> runnerJs <> "', 'script');\
+        \add_preload_tag('" <> wasmUrl <> "');\
+        \add_preload_tag('" <> jsaddleJs <> "');\
+        \add_preload_tag('" <> interfaceJs <> "');\
+        \add_preload_tag('" <> runnerJs <> "');\
       \}"
 
     -- The 'wasmFile' variable is needed here because export API is not working
