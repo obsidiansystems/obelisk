@@ -100,7 +100,10 @@ data GhcjsWidgets a = GhcjsWidgets
 
 data GhcjsWasmAssets = GhcjsWasmAssets
   { _ghcjsWasmAssets_allJs :: Text
+  -- ^ URL (could be relative) of "all.js"
   , _ghcjsWasmAssets_wasmPathRoot :: Maybe Text
+  -- ^ Optional root URL (could be relative) of wasm assets.
+  -- If this is Nothing, then it means wasm is disabled.
   }
 
 -- | Given the URL of all.js, return the widgets which are responsible for
@@ -308,7 +311,13 @@ deferredGhcjsScript (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
 scriptTag :: DomBuilder t m => Text -> m ()
 scriptTag t = elAttr "script" ("type" =: "text/javascript") $ text t
 
-wasmScripts :: Text -> Text -> (Text, Text, (Int -> Text))
+wasmScripts
+  :: Text
+  -- ^ URL (could be relative) of "all.js"
+  -> Text
+  -- ^ Root URL (could be relative) of wasm assets
+  -> (Text, Text, (Int -> Text))
+  -- ^ (preload script, deferred run script, delayed run script (Int input is the delay))
 wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
   where
     jsaddleJs = wasmRoot <> "/jsaddle_core.js"
@@ -333,6 +342,8 @@ wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
       \  add_preload_tag('" <> runnerJs <> "', 'script');      \
       \}"
 
+    -- The 'wasmFile' variable is needed here because export API is not working
+    -- in the webabi ts code. The wasm file is fetched by the runnerJs.
     runJsScript =
       "add_deferload_tag = function (docSrc) {       \
       \  var tag = document.createElement('script'); \
