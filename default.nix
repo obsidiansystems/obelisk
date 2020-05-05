@@ -167,29 +167,37 @@ in rec {
 
   inherit mkAssets;
 
-  serverExe = backend: frontend: assets: optimizationLevel: version:
+  serverExe = backend: frontend: assets: optimizationLevel: bundledConfig: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      ${pkgs.lib.optionalString (bundledConfig != null) "ln -s ${bundledConfig} $out/config"}
       echo ${version} > $out/version
     '';
 
+  mkNixOS = imports: import (pkgs.path + /nixos) {
+    system = "x86_64-linux";
+    configuration = { inherit imports; };
+  };
+
+  serverImports = args: [
+    (serverModules.mkDefaultNetworking args)
+    (serverModules.mkObeliskApp args)
+  ];
+
   server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }@args:
-    let
-      nixos = import (pkgs.path + /nixos);
-    in nixos {
-      system = "x86_64-linux";
-      configuration = {
-        imports = [
-          (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
-          (serverModules.mkDefaultNetworking args)
-          (serverModules.mkObeliskApp args)
-        ];
-      };
-    };
+    mkNixOS (serverImports args ++ [
+      (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
+    ]);
+
+  mkVM = { exe, hostName, adminEmail, routeHost, enableHttps, version, module }@args:
+    mkNixOS (serverImports args ++ [
+      (pkgs.path + /nixos/modules/virtualisation/virtualbox-image.nix)
+      (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
+    ]);
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base': projectDefinition:
@@ -309,14 +317,20 @@ in rec {
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
       mainProjectOut = projectOut { inherit system; };
-      serverOn = projectInst: version: serverExe
+      serverOn = projectInst: bundledConfig: version: serverExe
         projectInst.ghc.backend
         mainProjectOut.ghcjs.frontend
         projectInst.passthru.staticFiles
         projectInst.passthru.__closureCompilerOptimizationLevel
+        bundledConfig
         version;
-      linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
+      linuxExe = serverOn (projectOut { system = "x86_64-linux"; }) null;
+      ovaExe = serverOn (projectOut { system = "x86_64-linux"; }) (base' + /config);
       dummyVersion = "Version number is only available for deployments";
+
+      vm = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? (_:_:{}) }:
+        mkVM (args // { inherit module; exe = ovaExe version; });
+
     in mainProjectOut // {
       __unstable__.profiledObRun = let
         profiled = projectOut { inherit system; enableLibraryProfiling = true; };
@@ -348,7 +362,10 @@ in rec {
 
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
-      exe = serverOn mainProjectOut dummyVersion;
+      exe = serverOn mainProjectOut null dummyVersion;
+      inherit vm;
+      ova = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? (_: _: {}) }:
+        (vm args).config.system.build.virtualBoxOVA;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
