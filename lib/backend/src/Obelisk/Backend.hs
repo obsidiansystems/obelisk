@@ -326,57 +326,57 @@ wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
     wasmUrl = wasmRoot <> "/frontend.wasm"
 
     preloadScript =
-      "add_preload_tag = function (docSrc, docType) {          \
-      \  var link_tag = document.createElement('link');        \
-      \  link_tag.rel = 'preload';                             \
-      \  link_tag.as = docType;                                \
-      \  link_tag.href = docSrc;                               \
-      \  document.head.appendChild(link_tag);                  \
-      \};                                                      \
-      \if (typeof(WebAssembly) === 'undefined') {              \
-      \  add_preload_tag('" <> allJsUrl <> "', 'script');      \
-      \} else {                                                \
-      \  add_preload_tag('" <> wasmUrl <> "', 'script');       \
-      \  add_preload_tag('" <> jsaddleJs <> "', 'script');     \
-      \  add_preload_tag('" <> interfaceJs <> "', 'script');   \
-      \  add_preload_tag('" <> runnerJs <> "', 'script');      \
+      "add_preload_tag = function (docSrc, docType) {\
+        \var link_tag = document.createElement('link');\
+        \link_tag.rel = 'preload';\
+        \link_tag.as = docType;\
+        \link_tag.href = docSrc;\
+        \document.head.appendChild(link_tag);\
+      \};\
+      \if (typeof(WebAssembly) === 'undefined') {\
+        \add_preload_tag('" <> allJsUrl <> "', 'script');\
+      \} else {\
+        \add_preload_tag('" <> wasmUrl <> "', 'script');\
+        \add_preload_tag('" <> jsaddleJs <> "', 'script');\
+        \add_preload_tag('" <> interfaceJs <> "', 'script');\
+        \add_preload_tag('" <> runnerJs <> "', 'script');\
       \}"
 
     -- The 'wasmFile' variable is needed here because export API is not working
     -- in the webabi ts code. The wasm file is fetched by the runnerJs.
     runJsScript =
-      "add_deferload_tag = function (docSrc) {       \
-      \  var tag = document.createElement('script'); \
-      \  tag.type = 'text/javascript';               \
-      \  tag.src = docSrc;                           \
-      \  tag.setAttribute = ('defer', 'defer');      \
-      \  document.body.appendChild(tag);             \
-      \};                                            \
-      \if (typeof(WebAssembly) === 'undefined') {    \
-      \  add_deferload_tag('" <> allJsUrl <> "');    \
-      \} else {                                      \
-      \  var wasmFile = '" <> wasmUrl <> "';         \
-      \  add_deferload_tag('" <> jsaddleJs <> "');   \
-      \  add_deferload_tag('" <> interfaceJs <> "'); \
-      \  add_deferload_tag('" <> runnerJs <> "');    \
+      "add_deferload_tag = function (docSrc) {\
+        \var tag = document.createElement('script');\
+        \tag.type = 'text/javascript';\
+        \tag.src = docSrc;\
+        \tag.setAttribute = ('defer', 'defer');\
+        \document.body.appendChild(tag);\
+      \};\
+      \if (typeof(WebAssembly) === 'undefined') {\
+        \add_deferload_tag('" <> allJsUrl <> "');\
+      \} else {\
+        \var wasmFile = '" <> wasmUrl <> "';\
+        \add_deferload_tag('" <> jsaddleJs <> "');\
+        \add_deferload_tag('" <> interfaceJs <> "');\
+        \add_deferload_tag('" <> runnerJs <> "');\
       \}"
 
     delayedJsScript n =
-      "var wasmFile = '" <> wasmUrl <> "';            \
-      \setTimeout(function() {                        \
-      \  add_load_tag = function (docSrc) {           \
-      \    var tag = document.createElement('script');\
-      \    tag.type = 'text/javascript';              \
-      \    tag.src = docSrc;                          \
-      \    document.body.appendChild(tag);            \
-      \  };                                           \
-      \  if (typeof(WebAssembly) === 'undefined') {   \
-      \    add_load_tag('" <> allJsUrl <> "');        \
-      \  } else {                                     \
-      \    add_load_tag('" <> jsaddleJs <> "');       \
-      \    add_load_tag('" <> interfaceJs <> "');     \
-      \    add_load_tag('" <> runnerJs <> "');        \
-      \  }                                            \
+      "var wasmFile = '" <> wasmUrl <> "';\
+      \setTimeout(function() {\
+        \add_load_tag = function (docSrc) {\
+          \var tag = document.createElement('script');\
+          \tag.type = 'text/javascript';\
+          \tag.src = docSrc;\
+          \document.body.appendChild(tag);\
+        \};\
+        \if (typeof(WebAssembly) === 'undefined') {\
+          \add_load_tag('" <> allJsUrl <> "');\
+        \} else {\
+          \add_load_tag('" <> jsaddleJs <> "');\
+          \add_load_tag('" <> interfaceJs <> "');\
+          \add_load_tag('" <> runnerJs <> "');\
+        \}\
       \}, " <> T.pack (show n) <> ");"
 
 -- | An all.js script which is loaded after waiting for some time to pass. This
