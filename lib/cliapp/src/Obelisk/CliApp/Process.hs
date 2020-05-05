@@ -22,11 +22,13 @@ module Obelisk.CliApp.Process
   , readCreateProcessWithExitCode
   , readProcessAndLogOutput
   , readProcessAndLogStderr
+  , readProcessJSONAndLogStderr
   , reconstructCommand
   , setCwd
   , setDelegateCtlc
   , setEnvOverride
   , shell
+  , waitForProcess
   ) where
 
 import Control.Monad ((<=<), join, void)
@@ -51,9 +53,10 @@ import System.IO (Handle)
 import System.IO.Streams (InputStream, handleToInputStream)
 import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
-import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), std_err, std_out, waitForProcess)
+import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), std_err, std_out)
 import qualified System.Process as Process
 import Text.ShellEscape (bytes, bash)
+import qualified Data.Aeson as Aeson
 
 import Control.Monad.Log (Severity (..))
 import Obelisk.CliApp.Logging (putLog, putLogRaw)
@@ -103,6 +106,19 @@ readProcessAndLogStderr sev process = do
     streamToLog =<< liftIO (streamHandle sev err)
   liftIO $ T.decodeUtf8With lenientDecode <$> BS.hGetContents out
 
+readProcessJSONAndLogStderr
+  :: (Aeson.FromJSON a, MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
+  => Severity -> ProcessSpec -> m a
+readProcessJSONAndLogStderr sev process = do
+  (out, _err) <- withProcess process $ \_out err -> do
+    streamToLog =<< liftIO (streamHandle sev err)
+  json <- liftIO $ BS.hGetContents out
+  case Aeson.eitherDecodeStrict json of
+    Right a -> pure a
+    Left err -> do
+      putLog Error $ "Could not decode process output as JSON: " <> T.pack err
+      throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess process) 0
+
 readCreateProcessWithExitCode
   :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
   => ProcessSpec -> m (ExitCode, String, String)
@@ -130,7 +146,7 @@ readProcessAndLogOutput (sev_out, sev_err) process = do
   outText <- liftIO $ T.decodeUtf8With lenientDecode <$> BS.hGetContents out
   putLogRaw sev_out outText
 
-  liftIO (waitForProcess p) >>= \case
+  waitForProcess p >>= \case
     ExitSuccess -> pure outText
     ExitFailure code -> throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess process) code
 
@@ -205,7 +221,7 @@ withProcess process f = do -- TODO: Use bracket.
 
   f out err  -- Pass the handles to the passed function
 
-  liftIO (waitForProcess p) >>= \case
+  waitForProcess p >>= \case
     ExitSuccess -> return (out, err)
     ExitFailure code -> throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess process) code
 
@@ -221,6 +237,10 @@ streamToLog stream = fix $ \loop -> do
   liftIO (Streams.read stream) >>= \case
     Nothing -> return ()
     Just (sev, line) -> putLogRaw sev (T.decodeUtf8With lenientDecode line) >> loop
+
+-- | Wrapper around `System.Process.waitForProcess`
+waitForProcess :: MonadIO m => ProcessHandle -> m ExitCode
+waitForProcess = liftIO . Process.waitForProcess
 
 -- | Pretty print a 'CmdSpec'
 reconstructCommand :: Process.CmdSpec -> Text

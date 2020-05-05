@@ -5,70 +5,54 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-module Obelisk.Command.Thunk
-  ( GitHubSource (..)
-  , GitUri (..)
-  , ReadThunkError (..)
-  , ThunkConfig (..)
-  , ThunkData (..)
-  , ThunkPackConfig (..)
-  , ThunkPtr (..)
-  , ThunkRev (..)
-  , ThunkSource (..)
-  , ThunkUpdateConfig (..)
-  , createThunk
-  , createThunkWithLatest
-  , getLatestRev
-  , getThunkGitBranch
-  , getThunkPtr
-  , gitUriToText
-  , nixBuildAttrWithCache
-  , nixBuildThunkAttrWithCache
-  , packThunk
-  , parseGitUri
-  , readThunk
-  , unpackThunk
-  , updateThunk
-  , updateThunkToLatest
-  , uriThunkPtr
-  ) where
+module Obelisk.Command.Thunk where
 
 import Control.Applicative
 import Control.Exception (displayException, try)
-import qualified Control.Lens as Lens
-import Control.Lens.Indexed hiding ((<.>))
+import Control.Lens (ifor, ifor_, (.~))
 import Control.Monad
-import Control.Monad.Catch (handle)
+import Control.Monad.Extra (findM)
+import Control.Monad.Catch (MonadCatch, handle)
 import Control.Monad.Except
 import Data.Aeson ((.=))
 import qualified Data.Aeson as Aeson
 import Data.Aeson.Encode.Pretty
 import qualified Data.Aeson.Types as Aeson
+import Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as LBS
+import Data.Containers.ListUtils (nubOrd)
 import Data.Default
 import Data.Either.Combinators (fromRight', rightToMaybe)
+import Data.Foldable (toList)
+import Data.Function ((&))
+import Data.Functor ((<&>))
 import Data.Git.Ref (Ref)
 import qualified Data.Git.Ref as Ref
 import qualified Data.List as L
-import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.String.Here.Interpolated (i)
+import Data.String.Here.Uninterpolated (here)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding
 import qualified Data.Text.IO as T
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Traversable (for)
 import Data.Yaml (parseMaybe)
 import GitHub
 import GitHub.Data.Name
 import Obelisk.Command.Nix
 import System.Directory
+import System.Exit
 import System.FilePath
 import System.IO.Error
 import System.IO.Temp
@@ -81,11 +65,10 @@ import Obelisk.Command.Utils
 
 --TODO: Support symlinked thunk data
 data ThunkData
-   = ThunkData_Packed ThunkPtr
+   = ThunkData_Packed ThunkSpec ThunkPtr
    -- ^ Packed thunk
-   | ThunkData_Checkout (Maybe ThunkPtr)
+   | ThunkData_Checkout
    -- ^ Checked out thunk that was unpacked from this pointer
-  deriving (Show, Eq, Ord)
 
 -- | A reference to the exact data that a thunk should translate into
 data ThunkPtr = ThunkPtr
@@ -111,6 +94,11 @@ data ThunkSource
    | ThunkSource_Git GitSource
    deriving (Show, Eq, Ord)
 
+thunkSourceToGitSource :: ThunkSource -> GitSource
+thunkSourceToGitSource = \case
+  ThunkSource_GitHub s -> forgetGithub False s
+  ThunkSource_Git s -> s
+
 data GitHubSource = GitHubSource
   { _gitHubSource_owner :: Name Owner
   , _gitHubSource_repo :: Name Repo
@@ -119,7 +107,7 @@ data GitHubSource = GitHubSource
   }
   deriving (Show, Eq, Ord)
 
-newtype GitUri = GitUri URI.URI deriving (Eq, Ord, Show)
+newtype GitUri = GitUri { unGitUri :: URI.URI } deriving (Eq, Ord, Show)
 
 gitUriToText :: GitUri -> Text
 gitUriToText (GitUri uri)
@@ -210,93 +198,117 @@ nixPrefetchGit uri rev fetchSubmodules =
 
 --TODO: Pretty print these
 data ReadThunkError
-   = ReadThunkError_UnrecognizedFiles
-   | ReadThunkError_AmbiguousFiles
-   | ReadThunkError_UnrecognizedLoader Text
-   | ReadThunkError_UnparseablePtr LBS.ByteString
-   deriving (Show)
+  = ReadThunkError_UnrecognizedThunk
+  | ReadThunkError_UnrecognizedPaths (NonEmpty FilePath)
+  | ReadThunkError_MissingPaths (NonEmpty FilePath)
+  | ReadThunkError_UnparseablePtr FilePath String
+  | ReadThunkError_FileError IOError
+  | ReadThunkError_FileDoesNotMatch FilePath Text
+  | ReadThunkError_UnrecognizedState String
+  | ReadThunkError_AmbiguousPackedState ThunkPtr ThunkPtr
+  deriving (Show)
 
--- | Read a thunk and validate that it is only a thunk, either packed or unpacked.
--- If the thunk is packed and additional data is present, fail.
-readThunk :: MonadObelisk m => FilePath -> m (Either ReadThunkError ThunkData)
-readThunk thunkDir = do
-  files <- liftIO $ listDirectory thunkDir
-  case ".git" `elem` files of
-    True -> fmap ThunkData_Checkout <$> do
-      let origThunkPath = thunkDir </> ".git" </> "obelisk" </> "orig-thunk"
-      liftIO $ doesDirectoryExist origThunkPath >>= \case
-        True -> fmap Just <$> readPackedThunk origThunkPath
-        False -> return $ return Nothing
-    False -> liftIO $ fmap ThunkData_Packed <$> readPackedThunk thunkDir
+unpackedDirName :: FilePath
+unpackedDirName = "."
 
-data ThunkType = ThunkType
-  { _thunkType_loader :: FilePath
-  , _thunkType_json :: FilePath
-  , _thunkType_optional :: Set FilePath
-  , _thunkType_loaderVersions :: NonEmpty Text
-  , _thunkType_parser :: Aeson.Object -> Aeson.Parser ThunkPtr
+attrCacheFileName :: FilePath
+attrCacheFileName = ".attr-cache"
+
+-- | Specification for how a file in a thunk version works.
+data ThunkFileSpec
+  = ThunkFileSpec_Ptr (LBS.ByteString -> Either String ThunkPtr) -- ^ This file specifies 'ThunkPtr' data
+  | ThunkFileSpec_FileMatches Text -- ^ This file must match the given content exactly
+  | ThunkFileSpec_CheckoutIndicator -- ^ Existence of this directory indicates that the thunk is unpacked
+  | ThunkFileSpec_AttrCache -- ^ This directory is an attribute cache
+
+-- | Specification for how a set of files in a thunk version work.
+data ThunkSpec = ThunkSpec
+  { _thunkSpec_name :: !Text
+  , _thunkSpec_files :: !(Map FilePath ThunkFileSpec)
   }
 
-gitHubThunkType :: ThunkType
-gitHubThunkType = ThunkType
-  { _thunkType_loader = "default.nix"
-  , _thunkType_json = "github.json"
-  , _thunkType_optional = Set.fromList [".attr-cache"]
-  , _thunkType_loaderVersions = gitHubStandaloneLoaders
-  , _thunkType_parser = parseThunkPtr $ \v ->
-      ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v
-  }
+thunkSpecTypes :: NonEmpty (NonEmpty ThunkSpec)
+thunkSpecTypes = gitThunkSpecs :| [gitHubThunkSpecs]
 
-gitThunkType :: ThunkType
-gitThunkType = ThunkType
-  { _thunkType_loader = "default.nix"
-  , _thunkType_json = "git.json"
-  , _thunkType_optional = Set.fromList [".attr-cache"]
-  , _thunkType_loaderVersions = plainGitStandaloneLoaders
-  , _thunkType_parser = parseThunkPtr $ fmap ThunkSource_Git . parseGitSource
-  }
+-- | Attempts to match a 'ThunkSpec' to a given directory.
+matchThunkSpecToDir
+  :: (MonadError ReadThunkError m, MonadIO m, MonadCatch m)
+  => ThunkSpec -- ^ 'ThunkSpec' to match against the given files/directory
+  -> FilePath -- ^ Path to directory
+  -> Set FilePath -- ^ Set of file paths relative to the given directory
+  -> m ThunkData
+matchThunkSpecToDir thunkSpec dir dirFiles = do
+  case nonEmpty (toList $ dirFiles `Set.difference` expectedPaths) of
+    Just fs -> throwError $ ReadThunkError_UnrecognizedPaths $ (dir </>) <$> fs
+    Nothing -> pure ()
+  case nonEmpty (toList $ requiredPaths `Set.difference` dirFiles) of
+    Just fs -> throwError $ ReadThunkError_MissingPaths $ (dir </>) <$> fs
+    Nothing -> pure ()
+  datas <- fmap toList $ flip Map.traverseMaybeWithKey (_thunkSpec_files thunkSpec) $ \expectedPath -> \case
+    ThunkFileSpec_AttrCache -> Nothing <$ dirMayExist expectedPath
+    ThunkFileSpec_CheckoutIndicator -> liftIO (doesDirectoryExist (dir </> expectedPath)) <&> \case
+      False -> Nothing
+      True -> Just ThunkData_Checkout
+    ThunkFileSpec_FileMatches expectedContents -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
+      actualContents <- liftIO (T.readFile $ dir </> expectedPath)
+      case T.strip expectedContents == T.strip actualContents of
+        True -> pure Nothing
+        False -> throwError $ ReadThunkError_FileDoesNotMatch (dir </> expectedPath) expectedContents
+    ThunkFileSpec_Ptr parser -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
+      let path = dir </> expectedPath
+      liftIO (doesFileExist path) >>= \case
+        False -> pure Nothing
+        True -> do
+          actualContents <- liftIO $ LBS.readFile path
+          case parser actualContents of
+            Right v -> pure $ Just (ThunkData_Packed thunkSpec v)
+            Left e -> throwError $ ReadThunkError_UnparseablePtr (dir </> expectedPath) e
 
-thunkTypes :: [ThunkType]
-thunkTypes = [gitThunkType, gitHubThunkType]
+  case nonEmpty datas of
+    Nothing -> throwError ReadThunkError_UnrecognizedThunk
+    Just xs -> fold1WithM xs $ \a b -> either throwError pure (mergeThunkData a b)
+  where
+    rootPathsOnly = Set.fromList . mapMaybe takeRootDir . Map.keys
+    takeRootDir = fmap NonEmpty.head . nonEmpty . splitPath
 
-findThunkType :: [ThunkType] -> FilePath -> IO (Either ReadThunkError ThunkType)
-findThunkType types thunkDir = do
-  matches <- fmap catMaybes $ forM types $ \thunkType -> do
-    let
-      expectedContents = Set.fromList $ (thunkDir </>) <$>
-        [ _thunkType_loader thunkType
-        , _thunkType_json thunkType
-        ]
-      optionalContents = Set.map (thunkDir </>) (_thunkType_optional thunkType)
+    expectedPaths = rootPathsOnly $ _thunkSpec_files thunkSpec
 
-    -- Ensure that there aren't any other files in the thunk
-    -- NB: System.Directory.listDirectory returns the contents without the directory path
-    files <- liftIO $ Set.fromList . fmap (thunkDir </>) <$> listDirectory thunkDir
-    let unexpectedContents = files `Set.difference` (expectedContents `Set.union` optionalContents)
-        missingContents = expectedContents `Set.difference` files
-    pure $ if Set.null unexpectedContents && Set.null missingContents
-      then Just thunkType
-      else Nothing
+    requiredPaths = rootPathsOnly $ Map.filter isRequiredFileSpec $ _thunkSpec_files thunkSpec
+    isRequiredFileSpec = \case
+      ThunkFileSpec_FileMatches _ -> True
+      _ -> False
 
-  pure $ case matches of
-    [singleMatch] -> Right singleMatch
-    [] -> Left ReadThunkError_UnrecognizedFiles
-    _ -> Left ReadThunkError_AmbiguousFiles
+    dirMayExist expectedPath = liftIO (doesFileExist (dir </> expectedPath)) >>= \case
+      True -> throwError $ ReadThunkError_UnrecognizedPaths $ expectedPath :| []
+      False -> pure ()
+
+    -- Combine 'ThunkData' from different files, preferring "Checkout" over "Packed"
+    mergeThunkData ThunkData_Checkout ThunkData_Checkout = Right ThunkData_Checkout
+    mergeThunkData ThunkData_Checkout ThunkData_Packed{} = Left bothPackedAndUnpacked
+    mergeThunkData ThunkData_Packed{} ThunkData_Checkout = Left bothPackedAndUnpacked
+    mergeThunkData a@(ThunkData_Packed _ ptrA) (ThunkData_Packed _ ptrB) =
+      if ptrA == ptrB then Right a else Left $ ReadThunkError_AmbiguousPackedState ptrA ptrB
+
+    bothPackedAndUnpacked = ReadThunkError_UnrecognizedState "Both packed data and checkout present"
+
+    fold1WithM (x :| xs) f = foldM f x xs
+
+readThunkWith
+  :: (MonadObelisk m)
+  => NonEmpty (NonEmpty ThunkSpec) -> FilePath -> m (Either ReadThunkError ThunkData)
+readThunkWith specTypes dir = do
+  dirFiles <- Set.fromList <$> liftIO (listDirectory dir)
+  let specs = concatMap toList $ toList $ NonEmpty.transpose specTypes -- Interleave spec types so we try each one in a "fair" ordering
+  flip fix specs $ \loop -> \case
+    [] -> pure $ Left ReadThunkError_UnrecognizedThunk
+    spec:rest -> runExceptT (matchThunkSpecToDir spec dir dirFiles) >>= \case
+      Left e -> putLog Debug [i|Thunk specification ${_thunkSpec_name spec} did not match ${dir}: ${e}|] *> loop rest
+      x@(Right _) -> x <$ putLog Debug [i|Thunk specification ${_thunkSpec_name spec} matched ${dir}|]
 
 -- | Read a thunk and validate that it is exactly a packed thunk.
 -- If additional data is present, fail.
-readPackedThunk :: FilePath -> IO (Either ReadThunkError ThunkPtr)
-readPackedThunk thunkDir = runExceptT $ do
-  thunkType <- ExceptT $ findThunkType thunkTypes thunkDir
-  -- Ensure that we recognize the thunk loader
-  loader <- liftIO $ T.readFile $ thunkDir </> _thunkType_loader thunkType
-  unless (loader `elem` _thunkType_loaderVersions thunkType) $ do
-    throwError $ ReadThunkError_UnrecognizedLoader loader
-
-  txt <- liftIO $ LBS.readFile $ thunkDir </> _thunkType_json thunkType
-  case parseMaybe (_thunkType_parser thunkType) =<< Aeson.decode txt of
-    Nothing -> throwError $ ReadThunkError_UnparseablePtr txt
-    Just ptr -> return ptr
+readThunk :: (MonadObelisk m) => FilePath -> m (Either ReadThunkError ThunkData)
+readThunk = readThunkWith thunkSpecTypes
 
 parseThunkPtr :: (Aeson.Object -> Aeson.Parser ThunkSource) -> Aeson.Object -> Aeson.Parser ThunkPtr
 parseThunkPtr parseSrc v = do
@@ -340,16 +352,18 @@ parseGitSource v = do
 overwriteThunk :: MonadObelisk m => FilePath -> ThunkPtr -> m ()
 overwriteThunk target thunk = do
   -- Ensure that this directory is a valid thunk (i.e. so we aren't losing any data)
-  Right _ <- readThunk target
+  readThunk target >>= \case
+    Left e -> failWith [i|Invalid thunk at ${target}: ${e}|]
+    Right _ -> pure ()
 
   --TODO: Is there a safer way to do this overwriting?
-  liftIO $ removeDirectoryRecursive target
-  liftIO $ createThunk target thunk
+  liftIO $ removePathForcibly target
+  createThunk target $ Right thunk
 
-thunkPtrLoader :: ThunkPtr -> Text
-thunkPtrLoader thunk = case _thunkPtr_source thunk of
-  ThunkSource_GitHub _ -> NonEmpty.head gitHubStandaloneLoaders
-  ThunkSource_Git _ -> NonEmpty.head plainGitStandaloneLoaders
+thunkPtrToSpec :: ThunkPtr -> ThunkSpec
+thunkPtrToSpec thunk = case _thunkPtr_source thunk of
+  ThunkSource_GitHub _ -> NonEmpty.head gitHubThunkSpecs
+  ThunkSource_Git _ -> NonEmpty.head gitThunkSpecs
 
 -- It's important that formatting be very consistent here, because
 -- otherwise when people update thunks, their patches will be messy
@@ -396,35 +410,41 @@ encodeThunkPtrData (ThunkPtr rev src) = case src of
     , confTrailingNewline = True
     }
 
-createThunk :: MonadIO m => FilePath -> ThunkPtr -> m ()
-createThunk target thunk = liftIO $ do
-  createDirectoryIfMissing True (target </> ".attr-cache")
-  T.writeFile (target </> "default.nix") (thunkPtrLoader thunk)
-  let
-    jsonFileName = case _thunkPtr_source thunk of
-      ThunkSource_GitHub _ -> "github"
-      ThunkSource_Git _ -> "git"
-  LBS.writeFile (target </> jsonFileName <.> "json") (encodeThunkPtrData thunk)
+createThunk :: MonadObelisk m => FilePath -> Either ThunkSpec ThunkPtr -> m ()
+createThunk target ptrInfo =
+  ifor_ (_thunkSpec_files spec) $ \path -> \case
+    ThunkFileSpec_FileMatches content -> withReadyPath path $ \p -> liftIO $ T.writeFile p content
+    ThunkFileSpec_Ptr _ -> case ptrInfo of
+      Left _ -> pure () -- We can't write the ptr without it
+      Right ptr -> withReadyPath path $ \p -> liftIO $ LBS.writeFile p (encodeThunkPtrData ptr)
+    _ -> pure ()
+  where
+    spec = either id thunkPtrToSpec ptrInfo
+    withReadyPath path f = do
+      let fullPath = target </> path
+      putLog Debug $ "Writing thunk file " <> T.pack fullPath
+      liftIO $ createDirectoryIfMissing True $ takeDirectory fullPath
+      f fullPath
 
 createThunkWithLatest :: MonadObelisk m => FilePath -> ThunkSource -> m ()
 createThunkWithLatest target s = do
   rev <- getLatestRev s
-  createThunk target $ ThunkPtr
+  createThunk target $ Right $ ThunkPtr
     { _thunkPtr_source = s
     , _thunkPtr_rev = rev
     }
 
 updateThunkToLatest :: MonadObelisk m => ThunkUpdateConfig -> FilePath -> m ()
-updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest") $ do
-  checkThunkDirectory "ob thunk update directory cannot be '.'" target
+updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = spinner $ do
+  checkThunkDirectory target
   -- check to see if thunk should be updated to a specific branch or just update it's current branch
   case mBranch of
     Nothing -> do
       (overwrite, ptr) <- readThunk target >>= \case
-        Left err -> failWith $ T.pack $ "thunk update: " <> show err
+        Left err -> failWith [i|Thunk update: ${err}|]
         Right c -> case c of
-          ThunkData_Packed t -> return (target, t)
-          ThunkData_Checkout _ -> failWith "cannot update an unpacked thunk"
+          ThunkData_Packed _ t -> return (target, t)
+          ThunkData_Checkout -> failWith "cannot update an unpacked thunk"
       let src = _thunkPtr_source ptr
       rev <- getLatestRev src
       overwriteThunk overwrite $ modifyThunkPtrByConfig thunkConfig $ ThunkPtr
@@ -432,38 +452,36 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = withSpinner
         , _thunkPtr_rev = rev
         }
     Just branch -> readThunk target >>= \case
-      Left err -> failWith $ T.pack $ "thunk update: " <> show err
+      Left err -> failWith [i|Thunk update: ${err}|]
       Right c -> case c of
-        ThunkData_Packed t -> case _thunkPtr_source t of
-          ThunkSource_Git tsg -> setThunk thunkConfig target tsg branch
-          ThunkSource_GitHub tsgh -> do
-            let tsg = forgetGithub False tsgh
-            setThunk thunkConfig target tsg branch
-        ThunkData_Checkout _ -> failWith $ T.pack $ "thunk located at " <> show target <> " is unpacked. Use ob thunk pack on the desired directory and then try ob thunk update again."
+        ThunkData_Packed _ t -> setThunk thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
+        ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
+  where
+    spinner = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest")
 
 setThunk :: MonadObelisk m => ThunkConfig -> FilePath -> GitSource -> String -> m ()
 setThunk thunkConfig target gs branch = do
-  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (Just $ T.pack branch) Nothing
+  newThunkPtr <- uriThunkPtr (_gitSource_url gs) (_thunkConfig_private thunkConfig) (Just $ T.pack branch) Nothing
   overwriteThunk target newThunkPtr
   updateThunkToLatest (ThunkUpdateConfig Nothing thunkConfig) target
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
-gitHubStandaloneLoaders :: NonEmpty Text
-gitHubStandaloneLoaders =
-  gitHubStandaloneLoaderV4 :|
-  [ gitHubStandaloneLoaderV3
-  , gitHubStandaloneLoaderV2
-  , gitHubStandaloneLoaderV1
+gitHubThunkSpecs :: NonEmpty ThunkSpec
+gitHubThunkSpecs =
+  gitHubThunkSpecV5 :|
+  [ gitHubThunkSpecV4
+  , gitHubThunkSpecV3
+  , gitHubThunkSpecV2
+  , gitHubThunkSpecV1
   ]
 
-gitHubStandaloneLoaderV1 :: Text
-gitHubStandaloneLoaderV1 = T.unlines
-  [ "import ((import <nixpkgs> {}).fetchFromGitHub (builtins.fromJSON (builtins.readFile ./github.json)))"
-  ]
+gitHubThunkSpecV1 :: ThunkSpec
+gitHubThunkSpecV1 = legacyGitHubThunkSpec "github-v1"
+  "import ((import <nixpkgs> {}).fetchFromGitHub (builtins.fromJSON (builtins.readFile ./github.json)))"
 
-gitHubStandaloneLoaderV2 :: Text
-gitHubStandaloneLoaderV2 = T.unlines
+gitHubThunkSpecV2 :: ThunkSpec
+gitHubThunkSpecV2 = legacyGitHubThunkSpec "github-v2" $ T.unlines
   [ "# DO NOT HAND-EDIT THIS FILE" --TODO: Add something about how to get more info on Obelisk, etc.
   , "import ((import <nixpkgs> {}).fetchFromGitHub ("
   , "  let json = builtins.fromJSON (builtins.readFile ./github.json);"
@@ -473,8 +491,8 @@ gitHubStandaloneLoaderV2 = T.unlines
   , "))"
   ]
 
-gitHubStandaloneLoaderV3 :: Text
-gitHubStandaloneLoaderV3 = T.unlines
+gitHubThunkSpecV3 :: ThunkSpec
+gitHubThunkSpecV3 = legacyGitHubThunkSpec "github-v3" $ T.unlines
   [ "# DO NOT HAND-EDIT THIS FILE"
   , "let"
   , "  fetch = { private ? false, ... }@args: if private && builtins.hasAttr \"fetchGit\" builtins"
@@ -493,8 +511,8 @@ gitHubStandaloneLoaderV3 = T.unlines
   , "in import (fetch (builtins.fromJSON (builtins.readFile ./github.json)))"
   ]
 
-gitHubStandaloneLoaderV4 :: Text
-gitHubStandaloneLoaderV4 = T.unlines
+gitHubThunkSpecV4 :: ThunkSpec
+gitHubThunkSpecV4 = legacyGitHubThunkSpec "github-v4" $ T.unlines
   [ "# DO NOT HAND-EDIT THIS FILE"
   , "let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:"
   , "  if !fetchSubmodules && !private then builtins.fetchTarball {"
@@ -505,23 +523,50 @@ gitHubStandaloneLoaderV4 = T.unlines
   , "in import (fetch (builtins.fromJSON (builtins.readFile ./github.json)))"
   ]
 
-plainGitStandaloneLoaders :: NonEmpty Text
-plainGitStandaloneLoaders =
-  plainGitStandaloneLoaderV3 :|
-  [ plainGitStandaloneLoaderV1
-  , plainGitStandaloneLoaderV2
+legacyGitHubThunkSpec :: Text -> Text -> ThunkSpec
+legacyGitHubThunkSpec name loader = ThunkSpec name $ Map.fromList
+  [ ("default.nix", ThunkFileSpec_FileMatches $ T.strip loader)
+  , ("github.json" , ThunkFileSpec_Ptr parseGitHubJsonBytes)
+  , (attrCacheFileName, ThunkFileSpec_AttrCache)
+  , (".git", ThunkFileSpec_CheckoutIndicator)
   ]
 
-plainGitStandaloneLoaderV1 :: Text
-plainGitStandaloneLoaderV1 = T.unlines
+gitHubThunkSpecV5 :: ThunkSpec
+gitHubThunkSpecV5 = mkThunkSpec "github-v5" "github.json" parseGitHubJsonBytes [here|
+# DO NOT HAND-EDIT THIS FILE
+let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:
+  if !fetchSubmodules && !private then builtins.fetchTarball {
+    url = "https://github.com/${owner}/${repo}/archive/${rev}.tar.gz"; inherit sha256;
+  } else (import <nixpkgs> {}).fetchFromGitHub {
+    inherit owner repo rev sha256 fetchSubmodules private;
+  };
+  json = builtins.fromJSON (builtins.readFile ./github.json);
+in fetch json
+|]
+
+parseGitHubJsonBytes :: LBS.ByteString -> Either String ThunkPtr
+parseGitHubJsonBytes = parseJsonObject $ parseThunkPtr $ \v ->
+  ThunkSource_GitHub <$> parseGitHubSource v <|> ThunkSource_Git <$> parseGitSource v
+
+gitThunkSpecs :: NonEmpty ThunkSpec
+gitThunkSpecs =
+  gitThunkSpecV5 :|
+  [ gitThunkSpecV4
+  , gitThunkSpecV3
+  , gitThunkSpecV2
+  , gitThunkSpecV1
+  ]
+
+gitThunkSpecV1 :: ThunkSpec
+gitThunkSpecV1 = legacyGitThunkSpec "git-v1" $ T.unlines
   [ "# DO NOT HAND-EDIT THIS FILE"
   , "let fetchGit = {url, rev, ref ? null, branch ? null, sha256 ? null, fetchSubmodules ? null}:"
   , "  assert !fetchSubmodules; (import <nixpkgs> {}).fetchgit { inherit url rev sha256; };"
   , "in import (fetchGit (builtins.fromJSON (builtins.readFile ./git.json)))"
   ]
 
-plainGitStandaloneLoaderV2 :: Text
-plainGitStandaloneLoaderV2 = T.unlines
+gitThunkSpecV2 :: ThunkSpec
+gitThunkSpecV2 = legacyGitThunkSpec "git-v2" $ T.unlines
   [ "# DO NOT HAND-EDIT THIS FILE"
   , "let fetchGit = {url, rev, ref ? null, branch ? null, sha256 ? null, fetchSubmodules ? null}:"
   , "  if builtins.hasAttr \"fetchGit\" builtins"
@@ -530,8 +575,10 @@ plainGitStandaloneLoaderV2 = T.unlines
   , "in import (fetchGit (builtins.fromJSON (builtins.readFile ./git.json)))"
   ]
 
-plainGitStandaloneLoaderV3 :: Text
-plainGitStandaloneLoaderV3 = T.unlines
+-- This loader has a bug because @builtins.fetchGit@ is not given a @ref@
+-- and will fail to find commits without this because it does shallow clones.
+gitThunkSpecV3 :: ThunkSpec
+gitThunkSpecV3 = legacyGitThunkSpec "git-v3" $ T.unlines
   [ "# DO NOT HAND-EDIT THIS FILE"
   , "let fetch = {url, rev, ref ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:"
   , "  let realUrl = let firstChar = builtins.substring 0 1 url; in"
@@ -546,10 +593,69 @@ plainGitStandaloneLoaderV3 = T.unlines
   , "in import (fetch (builtins.fromJSON (builtins.readFile ./git.json)))"
   ]
 
-thunkFileNames :: [FilePath]
-thunkFileNames = ["default.nix", "github.json", "git.json"]
+gitThunkSpecV4 :: ThunkSpec
+gitThunkSpecV4 = legacyGitThunkSpec "git-v4" $ T.unlines
+  [ "# DO NOT HAND-EDIT THIS FILE"
+  , "let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:"
+  , "  let realUrl = let firstChar = builtins.substring 0 1 url; in"
+  , "    if firstChar == \"/\" then /. + url"
+  , "    else if firstChar == \".\" then ./. + url"
+  , "    else url;"
+  , "  in if !fetchSubmodules && private then builtins.fetchGit {"
+  , "    url = realUrl; inherit rev;"
+  , "    ${if branch == null then null else \"ref\"} = branch;"
+  , "  } else (import <nixpkgs> {}).fetchgit {"
+  , "    url = realUrl; inherit rev sha256;"
+  , "  };"
+  , "in import (fetch (builtins.fromJSON (builtins.readFile ./git.json)))"
+  ]
 
---TODO: when checking something out, make a shallow clone
+legacyGitThunkSpec :: Text -> Text -> ThunkSpec
+legacyGitThunkSpec name loader = ThunkSpec name $ Map.fromList
+  [ ("default.nix", ThunkFileSpec_FileMatches $ T.strip loader)
+  , ("git.json" , ThunkFileSpec_Ptr parseGitJsonBytes)
+  , (attrCacheFileName, ThunkFileSpec_AttrCache)
+  , (".git", ThunkFileSpec_CheckoutIndicator)
+  ]
+
+gitThunkSpecV5 :: ThunkSpec
+gitThunkSpecV5 = mkThunkSpec "git-v5" "git.json" parseGitJsonBytes [here|
+# DO NOT HAND-EDIT THIS FILE
+let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
+  let realUrl = let firstChar = builtins.substring 0 1 url; in
+    if firstChar == "/" then /. + url
+    else if firstChar == "." then ./. + url
+    else url;
+  in if !fetchSubmodules && private then builtins.fetchGit {
+    url = realUrl; inherit rev;
+    ${if branch == null then null else "ref"} = branch;
+  } else (import <nixpkgs> {}).fetchgit {
+    url = realUrl; inherit rev sha256;
+  };
+  json = builtins.fromJSON (builtins.readFile ./git.json);
+in fetch json
+|]
+
+parseGitJsonBytes :: LBS.ByteString -> Either String ThunkPtr
+parseGitJsonBytes = parseJsonObject $ parseThunkPtr $ fmap ThunkSource_Git . parseGitSource
+
+mkThunkSpec :: Text -> FilePath -> (LBS.ByteString -> Either String ThunkPtr) -> Text -> ThunkSpec
+mkThunkSpec name jsonFileName parser srcNix = ThunkSpec name $ Map.fromList
+  [ ("default.nix", ThunkFileSpec_FileMatches defaultNixViaSrc)
+  , ("thunk.nix", ThunkFileSpec_FileMatches srcNix)
+  , (jsonFileName, ThunkFileSpec_Ptr parser)
+  , (attrCacheFileName, ThunkFileSpec_AttrCache)
+  , (normalise $ unpackedDirName </> ".git", ThunkFileSpec_CheckoutIndicator)
+  ]
+  where
+    defaultNixViaSrc = [here|
+# DO NOT HAND-EDIT THIS FILE
+import (import ./thunk.nix)
+|]
+
+
+parseJsonObject :: (Aeson.Object -> Aeson.Parser a) -> LBS.ByteString -> Either String a
+parseJsonObject p bytes = Aeson.parseEither p =<< Aeson.eitherDecode bytes
 
 -- | Checks a cache directory to see if there is a fresh symlink
 -- to the result of building an attribute of a thunk.
@@ -557,44 +663,49 @@ thunkFileNames = ["default.nix", "github.json", "git.json"]
 -- and the result is symlinked into the cache.
 nixBuildThunkAttrWithCache
   :: MonadObelisk m
-  => FilePath
+  => ThunkSpec
+  -> FilePath
   -- ^ Path to directory containing Thunk
   -> String
   -- ^ Attribute to build
-  -> m FilePath
+  -> m (Maybe FilePath)
   -- ^ Symlink to cached or built nix output
 -- WARNING: If the thunk uses an impure reference such as '<nixpkgs>'
 -- the caching mechanism will fail as it merely measures the modification
 -- time of the cache link and the expression to build.
-nixBuildThunkAttrWithCache thunkDir attr = do
-  --NB: Expects thunkDir to be normalised with no trailing path separator.
-  --This should be guaranteed by the command argument parser.
-  let cacheErrHandler e
-        | isDoesNotExistError e = return Nothing -- expected from a cache miss
-        | otherwise = putLog Error (T.pack $ displayException e) >> return Nothing
-      cacheDir = thunkDir </> ".attr-cache"
-      cachePath = cacheDir </> attr <.> "out"
+nixBuildThunkAttrWithCache thunkSpec thunkDir attr = do
   latestChange <- liftIO $ do
-    createDirectoryIfMissing False cacheDir
-    let getModificationTimeMaybe = fmap rightToMaybe . try @IOError . getModificationTime
-    maximum . catMaybes <$> mapM (getModificationTimeMaybe . (thunkDir </>)) thunkFileNames
-  cacheHit <- handle cacheErrHandler $ do
-    cacheTime <- liftIO $ posixSecondsToUTCTime . realToFrac . modificationTime <$> getSymbolicLinkStatus cachePath
-    return $ if latestChange <= cacheTime
-      then Just cachePath
-      else Nothing
-  case cacheHit of
-    Just c -> return c
-    Nothing -> do
-      putLog Warning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
-      _ <- nixCmd $ NixCmd_Build $ def
-        Lens.& nixBuildConfig_outLink Lens..~ OutLink_IndirectRoot cachePath
-        Lens.& nixCmdConfig_target Lens..~ Target
-          { _target_path = Just thunkDir
-          , _target_attr = Just attr
-          , _target_expr = Nothing
-          }
-      return cachePath
+    let
+      getModificationTimeMaybe = fmap rightToMaybe . try @IOError . getModificationTime
+      thunkFileNames = Map.keys $ _thunkSpec_files thunkSpec
+    maximum . catMaybes <$> traverse (getModificationTimeMaybe . (thunkDir </>)) thunkFileNames
+
+  let cachePaths' = nonEmpty $ Map.keys $ Map.filter (\case ThunkFileSpec_AttrCache -> True; _ -> False) $
+                      _thunkSpec_files thunkSpec
+  for cachePaths' $ \cachePaths ->
+    fmap NonEmpty.head $ for cachePaths $ \cacheDir -> do
+      let
+        cachePath = thunkDir </> cacheDir </> attr <.> "out"
+        cacheErrHandler e
+          | isDoesNotExistError e = pure Nothing -- expected from a cache miss
+          | otherwise = Nothing <$ putLog Error (T.pack $ displayException e)
+      cacheHit <- handle cacheErrHandler $ do
+        cacheTime <- liftIO $ posixSecondsToUTCTime . realToFrac . modificationTime <$> getSymbolicLinkStatus cachePath
+        pure $ if latestChange <= cacheTime
+          then Just cachePath
+          else Nothing
+      case cacheHit of
+        Just c -> pure c
+        Nothing -> do
+          putLog Warning $ T.pack $ mconcat [thunkDir, ": ", attr, " not cached, building ..."]
+          liftIO $ createDirectoryIfMissing True (takeDirectory cachePath)
+          (cachePath <$) $ nixCmd $ NixCmd_Build $ def
+            & nixBuildConfig_outLink .~ OutLink_IndirectRoot cachePath
+            & nixCmdConfig_target .~ Target
+              { _target_path = Just thunkDir
+              , _target_attr = Just attr
+              , _target_expr = Nothing
+              }
 
 -- | Build a nix attribute, and cache the result if possible
 nixBuildAttrWithCache
@@ -605,13 +716,15 @@ nixBuildAttrWithCache
   -- ^ Attribute to build
   -> m FilePath
   -- ^ Symlink to cached or built nix output
-nixBuildAttrWithCache exprPath attr = do
-  readThunk exprPath >>= \case
-    -- Only packed thunks are cached. in particular, checkouts are not
-    Right (ThunkData_Packed _) -> nixBuildThunkAttrWithCache exprPath attr
-    _ -> nixCmd $ NixCmd_Build $ def
-      Lens.& nixBuildConfig_outLink Lens..~ OutLink_None
-      Lens.& nixCmdConfig_target Lens..~ Target
+nixBuildAttrWithCache exprPath attr = readThunk exprPath >>= \case
+  -- Only packed thunks are cached. In particular, checkouts are not.
+  Right (ThunkData_Packed spec _) ->
+    maybe build pure =<< nixBuildThunkAttrWithCache spec exprPath attr
+  _ -> build
+  where
+    build = nixCmd $ NixCmd_Build $ def
+      & nixBuildConfig_outLink .~ OutLink_None
+      & nixCmdConfig_target .~ Target
         { _target_path = Just exprPath
         , _target_attr = Just attr
         , _target_expr = Nothing
@@ -632,76 +745,95 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
   where
     copyThunkToTmp tmpDir thunkDir = readThunk thunkDir >>= \case
       Left err -> failWith $ "withThunkUnpacked: " <> T.pack (show err)
-      Right (ThunkData_Packed _) -> do
+      Right ThunkData_Packed{} -> do
         let tmpThunk = tmpDir </> "thunk"
         callProcessAndLogOutput (Notice, Error) $
-          proc "cp" ["-r", "-T", thunkDir, tmpThunk]
+          proc cp ["-r", "-T", thunkDir, tmpThunk]
         return tmpThunk
       Right _ -> failWith "Thunk is not packed"
     updateThunkFromTmp p' = do
       _ <- packThunk' True (ThunkPackConfig False (ThunkConfig Nothing)) p'
       callProcessAndLogOutput (Notice, Error) $
-        proc "cp" ["-r", "-T", p', p]
+        proc cp ["-r", "-T", p', p]
 
 finalMsg :: Bool -> (a -> Text) -> Maybe (a -> Text)
 finalMsg noTrail s = if noTrail then Nothing else Just s
 
+-- | Check that we are not somewhere inside the thunk directory
+checkThunkDirectory :: MonadObelisk m => FilePath -> m ()
+checkThunkDirectory thunkDir = do
+  currentDir <- liftIO getCurrentDirectory
+  thunkDir' <- liftIO $ canonicalizePath thunkDir
+  when (thunkDir' `L.isInfixOf` currentDir) $
+    failWith [i|Can't perform thunk operations from within the thunk directory: ${thunkDir}|]
+
+  -- Don't let thunk commands work when directly given an unpacked repo
+  when (takeFileName thunkDir == unpackedDirName) $
+    readThunk (takeDirectory thunkDir) >>= \case
+      Right _ -> failWith [i|Refusing to perform thunk operation on ${thunkDir} because it is a thunk's unpacked source|]
+      Left _ -> pure ()
+
 unpackThunk :: MonadObelisk m => FilePath -> m ()
 unpackThunk = unpackThunk' False
 
--- | Check that we are not somewhere inside the thunk directory
-checkThunkDirectory :: MonadObelisk m => Text -> FilePath -> m ()
-checkThunkDirectory msg thunkDir = do
-  currentDir <- liftIO getCurrentDirectory
-  thunkDir' <- liftIO $ canonicalizePath thunkDir
-  when (thunkDir' `L.isInfixOf` currentDir) $ failWith msg
-
 unpackThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
-unpackThunk' noTrail thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
-  Left err -> failWith $ "thunk unpack: " <> T.pack (show err)
+unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
+  Left err -> failWith [i|Invalid thunk at ${thunkDir}: ${err}|]
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
-  Right (ThunkData_Checkout _) -> failWith "thunk unpack: thunk is already unpacked"
-  Right (ThunkData_Packed tptr) -> do
+  Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
+  Right (ThunkData_Packed _ tptr) -> do
     let (thunkParent, thunkName) = splitFileName thunkDir
-    withTempDirectory thunkParent thunkName $ \tmpRepo -> do
-      let obGitDir = tmpRepo </> ".git" </> "obelisk"
-          s = case _thunkPtr_source tptr of
-            ThunkSource_GitHub s' -> forgetGithub False s'
-            ThunkSource_Git s' -> s'
+    withTempDirectory thunkParent thunkName $ \tmpThunk -> do
+      let
+        gitSrc = thunkSourceToGitSource $ _thunkPtr_source tptr
+        newSpec = case _thunkPtr_source tptr of
+          ThunkSource_GitHub _ -> NonEmpty.head gitHubThunkSpecs
+          ThunkSource_Git _ -> NonEmpty.head gitThunkSpecs
       withSpinner' ("Fetching thunk " <> T.pack thunkName)
                    (finalMsg noTrail $ const $ "Fetched thunk " <> T.pack thunkName) $ do
-        let git = callProcessAndLogOutput (Notice, Notice) . gitProc tmpRepo
-        git $ [ "clone" ]
-          ++  ("--recursive" <$ guard (_gitSource_fetchSubmodules s))
-          ++  [ T.unpack $ gitUriToText $ _gitSource_url s ]
-          ++  do branch <- maybeToList $ _gitSource_branch s
-                 [ "--branch", T.unpack $ untagName branch ]
-        git ["reset", "--hard", Ref.toHexString $ _thunkRev_commit $ _thunkPtr_rev tptr]
-        when (_gitSource_fetchSubmodules s) $
-          git ["submodule", "update", "--recursive", "--init"]
+        let unpackedPath = tmpThunk </> unpackedDirName
+        gitCloneForThunkUnpack gitSrc (_thunkRev_commit $ _thunkPtr_rev tptr) unpackedPath
 
-        liftIO $ createDirectory obGitDir
-        callProcessAndLogOutput (Notice, Error) $
-          proc "cp" ["-r", "-T", thunkDir </> ".", obGitDir </> "orig-thunk"]
-        callProcessAndLogOutput (Notice, Error) $
-          proc "rm" ["-r", thunkDir]
-        callProcessAndLogOutput (Notice, Error) $
-          proc "mv" ["-T", tmpRepo, thunkDir]
+        let normalizeMore = dropTrailingPathSeparator . normalise
+        when (normalizeMore unpackedPath /= normalizeMore tmpThunk) $ -- Only write meta data if the checkout is not inplace
+          createThunk tmpThunk $ Left newSpec
+
+        liftIO $ do
+          removePathForcibly thunkDir
+          renameDirectory tmpThunk thunkDir
+
+gitCloneForThunkUnpack
+  :: MonadObelisk m
+  => GitSource -- ^ Git source to use
+  -> Ref hash -- ^ Commit hash to reset to
+  -> FilePath -- ^ Directory to clone into
+  -> m ()
+gitCloneForThunkUnpack gitSrc commit dir = do
+  let git = callProcessAndLogOutput (Notice, Notice) . gitProc dir
+  git $ [ "clone" ]
+    ++  ["--recursive" | _gitSource_fetchSubmodules gitSrc]
+    ++  [ T.unpack $ gitUriToText $ _gitSource_url gitSrc ]
+    ++  do branch <- maybeToList $ _gitSource_branch gitSrc
+           [ "--branch", T.unpack $ untagName branch ]
+  git ["reset", "--hard", Ref.toHexString commit]
+  when (_gitSource_fetchSubmodules gitSrc) $
+    git ["submodule", "update", "--recursive", "--init"]
 
 --TODO: add a rollback mode to pack to the original thunk
 packThunk :: MonadObelisk m => ThunkPackConfig -> FilePath -> m ThunkPtr
 packThunk = packThunk' False
 
 packThunk' :: MonadObelisk m => Bool -> ThunkPackConfig -> FilePath -> m ThunkPtr
-packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDirectory "Can't pack/unpack from within the thunk directory" thunkDir >> readThunk thunkDir >>= \case
-  Left err -> failWith $ T.pack $ "thunk pack: " <> show err
-  Right (ThunkData_Packed _) -> failWith "pack: thunk is already packed"
-  Right (ThunkData_Checkout _) -> do
-    withSpinner' ("Packing thunk " <> T.pack thunkDir)
-                 (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $ do
-      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr (not force) thunkDir
-      callProcessAndLogOutput (Debug, Error) $ proc "rm" ["-rf", thunkDir]
-      liftIO $ createThunk thunkDir thunkPtr
+packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
+  Right ThunkData_Packed{} -> failWith [i|Thunk at ${thunkDir} is is already packed|]
+  _ -> withSpinner'
+    ("Packing thunk " <> T.pack thunkDir)
+    (finalMsg noTrail $ const $ "Packed thunk " <> T.pack thunkDir) $
+    do
+      let checkClean = if force then CheckClean_NoCheck else CheckClean_FullCheck
+      thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
+      liftIO $ removePathForcibly thunkDir
+      createThunk thunkDir $ Right thunkPtr
       pure thunkPtr
 
 modifyThunkPtrByConfig :: ThunkConfig -> ThunkPtr -> ThunkPtr
@@ -712,29 +844,43 @@ modifyThunkPtrByConfig (ThunkConfig markPrivate') ptr = case markPrivate' of
       ThunkSource_GitHub s -> ThunkSource_GitHub $ s { _gitHubSource_private = markPrivate }
     }
 
-getThunkPtr :: forall m. MonadObelisk m => Bool -> FilePath -> m ThunkPtr
-getThunkPtr checkClean thunkDir = do
-  when checkClean $ ensureCleanGitRepo thunkDir True
+data CheckClean
+  = CheckClean_FullCheck
+  -- ^ Check that the repo is clean, including .gitignored files
+  | CheckClean_NotIgnored
+  -- ^ Check that the repo is clean, not including .gitignored files
+  | CheckClean_NoCheck
+  -- ^ Don't check that the repo is clean
+
+getThunkPtr :: forall m. MonadObelisk m => CheckClean -> FilePath -> Maybe Bool -> m ThunkPtr
+getThunkPtr gitCheckClean dir mPrivate = do
+  let repoLocations = nubOrd $ map (first normalise)
+        [(".git", "."), (unpackedDirName </> ".git", unpackedDirName)]
+  repoLocation' <- liftIO $ flip findM repoLocations $ doesDirectoryExist . (dir </>) . fst
+  thunkDir <- case repoLocation' of
+    Nothing -> failWith [i|Can't find an unpacked thunk in ${dir}|]
+    Just (_, path) -> pure $ normalise $ dir </> path
+
+  let (checkClean, checkIgnored) = case gitCheckClean of
+        CheckClean_FullCheck -> (True, True)
+        CheckClean_NotIgnored -> (True, False)
+        CheckClean_NoCheck -> (False, False)
+  when checkClean $ ensureCleanGitRepo thunkDir checkIgnored
     "thunk pack: thunk checkout contains unsaved modifications"
 
   -- Check whether there are any stashes
-  stashOutput <- readGitProcess thunkDir ["stash", "list"]
-  when checkClean $ case T.null stashOutput of
-    False -> do
+  when checkClean $ do
+    stashOutput <- readGitProcess thunkDir ["stash", "list"]
+    unless (T.null stashOutput) $
       failWith $ T.unlines $
         [ "thunk pack: thunk checkout has stashes"
         , "git stash list:"
         ] ++ T.lines stashOutput
-    True -> return ()
 
-  -- Get current branch ``
+  -- Get current branch
   (mCurrentBranch, mCurrentCommit) <- do
-    b <- listToMaybe
-      <$> T.lines
-      <$> readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
-    c <- listToMaybe
-      <$> T.lines
-      <$> readGitProcess thunkDir ["rev-parse", "HEAD"]
+    b <- listToMaybe . T.lines <$> readGitProcess thunkDir ["rev-parse", "--abbrev-ref", "HEAD"]
+    c <- listToMaybe . T.lines <$> readGitProcess thunkDir ["rev-parse", "HEAD"]
     case b of
       (Just "HEAD") -> failWith $ T.unlines
         [ "thunk pack: You are in 'detached HEAD' state."
@@ -745,7 +891,7 @@ getThunkPtr checkClean thunkDir = do
 
   -- Get information on all branches and their (optional) designated upstream
   -- correspondents
-  (headDump :: [Text]) <- T.lines <$> readGitProcess thunkDir
+  headDump :: [Text] <- T.lines <$> readGitProcess thunkDir
     [ "for-each-ref"
     , "--format=%(refname:short) %(upstream:short) %(upstream:remotename)"
     , "refs/heads/"
@@ -791,7 +937,7 @@ getThunkPtr checkClean thunkDir = do
       ]
 
     -- loosely by https://stackoverflow.com/questions/7773939/show-git-ahead-and-behind-info-for-all-branches-including-remotes
-    stats <- iforM headUpstream $ \branch (upstream, _remote) -> do
+    stats <- ifor headUpstream $ \branch (upstream, _remote) -> do
       (stat :: [Text]) <- T.lines <$> readGitProcess thunkDir
         [ "rev-list", "--left-right"
         , T.unpack branch <> "..." <> T.unpack upstream
@@ -815,8 +961,9 @@ getThunkPtr checkClean thunkDir = do
         \pushed but this repo's remote tracking branches don't know it.)"
       ]
 
-  -- We assume it's safe to pack the thunk at this point
-  putLog Informational "All changes safe in git remotes. OK to pack thunk."
+  when checkClean $ do
+    -- We assume it's safe to pack the thunk at this point
+    putLog Informational "All changes safe in git remotes. OK to pack thunk."
 
   let remote = maybe "origin" snd $ flip Map.lookup headUpstream =<< mCurrentBranch
 
@@ -829,14 +976,12 @@ getThunkPtr checkClean thunkDir = do
   remoteUri <- case parseGitUri remoteUri' of
     Nothing -> failWith $ "Could not identify git remote: " <> remoteUri'
     Just uri -> pure uri
-  uriThunkPtr remoteUri mCurrentBranch mCurrentCommit
+  uriThunkPtr remoteUri mPrivate mCurrentBranch mCurrentCommit
 
 -- | Get the latest revision available from the given source
 getLatestRev :: MonadObelisk m => ThunkSource -> m ThunkRev
 getLatestRev os = do
-  let gitS = case os of
-        ThunkSource_GitHub s -> forgetGithub False s
-        ThunkSource_Git s -> s
+  let gitS = thunkSourceToGitSource os
   (_, commit) <- gitGetCommitBranch (_gitSource_url gitS) (untagName <$> _gitSource_branch gitS)
   case os of
     ThunkSource_GitHub s -> githubThunkRev s commit
@@ -848,12 +993,12 @@ getLatestRev os = do
 -- performance. If that doesn't work (e.g. authentication issue), we fall back
 -- on just doing things the normal way for git repos in general, and save it as
 -- a regular git thunk.
-uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Text -> Maybe Text -> m ThunkPtr
-uriThunkPtr uri mbranch mcommit = do
+uriThunkPtr :: MonadObelisk m => GitUri -> Maybe Bool -> Maybe Text -> Maybe Text -> m ThunkPtr
+uriThunkPtr uri mPrivate mbranch mcommit = do
   commit <- case mcommit of
     Nothing -> gitGetCommitBranch uri mbranch >>= return . snd
     (Just c) -> return c
-  (src, rev) <- case uriToThunkSource uri mbranch of
+  (src, rev) <- uriToThunkSource uri mPrivate mbranch >>= \case
     ThunkSource_GitHub s -> do
       rev <- runExceptT $ githubThunkRev s commit
       case rev of
@@ -876,8 +1021,8 @@ uriThunkPtr uri mbranch mcommit = do
 -- If the thunk is a GitHub thunk and fails, we do *not* fall back like with
 -- `uriThunkPtr`. Unlike a plain URL, a thunk src explicitly states which method
 -- should be employed, and so we respect that.
-uriToThunkSource :: GitUri -> Maybe Text -> ThunkSource
-uriToThunkSource (GitUri u)
+uriToThunkSource :: MonadObelisk m => GitUri -> Maybe Bool -> Maybe Text -> m ThunkSource
+uriToThunkSource (GitUri u) mPrivate
   | Right uriAuth <- URI.uriAuthority u
   , Just scheme <- URI.unRText <$> URI.uriScheme u
   , case scheme of
@@ -889,21 +1034,53 @@ uriToThunkSource (GitUri u)
       s -> s `L.elem` [ "git", "https", "http" ] -- "http:" just redirects to "https:"
         && URI.unRText (URI.authHost uriAuth) == "github.com"
   , Just (_, owner :| [repoish]) <- URI.uriPath u
-  = \mbranch -> ThunkSource_GitHub $ GitHubSource
-    { _gitHubSource_owner = N $ URI.unRText owner
-    , _gitHubSource_repo = N $ let
-        repoish' = URI.unRText repoish
-      in fromMaybe repoish' $ T.stripSuffix ".git" repoish'
-    , _gitHubSource_branch = N <$> mbranch
-    , _gitHubSource_private = False -- TODO: Can we try something to infer this?
-    }
+  = \mbranch -> do
+      isPrivate <- getIsPrivate
+      pure $ ThunkSource_GitHub $ GitHubSource
+        { _gitHubSource_owner = N $ URI.unRText owner
+        , _gitHubSource_repo = N $ let
+            repoish' = URI.unRText repoish
+          in fromMaybe repoish' $ T.stripSuffix ".git" repoish'
+        , _gitHubSource_branch = N <$> mbranch
+        , _gitHubSource_private = isPrivate
+        }
 
-  | otherwise = \mbranch -> ThunkSource_Git $ GitSource
-    { _gitSource_url = GitUri u
-    , _gitSource_branch = N <$> mbranch
-    , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
-    , _gitSource_private = False -- TODO: Can we try something to infer this?
-    }
+  | otherwise = \mbranch -> do
+      isPrivate <- getIsPrivate
+      pure $ ThunkSource_Git $ GitSource
+        { _gitSource_url = GitUri u
+        , _gitSource_branch = N <$> mbranch
+        , _gitSource_fetchSubmodules = False -- TODO: How do we determine if this should be true?
+        , _gitSource_private = isPrivate
+        }
+  where
+    getIsPrivate = maybe (guessGitRepoIsPrivate $ GitUri u) pure mPrivate
+
+guessGitRepoIsPrivate :: MonadObelisk m => GitUri -> m Bool
+guessGitRepoIsPrivate uri = flip fix urisToTry $ \loop -> \case
+  [] -> pure True
+  uriAttempt:xs -> do
+    result <- readCreateProcessWithExitCode $
+      isolateGitProc $
+        gitProcNoRepo
+          [ "ls-remote"
+          , "--quiet"
+          , "--exit-code"
+          , "--symref"
+          , T.unpack $ gitUriToText uriAttempt
+          ]
+    case result of
+      (ExitSuccess, _, _) -> pure False -- Must be a public repo
+      _ -> loop xs
+  where
+    urisToTry = nubOrd $
+      -- Include the original URI if it isn't using SSH because SSH will certainly fail.
+      [uri | fmap URI.unRText (URI.uriScheme (unGitUri uri)) /= Just "ssh"] <>
+      [changeScheme "https" uri, changeScheme "http" uri]
+    changeScheme scheme (GitUri u) = GitUri $ u
+      { URI.uriScheme = URI.mkScheme scheme
+      , URI.uriAuthority = (\x -> x { URI.authUserInfo = Nothing }) <$> URI.uriAuthority u
+      }
 
 -- Funny signature indicates no effects depend on the optional branch name.
 githubThunkRev
@@ -963,6 +1140,7 @@ gitThunkRev s commit = do
 --
 -- If the branch name is passed in, it is returned exactly as-is. If it is not
 -- passed it, the default branch of the repo is used instead.
+
 gitGetCommitBranch
   :: MonadObelisk m => GitUri -> Maybe Text -> m (Text, CommitId)
 gitGetCommitBranch uri mbranch = withExitFailMessage ("Failure for git remote " <> uriMsg) $ do

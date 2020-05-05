@@ -45,11 +45,13 @@ module Obelisk.CliApp
   , readCreateProcessWithExitCode
   , readProcessAndLogOutput
   , readProcessAndLogStderr
+  , readProcessJSONAndLogStderr
   , reconstructCommand
   , setCwd
   , setDelegateCtlc
   , setEnvOverride
   , shell
+  , waitForProcess
   ) where
 
 import Control.Monad.Log (Severity (..))
