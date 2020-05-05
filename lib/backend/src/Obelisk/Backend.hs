@@ -101,9 +101,26 @@ data GhcjsWidgets a = GhcjsWidgets
 data GhcjsWasmAssets = GhcjsWasmAssets
   { _ghcjsWasmAssets_allJs :: Text
   -- ^ URL (could be relative) of "all.js"
-  , _ghcjsWasmAssets_wasmPathRoot :: Maybe Text
-  -- ^ Optional root URL (could be relative) of wasm assets.
+  , _ghcjsWasmAssets_wasm :: Maybe (Text, WasmAssets)
+  -- ^ (Optional) root URL (could be relative) of wasm assets along with
+  -- the record of wasm assets.
   -- If this is Nothing, then it means wasm is disabled.
+  }
+
+-- | Files needed for wasm, the JS files are from the webabi
+data WasmAssets = WasmAssets
+  { _wasmAssets_jsaddleJs :: Text
+  , _wasmAssets_interfaceJs :: Text
+  , _wasmAssets_runnerJs :: Text
+  , _wasmAssets_wasmFile :: Text
+  }
+
+defaultWasmAssets :: WasmAssets
+defaultWasmAssets = WasmAssets
+  { _wasmAssets_jsaddleJs = "jsaddle_core.js"
+  , _wasmAssets_interfaceJs = "jsaddle_mainthread_interface.js"
+  , _wasmAssets_runnerJs = "mainthread_runner.js"
+  , _wasmAssets_wasmFile = "frontend.wasm"
   }
 
 -- | Given the URL of all.js, return the widgets which are responsible for
@@ -269,8 +286,10 @@ runBackendWith (BackendConfig runSnap staticAssets ghcjsAssets ghcjsWidgets) bac
               where
                 routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
                 allJsUrl = renderAllJsPath validFullEncoder
-                mWasmUrls = if enableWasm then Just (renderWasmPathRoot validFullEncoder) else Nothing
-                widgets = ($ GhcjsWasmAssets allJsUrl mWasmUrls) <$> ghcjsWidgets
+                mWasmAssets = if enableWasm
+                  then Just (renderWasmPathRoot validFullEncoder, defaultWasmAssets)
+                  else Nothing
+                widgets = ($ GhcjsWasmAssets allJsUrl mWasmAssets) <$> ghcjsWidgets
                 frontendApp = GhcjsApp
                   { _ghcjsApp_compiled = ghcjsAssets
                   , _ghcjsApp_value = frontend
@@ -278,7 +297,7 @@ runBackendWith (BackendConfig runSnap staticAssets ghcjsAssets ghcjsWidgets) bac
   where
     checkWasmFile = do
       let base = _staticAssets_processed ghcjsAssets
-          p = "frontend.wasm"
+          p = T.unpack $ _wasmAssets_wasmFile defaultWasmAssets
       assetType :: (Either IOError ByteString) <- liftIO $ try $ BSC8.readFile $ base </> p </> "type"
       pure $ isRight assetType
 
@@ -314,16 +333,19 @@ scriptTag t = elAttr "script" ("type" =: "text/javascript") $ text t
 wasmScripts
   :: Text
   -- ^ URL (could be relative) of "all.js"
-  -> Text
-  -- ^ Root URL (could be relative) of wasm assets
+  -> (Text, WasmAssets)
+  -- ^ Root URL (could be relative) of wasm assets along with
+  -- the record of wasm assets.
   -> (Text, Text, (Int -> Text))
   -- ^ (preload script, deferred run script, delayed run script (Int input is the delay))
-wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
+wasmScripts allJsUrl' (wasmRoot, wAssets) = (preloadScript, runJsScript, delayedJsScript)
   where
-    jsaddleJs = wasmRoot <> "/jsaddle_core.js"
-    interfaceJs = wasmRoot <> "/jsaddle_mainthread_interface.js"
-    runnerJs = wasmRoot <> "/mainthread_runner.js"
-    wasmUrl = wasmRoot <> "/frontend.wasm"
+    wrapName f = "'" <> wasmRoot <> "/" <> f wAssets <> "'"
+    jsaddleJs = wrapName _wasmAssets_jsaddleJs
+    interfaceJs = wrapName _wasmAssets_interfaceJs
+    runnerJs = wrapName _wasmAssets_runnerJs
+    wasmUrl = wrapName _wasmAssets_wasmFile
+    allJsUrl = "'" <> allJsUrl' <> "'"
 
     preloadScript =
       "add_preload_tag = function (docSrc) {\
@@ -334,12 +356,12 @@ wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
         \document.head.appendChild(link_tag);\
       \};\
       \if (typeof(WebAssembly) === 'undefined') {\
-        \add_preload_tag('" <> allJsUrl <> "');\
+        \add_preload_tag(" <> allJsUrl <> ");\
       \} else {\
-        \add_preload_tag('" <> wasmUrl <> "');\
-        \add_preload_tag('" <> jsaddleJs <> "');\
-        \add_preload_tag('" <> interfaceJs <> "');\
-        \add_preload_tag('" <> runnerJs <> "');\
+        \add_preload_tag(" <> wasmUrl <> ");\
+        \add_preload_tag(" <> jsaddleJs <> ");\
+        \add_preload_tag(" <> interfaceJs <> ");\
+        \add_preload_tag(" <> runnerJs <> ");\
       \}"
 
     -- The 'wasmFile' variable is needed here because export API is not working
@@ -353,16 +375,16 @@ wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
         \document.body.appendChild(tag);\
       \};\
       \if (typeof(WebAssembly) === 'undefined') {\
-        \add_deferload_tag('" <> allJsUrl <> "');\
+        \add_deferload_tag(" <> allJsUrl <> ");\
       \} else {\
-        \var wasmFile = '" <> wasmUrl <> "';\
-        \add_deferload_tag('" <> jsaddleJs <> "');\
-        \add_deferload_tag('" <> interfaceJs <> "');\
-        \add_deferload_tag('" <> runnerJs <> "');\
+        \var wasmFile = " <> wasmUrl <> ";\
+        \add_deferload_tag(" <> jsaddleJs <> ");\
+        \add_deferload_tag(" <> interfaceJs <> ");\
+        \add_deferload_tag(" <> runnerJs <> ");\
       \}"
 
     delayedJsScript n =
-      "var wasmFile = '" <> wasmUrl <> "';\
+      "var wasmFile = " <> wasmUrl <> ";\
       \setTimeout(function() {\
         \add_load_tag = function (docSrc) {\
           \var tag = document.createElement('script');\
@@ -371,11 +393,11 @@ wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
           \document.body.appendChild(tag);\
         \};\
         \if (typeof(WebAssembly) === 'undefined') {\
-          \add_load_tag('" <> allJsUrl <> "');\
+          \add_load_tag(" <> allJsUrl <> ");\
         \} else {\
-          \add_load_tag('" <> jsaddleJs <> "');\
-          \add_load_tag('" <> interfaceJs <> "');\
-          \add_load_tag('" <> runnerJs <> "');\
+          \add_load_tag(" <> jsaddleJs <> ");\
+          \add_load_tag(" <> interfaceJs <> ");\
+          \add_load_tag(" <> runnerJs <> ");\
         \}\
       \}, " <> T.pack (show n) <> ");"
 
