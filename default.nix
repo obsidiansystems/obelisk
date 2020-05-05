@@ -289,7 +289,7 @@ in rec {
 
                 shells-ghc = builtins.attrNames (self.predefinedPackages // self.shellPackages);
 
-                shells-ghcjs = [
+                shells-web = [
                   self.frontendName
                   self.commonName
                 ];
@@ -316,8 +316,9 @@ in rec {
                     ${if self.userSettings.android == null && self.userSettings.ios == null then null else "ghcSavedSplices"} =
                       lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
                     ghc = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghc;
-                    ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
-                    wasm = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
+                    ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-web;
+                    ${if !enableWasm then null else "wasm"} =
+                      lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-web;
                   };
                   android = self.__androidWithConfig (self.base + "/config");
                   ios = self.__iosWithConfig (self.base + "/config");
