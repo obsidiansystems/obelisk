@@ -8,7 +8,6 @@ module Obelisk.Command where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
-import qualified Data.ByteString.UTF8 as BSU
 import Data.Foldable (for_)
 import Data.List (isInfixOf, isPrefixOf)
 import Data.List.NonEmpty (NonEmpty, nonEmpty)
@@ -23,7 +22,6 @@ import System.Environment
 import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
-import Text.ShellEscape (bash, bytes)
 import System.Posix.Process (executeFile)
 
 import Obelisk.App
@@ -400,7 +398,7 @@ ob = \case
   ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
   ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
   ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths ->
-    nixShellForInterpretPaths False shellAttr root interpretPaths (BSU.toString . bytes . bash . BSU.fromString <$> cmd)
+    nixShellForInterpretPaths False shellAttr root interpretPaths (bashEscape <$> cmd)
   ObCommand_Doc shellAttr pkgs -> withInterpretPaths [] $ \root interpretPaths ->
     nixShellForInterpretPaths True shellAttr root interpretPaths $ Just $ haddockCommand pkgs
   ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do

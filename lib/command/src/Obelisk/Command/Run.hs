@@ -20,7 +20,6 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
 import Data.Bifoldable (bifoldr1)
 import Data.Bifunctor (bimap)
-import qualified Data.ByteString.UTF8 as BSU
 import Data.Coerce (coerce)
 import Data.Default (def)
 import Data.Either (partitionEithers)
@@ -61,7 +60,6 @@ import System.Environment (getExecutablePath)
 import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
-import Text.ShellEscape (bash, bytes)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (
@@ -78,7 +76,7 @@ import Obelisk.CliApp (
     withSpinner,
   )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets)
+import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets, bashEscape)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
@@ -466,7 +464,7 @@ runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
   nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
-    Just $ unwords $ fmap (BSU.toString . bytes . bash . BSU.fromString) $ "ghci" : ghciArgs
+    Just $ unwords $ fmap bashEscape $ "ghci" : ghciArgs
 
 -- | Run ghcid
 runGhcid
@@ -479,7 +477,7 @@ runGhcid
   -> m ()
 runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
   nixShellWithoutPkgs root True chdirToRoot (packageInfoToNamePathMap packages) "ghc" $
-    Just $ unwords $ fmap (BSU.toString . bytes . bash . BSU.fromString) $ ghcidExePath : opts
+    Just $ unwords $ fmap bashEscape $ ghcidExePath : opts
   where
     opts = concat
       [ ["-W"]

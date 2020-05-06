@@ -15,6 +15,7 @@ module Obelisk.Command.Project
   , toImplDir
   , toObeliskDir
   , withProjectRoot
+  , bashEscape
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
@@ -285,6 +286,9 @@ nixShellRunConfig root isPure command = do
       , maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
       , [cs]
       ])
+
+bashEscape :: String -> String
+bashEscape = BSU.toString . bytes . bash . BSU.fromString
 
 nixShellRunProc :: NixShellConfig -> ProcessSpec
 nixShellRunProc cfg = setDelegateCtlc True $ proc "nix-shell" $ runNixShellConfig cfg
