@@ -40,7 +40,7 @@ import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
 import System.Posix.Files
-import Text.ShellEscape (Bash, bytes, bash)
+import Text.ShellEscape (bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -272,7 +272,7 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
     fileGroupWritable = fileMode s .&. 0o020 == 0o020
     umaskGroupWritable = umask .&. 0o020 == 0
 
-nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe [Bash] -> m NixShellConfig
+nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
 nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
@@ -283,7 +283,7 @@ nixShellRunConfig root isPure command = do
     & nixShellConfig_run .~ (command <&> \cs -> unwords $ concat
       [ ["export", BSU.toString . bytes . bash $ "NIX_PATH=nixpkgs=" <> encodeUtf8 nixpkgsPath, ";"]
       , maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
-      , fmap (BSU.toString . bytes) cs
+      , [cs]
       ])
 
 nixShellRunProc :: NixShellConfig -> ProcessSpec
@@ -296,7 +296,7 @@ nixShellWithoutPkgs
   -> Bool -- ^ Should we chdir to the package root in the shell?
   -> Map Text FilePath -- ^ Package names mapped to their paths
   -> String -- ^ Shell attribute to use (e.g. @"ghc"@, @"ghcjs"@, etc.)
-  -> Maybe [Bash] -- ^ If 'Just' run the given command; otherwise just open the interactive shell
+  -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
   -> m ()
 nixShellWithoutPkgs root isPure chdirToRoot packageNamesAndPaths shellAttr command = do
   packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
@@ -314,7 +314,7 @@ nixShellWithoutPkgs root isPure chdirToRoot packageNamesAndPaths shellAttr comma
         ]
   void $ waitForProcess ph
 
-nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe [Bash] -> m ()
+nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 nixShellWithHoogle root isPure shell' command = do
   defShellConfig <- nixShellRunConfig root isPure command
   (_, _, _, ph) <- createProcess_ "nixShellWithHoogle" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig

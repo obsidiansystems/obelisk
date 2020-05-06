@@ -55,7 +55,7 @@ import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
 import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), std_err, std_out)
 import qualified System.Process as Process
-import Text.ShellEscape (bytes, bash)
+import Text.ShellEscape (bash, bytes)
 import qualified Data.Aeson as Aeson
 
 import Control.Monad.Log (Severity (..))

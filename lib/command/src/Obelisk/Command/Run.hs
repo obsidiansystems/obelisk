@@ -61,7 +61,7 @@ import System.Environment (getExecutablePath)
 import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
-import Text.ShellEscape (Bash, bash)
+import Text.ShellEscape (bash, bytes)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (
@@ -195,7 +195,7 @@ exportGhciConfig useRelativePaths root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   getGhciSessionSettings pkgs "." useRelativePaths
 
-nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe [Bash] -> m ()
+nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
 nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   nixShellWithoutPkgs root isPure False (packageInfoToNamePathMap pkgs) shell cmd
@@ -466,7 +466,7 @@ runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
   nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
-    Just $ fmap (bash . BSU.fromString) $ "ghci" : ghciArgs
+    Just $ unwords $ fmap (BSU.toString . bytes . bash . BSU.fromString) $ "ghci" : ghciArgs
 
 -- | Run ghcid
 runGhcid
@@ -479,7 +479,7 @@ runGhcid
   -> m ()
 runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
   nixShellWithoutPkgs root True chdirToRoot (packageInfoToNamePathMap packages) "ghc" $
-    Just $ fmap (bash . BSU.fromString) $ ghcidExePath : opts
+    Just $ unwords $ fmap (BSU.toString . bytes . bash . BSU.fromString) $ ghcidExePath : opts
   where
     opts = concat
       [ ["-W"]
