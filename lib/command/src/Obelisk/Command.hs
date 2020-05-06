@@ -8,19 +8,14 @@ module Obelisk.Command where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
-<<<<<<< HEAD
 import Data.Foldable (for_)
 import Data.List (isInfixOf, isPrefixOf)
 import Data.List.NonEmpty (NonEmpty, nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
-=======
-import qualified Data.ByteString.Base16 as Base16
-import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.UTF8 as BSU
 import Data.List
 import Data.Maybe (catMaybes)
->>>>>>> 0c977864 (added projectProc commands)
 import qualified Data.Text as T
 import Data.Traversable (for)
 import Options.Applicative

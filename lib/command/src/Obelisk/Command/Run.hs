@@ -476,6 +476,7 @@ runGhciRepl root (toList -> packages) ghciArgs =
   nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
     Just $ unwords $ "ghci" : ghciArgs -- TODO: Shell escape
 
+
 -- | Run ghcid
 runGhcid
   :: (MonadObelisk m, Foldable f)
