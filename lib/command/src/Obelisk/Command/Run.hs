@@ -109,9 +109,6 @@ data PathTree a = PathTree_Node
   (Map FilePath (PathTree a)) -- Branches to deeper leaves
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
 
-emptyPathTree :: PathTree a
-emptyPathTree = PathTree_Node Nothing mempty
-
 -- | 2D ASCII drawing of a 'PathTree'. Adapted from Data.Tree.draw.
 drawPathTree :: (a -> Text) -> PathTree a -> Text
 drawPathTree showA (PathTree_Node _ ts0) = T.intercalate "\n" $ goForest (Map.toList ts0)
