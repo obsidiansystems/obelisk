@@ -19,7 +19,6 @@ library
     , monad-loops
     , mtl
     , shell-escape
-    , posix-escape
     , process
     , terminal-size
     , text
