@@ -243,6 +243,8 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       uu <- update
       assertRevEQ u uu
 
+    it "can run 'ob doc'" $ inTmpObInit $ \_ -> runOb ["doc", "reflex"]
+
   describe "ob thunk pack/unpack" $ parallel $ do
     it "has thunk pack and unpack inverses" $ inTmpObInitWithImplCopy $ \_ -> do
 
