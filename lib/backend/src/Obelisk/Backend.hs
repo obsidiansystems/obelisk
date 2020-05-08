@@ -368,8 +368,9 @@ wasmScripts allJsUrl' (wasmRoot, wAssets) = (preloadScript, runJsScript, delayed
         \add_preload_tag(" <> runnerJs <> ");\
       \}"
 
-    -- The 'wasmFile' variable is needed here because export API is not working
-    -- in the webabi ts code. The wasm file is fetched by the runnerJs.
+    -- The 'WASM_URL_FOR_MAINTHREAD_RUNNER_JS' variable is needed here because
+    -- the export API is not working in the webabi ts code.
+    -- This variable is read by the runnerJs.
     runJsScript =
       "add_deferload_tag = function (docSrc) {\
         \var tag = document.createElement('script');\
@@ -381,14 +382,14 @@ wasmScripts allJsUrl' (wasmRoot, wAssets) = (preloadScript, runJsScript, delayed
       \if (typeof(WebAssembly) === 'undefined') {\
         \add_deferload_tag(" <> allJsUrl <> ");\
       \} else {\
-        \var wasmFile = " <> wasmUrl <> ";\
+        \var WASM_URL_FOR_MAINTHREAD_RUNNER_JS = " <> wasmUrl <> ";\
         \add_deferload_tag(" <> jsaddleJs <> ");\
         \add_deferload_tag(" <> interfaceJs <> ");\
         \add_deferload_tag(" <> runnerJs <> ");\
       \}"
 
     delayedJsScript n =
-      "var wasmFile = " <> wasmUrl <> ";\
+      "var WASM_URL_FOR_MAINTHREAD_RUNNER_JS = " <> wasmUrl <> ";\
       \setTimeout(function() {\
         \add_load_tag = function (docSrc) {\
           \var tag = document.createElement('script');\
