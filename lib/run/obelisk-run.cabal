@@ -33,7 +33,7 @@ library
     , process
     , ref-tf
     , reflex
-    , reflex-dom
+    , reflex-dom-core
     , snap-core
     , streaming-commons
     , text
