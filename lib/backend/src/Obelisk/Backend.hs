@@ -296,8 +296,7 @@ runBackendWith (BackendConfig runSnap staticAssets ghcjsAssets ghcjsWidgets) bac
   where
     checkWasmFile = do
       let base = _staticAssets_processed ghcjsAssets
-          p = T.unpack $ _wasmAssets_wasmFile defaultWasmAssets
-      isJust <$> getAssetPath base p
+      (isJust <$>) $ getAssetPath base $ T.unpack $ _wasmAssets_wasmFile defaultWasmAssets
 
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
@@ -376,7 +375,7 @@ wasmScripts allJsUrl' (wasmRoot, wAssets) = (preloadScript, runJsScript, delayed
         \var tag = document.createElement('script');\
         \tag.type = 'text/javascript';\
         \tag.src = docSrc;\
-        \tag.setAttribute = ('defer', 'defer');\
+        \tag.setAttribute('defer', 'defer');\
         \document.body.appendChild(tag);\
       \};\
       \if (typeof(WebAssembly) === 'undefined') {\
