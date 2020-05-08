@@ -88,7 +88,7 @@ import Reflex.EventWriter.Base
 import Reflex.Dynamic
 import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
-import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
+import Language.Javascript.JSaddle hiding (Ref) --TODO: Get rid of this - other platforms can also be routed
 import Reflex.Dom.Core
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
