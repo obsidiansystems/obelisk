@@ -15,6 +15,7 @@ library
                  dependent-sum-template,
                  lens,
                  mtl,
+                 network-uri,
                  obelisk-asset-serve-snap,
                  obelisk-executable-config-inject,
                  obelisk-executable-config-lookup,

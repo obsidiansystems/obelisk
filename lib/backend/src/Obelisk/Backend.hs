@@ -56,6 +56,7 @@ import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
+import Network.URI (escapeURIString, isUnescapedInURIComponent, isUnescapedInURI)
 import Obelisk.Asset.Serve.Snap (serveAsset, getAssetPath)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
@@ -314,18 +315,24 @@ renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
 -- This is the default preload method.
 preloadGhcjs :: GhcjsWasmAssets -> FrontendWidgetT r ()
 preloadGhcjs (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
-  Nothing -> elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
+  Nothing -> elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: (escapeURI allJsUrl)) blank
   Just wasmAssets -> scriptTag $ view _1 (wasmScripts allJsUrl wasmAssets)
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
 deferredGhcjsScript :: GhcjsWasmAssets -> FrontendWidgetT r ()
 deferredGhcjsScript (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
-  Nothing -> elAttr "script" ("type" =: "text/javascript" <> "src" =: allJsUrl <> "defer" =: "defer") blank
+  Nothing -> elAttr "script" ("type" =: "text/javascript" <> "src" =: (escapeURI allJsUrl) <> "defer" =: "defer") blank
   Just wasmAssets -> scriptTag $ view _2 (wasmScripts allJsUrl wasmAssets)
 
 scriptTag :: DomBuilder t m => Text -> m ()
 scriptTag t = elAttr "script" ("type" =: "text/javascript") $ text t
+
+escapeURI :: Text -> Text
+escapeURI = T.pack . escapeURIString isUnescapedInURI . T.unpack
+
+escapeURIComponent :: Text -> Text
+escapeURIComponent = T.pack . escapeURIString isUnescapedInURIComponent . T.unpack
 
 wasmScripts
   :: Text
@@ -337,12 +344,12 @@ wasmScripts
   -- ^ (preload script, deferred run script, delayed run script (Int input is the delay))
 wasmScripts allJsUrl' (wasmRoot, wAssets) = (preloadScript, runJsScript, delayedJsScript)
   where
-    wrapName f = "'" <> wasmRoot <> "/" <> f wAssets <> "'"
+    wrapName f = "'" <> escapeURI wasmRoot <> "/" <> escapeURIComponent (f wAssets) <> "'"
     jsaddleJs = wrapName _wasmAssets_jsaddleJs
     interfaceJs = wrapName _wasmAssets_interfaceJs
     runnerJs = wrapName _wasmAssets_runnerJs
     wasmUrl = wrapName _wasmAssets_wasmFile
-    allJsUrl = "'" <> allJsUrl' <> "'"
+    allJsUrl = "'" <> escapeURI allJsUrl' <> "'"
 
     preloadScript =
       "add_preload_tag = function (docSrc) {\
@@ -412,7 +419,7 @@ delayedGhcjsScript n (GhcjsWasmAssets allJsUrl mWasm) = scriptTag scriptToRun
         [ "setTimeout(function() {"
         , "  var all_js_script = document.createElement('script');"
         , "  all_js_script.type = 'text/javascript';"
-        , "  all_js_script.src = '" <> allJsUrl <> "';"
+        , "  all_js_script.src = '" <> escapeURI allJsUrl <> "';"
         , "  document.body.appendChild(all_js_script);"
         , "}, " <> T.pack (show n) <> ");"
         ]
