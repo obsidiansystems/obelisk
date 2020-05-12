@@ -39,6 +39,7 @@ module Obelisk.CliApp
   , callCommand
   , callProcess
   , callProcessAndLogOutput
+  , createProcess
   , createProcess_
   , overCreateProcess
   , proc
