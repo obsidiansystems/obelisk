@@ -1,5 +1,6 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -224,7 +225,19 @@ hoistR f (x :=> Identity y) = f x :/ y
 infixr 5 :.
 type (:.) = (,)
 
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ >= 810
 {-# COMPLETE (:.) #-}
+#else
+{-# WARNING (:.)
+  [ "Use of this pattern in GHC < 8.10 will result in spurious non-exhaustive warnings at every use site."
+  , "We cannot provide a COMPLETE pragma to silence these due to a GHC bug: https://gitlab.haskell.org/ghc/ghc/issues/17729."
+  , "The bug hides incompleteness warnings for all two tuples when the COMPLETE pattern is in scope."
+  , "Instead, you should use (,) directly until you can switch to GHC >= 8.10, where the COMPLETE pragma is reinstated."
+  ]
+  #-}
+#endif
+#endif
 pattern (:.) :: a -> b -> a :. b
 pattern a :. b = (a, b)
 
