@@ -1,21 +1,24 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE DeriveGeneric #-}
 module Obelisk.Command.Deploy where
 
+import Control.Applicative (liftA2)
 import Control.Lens
 import Control.Monad
 import Control.Monad.Catch (Exception (displayException), MonadThrow, bracket, throwM, try)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (FromJSON, ToJSON, encode, eitherDecode)
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.String.Here.Interpolated (i)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.Generics
@@ -36,18 +39,32 @@ import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
+data DeployInitOpts = DeployInitOpts
+  { _deployInitOpts_outputDir :: FilePath
+  , _deployInitOpts_sshKey :: FilePath
+  , _deployInitOpts_hostname :: [String]
+  , _deployInitOpts_route :: String
+  , _deployInitOpts_adminEmail :: String
+  , _deployInitOpts_enableHttps :: Bool
+  } deriving Show
 
-deployInit
+deployInit :: MonadObelisk m => DeployInitOpts -> FilePath -> m ()
+deployInit deployOpts root = do
+  let deployDir = _deployInitOpts_outputDir deployOpts
+  rootEqualsTarget <- liftIO $ liftA2 equalFilePath (canonicalizePath root) (canonicalizePath deployDir)
+  when rootEqualsTarget $
+    failWith [i|Deploy directory ${deployDir} should not be the same as project root.|]
+  thunkPtr <- readThunk root >>= \case
+    Right (ThunkData_Packed _ ptr) -> return ptr
+    _ -> getThunkPtr CheckClean_NotIgnored root Nothing
+  deployInit' thunkPtr deployOpts
+
+deployInit'
   :: MonadObelisk m
   => ThunkPtr
-  -> FilePath
-  -> FilePath
-  -> [String] -- ^ hostnames
-  -> String -- ^ route
-  -> String -- ^ admin email
-  -> Bool -- ^ enable https
+  -> DeployInitOpts
   -> m ()
-deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps = do
+deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminEmail enableHttps) = do
   liftIO $ createDirectoryIfMissing True deployDir
   localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
@@ -77,8 +94,8 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
                    ]
 
   let srcDir = deployDir </> "src"
-  withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ liftIO $ do
-    createThunk srcDir thunkPtr
+  withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ do
+    createThunk srcDir $ Right thunkPtr
     setupObeliskImpl deployDir
 
   withSpinner "Writing deployment configuration" $ do
@@ -92,8 +109,8 @@ deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps 
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
-setupObeliskImpl :: FilePath -> IO ()
-setupObeliskImpl deployDir = do
+setupObeliskImpl :: MonadIO m => FilePath -> m ()
+setupObeliskImpl deployDir = liftIO $ do
   let
     implDir = toImplDir deployDir
     goBackUp = foldr (</>) "" $ (".." <$) $ splitPath $ makeRelative deployDir implDir
@@ -109,8 +126,8 @@ deployPush deployPath getNixBuilders = do
   routeHost <- getHostFromRoute enableHttps route
   let srcPath = deployPath </> "src"
   thunkPtr <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed ptr) -> return ptr
-    Right (ThunkData_Checkout _) -> do
+    Right (ThunkData_Packed _ ptr) -> return ptr
+    Right ThunkData_Checkout -> do
       checkGitCleanStatus srcPath True >>= \case
         True -> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."

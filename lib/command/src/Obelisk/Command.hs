@@ -3,20 +3,18 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 module Obelisk.Command where
 
-import Control.Monad
-import Control.Monad.IO.Class (liftIO)
-import qualified Data.Binary as Binary
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
-import qualified Data.ByteString.Base16 as Base16
-import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (for_)
-import Data.List
+import Data.List (isInfixOf, isPrefixOf)
+import Data.List.NonEmpty (NonEmpty, nonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
+import qualified Data.Map as Map
 import qualified Data.Text as T
-import Data.Text.Encoding
-import Data.Text.Encoding.Error (lenientDecode)
-import GHC.StaticPtr
+import Data.Traversable (for)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (text, (<$$>))
 import System.Directory
@@ -76,8 +74,8 @@ argsInfo cfg = info (args cfg <**> helper) $ mconcat
 initSource :: Parser InitSource
 initSource = foldl1 (<|>)
   [ pure InitSource_Default
-  , InitSource_Branch <$> strOption (long "branch" <> metavar "BRANCH")
-  , InitSource_Symlink <$> strOption (long "symlink" <> action "directory" <> metavar "PATH")
+  , InitSource_Branch <$> strOption (long "branch" <> metavar "BRANCH" <> help "Initialize the project using the given BRANCH of Obelisk's official repository")
+  , InitSource_Symlink <$> strOption (long "symlink" <> action "directory" <> metavar "PATH" <> help "(Use with caution) Initialize the project using the copy of Obelisk found at the given PATH")
   ]
 
 initForce :: Parser Bool
@@ -86,11 +84,11 @@ initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run
+   | ObCommand_Run [(FilePath, Interpret)]
    | ObCommand_Profile String [String]
-   | ObCommand_Thunk ThunkCommand
-   | ObCommand_Repl
-   | ObCommand_Watch
+   | ObCommand_Thunk ThunkOption
+   | ObCommand_Repl [(FilePath, Interpret)]
+   | ObCommand_Watch [(FilePath, Interpret)]
    | ObCommand_Shell ShellOpts
    | ObCommand_Doc String [String] -- shell and list of packages
    | ObCommand_Hoogle String Int -- shell and port
@@ -101,6 +99,9 @@ data ObInternal
    -- the preprocessor argument syntax is also handled outside
    -- optparse-applicative, but it shouldn't ever conflict with another syntax
    = ObInternal_ApplyPackages String String String [String]
+   | ObInternal_ExportGhciConfig
+      [(FilePath, Interpret)]
+      Bool -- ^ Use relative paths
    deriving Show
 
 obCommand :: ArgsConfig -> Parser ObCommand
@@ -108,11 +109,11 @@ obCommand cfg = hsubparser
   (mconcat
     [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-    , command "run" $ info (pure ObCommand_Run) $ progDesc "Run current project in development mode"
+    , command "run" $ info (ObCommand_Run <$> interpretOpts) $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
-    , command "thunk" $ info (ObCommand_Thunk <$> thunkCommand) $ progDesc "Manipulate thunk directories"
-    , command "repl" $ info (pure ObCommand_Repl) $ progDesc "Open an interactive interpreter"
-    , command "watch" $ info (pure ObCommand_Watch) $ progDesc "Watch current project for errors and warnings"
+    , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
+    , command "repl" $ info (ObCommand_Repl <$> interpretOpts) $ progDesc "Open an interactive interpreter"
+    , command "watch" $ info (ObCommand_Watch <$> interpretOpts) $ progDesc "Watch current project for errors and warnings"
     , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
     , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
         progDesc "List paths to haddock documentation for specified packages"
@@ -120,7 +121,16 @@ obCommand cfg = hsubparser
               text "Hint: To open the documentation you can pipe the output of this command like"
               <$$> text "ob doc reflex reflex-dom-core | xargs -n1 xdg-open")
     , command "hoogle" $ info (ObCommand_Hoogle <$> shellFlags <*> portOpt 8080) $ progDesc "Run a hoogle server locally for your project's dependency tree"
+    , command "internal" $ info (ObCommand_Internal <$> internalCommand) $ progDesc "Internal Obelisk commands with unstable APIs"
     ])
+
+internalCommand :: Parser ObInternal
+internalCommand = hsubparser $ mconcat
+  [ command "export-ghci-configuration" $ info (ObInternal_ExportGhciConfig <$> interpretOpts <*> useRelativePathsFlag)
+      $ progDesc "Export the GHCi configuration used by ob run, etc.; useful for IDE integration"
+  ]
+  where
+    useRelativePathsFlag = switch (long "use-relative-paths" <> help "Use relative paths")
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
@@ -175,16 +185,6 @@ data DeployCommand
   | DeployCommand_Update
   deriving Show
 
-data DeployInitOpts = DeployInitOpts
-  { _deployInitOpts_outputDir :: FilePath
-  , _deployInitOpts_sshKey :: FilePath
-  , _deployInitOpts_hostname :: [String]
-  , _deployInitOpts_route :: String
-  , _deployInitOpts_adminEmail :: String
-  , _deployInitOpts_enableHttps :: Bool
-  }
-  deriving Show
-
 profileCommand :: Parser (String, [String])
 profileCommand = (,)
   <$> strOption
@@ -202,15 +202,6 @@ profileCommand = (,)
     <> metavar "FLAGS"
     <> showDefault
     ))
-
-
---TODO: Result should provide normalised path and also original user input for error reporting.
-thunkDirectoryParser :: Parser FilePath
-thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
-  [ action "directory"
-  , metavar "THUNKDIR"
-  , help "Path to directory containing thunk data"
-  ]
 
 thunkConfig :: Parser ThunkConfig
 thunkConfig = ThunkConfig
@@ -230,22 +221,36 @@ thunkPackConfig = ThunkPackConfig
   <$> switch (long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care.")
   <*> thunkConfig
 
+data ThunkOption = ThunkOption
+  { _thunkOption_thunks :: NonEmpty FilePath
+  , _thunkOption_command :: ThunkCommand
+  } deriving Show
+
 data ThunkCommand
-   = ThunkCommand_Update [FilePath] ThunkUpdateConfig
-   | ThunkCommand_Unpack [FilePath]
-   | ThunkCommand_Pack   [FilePath] ThunkPackConfig
+  = ThunkCommand_Update ThunkUpdateConfig
+  | ThunkCommand_Unpack
+  | ThunkCommand_Pack ThunkPackConfig
   deriving Show
 
-thunkCommand :: Parser ThunkCommand
-thunkCommand = hsubparser $ mconcat
-  [ command "update" $ info (ThunkCommand_Update <$> some thunkDirectoryParser <*> thunkUpdateConfig) $ progDesc "Update thunk to latest revision available"
-  , command "unpack" $ info (ThunkCommand_Unpack <$> some thunkDirectoryParser) $ progDesc "Unpack thunk into git checkout of revision it points to"
-  , command "pack" $ info (ThunkCommand_Pack <$> some thunkDirectoryParser <*> thunkPackConfig) $ progDesc "Pack git checkout into thunk that points at the current branch's upstream"
+thunkOption :: Parser ThunkOption
+thunkOption = hsubparser $ mconcat
+  [ command "update" $ info (thunkOptionWith $ ThunkCommand_Update <$> thunkUpdateConfig) $ progDesc "Update packed thunk to latest revision available on the tracked branch"
+  , command "unpack" $ info (thunkOptionWith $ pure ThunkCommand_Unpack) $ progDesc "Unpack thunk into git checkout of revision it points to"
+  , command "pack" $ info (thunkOptionWith $ ThunkCommand_Pack <$> thunkPackConfig) $ progDesc "Pack git checkout or unpacked thunk into thunk that points at the current branch's upstream"
   ]
+  where
+    thunkOptionWith f = ThunkOption
+      <$> ((NonEmpty.:|)
+            <$> thunkDirArg (metavar "THUNKDIRS..." <> help "Paths to directories containing thunk data")
+            <*> many (thunkDirArg mempty)
+          )
+      <*> f
+    thunkDirArg opts = fmap (dropTrailingPathSeparator . normalise) $ strArgument $ action "directory" <> opts
 
 data ShellOpts
   = ShellOpts
     { _shellOpts_shell :: String
+    , _shellOpts_interpretPaths :: [(FilePath, Interpret)]
     , _shellOpts_command :: Maybe String
     }
   deriving Show
@@ -256,9 +261,30 @@ shellFlags =
   <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
   <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
 
+interpretOpts :: Parser [(FilePath, Interpret)]
+interpretOpts = many
+    (   (, Interpret_Interpret) <$>
+          strOption (common <> long "interpret" <> help
+            "Don't pre-build packages found in DIR when constructing the package database. The default behavior is \
+            \'--interpret <project-root>', which will load everything which is unpacked into GHCi. \
+            \ Use --interpret and --no-interpret multiple times to add or remove multiple trees \
+            \ from the environment. Settings for right-most directories will \
+            \ override settings for any identical directories given earlier."
+          )
+    <|> (, Interpret_NoInterpret) <$>
+          strOption (common <> long "no-interpret" <> help
+            "Make packages found in DIR available in the package database (but only when they are used dependencies). \
+            \ This will build the packages in DIR before loading GHCi. \
+            \See help for --interpret for how the two options are related."
+          )
+    )
+  where
+    common = action "directory" <> metavar "DIR"
+
 shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
   <$> shellFlags
+  <*> interpretOpts
   <*> optional (strArgument (metavar "COMMAND"))
 
 portOpt :: Int -> Parser Int
@@ -268,9 +294,6 @@ parserPrefs :: ParserPrefs
 parserPrefs = defaultPrefs
   { prefShowHelpOnEmpty = True
   }
-
-parseCLIArgs :: ArgsConfig -> [String] -> IO Args
-parseCLIArgs cfg = handleParseResult . execParserPure parserPrefs (argsInfo cfg)
 
 -- | Create an Obelisk config for the current process.
 mkObeliskConfig :: IO Obelisk
@@ -356,29 +379,7 @@ ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
   ObCommand_Init source force -> initProject source force
   ObCommand_Deploy dc -> case dc of
-    DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
-      let deployDir = _deployInitOpts_outputDir deployOpts
-      r <- liftIO $ canonicalizePath root
-      rootEqualsTarget <- liftIO $ equalFilePath r <$> canonicalizePath deployDir
-      when rootEqualsTarget $
-        failWith $ "Deploy directory " <> T.pack deployDir <> " should not be the same as project root."
-      thunkPtr <- readThunk root >>= \case
-        Left err -> failWith $ case err of
-          ReadThunkError_AmbiguousFiles ->
-            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
-          ReadThunkError_UnrecognizedFiles ->
-            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
-          _ -> "thunk read: " <> T.pack (show err)
-        Right (ThunkData_Packed ptr) -> return ptr
-        Right (ThunkData_Checkout (Just ptr)) -> return ptr
-        Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr False root Nothing
-      let sshKeyPath = _deployInitOpts_sshKey deployOpts
-          hostname = _deployInitOpts_hostname deployOpts
-          route = _deployInitOpts_route deployOpts
-          adminEmail = _deployInitOpts_adminEmail deployOpts
-          enableHttps = _deployInitOpts_enableHttps deployOpts
-      deployInit thunkPtr deployDir sshKeyPath hostname route adminEmail enableHttps
+    DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployPush deployPath $ case remoteBuilder of
@@ -386,23 +387,36 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run -> run
+  ObCommand_Run interpretPathsList -> withInterpretPaths interpretPathsList run
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
-  ObCommand_Thunk tc -> case tc of
-    ThunkCommand_Update thunks config -> for_ thunks (updateThunkToLatest config)
-    ThunkCommand_Unpack thunks -> for_ thunks unpackThunk
-    ThunkCommand_Pack thunks config -> for_ thunks (packThunk config)
-  ObCommand_Repl -> runRepl
-  ObCommand_Watch -> runWatch
-  ObCommand_Shell so -> withProjectRoot "." $ \root ->
-    projectShell root False (_shellOpts_shell so) (_shellOpts_command so)
-  ObCommand_Doc shell' pkgs -> withProjectRoot "." $ \root ->
-    projectShell root False shell' (Just $ haddockCommand pkgs)
+  ObCommand_Thunk to -> case _thunkOption_command to of
+    ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
+    ThunkCommand_Unpack -> for_ thunks unpackThunk
+    ThunkCommand_Pack config -> for_ thunks (packThunk config)
+    where
+      thunks = _thunkOption_thunks to
+  ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
+  ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
+  ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths ->
+    nixShellForInterpretPaths False shellAttr root interpretPaths cmd
+  ObCommand_Doc shellAttr pkgs -> withInterpretPaths [] $ \root interpretPaths ->
+    nixShellForInterpretPaths True shellAttr root interpretPaths $ Just $ haddockCommand pkgs
   ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
     nixShellWithHoogle root True shell' $ Just $ "hoogle server -p " <> show port <> " --local"
   ObCommand_Internal icmd -> case icmd of
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
+    ObInternal_ExportGhciConfig interpretPathsList useRelativePaths ->
+      liftIO . putStrLn . unlines =<< withInterpretPaths interpretPathsList (exportGhciConfig useRelativePaths)
+
+-- | A helper for the common case that the command you want to run needs the project root and a resolved
+-- set of interpret paths.
+withInterpretPaths :: MonadObelisk m => [(FilePath, Interpret)] -> (FilePath -> PathTree Interpret -> m a) -> m a
+withInterpretPaths interpretPathsList f = withProjectRoot "." $ \root -> do
+  interpretPaths' <- resolveInterpretPaths $ (root, Interpret_Interpret) : interpretPathsList
+  case interpretPaths' of
+    Nothing -> failWith "No paths provided for finding packages"
+    Just interpretPaths -> f root interpretPaths
 
 haddockCommand :: [String] -> String
 haddockCommand pkgs = unwords
@@ -417,14 +431,21 @@ haddockCommand pkgs = unwords
 getArgsConfig :: IO ArgsConfig
 getArgsConfig = pure $ ArgsConfig { _argsConfig_enableVmBuilderByDefault = System.Info.os == "darwin" }
 
-encodeStaticKey :: StaticKey -> String
-encodeStaticKey = T.unpack . decodeUtf8With lenientDecode . Base16.encode . LBS.toStrict . Binary.encode
-
--- TODO: Use failWith in place of fail to be consistent.
-decodeStaticKey :: String -> Either String StaticKey
-decodeStaticKey s = case Base16.decode $ encodeUtf8 $ T.pack s of
-  (b, "") -> case Binary.decodeOrFail $ LBS.fromStrict b of
-    Right ("", _, a) -> pure a
-    Right _ -> fail "decodeStaticKey: Binary.decodeOrFail didn't consume all input"
-    Left (_, _, e) -> fail $ "decodeStaticKey: Binary.decodeOrFail failed: " <> show e
-  _ -> fail $ "decodeStaticKey: could not decode hex string: " <> show s
+-- | Resolves an ordered list of paths for use with @--interpret@/@--no-interpret@ by coalescing
+--   paths into a non-ambiguous set of paths. Ambiguity is resolved by choosing right-most paths
+--   over any preceeding identical paths.
+--
+--   For example: @a/b=ON a/b/c=OFF@ and @a/b/c=OFF a/b=ON@ are the same.
+--   @a/b=ON a/b=OFF@ is reduced to @a/b=OFF@. We prefer right-biased choice to increase
+--   scriptability.
+--
+--   N.B. All the paths in the result will be canonicalized. It's impossible to determine path
+--   overlap otherwise.
+resolveInterpretPaths :: MonadIO m => [(FilePath, a)] -> m (Maybe (PathTree a))
+resolveInterpretPaths ps = do
+  trees <- liftIO $ for ps $ \(p, a) -> pathToTree a <$> canonicalizePath p
+  pure $ foldr1 mergeTrees <$> nonEmpty trees
+  where
+    -- | Merge two 'PathTree's preferring leaves on the right in as much as they overlap with paths on the left.
+    mergeTrees :: PathTree a -> PathTree a -> PathTree a
+    mergeTrees (PathTree_Node ax x) (PathTree_Node ay y) = PathTree_Node (ay <|> ax) $ Map.unionWith mergeTrees x y

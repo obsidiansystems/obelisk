@@ -3,10 +3,7 @@
     iosSdkVersion = "10.2";
   }
 , local-self ? import ./. self-args
-, supportedSystems ? [
-    "x86_64-linux"
-    "x86_64-darwin"
-  ]
+, supportedSystems ? [ builtins.currentSystem ]
 }:
 
 let
@@ -56,19 +53,28 @@ let
         obelisk.haskellPackageSets.ghcjs
         obeliskPackagesCommon;
       command = obelisk.command;
-      skeleton = import ./skeleton { inherit obelisk; };
-      serverSkeletonExe = skeleton.exe;
+
+      withSkeletonOptions = skel: options: (skel.passthru.__unstable__.self.extend (self: super: {
+        userSettings = super.userSettings // options;
+      })).project;
+      rawSkeleton = import ./skeleton { inherit obelisk; };
+      skeleton = withSkeletonOptions rawSkeleton {
+        withHoogle = true;  # cache the Hoogle database for the skeleton
+        __withGhcide = true; # cache the ghcide build for the skeleton
+      };
+
+      serverSkeletonExe = rawSkeleton.exe;
       # TODO fix nixpkgs so it doesn't try to run the result of haskell shells as setup hooks.
       serverSkeletonShell = local-self.nixpkgs.runCommand "shell-safe-for-dep" {} ''
         touch "$out"
         echo "return" >> "$out"
         cat "${skeleton.shells.ghc}" >> "$out"
       '';
-      androidSkeleton = (import ./skeleton { inherit obelisk; }).android.frontend;
-      iosSkeleton = (import ./skeleton { inherit obelisk; }).ios.frontend;
+      androidSkeleton = skeleton.android.frontend;
+      iosSkeleton = skeleton.ios.frontend;
       nameSuffix = if profiling then "profiled" else "unprofiled";
       packages = {
-        skeletonProfiledObRun = skeleton.__unstable__.profiledObRun;
+        skeletonProfiledObRun = rawSkeleton.__unstable__.profiledObRun;
         inherit
           command
           serverSkeletonShell

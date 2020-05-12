@@ -1,16 +1,41 @@
 # Revision history for obelisk
 
-This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
+This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
 ## Unreleased
+
+* ([#715](https://github.com/obsidiansystems/obelisk/pull/715)) In `Obelisk.Route` deprecate `isoEncoder` and `prismEncoder` in favor of more precisely named `viewEncoder` and `reviewEncoder` (respectively) and improve documentation regarding contravariance of `reviewEncoder`.
+* ([#606](https://github.com/obsidiansystems/obelisk/pull/606)) Obelisk now depends directly on `reflex-dom-core` instead of `reflex-dom`. This avoids requiring a `jsaddle-webkit2gtk` dependency in apps that are only using `jsaddle-warp`.
+
+## v0.8.0.0
+
+* ([#674](https://github.com/obsidiansystems/obelisk/pull/674), [#711](https://github.com/obsidiansystems/obelisk/pull/711)) Introduce a new thunk format to support accessing the thunk's source directly when packed. When packed, thunks have an additional file called `thunk.nix` and `default.nix` is now a think wrapper around that.
+* ([#665](https://github.com/obsidiansystems/obelisk/pull/665)) Add `--interpret` and `--no-interpret` options to `ob run`/`ob watch`/`ob repl`/`ob shell`. These options allow you to pick which paths will be pre-compiled by `nix` when entering the shell/session and which won't. For example `ob run --no-interpret dep` will ensure that any dependencies found in `./dep` will be built by `nix` before loading the rest of the project into the `ghci` session. The same configuration for `ob shell` will ensure that those packages are built and available in the `ghc` package database inside the shell.
+
+  **NOTE:** `ob shell`'s default behavior is now different. By default it now behaves like `ob run`/`ob watch`/`ob repl` in that it does *not* pre-build any packages whose `.cabal` or `package.yaml` files are found in the project. To regain the previous behavior, use `ob shell --no-interpret . --interpret backend --interpret common --interpret frontend` from the project root.
+* ([#695](https://github.com/obsidiansystems/obelisk/pull/695)) `ob deploy init` now requires that your obelisk project be a clean `git` checkout with pushed changes. It has always required that your obelisk project be a `git` repository, but it did not require that your local changes be committed and pushed. This new requirement is added to ensure users don't accidentally create a deployment pointing to an old version of the project.
+* ([#705](https://github.com/obsidiansystems/obelisk/pull/705)) Add `Obelisk.Route.packTextEncoder` and generalize `Obelisk.Route.unpackTextEncoder` over any `Data.Text.Lens.IsText`.
+* ([#712](https://github.com/obsidiansystems/obelisk/pull/712)) Update [`reflex-platform`](https://github.com/reflex-frp/reflex-platform) to version 0.5.3.0.
+* ([#700](https://github.com/obsidiansystems/obelisk/pull/700)) Ensure `ob init` uses the thunk format of the target obelisk rather than the one currently running the init command. If a user had installed a version of obelisk with a new thunk format, a newly initialized skeleton of an older version would not be able to unpack it's own `.obelisk/impl`.
+* ([#693](https://github.com/obsidiansystems/obelisk/pull/693)) Fix a bug where some packages in `.attr-cache` directories would be incorrectly picked up and used instead of the correct ones when using `ob run`/`ob watch`/`ob repl`.
+* ([#709](https://github.com/obsidiansystems/obelisk/pull/709)) Fix a bug in obelisk's preprocessor causing it to incorrectly skip files in some circumstances.
+* ([#663](https://github.com/obsidiansystems/obelisk/pull/663)) Add **experimental** support for [`ghcide`](https://github.com/digital-asset/ghcide). See the README for more information.
+* ([#714](https://github.com/obsidiansystems/obelisk/pull/714)) Miscellaneous improvements to CLI help and logging.
+
+## v0.7.0.1
+
+* Fix the version number for `ob` the command-line tool. ([#679](https://github.com/obsidiansystems/obelisk/pull/679))
+
+## v0.7.0.0
 
 * Fully support HTTP [Range](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Range) requests on static assets to support Safari. ([#664](https://github.com/obsidiansystems/obelisk/pull/664))
 * Support non-EC2 deployments. ([#658](https://github.com/obsidiansystems/obelisk/pull/658))
 * Fix `ob deploy test android` to work. ([#645](https://github.com/obsidiansystems/obelisk/pull/645))
 * Fix vulnerability where Android deployments would leave signing keys in the nix store which is world readable. ([#645](https://github.com/obsidiansystems/obelisk/pull/645)) (Thanks to [kmicklas](https://github.com/kmicklas) for the report.)
-* Add `Obelisk.Backend.runBackendWith` to allow customization of how GHCJS resources are loaded in the page. ([#668](https://github.com/obsidiansystems/obelisk/pull/668))
+* Add `Obelisk.Backend.runBackendWith` to allow several customizations. ([#668](https://github.com/obsidiansystems/obelisk/pull/668), [#644](https://github.com/obsidiansystems/obelisk/pull/644))
 * Add `ob profile` command to run Obelisk projects with profiling. `ob profile` works like `ob run`, but instead of using `ghci`, it builds an executable that is built with profiling enabled. ([#654](https://github.com/obsidiansystems/obelisk/pull/654))
-* Obelisk now depends directly on `reflex-dom-core` instead of `reflex-dom`. This avoids requiring a `jsaddle-webkit2gtk` dependency in apps that are only using `jsaddle-warp`. ([#606](https://github.com/obsidiansystems/obelisk/pull/606))
+* Obelisk's `default.nix` now exposes `mkAssets` function which is used to construct the assets served by an Obelisk application. ([#651](https://github.com/obsidiansystems/obelisk/pull/651))
+* Bump reflex-platform to v0.5.2.0. ([#671](https://github.com/obsidiansystems/obelisk/pull/671))
 
 ## v0.6.0.0 - 2020-02-21
 

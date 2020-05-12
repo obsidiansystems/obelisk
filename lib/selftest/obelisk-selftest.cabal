@@ -9,6 +9,8 @@ library
   hs-source-dirs: src
   build-depends:
       base
+    , bytestring
+    , aeson
     , containers
     , directory
     , filepath
@@ -17,7 +19,6 @@ library
     , http-types
     , HUnit
     , network
-    , obelisk-cliapp
     , obelisk-executable-config-lookup
     , obelisk-run
     , which
