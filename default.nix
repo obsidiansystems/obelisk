@@ -191,6 +191,13 @@ in rec {
       };
     };
 
+  getLocalSourceSet = pkg: lib.filter
+    (p: (builtins.isPath or (x: !(builtins.isString x))) (p.src or null))
+    (lib.closePropagation (
+      pkg.getBuildInputs.haskellBuildInputs or
+        (pkg.buildInputs ++ pkg.propagatedBuildInputs ++ pkg.nativeBuildInputs)
+    ));
+
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base': projectDefinition:
     let
