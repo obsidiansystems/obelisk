@@ -78,7 +78,6 @@ type ObeliskWidget js t route m =
   , Ref m ~ Ref IO
   , MonadRef (Performable m)
   , Ref (Performable m) ~ Ref IO
-  , MonadFix (Performable m)
   , PrimMonad m
   , Prerender js t m
   , PrebuildAgnostic t route m
@@ -94,6 +93,7 @@ type PrebuildAgnostic t route m =
   , MonadFix m
   , HasConfigs m
   , HasConfigs (Performable m)
+  , MonadFix (Performable m)
   )
 
 data Frontend route = Frontend
@@ -199,6 +199,7 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , PrimMonad m
            , MonadSample DomTimeline (Performable m)
            , DOM.MonadJSM m
+           , MonadFix (Performable (Client (HydrationDomBuilderT s DomTimeline m)))
            , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
            , MonadFix (Performable m)
            , MonadFix m
