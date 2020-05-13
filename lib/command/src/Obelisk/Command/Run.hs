@@ -25,12 +25,14 @@ import Data.Default (def)
 import Data.Either (partitionEithers)
 import Data.Foldable (fold, for_, toList)
 import Data.Functor.Identity (runIdentity)
+import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Map.Monoidal as MMap
-import Data.Maybe
+import Data.Maybe (catMaybes, fromMaybe, mapMaybe, maybeToList)
+import Data.Ord (comparing)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String.Here.Interpolated (i)
@@ -44,17 +46,17 @@ import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
 import qualified Distribution.System as Dist
-import Distribution.Types.BuildInfo
-import Distribution.Types.CondTree
-import Distribution.Types.GenericPackageDescription
-import Distribution.Types.Library
-import Distribution.Utils.Generic
+import Distribution.Types.BuildInfo (buildable, defaultExtensions, defaultLanguage, hsSourceDirs, options)
+import Distribution.Types.CondTree (simplifyCondTree)
+import Distribution.Types.GenericPackageDescription (ConfVar (Arch, Impl, OS), condLibrary)
+import Distribution.Types.Library (libBuildInfo)
+import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
 import qualified Distribution.Parsec.Common as Dist
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
 import qualified Hpack.Yaml as Hpack
-import Language.Haskell.Extension
-import Network.Socket hiding (Debug)
+import Language.Haskell.Extension (Extension, Language)
+import qualified Network.Socket as Socket
 import System.Directory
 import System.Environment (getExecutablePath)
 import System.FilePath
@@ -495,14 +497,14 @@ runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
 mkGhciScriptArg :: FilePath -> [String]
 mkGhciScriptArg dotGhci = ["-ghci-script", dotGhci]
 
-getFreePort :: MonadIO m => m PortNumber
-getFreePort = liftIO $ withSocketsDo $ do
-  addr:_ <- getAddrInfo (Just defaultHints) (Just "127.0.0.1") (Just "0")
-  bracket (open addr) close socketPort
+getFreePort :: MonadIO m => m Socket.PortNumber
+getFreePort = liftIO $ Socket.withSocketsDo $ do
+  addr:_ <- Socket.getAddrInfo (Just Socket.defaultHints) (Just "127.0.0.1") (Just "0")
+  bracket (open addr) Socket.close Socket.socketPort
   where
     open addr = do
-      sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-      bind sock (addrAddress addr)
+      sock <- Socket.socket (Socket.addrFamily addr) (Socket.addrSocketType addr) (Socket.addrProtocol addr)
+      Socket.bind sock (Socket.addrAddress addr)
       return sock
 
 
