@@ -321,7 +321,11 @@ in rec {
       __unstable__.profiledObRun = let
         profiled = projectOut { inherit system; enableLibraryProfiling = true; };
         exeSource = builtins.toFile "ob-run.hs" ''
+          {-# LANGUAGE NoImplicitPrelude #-}
+          {-# LANGUAGE PackageImports #-}
           module Main where
+
+          import "base" Prelude
 
           import Control.Exception
           import Reflex.Profiled
@@ -340,7 +344,7 @@ in rec {
             Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
         '';
       in nixpkgs.runCommand "ob-run" {
-        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [p.backend p.frontend])) ];
       } ''
         cp ${exeSource} $PWD/ob-run.hs
         mkdir -p $out/bin/
