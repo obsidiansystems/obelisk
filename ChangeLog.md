@@ -5,6 +5,7 @@ This project's release branch is `master`. This log is written from the perspect
 ## Unreleased
 
 * ([#715](https://github.com/obsidiansystems/obelisk/pull/715)) In `Obelisk.Route` deprecate `isoEncoder` and `prismEncoder` in favor of more precisely named `viewEncoder` and `reviewEncoder` (respectively) and improve documentation regarding contravariance of `reviewEncoder`.
+* ([#375](https://github.com/obsidiansystems/obelisk/pull/375)) Fix regression causing custom `Prelude`s to break `ob run`/`ob watch`/`ob repl`.
 
 ## v0.8.0.0
 

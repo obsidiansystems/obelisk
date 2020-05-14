@@ -39,6 +39,7 @@ library
     , optparse-applicative
     , placeholders
     , process
+    , shell-escape
     , temporary
     , terminal-size
     , text
@@ -46,6 +47,7 @@ library
     , transformers
     , unix
     , unordered-containers
+    , utf8-string
     , which
     , yaml
   exposed-modules:

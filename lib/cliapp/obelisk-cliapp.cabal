@@ -19,10 +19,12 @@ library
     , monad-loops
     , mtl
     , process
+    , shell-escape
     , terminal-size
     , text
     , time
     , transformers
+    , utf8-string
   exposed-modules:
     Obelisk.CliApp
   other-modules:
