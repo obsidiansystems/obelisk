@@ -398,7 +398,7 @@ ob = \case
   ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
   ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
   ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths ->
-    nixShellForInterpretPaths False shellAttr root interpretPaths (bashEscape <$> cmd)
+    nixShellForInterpretPaths False shellAttr root interpretPaths cmd -- N.B. We do NOT bash escape here; we want to run the command as-is
   ObCommand_Doc shellAttr pkgs -> withInterpretPaths [] $ \root interpretPaths ->
     nixShellForInterpretPaths True shellAttr root interpretPaths $ Just $ haddockCommand pkgs
   ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
