@@ -1,57 +1,57 @@
 # Obelisk Routing
 
-This document contains examples and introductory material for using the
-`obelisk-routes` package in your application.
+The `obelisk-routes` package is designed to help with managing the paths and parameters for
+routing in your application.
 
-The `obelisk-routes` package is designed to help with managing the paths and
-parameters for the various pages in your application. These routes are for
-organising and structuring the navigation of your application.
+This is distinct from packages like `servant` that are designed for specifying endpoints for a
+REST API. When building routes with `obelisk-routes` you're not going to be handling headers or
+HTTP methods.
 
-This is distinct from packages like `servant` that are designed for building
-endpoints for a REST API. When building these routes you're not going to be
-handling headers or HTTP methods.
-
-One of the goals of `obelisk-routes` is to allow for complex routing
-structures to be partitioned into manageable chunks that are then combined in
-a straight-forward manner. Allowing for re-use of various components and to
-help the type-system provide as many guarantees as possible.
+One of the goals of `obelisk-routes` is to allow for complex routing structures to be partitioned
+into manageable chunks that are then combined in a straight-forward manner. Allowing for re-use
+of various components and to help the type-system provide as many guarantees as possible. We'll
+see this come into play when we start adding more complex routes.
 
 ## Building blocks
 
-There are a few pieces required to build routes in Obelisk and there is plenty to dig into
-if you are curious. However for our purposes we can survive with a surface level
-understanding.
+There are a few pieces required to build routes in Obelisk and there is plenty to dig into if you
+are curious. It may seem daunting and there is certainly a lot of power on offer. However for our
+purposes we can survive with a surface level understanding.
+
+Below we will cover a few of the types that we need to interact with to add routes to our
+application. Again you don't have to have a deep understanding of these types, a high level view
+will suffice for now.
 
 #### `SegmentResult`
 
-This is the primary building block of individual routes, it has a list-like
-structure of; a recursive component, and a terminating case.
+This is the primary building block of individual routes, it has a list-like structure with a
+recursive component, and a terminating case.
 
-The `PathEnd ...` constructor may be used to indicate that there is only this
-single segment in that route, or to terminate a longer route.
+The recursive case is the `PathSegment Text (Encoder check parse a PageName)` constructor that
+encodes a literal segment in the path, followed by one or more `Encoder`s.
 
-Or the `PathSegment "user" ...` to encode "user" as a literal segment in the
-path, followed by more `Encoder`s.
+The terminating case is the `PathEnd (Encoder check parse a (Map Text (Maybe Text)))` constructor.
+It is used to indicate that there is only this single segment in that route, or to terminate a longer route.
 
 #### `Encoder`
 
-An `Encoder` describes how the either an individual segment of a route is to
-be encoded. Such as how to read the number from a route like `/user/33`.
+An `Encoder` may describe how an individual segment of a route is to be encoded. Such as how to
+read the number from a route like `/user/33`. Or how several routes are encoded. So you may have
+an `Encoder` that for all of the routes pertaining to 'blog posts', such as:
 
-It can also describe how several routes are encoded. So you may have an
-`Encoder` that describes how all of the routes pertaining to 'blog posts' are
-encoded.
+- /blog/:postId:/edit
+- /blog/:postId:/metrics
+- etc...
 
-In particular note that `Encoder`s may be composed using the composition
-operator from `Control.Category`. This means that complex route structures
-can be broken down into manageable pieces and then composed together to
-encode the entire structure.
+In particular note that `Encoder`s may be composed, thereby creating more elaborate routing
+structures from simpler pieces. It also means that scary looking routing hierarchies can be
+partitioned and made easier to work with.
 
 #### `BackendRoute` & `FrontendRoute`
 
-Obelisk has two distinct sets of routes for backend and frontend. These GADTs
-are called `BackendRoute` and `FrontendRoute`. These are provided for you to
-start you off, and we will create our own later on.
+An Obelisk application begins with two distinct sets of routes for backend and frontend. These
+are defined as GADTs called `BackendRoute` and `FrontendRoute`, respectively. These are provided
+for you to start you off.
 
 In a fresh Obelisk application these live in the `Common.Route` module.
 
@@ -63,50 +63,66 @@ In a fresh Obelisk application these live in the `Common.Route` module.
 - "blog/:userId:/:postId:"
 - "dashboard?optionA=true".
 
-Building routes for either one is the same process. Keeping the types separate enforces
-the distinction at compile time and helps to prevent errors.
+Building routes for either one is the same process. Keeping the types separate enforces the
+distinction at compile time and helps to prevent errors.
 
-The routing system in Obelisk is quite powerful and we'll only touch on some
-basics here, but this should be enough to start with and we can dive into the
-gnarlier routing problems later.
+The routing system in Obelisk is quite powerful and we'll only touch on some basics here, but
+this should be enough to start with and we can dive into the gnarlier routing problems later.
 
-## An example route
+## Simple route with one parameter
 
-Consider the following `Frontend` request that we want our Obelisk
-application to be able to handle:
+Consider the following `Frontend` route that we want our application to be able to handle:
 
 ```
-GET /user/42
+/user/42
 ```
 
-It has a static portion "user" and some number that we want to verify and
-have available on our page for us to use.
+It has a static portion "user" and some number that we want to verify and have available on our
+page for us to use.
 
-We could use a bare `Int` in our types but we're responsible Haskellers so
-define a `newtype` in `Common.Api` to wrap the number for greater type safety
-and to be more descriptive:
+#### Obelisk live development environment
+
+For best results, this tutorial will work best if you work through it using a fresh created
+Obelisk application. To do so, ensure the `ob` command is installed and run the following:
+
+```shell
+$ mkdir ob-routes-tutorial
+$ cd ob-routes-tutorial
+$ ob init
+```
+
+After `ob init` has done its thing, use the live development environment provided by `ob`:
+
+```shell
+$ ob run
+```
+
+### Defining our route as a type
+
+When we define this route, we will need to tell Obelisk what want to do with that number. We
+_could_ leave it as `Text`, but we know it needs to be a number. We could encode to a bare `Int`,
+but we're responsible Haskellers so we will define a `newtype` in `Common.Api` to wrap the number
+for greater type safety and to be more descriptive:
 
 ```haskell
 newtype UserId = UserId { unUserId :: Int }
 ```
 
-For Obelisk to be aware of our routes existence, we add a constructor to
-`FrontendRoute` GADT in `Common.Route`. The purpose of this constructor is to
-give us something to match on when we're deciding which code to run for which
-page. As well as declare what are the types of things that will be pulled
-from the route and available on the resulting page.
+To create the route itself, we add a constructor to the `FrontendRoute` GADT in `Common.Route`.
 
-Add the following constructor to `FrontendRoute`:
+The purpose of this constructor is to give us something to match on when we're deciding which
+code to run, it will also be used to help build type-safe links within our application. As well
+as declare what the types are that will be pulled from the route.
+
+Add the following constructor to `FrontendRoute` in `Common.Route`:
 
 ```haskell
   FrontendRoute_User :: FrontendRoute UserId
 ```
 
-This says that we have route that will provide a `UserId` to our frontend.
-
-> The naming of the route 'FrontendRoute_User' is an Obelisk convention of including the
-> type name in individual constructor names. This helps disambiguate them in the code at
-> the cost of a few extra keystrokes. As an example:
+> The naming of the route 'FrontendRoute_User' is an Obelisk convention of including the type
+> name in individual constructor names. This helps disambiguate the code at the 'cost' of a few
+> extra keystrokes. As an example:
 >
 > ```haskell
 > data Foo
@@ -114,33 +130,93 @@ This says that we have route that will provide a `UserId` to our frontend.
 >   | Foo_ConstructorB
 > ```
 
-Next we need to build the `SegmentResult` that will tell Obelisk how this route is constructed.
+### Building our route from segments
 
-Obelisk router breaks down incoming routes into smaller segments that are then given to
-our `Encoder` to try to find a match. We define these segments using the `SegmentResult`
-type and add them to the case expression in `Common.Route` to be matched against.
+Next we need to build the `SegmentResult` that will tell Obelisk how this route is to be encoded
+in either direction.
 
-Looking at our route:
+Broadly speaking, the Obelisk router breaks down incoming routes into segments that are given to
+our `Encoder` to find a match. We define these segments using the `SegmentResult` type and add
+them to the case expression in `Common.Route` to be matched against.
 
+Add our new constructor to the following function in `Common.Route` as another pattern in the
+`case` expression for the frontend routes:
+
+```haskell
+fullRouteEncoder
+  :: Encoder (Either Text) Identity (R (FullRoute BackendRoute FrontendRoute)) PageName
+fullRouteEncoder = mkFullRouteEncoder
+  (FullRoute_Backend BackendRoute_Missing :/ ())
+  (\case
+      BackendRoute_Missing -> PathSegment "missing" $ unitEncoder mempty)
+  (\case
+      FrontendRoute_Main -> PathEnd $ unitEncoder mempty
+      -- Add the new constructor here
+  )
 ```
-/user/42
+
+Our route has multiple segments so we need to use the `PathSegment` constructor:
+
+```haskell
+  | PathSegment Text (Encoder check parse a PageName)
 ```
 
-We're able to identify two segments:
+Matching on the first segment is done by using the literal value "user" as the first argument to
+the constructor that we added to the `case` expression:
 
+```haskell
+  FrontendRoute_User -> PathSegment "user" _todo
 ```
-/ "user" / (UserId 42)
+
+We can now move onto building the `Encoder` for our `UserId`.
+
+#### Wait a minute, shouldn't I be matching on the route on the left?
+
+In many routing systems you match directly on the route input and break it down as required. This
+process can be fragile and has limitations. Additionally you are left on your own when comes to
+_creating_ links in your application. Because there is no way to relate the structure of a route
+to anything. You have to manually build up routes again, and if those routes change it can be
+onerous to find and fix all the constructed links.
+
+Obelisk routes are bidirectional, which means the `Encoder` that you create works as both a
+pattern match for incoming routes. As well as using the GADT constructors as a type safe
+mechanism for _creating_ links in your application. It's a compile error to try to use route
+constructors that don't exist, and if you change the type of a route the application will not
+build until you fix that change every where it appears.
+
+This design also enables the composition of `Encoder`s which is difficult and much more prone to
+error if you start by matching on the route itself.
+
+----
+
+### UserId Encoder
+
+Because the Obelisk routes are bidirectional, we need describe how to encode our type as a url
+segment at the same time as describing how to encode the url segment as our type.
+
+In other words, we need to tell Obelisk how to create a `UserId` from `Text` and back again. To
+do this we're going to write two functions and put them together into a `Prism'`.
+
+A `Prism'` is a condensed way of describing how to go from one type to another and _maybe_ back
+the other way.
+
+The types of the two functions are:
+
+```haskell
+_ :: UserId -> Text
+-- and
+_ :: Text -> Either Text UserId -- because not all Text is a valid UserId
 ```
 
-So we need to describe the static "user" segment, and the dynamic segment that takes the
-raw input of "42" and turns it into a `UserId`.
+The two functions are combined into a `Prism'` using the `prism` function. That function and the
+`Prism'` type will need to be imported from the `Control.Lens` module.
 
-We need to tell Obelisk how to create a `UserId` from `Text` and back again. To do this
-we're going to write two functions and put them together into a `Prism'`. A `Prism'` is a
-condensed way of describing how to go from one type to another, and maybe back the other
-way.
+```haskell
+import Control.Lens (Prism', prism)
+```
 
-Turning our `UserId` into `Text` is easy so let's do that one first:
+Turning our `UserId` into `Text` is unremakrable so let's do that one first. Define the prism in
+the `Common.Api` module, next to our `UserId` newtype definition:
 
 ```haskell
 userIdTextPrism :: Prism' Text UserId
@@ -150,12 +226,12 @@ userIdTextPrism = prism toText _fromText
     toText = T.pack . show . unUserId
 ```
 
-Now we encode `Text` as a `UserId`. This means we have to check that this input is
-valid. At this stage we only care that the input is a number greater than zero:
+Next to encode `Text` from the route input as a `UserId`. This means we have to check that this
+input is valid. Our requirement is that the input is a number greater than zero:
 
 ```haskell
 userIdTextPrism :: Prism' Text UserId
-userIdTextPrism = prism toText _fromText
+userIdTextPrism = prism toText fromText
   where
     -- Unwrap the UserId, use 'show' on the 'Int' value, and then turn that into 'Text'
     toText :: UserId -> Text
@@ -163,40 +239,208 @@ userIdTextPrism = prism toText _fromText
 
     fromText :: Text -> Either Text UserId
     fromText t = case readMaybe $ Text.unpack x of
-      Just i -> Right $ UserId i
-      Nothing -> Left x
+      -- Match when we have successfully read an Int value
+      -- and use a 'guard' to ensure it is greater than zero.
+      Just i | i > 0 -> Right $ UserId i
+      -- For everything else we return a Left value to indicate a failure.
+      _ -> Left x
 ```
 
-Our `Prism'` can now be used to create the rest of `SegmentResult` like so:
+We pass our `Prism'` to the aptly named `prismEncoder` function from `Obelisk.Route` to create
+the `Encoder`. In doing so we avoid the boring bits of having to chop up the route ourselves:
 
 ```haskell
-PathSegment "user" $ singlePathSegmentEncoder . prismEncoder userIdTextPrism
+prismEncoder userIdTextPrism :: Encoder parse check UserId Text
 ```
 
-We combine our `userIdTextPrism` using `prismEncoder` from `Obelisk.Route` to do the heavy
-lifting for us, and compose that using `(.)` with `singlePathSegmentEncoder` to tell
-Obelisk that this part of the route only has a single piece.
+Add this to the end of our `case` expression in `Common.Route`:
 
-It should be a rare event that you will need to write your own `Encoder` directly. The
-provided `Encoder`s in `Obelisk.Route` are designed to be composed and combined to build more
-complicated encoders and should be sufficient for most requirements.
+```haskell
+FrontendRoute_User -> PathSegment "user" $ _todo . prismEncoder userIdTextPrism
+```
 
-#### 'Wrapped' typeclass and Template Haskell.
+Next is to tell Obelisk that we have only a single path segment and once it has matched the
+static part and the `UserId` this route is complete. This is done by composing our `UserId`
+encoder with the `singlePathSegmentEncoder` using `(.)` imported from `Control.Category`:
+
+#### A more general composition
+
+Importantly the composition operator we need is the more general version from the
+`Control.Category` module. This is because the one from `Prelude` is specialised to the function
+arrow type `(->)`, whereas the one in `Control.Category` uses the `Category` typeclass:
+
+```haskell
+-- (.) from Prelude
+(.) :: (b -> c) -> (a -> b) -> a -> c
+
+-- (.) from Control.Category
+(.) :: Category cat => cat b c -> cat a b -> cat a c
+```
+
+Ensure that `(.)` is imported correctly at the top of `Common.Route`:
+
+ ```haskell
+import Prelude hiding ((.))
+import Control.Category
+```
+
+----
+
+Our addition to the `case` expression should look like this:
+
+```haskell
+  FrontendRoute_User -> PathSegment "user" $ singlePathSegmentEncoder . prismEncoder userIdTextPrism
+```
+
+It should be a rare event that you will need to write your own `Encoder` function like
+`prismEncoder` or `singlePathSegmentEncoder` directly. The provided `Encoder`s in `Obelisk.Route`
+are designed to be composed and combined to build more complicated encoders and should be
+sufficient for most requirements. If you find this is not the case and there is a pattern that
+keeps appearing and is not accounted for, then that is probably a bug and we'd like to know about
+it!
+
+#### Aside: 'Wrapped' typeclass and Template Haskell.
 
 If you're comfortable with Template Haskell, you can use the `makeWrapped` splice from
-`Control.Lens.TH` to derive the `Wrapped` typeclass. This would let you avoid having to
-write a `Prism'`:
+`Control.Lens.TH` to derive the `Wrapped` typeclass. This would let you avoid having to write a
+`Prism'`, and you could use the `unwrappedEncoder` to handle wrapping up the `Int` value produced
+by using the `readShowEncoder`. That encoder relies on the `Read` and `Show` instances for a
+given type and may not be appropriate for a URL:
 
 ```haskell
 PathSegment "user" $ readShowEncoder . unwrappedEncoder
 ```
 
-This is handy if you already have your newtypes defined and don't want to hand write
-`Prism'`s. This uses the `_Wrapped` prism from the `lens` library and then the encoder
-that uses the `Read` and `Show` instances for `Int`.
+This is handy if you already have your newtypes defined and don't want to hand write `Prism'`s.
+This uses the `_Wrapped` prism from the `lens` library and then the encoder that uses the `Read`
+and `Show` instances for `Int`.
 
-## Using the routes
+----
 
-`subRoute`
-`askRoute`
-`subPairRoute_`
+## Using routes
+
+Now we can update the Frontend of our application to do something with this routing information.
+
+We're going to make the rest of these changes in the main `Frontend.hs` in the `frontend`
+package. If you're following along with a freshly minted Obelisk application then it should look
+something like this:
+
+```haskell
+frontend :: Frontend (R FrontendRoute)
+frontend = Frontend
+  { _frontend_head = do
+      el "title" $ text "Obelisk Minimal Example"
+      elAttr "link" ("href" =: static @"main.css" <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
+  , _frontend_body = do
+      el "h1" $ text "Welcome to Obelisk!"
+      el "p" $ text $ T.pack commonStuff
+
+      -- `prerender` and `prerender_` let you choose a widget to run on the server
+      -- during prerendering and a different widget to run on the client with
+      -- JavaScript. The following will generate a `blank` widget on the server and
+      -- print "Hello, World!" on the client.
+      prerender_ blank $ liftJSM $ void $ eval ("console.log('Hello, World!')" :: T.Text)
+
+      elAttr "img" ("src" =: static @"obelisk.jpg") blank
+      el "div" $ do
+        exampleConfig <- getConfig "common/example"
+        case exampleConfig of
+          Nothing -> text "No config file found in config/common/example"
+          Just s -> text $ T.decodeUtf8 s
+      return ()
+  }
+```
+
+We're going to modify the function at `_frontend_body` to show different content for the main or
+user page, and then link between them.
+
+Notice that part of the type of `frontend` is `R FrontendRoute`. That is the same `FrontendRoute`
+type that we added our user route to. This tells us which routes are available for us to match on
+in this function. We can't accidentally match on a route that is not part of that type, it would
+be a compile error.
+
+At the top of our `_frontend_body` function, before the `do`, we're going to insert the
+`subRoute_` function and turn this entire function into a `case` expression that shows different
+content based on the current route. The existing content will be moved into the branch for
+`FrontendRoute_Main` and it will look a bit like this:
+
+```haskell
+  , _frontend_body = subRoute_ $ \r -> case r of
+    FrontendRoute_Main -> do
+      el "h1" $ text "Welcome to Obelisk!"
+      {- The initial body content goes here -}
+```
+
+Alternatively you can turn on the `{-# LANGUAGE LambdaCase #-}` language extension and avoid
+needing to bind the `r` variable:
+
+```haskell
+{-# LANGUAGE LambdaCase #-} -- put this at the top of the file
+...
+  , _frontend_body = subRoute_ $ \case
+    FrontendRoute_Main -> do
+      el "h1" $ text "Welcome to Obelisk!"
+      {- The initial body content goes here -}
+```
+
+As another branch in `case` expression, add our `FrontendRoute_User` constructor:
+
+```haskell
+  , _frontend_body = subRoute_ $ \case
+    FrontendRoute_User -> _todo
+    FrontendRoute_Main -> do
+```
+
+Now to add some content.
+
+Using the `askRoute` function we can access a `Dynamic` of our `UserId`. This is because the type
+that we had in our `FrontendRoute` GADT type is stored in a `ReaderT` that changes based on which
+route we're currently matching on.
+
+Were we to use `askRoute` in the `Frontend_Main` branch of our `case` expression, the resulting
+`Dynamic` would contain a value of unit `()` because that is the type of the `Frontend_Main`
+route.
+
+Update the `FrontendRoute_User` branch of our `case` expression to the following:
+
+```haskell
+  , _frontend_body = subRoute_ $ \case
+    FrontendRoute_User -> do
+      text "We're on the user page! But which user?"
+      dUserId <- askRoute
+      dyn_ $ ffor dUserId $ \(UserId uidVal) ->
+        text "This user : " <> T.pack (show uidVal)
+
+    FrontendRoute_Main -> do
+      ...
+```
+
+### Building links
+
+We have separate content based on the route, but we don't have any links yet!
+
+With the `routeLink` function we can create type safe links to different parts of our
+application. We will first link to the user page from the main page. Somewhere in the body of the
+`FrontendRoute_Main` content, add the following:
+
+```haskell
+routeLink (FrontendRoute_User :/ User 42) $
+  text "Visit the page of User # 42"
+```
+
+We define the link we want by using the constructor from our `FrontendRoute` type and using the
+function `(:/)` from `Obelisk.Route`, and we provide the required input of a `UserId` to satisfy
+the type of `FrontendRoute_User`. Then we create a child widget with some content that when
+clicked will take us to the user page.
+
+Similarily, we can create a link on the user page to take us to the main page:
+
+```haskell
+routeLink (FrontendRoute_Main :/ ()) $
+  text "To the main page!"
+```
+
+You should now have an Obelisk application with some rudimentary routing and enough of a start to
+begin building your application with type safe routes! Hooray!!
+
+The next topic we will cover is adding groups of sub-routes, as well as routes with multiple parameters.
