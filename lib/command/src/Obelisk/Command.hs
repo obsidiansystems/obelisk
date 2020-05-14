@@ -398,11 +398,11 @@ ob = \case
   ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
   ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
   ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths ->
-    nixShellForInterpretPaths False shellAttr root interpretPaths cmd
+    nixShellForInterpretPaths False shellAttr root interpretPaths (bashEscape <$> cmd)
   ObCommand_Doc shellAttr pkgs -> withInterpretPaths [] $ \root interpretPaths ->
     nixShellForInterpretPaths True shellAttr root interpretPaths $ Just $ haddockCommand pkgs
   ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
-    nixShellWithHoogle root True shell' $ Just $ "hoogle server -p " <> show port <> " --local"
+    nixShellWithHoogle root True shell' $ Just $ "hoogle server -p" <> show port <> " --local"
   ObCommand_Internal icmd -> case icmd of
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths

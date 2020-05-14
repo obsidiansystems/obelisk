@@ -78,7 +78,7 @@ import Obelisk.CliApp (
     withSpinner,
   )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets)
+import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets, bashEscape)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
@@ -466,7 +466,7 @@ runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
   nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
-    Just $ unwords $ "ghci" : ghciArgs -- TODO: Shell escape
+    Just $ unwords $ fmap bashEscape $ "ghci" : ghciArgs
 
 -- | Run ghcid
 runGhcid
@@ -479,17 +479,16 @@ runGhcid
   -> m ()
 runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
   nixShellWithoutPkgs root True chdirToRoot (packageInfoToNamePathMap packages) "ghc" $
-    Just $ unwords $ ghcidExePath : opts -- TODO: Shell escape
+    Just $ unwords $ fmap bashEscape $ ghcidExePath : opts
   where
-    opts =
-      [ "-W"
-      , "--outputfile=ghcid-output.txt"
-      ] <> map (\x -> "--reload='" <> x <> "'") reloadFiles
-        <> map (\x -> "--restart='" <> x <> "'") restartFiles
-        <> testCmd
-        <> ["--command='" <> unwords ("ghci" : ghciArgs) <> "'"] -- TODO: Shell escape
-    testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
-
+    opts = concat
+      [ ["-W"]
+      , ["--outputfile=ghcid-output.txt"]
+      , map (\x -> "--reload=" <> x) reloadFiles
+      , map (\x -> "--restart=" <> x) restartFiles
+      , maybe [] (\cmd -> ["--test=" <> cmd]) mcmd
+      , ["--command=" <> unwords ("ghci" : ghciArgs)]
+      ]
     adjustRoot x = if chdirToRoot then makeRelative root x else x
     reloadFiles = map adjustRoot [root </> "config"]
     restartFiles = map (adjustRoot . _cabalPackageInfo_packageFile) packages
