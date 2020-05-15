@@ -112,9 +112,8 @@ In a fresh Obelisk application these live in the `Common.Route` module.
 - "api/..." where the "..." portion is managed by a REST endpoint package of your choice.
 
 These backend routes can run their own code or hand off to a different request handling package
-to a finer grained set of endpoints. But should none of them match, then the frontend of the
-application is served and the frontend will continue parsing the route to determine the next
-state.
+to a finer grained set of endpoints. But should none of them match the frontend of the
+application is served and the frontend router will continue parsing the route.
 
 `FrontendRoute` is for managing the frontend routing of your application. Such as:
 - "blog/:userId:/:postId:"
