@@ -285,7 +285,7 @@ shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
   <$> shellFlags
   <*> interpretOpts
-  <*> optional (strArgument (metavar "COMMAND"))
+  <*> ((\xs -> if null xs then Nothing else Just $ unwords xs) <$> many (strArgument (metavar "COMMAND")))
 
 portOpt :: Int -> Parser Int
 portOpt dfault = option auto (long "port" <> short 'p' <> help "Port number for server" <> showDefault <> value dfault <> metavar "INT")
