@@ -23,7 +23,7 @@ library
     , obelisk-snap-extras
     , text
     , transformers
-    , unix
+    , unix-compat
   exposed-modules:
       Obelisk.Asset.Accept
       Obelisk.Asset.Serve.Snap

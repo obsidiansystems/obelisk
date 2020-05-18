@@ -24,7 +24,7 @@ library
     , template-haskell
     , text
     , transformers
-    , unix
+    , unix-compat
     , vector
   exposed-modules:
     Obelisk.Asset.Gather

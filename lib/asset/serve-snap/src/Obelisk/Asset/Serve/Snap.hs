@@ -31,7 +31,7 @@ import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import System.Directory (getDirectoryContents)
 import System.FilePath ((</>), splitFileName, takeDirectory)
 import System.IO.Error (isDoesNotExistError)
-import System.Posix (getFileStatus, fileSize)
+import System.PosixCompat.Files (getFileStatus, fileSize)
 
 -- | Serve static assets from an asset directory generated via @assets.nix@ or, failing that, from a regular directory.
 --
