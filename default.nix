@@ -167,7 +167,7 @@ in rec {
 
   inherit mkAssets;
 
-  serverExe = backend: frontend: assets: optimizationLevel: bundledConfig: version:
+  serverExe = { backend, frontend, assets, optimizationLevel, version, bundledConfig }:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
@@ -317,17 +317,23 @@ in rec {
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
       mainProjectOut = projectOut { inherit system; };
-      serverOn = projectInst: bundledConfig: version: serverExe
-        projectInst.ghc.backend
-        mainProjectOut.ghcjs.frontend
-        projectInst.passthru.staticFiles
-        projectInst.passthru.__closureCompilerOptimizationLevel
-        bundledConfig
-        version;
-      linuxExe = serverOn (projectOut { system = "x86_64-linux"; }) null;
-      ovaExe = serverOn (projectOut { system = "x86_64-linux"; }) (base' + /config);
+      serverOn = { projectInst, bundledConfig ? null, version } : serverExe {
+        inherit bundledConfig version;
+        inherit (projectInst.ghc) backend;
+        inherit (mainProjectOut.ghcjs) frontend;
+        assets = projectInst.passthru.staticFiles;
+        optimizationLevel = projectInst.passthru.__closureCompilerOptimizationLevel;
+      };
+      linuxExe = version: serverOn {
+        inherit version;
+        projectInst = projectOut { system = "x86_64-linux"; };
+      };
+      ovaExe = version: serverOn {
+        inherit version;
+        projectInst = projectOut { system = "x86_64-linux"; };
+        bundledConfig = base' + /config;
+      };
       dummyVersion = "Version number is only available for deployments";
-
       vm = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? (_:_:{}) }:
         mkVM (args // { inherit module; exe = ovaExe version; });
 
@@ -337,7 +343,6 @@ in rec {
         ova = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? (_: _: {}) }:
           (vm args).config.system.build.virtualBoxOVA;
         profiledObRun = let
-
           profiled = projectOut { inherit system; enableLibraryProfiling = true; };
           exeSource = builtins.toFile "ob-run.hs" ''
             module Main where
@@ -369,7 +374,10 @@ in rec {
 
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
-      exe = serverOn mainProjectOut null dummyVersion;
+      exe = serverOn {
+        projectInst = mainProjectOut;
+        version = dummyVersion;
+      };
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
