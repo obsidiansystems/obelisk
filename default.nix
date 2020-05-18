@@ -167,29 +167,37 @@ in rec {
 
   inherit mkAssets;
 
-  serverExe = backend: frontend: assets: optimizationLevel: version:
+  serverExe = { backend, frontend, assets, optimizationLevel, version, bundledConfig }:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
       ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      ${pkgs.lib.optionalString (bundledConfig != null) "ln -s ${bundledConfig} $out/config"}
       echo ${version} > $out/version
     '';
 
+  mkNixOS = imports: import (pkgs.path + /nixos) {
+    system = "x86_64-linux";
+    configuration = { inherit imports; };
+  };
+
+  serverImports = args: [
+    (serverModules.mkDefaultNetworking args)
+    (serverModules.mkObeliskApp args)
+  ];
+
   server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }@args:
-    let
-      nixos = import (pkgs.path + /nixos);
-    in nixos {
-      system = "x86_64-linux";
-      configuration = {
-        imports = [
-          (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
-          (serverModules.mkDefaultNetworking args)
-          (serverModules.mkObeliskApp args)
-        ];
-      };
-    };
+    mkNixOS (serverImports args ++ [
+      (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
+    ]);
+
+  mkVM = { exe, hostName, adminEmail, routeHost, enableHttps, version, module }@args:
+    mkNixOS (serverImports args ++ [
+      (pkgs.path + /nixos/modules/virtualisation/virtualbox-image.nix)
+      (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
+    ]);
 
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   project = base': projectDefinition:
@@ -309,47 +317,67 @@ in rec {
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
       mainProjectOut = projectOut { inherit system; };
-      serverOn = projectInst: version: serverExe
-        projectInst.ghc.backend
-        mainProjectOut.ghcjs.frontend
-        projectInst.passthru.staticFiles
-        projectInst.passthru.__closureCompilerOptimizationLevel
-        version;
-      linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
+      serverOn = { projectInst, bundledConfig ? null, version } : serverExe {
+        inherit bundledConfig version;
+        inherit (projectInst.ghc) backend;
+        inherit (mainProjectOut.ghcjs) frontend;
+        assets = projectInst.passthru.staticFiles;
+        optimizationLevel = projectInst.passthru.__closureCompilerOptimizationLevel;
+      };
+      linuxExe = version: serverOn {
+        inherit version;
+        projectInst = projectOut { system = "x86_64-linux"; };
+      };
+      ovaExe = version: serverOn {
+        inherit version;
+        projectInst = projectOut { system = "x86_64-linux"; };
+        bundledConfig = base' + /config;
+      };
       dummyVersion = "Version number is only available for deployments";
+      vm = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? (_:_:{}) }:
+        mkVM (args // { inherit module; exe = ovaExe version; });
+
     in mainProjectOut // {
-      __unstable__.profiledObRun = let
-        profiled = projectOut { inherit system; enableLibraryProfiling = true; };
-        exeSource = builtins.toFile "ob-run.hs" ''
-          module Main where
+      __unstable__ = {
+        inherit vm;
+        ova = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? (_: _: {}) }:
+          (vm args).config.system.build.virtualBoxOVA;
+        profiledObRun = let
+          profiled = projectOut { inherit system; enableLibraryProfiling = true; };
+          exeSource = builtins.toFile "ob-run.hs" ''
+            module Main where
 
-          import Control.Exception
-          import Reflex.Profiled
-          import System.Environment
+            import Control.Exception
+            import Reflex.Profiled
+            import System.Environment
 
-          import qualified Obelisk.Run
-          import qualified Frontend
-          import qualified Backend
+            import qualified Obelisk.Run
+            import qualified Frontend
+            import qualified Backend
 
-          main :: IO ()
-          main = do
-            args <- getArgs
-            let port = read $ args !! 0
-                assets = args !! 1
-                profileFile = (args !! 2) <> ".rprof"
-            Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
+            main :: IO ()
+            main = do
+              args <- getArgs
+              let port = read $ args !! 0
+                  assets = args !! 1
+                  profileFile = (args !! 2) <> ".rprof"
+              Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
         '';
-      in nixpkgs.runCommand "ob-run" {
-        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
-      } ''
+        in nixpkgs.runCommand "ob-run" {
+          buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+        } ''
         cp ${exeSource} $PWD/ob-run.hs
         mkdir -p $out/bin/
         ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
       '';
+      };
 
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
-      exe = serverOn mainProjectOut dummyVersion;
+      exe = serverOn {
+        projectInst = mainProjectOut;
+        version = dummyVersion;
+      };
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
