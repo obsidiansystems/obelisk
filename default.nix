@@ -332,41 +332,44 @@ in rec {
         mkVM (args // { inherit module; exe = ovaExe version; });
 
     in mainProjectOut // {
-      __unstable__.profiledObRun = let
-        profiled = projectOut { inherit system; enableLibraryProfiling = true; };
-        exeSource = builtins.toFile "ob-run.hs" ''
-          module Main where
+      __unstable__ = {
+        inherit vm;
+        ova = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? (_: _: {}) }:
+          (vm args).config.system.build.virtualBoxOVA;
+        profiledObRun = let
 
-          import Control.Exception
-          import Reflex.Profiled
-          import System.Environment
+          profiled = projectOut { inherit system; enableLibraryProfiling = true; };
+          exeSource = builtins.toFile "ob-run.hs" ''
+            module Main where
 
-          import qualified Obelisk.Run
-          import qualified Frontend
-          import qualified Backend
+            import Control.Exception
+            import Reflex.Profiled
+            import System.Environment
 
-          main :: IO ()
-          main = do
-            args <- getArgs
-            let port = read $ args !! 0
-                assets = args !! 1
-                profileFile = (args !! 2) <> ".rprof"
-            Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
+            import qualified Obelisk.Run
+            import qualified Frontend
+            import qualified Backend
+
+            main :: IO ()
+            main = do
+              args <- getArgs
+              let port = read $ args !! 0
+                  assets = args !! 1
+                  profileFile = (args !! 2) <> ".rprof"
+              Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
         '';
-      in nixpkgs.runCommand "ob-run" {
-        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
-      } ''
+        in nixpkgs.runCommand "ob-run" {
+          buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+        } ''
         cp ${exeSource} $PWD/ob-run.hs
         mkdir -p $out/bin/
         ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
       '';
+      };
 
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut null dummyVersion;
-      inherit vm;
-      ova = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? (_: _: {}) }:
-        (vm args).config.system.build.virtualBoxOVA;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
