@@ -25,12 +25,14 @@ import Data.Default (def)
 import Data.Either (partitionEithers)
 import Data.Foldable (fold, for_, toList)
 import Data.Functor.Identity (runIdentity)
+import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Map.Monoidal as MMap
-import Data.Maybe
+import Data.Maybe (catMaybes, fromMaybe, mapMaybe)
+import Data.Ord (comparing)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String.Here.Interpolated (i)
@@ -44,17 +46,17 @@ import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
 import qualified Distribution.System as Dist
-import Distribution.Types.BuildInfo
-import Distribution.Types.CondTree
-import Distribution.Types.GenericPackageDescription
-import Distribution.Types.Library
-import Distribution.Utils.Generic
+import Distribution.Types.BuildInfo (buildable, defaultExtensions, defaultLanguage, hsSourceDirs, options)
+import Distribution.Types.CondTree (simplifyCondTree)
+import Distribution.Types.GenericPackageDescription (ConfVar (Arch, Impl, OS), condLibrary)
+import Distribution.Types.Library (libBuildInfo)
+import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
 import qualified Distribution.Parsec.Common as Dist
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
 import qualified Hpack.Yaml as Hpack
-import Language.Haskell.Extension
-import Network.Socket hiding (Debug)
+import Language.Haskell.Extension (Extension, Language)
+import qualified Network.Socket as Socket
 import System.Directory
 import System.Environment (getExecutablePath)
 import System.FilePath
@@ -76,7 +78,7 @@ import Obelisk.CliApp (
     withSpinner,
   )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets)
+import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets, bashEscape)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
@@ -108,9 +110,6 @@ data PathTree a = PathTree_Node
   (Maybe a) -- An optional leaf at this point in the tree
   (Map FilePath (PathTree a)) -- Branches to deeper leaves
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
-
-emptyPathTree :: PathTree a
-emptyPathTree = PathTree_Node Nothing mempty
 
 -- | 2D ASCII drawing of a 'PathTree'. Adapted from Data.Tree.draw.
 drawPathTree :: (a -> Text) -> PathTree a -> Text
@@ -164,12 +163,12 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
 run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 run root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  withGhciScript pkgs $ \dotGhciPath -> do
-    assets <- findProjectAssets root
-    putLog Debug $ "Assets impurely loaded from: " <> assets
-    ghciArgs <- getGhciSessionSettings pkgs root True
-    freePort <- getFreePort
-    runGhcid root True (ghciArgs <> mkGhciScriptArg dotGhciPath) pkgs $ Just $ unwords
+  assets <- findProjectAssets root
+  putLog Debug $ "Assets impurely loaded from: " <> assets
+  ghciArgs <- getGhciSessionSettings pkgs root True
+  freePort <- getFreePort
+  withGhciScriptArgs pkgs $ \dotGhciArgs -> do
+    runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
@@ -181,15 +180,15 @@ runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runRepl root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   ghciArgs <- getGhciSessionSettings pkgs "." True
-  withGhciScript pkgs $ \dotGhciPath ->
-    runGhciRepl root pkgs (ghciArgs <> mkGhciScriptArg dotGhciPath)
+  withGhciScriptArgs pkgs $ \dotGhciArgs ->
+    runGhciRepl root pkgs (ghciArgs <> dotGhciArgs)
 
 runWatch :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runWatch root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   ghciArgs <- getGhciSessionSettings pkgs root True
-  withGhciScript pkgs $ \dotGhciPath ->
-    runGhcid root True (ghciArgs <> mkGhciScriptArg dotGhciPath) pkgs Nothing
+  withGhciScriptArgs pkgs $ \dotGhciArgs ->
+    runGhcid root True (ghciArgs <> dotGhciArgs) pkgs Nothing
 
 exportGhciConfig :: MonadObelisk m => Bool -> FilePath -> PathTree Interpret -> m [String]
 exportGhciConfig useRelativePaths root interpretPaths = do
@@ -396,13 +395,29 @@ parsePackagesOrFail dirs' = do
 packageInfoToNamePathMap :: Foldable f => f CabalPackageInfo -> Map Text FilePath
 packageInfoToNamePathMap = Map.fromList . map (_cabalPackageInfo_packageName &&& _cabalPackageInfo_packageRoot) . toList
 
+-- Like 'withGhciScript' but provides the precise ghci arguments to add to a ghci session
+withGhciScriptArgs
+  :: (MonadObelisk m, Foldable f)
+  => f CabalPackageInfo -- ^ List of packages to load into ghci
+  -> ([String] -> m ()) -- ^ Action to run with the extra ghci arguments
+  -> m ()
+withGhciScriptArgs packageInfos f = withGhciScript loadPreludeManually packageInfos $ \fp -> f ["-XNoImplicitPrelude", "-ghci-script", fp]
+  where
+    -- These lines must be first and allow the session to support a custom Prelude when @-XNoImplicitPrelude@
+    -- is passed to the ghci session.
+    loadPreludeManually =
+      [ ":add Prelude" -- @:add@ is used because it's less noisy when there is no custom Prelude
+      , ":set -XImplicitPrelude" -- Turn the default setting on
+      ]
+
 -- | Create ghci configuration to load the given packages
 withGhciScript
   :: (MonadObelisk m, Foldable f)
-  => f CabalPackageInfo -- ^ List of packages to load into ghci
+  => [String] -- ^ Commands to prefix to file
+  -> f CabalPackageInfo -- ^ List of packages to load into ghci
   -> (FilePath -> m ()) -- ^ Action to run with the path to generated temporary .ghci
   -> m ()
-withGhciScript (toList -> packageInfos) f =
+withGhciScript preCommands (toList -> packageInfos) f =
   withSystemTempDirectory "ob-ghci" $ \fp -> do
     let dotGhciPath = fp </> ".ghci"
     liftIO $ writeFile dotGhciPath dotGhci
@@ -414,7 +429,8 @@ withGhciScript (toList -> packageInfos) f =
       , [ "Backend" | "backend" `Set.member` packageNames ]
       , [ "Frontend" | "frontend" `Set.member` packageNames ]
       ]
-    dotGhci = unlines
+    dotGhci = unlines $
+      preCommands <>
       [ if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
       , "import qualified Obelisk.Run"
       , "import qualified Frontend"
@@ -467,7 +483,7 @@ runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
   nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
-    Just $ unwords $ "ghci" : ghciArgs -- TODO: Shell escape
+    Just $ unwords $ fmap bashEscape $ "ghci" : ghciArgs
 
 -- | Run ghcid
 runGhcid
@@ -480,32 +496,28 @@ runGhcid
   -> m ()
 runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
   nixShellWithoutPkgs root True chdirToRoot (packageInfoToNamePathMap packages) "ghc" $
-    Just $ unwords $ ghcidExePath : opts -- TODO: Shell escape
+    Just $ unwords $ fmap bashEscape $ ghcidExePath : opts
   where
-    opts =
-      [ "-W"
-      , "--outputfile=ghcid-output.txt"
-      ] <> map (\x -> "--reload='" <> x <> "'") reloadFiles
-        <> map (\x -> "--restart='" <> x <> "'") restartFiles
-        <> testCmd
-        <> ["--command='" <> unwords ("ghci" : ghciArgs) <> "'"] -- TODO: Shell escape
-    testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
-
+    opts = concat
+      [ ["-W"]
+      , ["--outputfile=ghcid-output.txt"]
+      , map (\x -> "--reload=" <> x) reloadFiles
+      , map (\x -> "--restart=" <> x) restartFiles
+      , maybe [] (\cmd -> ["--test=" <> cmd]) mcmd
+      , ["--command=" <> unwords ("ghci" : ghciArgs)]
+      ]
     adjustRoot x = if chdirToRoot then makeRelative root x else x
     reloadFiles = map adjustRoot [root </> "config"]
     restartFiles = map (adjustRoot . _cabalPackageInfo_packageFile) packages
 
-mkGhciScriptArg :: FilePath -> [String]
-mkGhciScriptArg dotGhci = ["-ghci-script", dotGhci]
-
-getFreePort :: MonadIO m => m PortNumber
-getFreePort = liftIO $ withSocketsDo $ do
-  addr:_ <- getAddrInfo (Just defaultHints) (Just "127.0.0.1") (Just "0")
-  bracket (open addr) close socketPort
+getFreePort :: MonadIO m => m Socket.PortNumber
+getFreePort = liftIO $ Socket.withSocketsDo $ do
+  addr:_ <- Socket.getAddrInfo (Just Socket.defaultHints) (Just "127.0.0.1") (Just "0")
+  bracket (open addr) Socket.close Socket.socketPort
   where
     open addr = do
-      sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-      bind sock (addrAddress addr)
+      sock <- Socket.socket (Socket.addrFamily addr) (Socket.addrSocketType addr) (Socket.addrProtocol addr)
+      Socket.bind sock (Socket.addrAddress addr)
       return sock
 
 

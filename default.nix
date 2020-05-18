@@ -356,8 +356,9 @@ in rec {
       in nixpkgs.runCommand "ob-run" {
         buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
       } ''
+        cp ${exeSource} $PWD/ob-run.hs
         mkdir -p $out/bin/
-        ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out/bin/ob-run
+        ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
       '';
 
       linuxExeConfigurable = linuxExe;
