@@ -114,7 +114,7 @@ obCommand cfg = hsubparser
     , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (ObCommand_Repl <$> interpretOpts) $ progDesc "Open an interactive interpreter"
     , command "watch" $ info (ObCommand_Watch <$> interpretOpts) $ progDesc "Watch current project for errors and warnings"
-    , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
+    , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies or run a command in such a shell. E.g. ob shell -- ghc-pkg list"
     , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
         progDesc "List paths to haddock documentation for specified packages"
         <> footerDoc (Just $
@@ -285,6 +285,9 @@ shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
   <$> shellFlags
   <*> interpretOpts
+  -- This funny construction is used to support optparse-applicative's @--@ parsing.
+  -- All arguments after @--@ are left unparsed and instead provided to the last positional parser
+  -- which must therefore be 'many' in order to consume the rest of the input.
   <*> ((\xs -> if null xs then Nothing else Just $ unwords xs) <$> many (strArgument (metavar "COMMAND")))
 
 portOpt :: Int -> Parser Int
