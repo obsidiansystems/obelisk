@@ -371,6 +371,17 @@ type that we added our user route to. This tells us which routes are available f
 in this function. We can't accidentally match on a route that is not part of that type, it would
 be a compile error.
 
+#### Aside: `R`
+
+The `R` type is a type alias that lets us talk about a set of routes, such as
+`FrontendRoute`, as a whole. Recall that a route GADT is declared with a single type variable, and
+that type variable is fixed for each individual route in that GADT. It would not be possible to use
+the individual routes if we were forced to leave the type variable exposed. The function would never
+type-check. By using the type alias that wraps a [`DSum` (dependent sum)](https://hackage.haskell.org/package/dependent-sum-0.7.1.0/docs/Data-Dependent-Sum.html#t:DSum) we can specify the
+available routes in a type signature.
+
+----
+
 At the top of our `_frontend_body` function, before the `do`, we're going to insert the
 `subRoute_` function and turn this entire function into a `case` expression that shows different
 content based on the current route. The existing content will be moved into the branch for
