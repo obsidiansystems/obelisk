@@ -18,16 +18,20 @@ decode . encode = pure
 ```
 
 Route declared using `obelisk-route` are bidirectional, meaning that any route that can be encode
-to types and matched on can also be encoded as a url *without losing information*. This also
-provdies a test case that you can apply to any routes that you create. If they fail this test
-then they are not valid routes.
+to types and matched on can also be encoded as a url *without losing information*.
 
 * **Common modifications made to routes, whereever possible, will be caught by the compiler.**
 
 When you make common modifications to routes, such as adding or removing a route, you get
-"incomplete case" and similar warnings everywhere you need to update your application. Changing
-the type of a route will be a complete build failure until each use-case is fixed. This makes it
-*much* harder to miss things when you add routes.
+"incomplete case" and similar warnings everywhere you need to update your application. The type
+system also makes it *much* easier to catch those easy to forget things, such as updating nav-bars,
+or the breadcrumb widget that needs a human-readable description.
+
+* **Behaviour of routes is identical for Backend and Frontend**
+
+This package doesn't have a distinction between backend or frontend routes, these are only different
+types so their behaviour is identical. This guarantees that rendering completed during backend
+hydration will be indistinguishable from rendering on the frontend.
 
 It may seem odd that `obelisk-route` does not provide a way to specify the HTTP Method for a given
 route. This is due to the requirement that this package may be used when rendering a page on the
@@ -37,19 +41,26 @@ the routing system worked differently on the backend vs the frontend.
 
 ## Thinking in routes
 
-The way to approach building routes with `obelisk-route` is to think in terms of explaining your
-abstract route as a concrete definition. You do this by treating `Encoder`s, the main building block
-of `obelisk-route`, as pure functions. With the other types and functions acting as guide rails
-towards the correct solution.
+The way to approach building routes with `obelisk-route` is to focus on your Route data structure.
 
-The `Encoder`s are the smallest possible pure function that _compose_ together to build the concrete
-definition of your routing structure. By composing and building routes from pieces that are so small
-that they are "obviously correct", you can be confident that the composition of those individual
-pieces is also correct.
+First, make sure it matches your application's structure: with one Route value for each logical
+page the user might want to visit.  Only once that is clear, move on to thinking about how those
+logical pages ought to appear in the user's address bar.  For instance, you might want each user's
+profile to show up at `/user/$userid`.
 
-Be mindful of approaching this package as a collection of 'encoders' and 'decoders' for turning
-strings into things and things into strings. This will, more often than not, lead to you fighting
-the API and making things needlessly difficult.
+Finally, consider how you want to handle URLs with slight differences, like an extra trailing slash
+or different capitalization, or URLs whose rendering format has changed.  By doing things in this
+order, you design your routes around your application, rather than designing your application around
+your routes.
+
+We define this structure in `obelisk-route` using `Encoder`s. These are pure functions that
+_compose_ together to build the concrete definition of your routing structure. By composing and
+building routes from pieces that are so small that they are "obviously correct", you can be
+confident that the composition of those individual pieces is also correct.
+
+Avoid approaching this package as a collection of 'encoders' and 'decoders' for turning strings into
+things and things into strings. This will, more often than not, lead to you fighting the API and
+making things needlessly difficult.
 
 As we build up some examples in this guide, we will demonstrate how to think about and explain your
 abstract routes as concrete definitions using `Encoder`s as pure functions. You will see that
@@ -63,7 +74,7 @@ For our first route, we want to have a route for every user that is parameterise
 ID. Expressed as an abstractly it might look something like this:
 
 ```haskell
-data Routes = User Int
+data Route = Route_User Int
 ```
 
 We'll briefly discuss some of the types that are involved and then go through the process of adding
@@ -83,18 +94,53 @@ This is the primary building block for any route definition. It looks a lot wors
 data Encoder check parse a b
 ```
 
-You can think of an `Encoder` as a thing of type `a -> b`. Indeed, `Encoder`s may be composed using
-`(.)` from `Control.Category`, as `Encoder` is an instance of `Category`. An `Encoder` may describe
-an individual segment such as:
+You can think of an `Encoder check parse a b` as a thing of type `a -> b`. Indeed, `Encoder`s may be
+composed using `(.)` from `Control.Category`, as `Encoder` is an instance of `Category`.
+
+#### Aside: a more general composition
+
+When composing `Encoder`s the operator we need is the more general version from the
+`Control.Category` module. This is because the one from `Prelude` is specialised to the function
+arrow type `(->)`, whereas the one in `Control.Category` uses the `Category` typeclass:
 
 ```haskell
-Encoder check parse a Text
+-- (.) from Prelude
+(.) :: (b -> c) -> (a -> b) -> a -> c
+
+-- (.) from Control.Category
+(.) :: Category cat => cat b c -> cat a b -> cat a c
+```
+
+The `Encoder` type is an instance of `Category` so we need to use the more general function. Ensure
+that `(.)` is imported correctly at the top of `Common.Route`:
+
+ ```haskell
+import Prelude hiding ((.))
+import Control.Category
+```
+
+If you use the `(.)` from `Prelude` then you will end up with type errors similar to the following:
+
+```shell
+    • Couldn't match expected type ‘b0 -> c0’
+                  with actual type ‘Encoder check0 parse0 [Text] PageName’
+    • In the first argument of ‘(.)’, namely ‘pathOnlyEncoder’
+```
+
+Where you can see that it expected something of type `b0 -> c0` whereas we're wanting to compose `Encoder`s.
+
+----
+
+An `Encoder` may describe an individual segment such as:
+
+```haskell
+Encoder check parse Text PageName
 ```
 
 Or a collection of routes:
 
 ```haskell
-Encoder check parse a (R MyBlogRoutes)
+Encoder check parse (R MyBlogRoutes) PageName
 ```
 
 #### `pathComponentEncoder` & `SegmentResult`
@@ -135,8 +181,9 @@ such as `servant`, for a finer grained set of REST endpoints.
 - "blog/:userId:/:postId:"
 - "dashboard?optionA=true".
 
-Building routes for either one is the same process. Keeping the types separate enforces the
-distinction at compile time and helps to prevent errors.
+Building routes for either one is the same process. The only distinction is that the names
+indicate who is _serving_ the routes. Keeping the types separate enforces the distinction
+at compile time and helps to prevent errors.
 
 #### Obelisk live development environment
 
