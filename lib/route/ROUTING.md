@@ -319,30 +319,6 @@ Our `case` expression should now look like this:
 Update our `case` expression and replace the typed hole with this `Encoder` and save the file. The
 `ob run` will update and tell us the next step.
 
-#### Aside: a more general composition
-
-When composing `Encoder`s the operator we need is the more general version from the
-`Control.Category` module. This is because the one from `Prelude` is specialised to the function
-arrow type `(->)`, whereas the one in `Control.Category` uses the `Category` typeclass:
-
-```haskell
--- (.) from Prelude
-(.) :: (b -> c) -> (a -> b) -> a -> c
-
--- (.) from Control.Category
-(.) :: Category cat => cat b c -> cat a b -> cat a c
-```
-
-The `Encoder` type is an instance of `Category` so we need to use the more general function. Ensure
-that `(.)` is imported correctly at the top of `Common.Route`:
-
- ```haskell
-import Prelude hiding ((.))
-import Control.Category
-```
-
-----
-
 It should be a rare event that you will need to write your own `Encoder` function like
 `unwrappedEncoder` directly. The provided `Encoder`s in `Obelisk.Route` are designed to be composed
 and combined to build more complicated encoders and should be sufficient for most requirements. If
