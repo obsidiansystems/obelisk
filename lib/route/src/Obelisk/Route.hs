@@ -200,7 +200,7 @@ import Text.Read (readMaybe)
 -- Subroutes/paths
 --------------------------------------------------------------------------------
 
--- | This alias is used to wrap the type of a route GADT so that the type variable is existentially quantified.
+-- | This alias is used to wrap the type of a route GADT so that the type variable of the GADT is existentially quantified.
 --
 -- Given the following route type :
 --
@@ -212,7 +212,7 @@ import Text.Read (readMaybe)
 --   MyRoutes_B :: MyRoutes Int
 -- @
 --
--- Using 'R' we're able to write type signatures such as:
+-- Using 'R' we're able to write type signatures without worrying about the 'a':
 --
 -- @
 -- myRoutesWidget :: RoutedT t (R MyRoutes) m ()
