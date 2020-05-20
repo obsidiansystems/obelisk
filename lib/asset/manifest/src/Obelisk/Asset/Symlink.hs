@@ -7,7 +7,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import System.Directory
 import System.FilePath.Posix
-import System.Posix.Files
+import System.PosixCompat.Files
 
 -- | Copy the given hashed files from one location to hashed paths in another
 -- location, and symlink the unhashed paths to the hashed ones

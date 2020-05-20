@@ -39,8 +39,9 @@ import System.Environment (lookupEnv)
 import System.FilePath
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
-import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
-import System.Posix.Files
+import System.PosixCompat.Files
+import System.PosixCompat.Types
+import System.PosixCompat.User
 import Text.ShellEscape (bash, bytes)
 
 import GitHub.Data.GitData (Branch)
