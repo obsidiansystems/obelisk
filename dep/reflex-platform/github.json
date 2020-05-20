@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "eac@bump-ghcjs-for-dedup-fix",
+  "branch": "develop",
   "private": false,
-  "rev": "b42e7658968c790a44fab3e1b65e33005addd616",
-  "sha256": "1iiak3lcghssj93is5m1z4ni0x1jvx7dxk558vqyn58qmghhnh1j"
+  "rev": "c21ec7036c8351185cd2feef9ce577b6a61c4f22",
+  "sha256": "0m4sdpz6qvngralpyprrbvsyi2zmfh2l3q5vhihwfp3842blvbfg"
 }
