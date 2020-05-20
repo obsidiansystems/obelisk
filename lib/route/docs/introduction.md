@@ -77,114 +77,6 @@ ID. Expressed as an abstractly it might look something like this:
 data Route = Route_User Int
 ```
 
-We'll briefly discuss some of the types that are involved and then go through the process of adding
-the concrete definition of this route to our application.
-
-## Building blocks
-
-There are a few pieces required to build routes in Obelisk and there is plenty to dig into if you
-are curious. For the time being we can survive with a surface level understanding.
-
-#### `Encoder`
-
-This is the primary building block for any route definition. It looks a lot worse than it is:
-
-```haskell
--- The 'check' and 'parse' type variables will be covered later
-data Encoder check parse a b
-```
-
-You can think of an `Encoder check parse a b` as a thing of type `a -> b`. Indeed, `Encoder`s may be
-composed using `(.)` from `Control.Category`, as `Encoder` is an instance of `Category`.
-
-#### Aside: a more general composition
-
-When composing `Encoder`s the operator we need is the more general version from the
-`Control.Category` module. This is because the one from `Prelude` is specialised to the function
-arrow type `(->)`, whereas the one in `Control.Category` uses the `Category` typeclass:
-
-```haskell
--- (.) from Prelude
-(.) :: (b -> c) -> (a -> b) -> a -> c
-
--- (.) from Control.Category
-(.) :: Category cat => cat b c -> cat a b -> cat a c
-```
-
-The `Encoder` type is an instance of `Category` so we need to use the more general function. Ensure
-that `(.)` is imported correctly at the top of `Common.Route`:
-
- ```haskell
-import Prelude hiding ((.))
-import Control.Category
-```
-
-If you use the `(.)` from `Prelude` then you will end up with type errors similar to the following:
-
-```shell
-    • Couldn't match expected type ‘b0 -> c0’
-                  with actual type ‘Encoder check0 parse0 [Text] PageName’
-    • In the first argument of ‘(.)’, namely ‘pathOnlyEncoder’
-```
-
-Where you can see that it expected something of type `b0 -> c0` whereas we're wanting to compose `Encoder`s.
-
-----
-
-An `Encoder` may describe an individual segment such as:
-
-```haskell
-Encoder check parse Text PageName
-```
-
-Or a collection of routes:
-
-```haskell
-Encoder check parse (R MyBlogRoutes) PageName
-```
-
-#### `pathComponentEncoder` & `SegmentResult`
-
-These are used in tandem to with a `case` expression of the constructors of the route type, such as
-`FrontendRoute`, and provide the necessary `Encoder`s for each route definition.
-
-The `SegmentResult` type that acts as part of this functions interface has a list-like structure
-with a recursive component and a terminating case.
-
-The recursive case is the `PathSegment Text (Encoder check parse a PageName)` constructor that
-encodes a literal segment in the path, followed by an `Encoder`.
-
-The terminating case is the `PathEnd (Encoder check parse a (Map Text (Maybe Text)))` constructor.
-It is used to indicate that there is only this single segment in that route, or to terminate a
-longer parent route.
-
-#### `BackendRoute` & `FrontendRoute`
-
-An Obelisk application begins with two distinct sets of routes for backend and frontend. These
-are defined as GADTs called `BackendRoute` and `FrontendRoute`, respectively.
-
-For more info on GADTs check out the following links:
-* [Haskell Wiki](https://wiki.haskell.org/Generalised_algebraic_datatype)
-* [What I Wish I Knew When Learning Haskell - GADTs](http://dev.stephendiehl.com/hask/#gadts)
-* [Haskellforall](http://www.haskellforall.com/2012/06/gadts.html)
-
-In a freshly generated Obelisk application these live in the `Common.Route` module.
-
-`BackendRoute` is for serving static things or deferring to other backend endpoints. Such as:
-- "static/files/img/:imgName:"
-- "api/..." where the "..." portion is managed by a REST endpoint package of your choice.
-
-These backend routes can run their own code or hand off to a different request handling package,
-such as `servant`, for a finer grained set of REST endpoints.
-
-`FrontendRoute` is for managing the frontend routing of your application. Such as:
-- "blog/:userId:/:postId:"
-- "dashboard?optionA=true".
-
-Building routes for either one is the same process. The only distinction is that the names
-indicate who is _serving_ the routes. Keeping the types separate enforces the distinction
-at compile time and helps to prevent errors.
-
 #### Obelisk live development environment
 
 For best results, work through this tutorial using a freshly created Obelisk application. Refer to the Obelisk documentation for [Developing an Obelisk project](https://github.com/obsidiansystems/obelisk#developing-an-obelisk-project).
@@ -218,6 +110,31 @@ provide the current user ID `Int` that was input on that route.
 >   = Foo_ConstructorA
 >   | Foo_ConstructorB
 > ```
+
+#### The `BackendRoute` & `FrontendRoute` types
+
+A freshly generated Obelisk application comes with two GADTs for backend and frontend routes in the
+`Common.Route` module. These are `BackendRoute` and `FrontendRoute`, respectively.
+
+For more info on GADTs check out the following links:
+* [Haskell Wiki](https://wiki.haskell.org/Generalised_algebraic_datatype)
+* [What I Wish I Knew When Learning Haskell - GADTs](http://dev.stephendiehl.com/hask/#gadts)
+* [Haskellforall](http://www.haskellforall.com/2012/06/gadts.html)
+
+`BackendRoute` is for serving static things or deferring to other backend endpoints. Such as:
+- "static/files/img/:imgName:"
+- "api/..." where the "..." portion is managed by a REST endpoint package of your choice.
+
+These backend routes can run their own code or hand off to a different request handling package,
+such as `servant`, for a finer grained set of REST endpoints.
+
+`FrontendRoute` is for managing the frontend routing of your application. Such as:
+- "blog/:userId:/:postId:"
+- "dashboard?optionA=true".
+
+Building routes for either one is the same process. The only distinction is that the names indicate
+who is _serving_ the routes. Keeping the types separate enforces the distinction at compile time and
+helps to prevent errors.
 
 ### Building our route from segments
 
@@ -281,9 +198,64 @@ The output from `ob run` will update and look something like this:
       Or perhaps ‘_todo’ is mis-spelled, or not in scope
 ```
 
-Remembering that we can squint a bit and view an `Encoder` as a function from `a -> b`, this makes
-the next typed hold that we have to fill, have a shape similar to `Int -> PageName`. Our next task
-will be to build that `Encoder` and fill that hole.
+#### The `Encoder` type
+
+This is the primary building block for any route definition:
+
+```haskell
+-- The 'check' and 'parse' type variables will be covered later
+data Encoder check parse a b
+```
+
+You can think of an `Encoder check parse a b` as a thing of type `a -> b`. Indeed, `Encoder`s may be
+treated as you would any pure function, including composing them using `(.)` as `Encoder` is an
+instance of `Category`.
+
+However the `(.)` operator from `Prelude` is specialised to the function arrow type `(->)` so we
+must import the moregeneral version from the `Control.Category` module, because it uses the
+`Category` typeclass constraint:
+
+```haskell
+-- (.) from Prelude
+(.) :: (b -> c) -> (a -> b) -> a -> c
+
+-- (.) from Control.Category
+(.) :: Category cat => cat b c -> cat a b -> cat a c
+```
+
+The `Encoder` type is an instance of `Category` so we need to use the more general function. Ensure
+that `(.)` is imported correctly at the top of `Common.Route`:
+
+ ```haskell
+import Prelude hiding ((.))
+import Control.Category
+```
+
+If you use the `(.)` from `Prelude` then you will end up with type errors similar to the following:
+
+```shell
+    • Couldn't match expected type ‘b0 -> c0’
+                  with actual type ‘Encoder check0 parse0 [Text] PageName’
+    • In the first argument of ‘(.)’, namely ‘pathOnlyEncoder’
+```
+
+Where you can see that it expected something of type `b0 -> c0` whereas we're wanting to compose
+`Encoder`s, although we can treat `Encoder` as pure functions, the types are distinct.
+
+----
+
+Looking back at the type hole from GHC:
+
+
+```shell
+    • Found hole:
+        _todo :: Encoder (Either Text) (Either Text) Int PageName
+      Or perhaps ‘_todo’ is mis-spelled, or not in scope
+```
+
+And noting that consider an `Encoder check parse a b` as a function from `a -> b`, this makes the
+next typed hold that we have to fill, have a shape similar to `Int -> PageName`. Our next task will
+be to build that `Encoder` and fill that hole.
 
 #### Wait a minute, shouldn't I be matching on the route on the left?
 
