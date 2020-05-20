@@ -54,6 +54,8 @@ module Obelisk.Route
   , unpackTextEncoder
   , prefixTextEncoder
   , unsafeTshowEncoder
+  , unsafeShowEncoder
+  , readShowEncoder
   , someConstEncoder
   , singlePathSegmentEncoder
   , maybeEncoder
@@ -98,7 +100,6 @@ module Obelisk.Route
   , renderObeliskRoute
   , renderBackendRoute
   , renderFrontendRoute
-  , readShowEncoder
   , integralEncoder
   , pathSegmentEncoder
   , queryOnlyEncoder
@@ -516,8 +517,14 @@ someConstEncoder = unsafeMkEncoder $ EncoderImpl
   , _encoderImpl_decode = pure . Some . Const
   }
 
--- | WARNING: This is only safe if the Show and Read instances for 'a' are
--- inverses of each other
+-- | WARNING: This is only safe if the Show and Read instances for 'a' are inverses of each other
+--
+-- Instances must be able to satisfy the following property for this 'Encoder' to be safe:
+--
+-- @
+-- forall a. reads (show a) === [(a, "")]
+-- @
+--
 unsafeTshowEncoder :: (Show a, Read a, Applicative check, MonadError Text parse) => Encoder check parse a Text
 unsafeTshowEncoder = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode = tshow
@@ -1098,8 +1105,24 @@ renderObeliskRoute e r =
       enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
   in (T.pack . uncurry (<>)) $ encode enc r
 
+-- | As per the 'unsafeTshowEncoder' but does not use the 'Text' type.
+--
+-- WARNING: Just like 'unsafeTshowEncoder' this is only safe if the Show and Read
+-- instances for 'a' are inverses of each other
+--
+-- Instances must be able to satisfy the following property for this 'Encoder' to be safe:
+--
+-- @
+-- forall a. reads (show a) === [(a, "")]
+-- @
+--
+unsafeShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) => Encoder check parse a PageName
+unsafeShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
+
+-- | This 'Encoder' does not properly indicate that its use may be unsafe and is being renamed to 'unsafeShowEncoder'
 readShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) => Encoder check parse a PageName
-readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
+readShowEncoder = unsafeShowEncoder
+{-# DEPRECATED readShowEncoder "This function has been renamed to 'unsafeShowEncoder'. 'readShowEncoder' will be removed in a future release" #-}
 
 integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
 integralEncoder = reviewEncoder Numeric.Lens.integral
