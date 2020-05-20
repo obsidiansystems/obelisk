@@ -8,6 +8,9 @@ This project's release branch is `master`. This log is written from the perspect
 * ([#739](https://github.com/obsidiansystems/obelisk/pull/739)) Improve `ob shell` by allowing commands to be passed verbatim after a `--` argument. For example, `ob shell 'run command'` can now be written `ob shell -- run command`.
 * ([#735](https://github.com/obsidiansystems/obelisk/pull/735)) Fix regression causing custom `Prelude`s to break `ob run`/`ob watch`/`ob repl`.
 * ([#737](https://github.com/obsidiansystems/obelisk/pull/737)) Fix bug causing custom `Prelude`s to break `ob profile`.
+* ([#742](https://github.com/obsidiansystems/obelisk/pull/742), [#57](https://github.com/obsidiansystems/obelisk/pull/57), [#406](https://github.com/obsidiansystems/obelisk/pull/406)) Enable `-dedupe` and `-DGHCJS_BROWSER` in GHCJS builds to make JavaScript output considerably smaller leading to faster load/parse times and faster build times.
+* ([#742](https://github.com/obsidiansystems/obelisk/pull/742)) Update `reflex-platform` which includes:
+    * A new version of GHCJS where `-dedupe` is fixed.
 
 ## v0.8.0.0
 
