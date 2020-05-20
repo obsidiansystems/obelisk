@@ -321,29 +321,32 @@ in rec {
       __unstable__.profiledObRun = let
         profiled = projectOut { inherit system; enableLibraryProfiling = true; };
         exeSource = builtins.toFile "ob-run.hs" ''
+          {-# LANGUAGE NoImplicitPrelude #-}
+          {-# LANGUAGE PackageImports #-}
           module Main where
 
-          import Control.Exception
-          import Reflex.Profiled
-          import System.Environment
+          -- Explicitly import Prelude from base lest there be multiple modules called Prelude
+          import "base" Prelude (IO, (++), read)
 
-          import qualified Obelisk.Run
+          import "base" Control.Exception (finally)
+          import "reflex" Reflex.Profiled (writeProfilingData)
+          import "base" System.Environment (getArgs)
+
+          import qualified "obelisk-run" Obelisk.Run
           import qualified Frontend
           import qualified Backend
 
           main :: IO ()
           main = do
-            args <- getArgs
-            let port = read $ args !! 0
-                assets = args !! 1
-                profileFile = (args !! 2) <> ".rprof"
-            Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
+            [portStr, assets, profFileName] <- getArgs
+            Obelisk.Run.run (read portStr) (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend
+              `finally` writeProfilingData (profFileName ++ ".rprof")
         '';
       in nixpkgs.runCommand "ob-run" {
-        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [p.backend p.frontend])) ];
       } ''
-        cp ${exeSource} $PWD/ob-run.hs
-        mkdir -p $out/bin/
+        cp ${exeSource} ob-run.hs
+        mkdir -p $out/bin
         ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
       '';
 
