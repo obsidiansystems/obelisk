@@ -2,10 +2,9 @@
 
 ## Motivation
 
-The `obelisk-route` package is designed to help with managing the paths and parameters for routing
-in your application.
+The `obelisk-route` package is designed to help with managing the paths and parameters for routing in your application.
 
-Most importantly it has been designed and built to provide the following guarantees.
+Most importantly it has been designed and built to provide the following guarantees:
 
 * **Every route value can be encoded to a URL**
 
@@ -17,21 +16,21 @@ Every route that you declare in your types will produce a valid URL, i.e. encodi
 decode . encode = pure
 ```
 
-Route declared using `obelisk-route` are bidirectional, meaning that any route that can be encode
+Routes declared using `obelisk-route` are bidirectional, meaning that any route that can be encoded
 to types and matched on can also be encoded as a url *without losing information*.
 
 * **Common modifications made to routes, whereever possible, will be caught by the compiler.**
 
-When you make common modifications to routes, such as adding or removing a route, you get
+When you make common modifications to routes, or a route is added or removed, there will be
 "incomplete case" and similar warnings everywhere you need to update your application. The type
-system also makes it *much* easier to catch those easy to forget things, such as updating nav-bars,
-or the breadcrumb widget that needs a human-readable description.
+system also makes it *much* easier to catch those easy-to-forget issues such as; updating nav-bars,
+or that breadcrumb widget that needs a human-readable description.
 
 * **Behaviour of routes is identical for Backend and Frontend**
 
 This package doesn't have a distinction between backend or frontend routes, these are only different
 types so their behaviour is identical. This guarantees that rendering completed during backend
-hydration will be indistinguishable from rendering on the frontend.
+hydration will be indistinguishable from rendering completed on the frontend.
 
 It may seem odd that `obelisk-route` does not provide a way to specify the HTTP Method for a given
 route. This is due to the requirement that this package may be used when rendering a page on the
@@ -53,7 +52,7 @@ or different capitalization, or URLs whose rendering format has changed.  By doi
 order, you design your routes around your application, rather than designing your application around
 your routes.
 
-We define this structure in `obelisk-route` using `Encoder`s. These are pure functions that
+We define this structure in `obelisk-route` using `Encoder`s. These are small pure functions that
 _compose_ together to build the concrete definition of your routing structure. By composing and
 building routes from pieces that are so small that they are "obviously correct", you can be
 confident that the composition of those individual pieces is also correct.
@@ -70,7 +69,7 @@ and composable pieces.
 
 ## Simple route with one parameter
 
-We're going to add a homepage for every user, which requires that it be parameterised on their user
+We're going to add a homepage for every user, which is it be parameterised on their user
 ID. Expressed abstractly it might look something like this:
 
 ```haskell
@@ -89,8 +88,8 @@ The purpose of this constructor is to give a name and a value to a particular ro
 constructor to match on when we're deciding what code to run. It will also be used to help build
 type-safe links within our application, as well as declare what types are expected from the route.
 
-Recall that our abstract route definition was a route for every user, parameterised over their user
-ID. Now we begin to make this into a concrete definition.
+Recall that our abstract route definition was a homepage for every user, parameterised over their
+user ID. Now we begin to make this into a concrete definition.
 
 Add the following constructor to `FrontendRoute` in `Common.Route`:
 
@@ -138,9 +137,9 @@ helps to prevent errors.
 
 ### Building our route from segments
 
-If you're following along with `ob run` then after you added the new constructor and saved the
-file. New incompleteness warnings will have appeared in the output of `ob run`. This is GHC and the
-type system helping us out by pointing out the next steps for us now that we've extended our
+If you're following along with `ob run` then after you add the new constructor and save the
+file. New incompleteness warnings will have appeared in the output of `ob run`. This is the type
+system helping us out by pointing out the next steps for us now that we've extended our
 `FrontendRoutes` type.
 
 The next step is to fill in the definition of our new route. The primary function that contains
@@ -148,7 +147,7 @@ these definitions is the `fullRouteEncoder` function, located in `Common.Route`.
 
 Add our new constructor as another pattern in the `case` expression for the frontend routes. For now
 add a type-hole on the right hand side of our new `case` expression and save the file. The `ob run`
-output should update and tell you the type of the expression that it is expecting:
+output will update and tell you the type of the expression that it is expecting:
 
 ```haskell
 fullRouteEncoder
@@ -175,8 +174,7 @@ The output will be:
 This is telling us that we have to construct a `SegmentResult` to be paired with our
 `FrontendRoute_User` constructor to form part of the complete `Encoder` for `FrontendRoutes`.
 
-Looking back at the `SegmentResult` type, it has two constructors. The one that we need is the
-`PathSegment` constructor:
+The `SegmentResult` type has two constructors. The one that we need is the `PathSegment` constructor:
 
 ```haskell
   | PathSegment Text (Encoder check parse a PageName)
@@ -208,11 +206,11 @@ data Encoder check parse a b
 ```
 
 You can think of an `Encoder check parse a b` as a thing of type `a -> b`. Indeed, `Encoder`s may be
-treated as you would any pure function, including composing them using `(.)` as `Encoder` is an
-instance of `Category`.
+treated as you would any pure function, including composing them using `(.)`. Because `Encoder` has
+an instance of `Category`.
 
 However the `(.)` operator from `Prelude` is specialised to the function arrow type `(->)` so we
-must import the moregeneral version from the `Control.Category` module, because it uses the
+must import the more general version from the `Control.Category` module, because it uses the
 `Category` typeclass constraint:
 
 ```haskell
@@ -231,7 +229,8 @@ import Prelude hiding ((.))
 import Control.Category
 ```
 
-If you use the `(.)` from `Prelude` then you will end up with type errors similar to the following:
+If you use the `(.)` from `Prelude` to compose `Encoder`s then you will end up with type errors
+similar to the following:
 
 ```shell
     • Couldn't match expected type ‘b0 -> c0’
@@ -239,7 +238,7 @@ If you use the `(.)` from `Prelude` then you will end up with type errors simila
     • In the first argument of ‘(.)’, namely ‘pathOnlyEncoder’
 ```
 
-Where you can see that it expected something of type `b0 -> c0` whereas we're wanting to compose
+You can see that it expected something of type `b0 -> c0` whereas we're wanting to compose
 `Encoder`s, although we can treat `Encoder` as pure functions, the types are distinct.
 
 ----
@@ -253,21 +252,21 @@ Looking back at the type hole from GHC:
       Or perhaps ‘_todo’ is mis-spelled, or not in scope
 ```
 
-And noting that consider an `Encoder check parse a b` as a function from `a -> b`, this makes the
-next typed hold that we have to fill, have a shape similar to `Int -> PageName`. Our next task will
-be to build that `Encoder` and fill that hole.
+Recall that we can treat an `Encoder check parse a b` as a function from `a -> b`, this makes the
+next typed hold that we have to fill have a type similar to `Int -> PageName`. Our next task will
+be to build that `Encoder`.
 
 #### Wait a minute, shouldn't I be matching on the route on the left?
 
 In many routing systems you match directly on the route input and break it down as required. This
 process can be fragile and has limitations. Additionally you are left on your own when comes to
-_creating_ links in your application. Because there is no way to relate the structure of a route to
+creating links in your application. Because there is no way to relate the structure of a route to
 anything, you have to manually build up routes again. If any of those routes change it can be a
 tedious and error-prone process to find and fix all the constructed links.
 
 Obelisk routes are bidirectional, which means the `Encoder` that you create works as both a 'pattern
 match' for incoming routes. As well as using the GADT constructors as a type safe mechanism for
-_creating_ links in your application. It's a compile error to try to use route constructors that
+_creating_ links in your application. It is a compile error to try to use route constructors that
 don't exist, and if you change the type of a route the application will not build until you fix that
 change every where it appears.
 
@@ -276,8 +275,8 @@ change every where it appears.
 ### Completing our first encoder
 
 Within the `Obelisk.Route` module are many pre-built `Encoders`, for our purposes we need to find
-one that can be used to satisfy the `Int -> PageName` shaped hole. The `unsafeShowEncoder` matches our
-requirements:
+one that can be used to satisfy the `Int -> PageName` shaped hole. The `unsafeShowEncoder` matches
+our requirements:
 
 ```haskell
 unsafeShowEncoder
@@ -307,27 +306,32 @@ _todo :: Encoder (Either Text) (Either Text) Int PageName
 
 This type is a combination of the URL and a query string and is the target type of a _complete_
 route `Encoder`. Individual `Encoder`s will work with different types, but often the final type of a
-chain of `Encoder`s will be a `PageName`. However it is unlikely you will ever need to construct
-this type yourself as `obelisk-route` will do that for you.
+chain of `Encoder`s will be a `PageName`. It is unlikely you will ever need to construct this type
+yourself as `obelisk-route` has functions that will handle that for you.
 
 ----
 
-We can safely simplify these the type of `unsafeShowEncoder` a bit for the sake of understanding:
+We can safely simplify the type of `unsafeShowEncoder` for the sake of understanding:
 
 ```haskell
 unsafeShowEncoder :: (Read a, Show a) => a -> PageName
 ```
 
-Conveniently `Int` has an instance of both `Read` and `Show`, satisfying both constraints of the
-`unsafeShowEncoder` becoming:
+Conveniently `Int` has an instance of both `Read` and `Show`, but more importantly these instances
+are inverses of one another. This matters because a guarantee of `obelisk-route` is that going to
+and from a URL **does not lose information**. If applying `show` to a value of `Int` and then
+applying `read` to the resulting `String` did not produce the exact same `Int` value that we started
+with, our `Encoder` would not be valid as it could not satisfy that guarantee.
+
+Replacing the constraints with our type, `unsafeShowEncoder` becomes:
 
 ```haskell
 unsafeShowEncoder :: Int -> PageName
 ```
 
-Which is exactly what we wanted! So we're able to replace our typed hole `_todo` with
-`unsafeShowEncoder` and we've created our first complete route `Encoder`. Yay. This `Encoder` does the
-simplest useful thing while being obviously correct.
+This is the type what we wanted! So we're able to replace our typed hole `_todo` with
+`unsafeShowEncoder` and we've created our first complete route `Encoder`. Yay. This `Encoder` does
+the simplest useful thing while being obviously correct.
 
 Our `case` expression should now look like this:
 
@@ -335,8 +339,8 @@ Our `case` expression should now look like this:
   FrontendRoute_User -> PathSegment "user" unsafeShowEncoder
 ```
 
-Update our `case` expression and replace the typed hole with this `Encoder` and save the file. The
-`ob run` will update and tell us the next step.
+Once you've updated our `case` expression to replace the typed hole with this `Encoder`, save the
+file. The `ob run` output will update and tell us the next step.
 
 It should be a rare event that you will need to write your own `Encoder` function like
 `unwrappedEncoder` directly. The provided `Encoder`s in `Obelisk.Route` are designed to be composed
@@ -352,7 +356,7 @@ our routes into the application and see how to make decisions and access the val
 
 Now we can update the Frontend of our application to do something with this routing information.
 
-We're going to make the rest of these changes in the main `Frontend.hs` in the `frontend`
+We're going to make the rest of these changes in the main `Frontend.hs` module in the `frontend`
 package. If you're following along with a freshly minted Obelisk application then it should look
 something like this:
 
@@ -382,8 +386,8 @@ frontend = Frontend
   }
 ```
 
-We're going to modify the function at `_frontend_body` to show different content for the main or
-user page, and then link between them.
+We'll modify the function at `_frontend_body` to show different content for the main or user page,
+and then link between them.
 
 Notice that part of the type of `frontend` is `R FrontendRoute`. That is the same `FrontendRoute`
 type that we added our user route to. This tells us which routes are available for us to match on
@@ -392,12 +396,11 @@ be a compile error.
 
 #### Aside: `R`
 
-The `R` type is a type alias that lets us talk about a set of routes, such as
-`FrontendRoute`, as a whole. Recall that a route GADT is declared with a single type variable, and
-that type variable is fixed for each individual route in that GADT. It would not be possible to use
-the individual routes if we were forced to leave the type variable exposed. The function would never
-type-check. By using the type alias that wraps a [`DSum` (dependent sum)](https://hackage.haskell.org/package/dependent-sum-0.7.1.0/docs/Data-Dependent-Sum.html#t:DSum) we can specify the
-available routes in a type signature.
+The `R` type is an alias that lets us talk about a set of routes, such as `FrontendRoute`, as a
+whole. The GADT for routes are declared with a single type variable, and that type variable is fixed
+for each individual route in that GADT. It would not be possible to use the individual routes if we
+were forced to leave the type variable exposed. The function would never type-check. By using the
+type alias that wraps the type constructor for the GADT with a [`DSum` (dependent sum)](https://hackage.haskell.org/package/dependent-sum-0.7.1.0/docs/Data-Dependent-Sum.html#t:DSum) we can specify the available routes in a type signature.
 
 ----
 
@@ -440,8 +443,7 @@ the `Int` that represents the user ID. This is because the type that we had in o
 GADT type is stored in a `ReaderT` that changes based on which route we're currently matching on.
 
 Were we to use `askRoute` in the `Frontend_Main` branch of our `case` expression, the resulting
-`Dynamic` would contain a value of unit `()` because that is the type of the `Frontend_Main`
-route.
+`Dynamic` would contain a value of unit `()` because that is the type of the `Frontend_Main` route.
 
 Update the `FrontendRoute_User` branch of our `case` expression to the following:
 
