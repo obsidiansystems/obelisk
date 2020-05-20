@@ -17,9 +17,6 @@ library
   exposed-modules:
     Frontend
   ghc-options: -Wall
-  if impl(ghcjs -any)
-    ghc-options: -dedupe
-    cpp-options: -DGHCJS_BROWSER
 
 executable frontend
   main-is: main.hs
@@ -31,10 +28,9 @@ executable frontend
                , reflex-dom
                , obelisk-generated-static
                , frontend
-  --TODO: Make these ghc-options optional
   ghc-options: -threaded
-  if os(darwin)
-     ghc-options: -dynamic
-  if impl(ghcjs -any)
+  if impl(ghcjs)
     ghc-options: -dedupe
     cpp-options: -DGHCJS_BROWSER
+  if os(darwin)
+    ghc-options: -dynamic
