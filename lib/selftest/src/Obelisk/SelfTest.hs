@@ -243,7 +243,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       uu <- update
       assertRevEQ u uu
 
-    it "can run 'ob doc'" $ inTmpObInit $ \_ -> runOb ["doc", "reflex"]
+    it "can run 'ob doc'" $ inTmpObInit $ \_ -> runOb_ ["doc", "reflex"]
 
   describe "ob thunk pack/unpack" $ parallel $ do
     it "has thunk pack and unpack inverses" $ inTmpObInitWithImplCopy $ \_ -> do
@@ -305,6 +305,11 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       startingContents <- checkDir dir
       void $ errExit False $ runOb ["thunk", "update", toTextIgnore dir, "--branch", "dumble-palooza"]
       checkDir dir >>= liftIO . assertEqual "" startingContents
+
+  describe "ob shell" $ parallel $ do
+    it "works with --" $ inTmpObInit $ \_ -> do
+      output <- runOb ["shell", "--", "ghc-pkg", "list"]
+      liftIO $ assertBool "Unexpected output from ob shell" $ ("Cabal-" `T.isInfixOf` output) && ("ghc-" `T.isInfixOf` output)
 
   describe "ob hoogle" $ {- NOT parallel -} do
     it "starts a hoogle server on the given port" $ inTmpObInit $ \_ -> do
