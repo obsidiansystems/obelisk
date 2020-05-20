@@ -151,21 +151,20 @@ runFrontend
   -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
+#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
   let mode = FrontendMode
-        { _frontendMode_hydrate =
-#ifdef ghcjs_HOST_OS
-          True
-#else
-          False
-#endif
-        , _frontendMode_adjustRoute =
-#ifdef ghcjs_HOST_OS
-          False
-#else
-          True
-#endif
+        { _frontendMode_hydrate = True
+        , _frontendMode_adjustRoute = False
         }
-  configs <- liftIO Lookup.getConfigs
+      doLift = Prelude.id
+#else
+  let mode = FrontendMode
+        { _frontendMode_hydrate = False
+        , _frontendMode_adjustRoute = True
+        }
+      doLift = liftIO
+#endif
+  configs <- doLift Lookup.getConfigs
   when (_frontendMode_hydrate mode) removeHTMLConfigs
   -- There's no fundamental reason that adjustRoute needs to control setting the
   -- initial route and *also* the useHash parameter; that's why these are

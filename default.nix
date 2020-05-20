@@ -2,6 +2,7 @@
 , profiling ? false
 , iosSdkVersion ? "10.2"
 , config ? {}
+, enableWasm ? true
 , reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
@@ -85,6 +86,33 @@ in rec {
       echo "//# sourceMappingURL=all.js.map" >> all.js
     ''}
   '';
+  webabi = pkgs.callPackage (hackGet (reflex-platform.wasmCross + /webabi)) {};
+  # wasm-opt -Oz seems to create a slightly larger binary
+  stripWasm = frontend: pkgs.runCommand "stripWasm" {} ''
+    mkdir $out
+    cd $out
+    ln -s "${frontend}/bin/frontend" frontend.original.wasm
+    cp "${frontend}/bin/frontend" frontend.wasm.tmp
+    chmod u+rw frontend.wasm.tmp
+    chmod a-x frontend.wasm.tmp
+    ${pkgs.wabt}/bin/wasm-strip frontend.wasm.tmp
+    ${pkgs.binaryen}/bin/wasm-opt -Os -o frontend.wasm frontend.wasm.tmp
+    rm frontend.wasm.tmp
+  '';
+
+  # The ghcjs and wasm files are put in a single asset, as they need to be in sync and served together.
+  combinedJsWasmAssets = frontendJs: optimizationLevel: frontendWasm: pkgs.runCommand "combinedJsWasmAssets" {} ''
+    mkdir $out
+    cd $out
+    ${if frontendJs != null then ''
+      ln -s ${compressedJs frontendJs optimizationLevel}/* .
+    '' else '' ''}
+    ${if frontendWasm != null then ''
+      ln -s ${stripWasm frontendWasm}/* .
+      ln -s ${webabi}/lib/node_modules/webabi/jsaddleJS/* .
+      ln -s ${webabi}/lib/node_modules/webabi/build/mainthread_runner.js .
+    '' else '' ''}
+  '';
 
   serverModules = {
     mkBaseEc2 = { nixosPkgs, ... }: {...}: {
@@ -167,13 +195,16 @@ in rec {
 
   inherit mkAssets;
 
-  serverExe = backend: frontend: assets: optimizationLevel: version:
+  serverExe = { backend, assets, version
+    , frontendJs ? null, optimizationLevel ? null
+    , frontendWasm ? null
+    } :
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
       ln -s "${mkAssets assets}" $out/static.assets
-      ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      ln -s ${mkAssets (combinedJsWasmAssets frontendJs optimizationLevel frontendWasm)} $out/frontend.jsexe.assets
       echo ${version} > $out/version
     '';
 
@@ -261,7 +292,7 @@ in rec {
 
                 shells-ghc = builtins.attrNames (self.predefinedPackages // self.shellPackages);
 
-                shells-ghcjs = [
+                shells-web = [
                   self.frontendName
                   self.commonName
                 ];
@@ -288,7 +319,9 @@ in rec {
                     ${if self.userSettings.android == null && self.userSettings.ios == null then null else "ghcSavedSplices"} =
                       lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
                     ghc = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghc;
-                    ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
+                    ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-web;
+                    ${if !enableWasm then null else "wasm"} =
+                      lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-web;
                   };
                   android = self.__androidWithConfig (self.base + "/config");
                   ios = self.__iosWithConfig (self.base + "/config");
@@ -309,12 +342,14 @@ in rec {
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
       mainProjectOut = projectOut { inherit system; };
-      serverOn = projectInst: version: serverExe
-        projectInst.ghc.backend
-        mainProjectOut.ghcjs.frontend
-        projectInst.passthru.staticFiles
-        projectInst.passthru.__closureCompilerOptimizationLevel
-        version;
+      serverOn = projectInst: version: serverExe {
+        backend = projectInst.ghc.backend;
+        frontendJs = mainProjectOut.ghcjs.frontend;
+        assets = projectInst.passthru.staticFiles;
+        optimizationLevel = projectInst.passthru.__closureCompilerOptimizationLevel;
+        frontendWasm = if enableWasm then mainProjectOut.wasm.frontend else null;
+        inherit version;
+      };
       linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
     in mainProjectOut // {
