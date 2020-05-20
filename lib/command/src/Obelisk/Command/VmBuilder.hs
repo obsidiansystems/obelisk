@@ -18,10 +18,10 @@ import System.Directory (createDirectoryIfMissing)
 import System.Exit (ExitCode(..))
 import System.FilePath ((<.>), (</>))
 import qualified System.Info
-import System.Process (proc)
 
 import Obelisk.App (MonadObelisk, getObeliskUserStateDir)
 import Obelisk.CliApp
+import Obelisk.Command.Utils (rmPath)
 
 -- | Generate the `--builders` argument string to enable the VM builder after ensuring it is available.
 getNixBuildersArg :: MonadObelisk m => m String
@@ -96,7 +96,7 @@ setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> con
 
   -- Create new SSH keys for this container
   callProcessAndLogOutput (Debug, Error) $
-    proc "rm" ["-f", stateDir </> sshKeyFileName, stateDir </> sshKeyFileName <.> "pub"]
+    proc rmPath ["-f", stateDir </> sshKeyFileName, stateDir </> sshKeyFileName <.> "pub"]
   callProcessAndLogOutput (Debug, Error) $
     proc "ssh-keygen" ["-t", "ed25519", "-f", stateDir </> sshKeyFileName, "-P", ""]
 
@@ -156,7 +156,8 @@ testLinuxBuild stateDir
   | System.Info.os == "linux" = failWith "Using the docker builder is not necessary on linux."
   | otherwise = do
     (exitCode, _stdout, stderr) <- readCreateProcessWithExitCode $ proc "nix-build"
-      [ "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
+      [ "--no-out-link"
+      , "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
       , "--builders", nixBuildersArgString stateDir
       ]
     unless (exitCode == ExitSuccess) $ do

@@ -10,10 +10,12 @@ library
       attoparsec
     , base
     , bytestring
+    , containers
     , cookie
     , dependent-sum
     , dependent-sum-template
     , ghcjs-dom
+    , HsOpenSSL
     , http-client
     , http-reverse-proxy
     , http-types
@@ -25,7 +27,7 @@ library
     , network
     , obelisk-asset-serve-snap
     , obelisk-backend
-    , obelisk-executable-config
+    , obelisk-executable-config-lookup
     , obelisk-frontend
     , obelisk-route
     , process
@@ -35,11 +37,17 @@ library
     , snap-core
     , streaming-commons
     , text
+    , time
     , universe
+    , utf8-string
     , wai
     , wai-websockets
     , warp
+    , warp-tls
     , websockets
   exposed-modules:
       Obelisk.Run
   ghc-options: -Wall -fwarn-redundant-constraints
+  if os(linux)
+    cpp-options: -DIPROUTE_SUPPORTED
+    build-depends: which

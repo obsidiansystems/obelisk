@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -22,10 +23,11 @@ import Data.Text.Encoding (encodeUtf8)
 import Reflex
 import Reflex.Host.Class
 import Reflex.Dom.Core
-import GHCJS.DOM.Document (getCookie, Document)
+import "ghcjs-dom" GHCJS.DOM.Document (getCookie, Document)
 import GHCJS.DOM.Types (MonadJSM)
 import Web.Cookie
 
+import Obelisk.Configs
 import Obelisk.Route.Frontend
 
 class Monad m => HasCookies m where
@@ -45,6 +47,8 @@ instance HasCookies m => HasCookies (SetRouteT t r m)
 instance HasCookies m => HasCookies (StaticDomBuilderT t m)
 instance HasCookies m => HasCookies (TriggerEventT t m)
 instance HasCookies m => HasCookies (RoutedT t r m)
+instance HasCookies m => HasCookies (ConfigsT m)
+instance HasConfigs m => HasConfigs (CookiesT m)
 
 newtype CookiesT m a = CookiesT { unCookiesT :: ReaderT Cookies m a }
   deriving

@@ -7,9 +7,11 @@ cabal-version: >=1.2
 library
   hs-source-dirs: src
   build-depends:
-      ansi-terminal
+      aeson
+    , ansi-terminal
     , base
     , bytestring
+    , containers
     , exceptions
     , io-streams
     , lens
@@ -17,13 +19,14 @@ library
     , monad-loops
     , mtl
     , process
+    , shell-escape
     , terminal-size
     , text
     , time
     , transformers
+    , utf8-string
   exposed-modules:
     Obelisk.CliApp
-    Obelisk.CliApp.Demo
   other-modules:
     Obelisk.CliApp.Logging
     Obelisk.CliApp.Process

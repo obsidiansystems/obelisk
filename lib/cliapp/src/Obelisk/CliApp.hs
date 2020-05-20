@@ -33,16 +33,26 @@ module Obelisk.CliApp
   , Severity (..)
 
   -- .Process
-  , ProcessFailure (..)
   , AsProcessFailure (..)
-  , readProcessAndLogStderr
-  , readProcessAndLogOutput
-  , readCreateProcessWithExitCode
-  , callProcessAndLogOutput
-  , createProcess_
-  , callProcess
+  , ProcessFailure (..)
+  , ProcessSpec (..)
   , callCommand
+  , callProcess
+  , callProcessAndLogOutput
+  , createProcess
+  , createProcess_
+  , overCreateProcess
+  , proc
+  , readCreateProcessWithExitCode
+  , readProcessAndLogOutput
+  , readProcessAndLogStderr
+  , readProcessJSONAndLogStderr
   , reconstructCommand
+  , setCwd
+  , setDelegateCtlc
+  , setEnvOverride
+  , shell
+  , waitForProcess
   ) where
 
 import Control.Monad.Log (Severity (..))

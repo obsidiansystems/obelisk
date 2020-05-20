@@ -2,14 +2,13 @@
 **/.cabal-sandbox
 **/cabal.sandbox.config
 result
+result-*
 *.o
 *.hi
-
 TAGS
 tags
 ctags
 dist-newstyle
 cabal.project.local
 .ghc.environment.*
-
 **/ghcid-output.txt

@@ -9,12 +9,17 @@ library
                , common
                , obelisk-frontend
                , obelisk-route
+               , jsaddle
                , reflex-dom
+               , obelisk-executable-config-lookup
                , obelisk-generated-static
                , text
   exposed-modules:
     Frontend
   ghc-options: -Wall
+  if impl(ghcjs -any)
+    ghc-options: -dedupe
+    cpp-options: -DGHCJS_BROWSER
 
 executable frontend
   main-is: main.hs
@@ -30,5 +35,6 @@ executable frontend
   ghc-options: -threaded
   if os(darwin)
      ghc-options: -dynamic
-  if impl(ghjcs)
-     ghcjs-options: -dedupe
+  if impl(ghcjs -any)
+    ghc-options: -dedupe
+    cpp-options: -DGHCJS_BROWSER
