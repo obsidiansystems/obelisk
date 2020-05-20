@@ -56,7 +56,7 @@ import System.Exit
 import System.FilePath
 import System.IO.Error
 import System.IO.Temp
-import System.Posix (getSymbolicLinkStatus, modificationTime)
+import System.PosixCompat.Files (getSymbolicLinkStatus, modificationTime)
 import qualified Text.URI as URI
 
 import Obelisk.App (MonadObelisk)
