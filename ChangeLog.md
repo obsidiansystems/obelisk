@@ -5,7 +5,9 @@ This project's release branch is `master`. This log is written from the perspect
 ## Unreleased
 
 * ([#715](https://github.com/obsidiansystems/obelisk/pull/715)) In `Obelisk.Route` deprecate `isoEncoder` and `prismEncoder` in favor of more precisely named `viewEncoder` and `reviewEncoder` (respectively) and improve documentation regarding contravariance of `reviewEncoder`.
-* ([#375](https://github.com/obsidiansystems/obelisk/pull/375)) Fix regression causing custom `Prelude`s to break `ob run`/`ob watch`/`ob repl`.
+* ([#739](https://github.com/obsidiansystems/obelisk/pull/739)) Improve `ob shell` by allowing commands to be passed verbatim after a `--` argument. For example, `ob shell 'run command'` can now be written `ob shell -- run command`.
+* ([#735](https://github.com/obsidiansystems/obelisk/pull/735)) Fix regression causing custom `Prelude`s to break `ob run`/`ob watch`/`ob repl`.
+* ([#737](https://github.com/obsidiansystems/obelisk/pull/737)) Fix bug causing custom `Prelude`s to break `ob profile`.
 
 ## v0.8.0.0
 
