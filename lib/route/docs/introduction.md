@@ -276,11 +276,11 @@ change every where it appears.
 ### Completing our first encoder
 
 Within the `Obelisk.Route` module are many pre-built `Encoders`, for our purposes we need to find
-one that can be used to satisfy the `Int -> PageName` shaped hole. The `readShowEncoder` matches our
+one that can be used to satisfy the `Int -> PageName` shaped hole. The `unsafeShowEncoder` matches our
 requirements:
 
 ```haskell
-readShowEncoder
+unsafeShowEncoder
   :: ( MonadError Text parse
      , Read a
      , Show a
@@ -312,27 +312,27 @@ this type yourself as `obelisk-route` will do that for you.
 
 ----
 
-We can safely simplify these the type of `readShowEncoder` a bit for the sake of understanding:
+We can safely simplify these the type of `unsafeShowEncoder` a bit for the sake of understanding:
 
 ```haskell
-readShowEncoder :: (Read a, Show a) => a -> PageName
+unsafeShowEncoder :: (Read a, Show a) => a -> PageName
 ```
 
 Conveniently `Int` has an instance of both `Read` and `Show`, satisfying both constraints of the
-`readShowEncoder` becoming:
+`unsafeShowEncoder` becoming:
 
 ```haskell
-readShowEncoder :: Int -> PageName
+unsafeShowEncoder :: Int -> PageName
 ```
 
 Which is exactly what we wanted! So we're able to replace our typed hole `_todo` with
-`readShowEncoder` and we've created our first complete route `Encoder`. Yay. This `Encoder` does the
+`unsafeShowEncoder` and we've created our first complete route `Encoder`. Yay. This `Encoder` does the
 simplest useful thing while being obviously correct.
 
 Our `case` expression should now look like this:
 
 ```haskell
-  FrontendRoute_User -> PathSegment "user" readShowEncoder
+  FrontendRoute_User -> PathSegment "user" unsafeShowEncoder
 ```
 
 Update our `case` expression and replace the typed hole with this `Encoder` and save the file. The
