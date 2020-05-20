@@ -389,7 +389,8 @@ main' argsCfg = do
         Just impl -> do
           -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
           putLog Debug $ "Handing off to " <> T.pack impl
-          liftIO $ executeFile impl False ("--no-handoff" : myArgs) Nothing
+          _ <- liftIO $ rawSystem impl ("--no-handoff" : myArgs)
+          return ()
   case myArgs of
     "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
     origPath:inPath:outPath:preprocessorName:packagePaths
