@@ -70,8 +70,8 @@ and composable pieces.
 
 ## Simple route with one parameter
 
-For our first route, we want to have a route for every user that is parameterised on their user
-ID. Expressed as an abstractly it might look something like this:
+We're going to add a homepage for every user, which requires that it be parameterised on their user
+ID. Expressed abstractly it might look something like this:
 
 ```haskell
 data Route = Route_User Int
