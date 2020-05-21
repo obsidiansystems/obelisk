@@ -1,4 +1,9 @@
 {-# LANGUAGE CPP #-}
+{-|
+
+Types and functions for defining routes and 'Encoder's.
+
+-}
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE EmptyCase #-}
@@ -19,19 +24,22 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route
-  ( R
+  ( -- * Primary Types
+    R
+  , PageName
+  , PathQuery
+  , Encoder
+  , EncoderImpl (..)
+  , EncoderFunc (..)
+
+  -- * Patterns, operators, and utilities
   , (:.)
   , (?/)
   , hoistR
   , pattern (:.)
   , pattern (:/)
-  , PageName
-  , PathQuery
-  , Encoder
   , unsafeEncoder
   , checkEncoder
-  , EncoderImpl (..)
-  , EncoderFunc (..)
   , unsafeMkEncoder
   , encode
   , decode
@@ -39,8 +47,35 @@ module Obelisk.Route
   , hoistCheck
   , hoistParse
   , mapSome
+  , rPrism
+  , _R
+  , renderObeliskRoute
+  , renderBackendRoute
+  , renderFrontendRoute
+  , byteStringsToPageName
+
+  -- * Collating Routes
   , SegmentResult (..)
   , pathComponentEncoder
+
+  , FullRoute (..)
+  , _FullRoute_Frontend
+  , _FullRoute_Backend
+  , mkFullRouteEncoder
+
+  , ObeliskRoute (..)
+  , _ObeliskRoute_App
+  , _ObeliskRoute_Resource
+  , ResourceRoute (..)
+
+  , JSaddleWarpRoute (..)
+  , jsaddleWarpRouteEncoder
+
+  , IndexOnlyRoute (..)
+  , indexOnlyRouteSegment
+  , indexOnlyRouteEncoder
+
+  -- * Provided Encoders
   , enumEncoder
   , enum1Encoder
   , checkEnum1EncoderFunc
@@ -73,33 +108,15 @@ module Obelisk.Route
   , shadowEncoder
   , prismEncoder
   , reviewEncoder
-  , rPrism
-  , _R
   , obeliskRouteEncoder
   , obeliskRouteSegment
   , pageNameEncoder
   , handleEncoder
-  , FullRoute (..)
-  , _FullRoute_Frontend
-  , _FullRoute_Backend
-  , mkFullRouteEncoder
-  , ObeliskRoute (..)
-  , _ObeliskRoute_App
-  , _ObeliskRoute_Resource
-  , ResourceRoute (..)
-  , JSaddleWarpRoute (..)
-  , jsaddleWarpRouteEncoder
-  , IndexOnlyRoute (..)
-  , indexOnlyRouteSegment
-  , indexOnlyRouteEncoder
   , someSumEncoder
   , Void1
   , void1Encoder
   , pathSegmentsTextEncoder
   , queryParametersTextEncoder
-  , renderObeliskRoute
-  , renderBackendRoute
-  , renderFrontendRoute
   , integralEncoder
   , pathSegmentEncoder
   , queryOnlyEncoder
@@ -109,6 +126,7 @@ module Obelisk.Route
   , pathFieldEncoder
   , jsonEncoder
   , byteStringsToPageName
+  , base64UriEncoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -552,10 +570,16 @@ checkEnum1EncoderFunc f = do
   pure $ EncoderFunc $ \p -> unsafeMkEncoder . unFlip $
     DMap.findWithDefault (error "checkEnum1EncoderFunc: EncoderImpl not found (should be impossible)") p encoderImpls
 
--- | This type is used by pathComponentEncoder to allow the user to indicate how to treat various cases when encoding a dependent sum of type `(R p)`.
+-- | This type is used by pathComponentEncoder to allow the user to indicate how to treat
+-- various cases when encoding a dependent sum of type `(R p)`.
 data SegmentResult check parse a =
-    PathEnd (Encoder check parse a (Map Text (Maybe Text))) -- ^ Indicate that the path is finished, with an Encoder that translates the corresponding value into query parameters
-  | PathSegment Text (Encoder check parse a PageName) -- ^ Indicate that the key should be represented by an additional path segment with the given 'Text', and give an Encoder for translating the corresponding value into the remainder of the route.
+    PathEnd (Encoder check parse a (Map Text (Maybe Text)))
+    -- ^ Indicate that the path is finished, with an Encoder that translates the
+    -- corresponding value into query parameters
+  | PathSegment Text (Encoder check parse a PageName)
+    -- ^ Indicate that the key should be represented by an additional path segment with
+    -- the given 'Text', and give an Encoder for translating the corresponding value into
+    -- the remainder of the route.
 
 -- | Encode a dependent sum of type `(R p)` into a PageName (i.e. the path and query part of a URL) by using the
 -- supplied function to decide how to encode the constructors of p using the SegmentResult type. It is important
