@@ -2,7 +2,8 @@
 
 ## Motivation
 
-The `obelisk-route` package is designed to help with managing the paths and parameters for routing in your application.
+The `obelisk-route` package is designed to help with managing the paths and parameters for routing
+in your application.
 
 Most importantly it has been designed and built to provide the following guarantees:
 
@@ -67,6 +68,10 @@ abstract routes as concrete definitions using `Encoder`s as pure functions. You 
 also cover what to do when it doesn't, and what you need to know to ensure that you build correct
 and composable pieces.
 
+#### Obelisk live development environment
+
+For best results, work through this tutorial using a freshly created Obelisk application. Refer to the Obelisk documentation for [Developing an Obelisk project](https://github.com/obsidiansystems/obelisk#developing-an-obelisk-project).
+
 ## Simple route with one parameter
 
 We're going to add a homepage for every user, which is it be parameterised on their user
@@ -75,10 +80,6 @@ ID. Expressed abstractly it might look something like this:
 ```haskell
 data Route = Route_User Int
 ```
-
-#### Obelisk live development environment
-
-For best results, work through this tutorial using a freshly created Obelisk application. Refer to the Obelisk documentation for [Developing an Obelisk project](https://github.com/obsidiansystems/obelisk#developing-an-obelisk-project).
 
 ### Defining our route as a type
 
@@ -142,8 +143,10 @@ file. New incompleteness warnings will have appeared in the output of `ob run`. 
 system helping us out by pointing out the next steps for us now that we've extended our
 `FrontendRoutes` type.
 
-The next step is to fill in the definition of our new route. The primary function that contains
-these definitions is the `fullRouteEncoder` function, located in `Common.Route`.
+The next step is to fill in the definition of our new route. We do this by extending the `case`
+expression in the `fullRouteEncoder`, the same function that has the `FrontendRoute_Main` route that
+we discussed previously.
+
 
 Add our new constructor as another pattern in the `case` expression for the frontend routes. For now
 add a type-hole on the right hand side of our new `case` expression and save the file. The `ob run`
