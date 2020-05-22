@@ -53,14 +53,10 @@ or different capitalization, or URLs whose rendering format has changed.  By doi
 order, you design your routes around your application, rather than designing your application around
 your routes.
 
-We define this structure in `obelisk-route` using `Encoder`s. These are small pure functions that
-_compose_ together to build the concrete definition of your routing structure. By composing and
-building routes from pieces that are so small that they are "obviously correct", you can be
-confident that the composition of those individual pieces is also correct.
-
-Avoid approaching this package as a collection of 'encoders' and 'decoders' for turning strings into
-things and things into strings. This will, more often than not, lead to you fighting the API and
-making things needlessly difficult.
+We then write the definition of the route using `Encoder`s. These may be thought of as small pure
+functions that _compose_ together using `(.)` to build the concrete definition of your routing
+structure. By composing and building routes from pieces that are so small that they are "obviously
+correct", you can be confident that the composition of those individual pieces is also correct.
 
 As we build up some examples in this guide, we will demonstrate how to think about your abstract
 routes as concrete definitions using `Encoder`s as pure functions. You will see that `obelisk-route`
@@ -71,6 +67,101 @@ pieces.
 #### Obelisk live development environment
 
 For best results, work through this tutorial using a freshly created Obelisk application. Refer to the Obelisk documentation for [Developing an Obelisk project](https://github.com/obsidiansystems/obelisk#developing-an-obelisk-project).
+
+## Our first route type
+
+The first route we will create will be for the main landing page of our application. There is only
+one possible route associated with this page, so the value for our route will have only one possible
+instantiation. For reasons that will be covered in a later section, we create this data type using a
+GADT to ensure we have the flexibilty in the types that we need.
+
+When it comes to how that route will present itself to the user in the addressbar, it will be our
+main page and at the root of all things so we want it to be only: `/`.
+
+The routes for new Obelisk application are in the `Common.Route` module. We will create our type
+here:
+
+```haskell
+data MyRoute :: * -> * where
+  MyRoute_Main :: MyRoute ()
+```
+
+The route type needs to be flexible so that we're able to have different types for different routes,
+which is why the `MyRoute` type is parameterised over another type.
+
+The constructor for our main page is `MyRoute_Main` and it has a type of `MyRoute ()` because there
+is only one way to create this value. This value will be used in our `case` expressions to decide
+what code to run, and when we're creating links to this page.
+
+> The naming of the route MyRoute_Main is an Obelisk convention of including the type
+> name in individual constructor names. This helps disambiguate the code at the 'cost' of a few
+> extra keystrokes. As an example:
+>
+> ```haskell
+> data Foo
+>   = Foo_ConstructorA
+>   | Foo_ConstructorB
+> ```
+
+
+If you've not encountered GADTs before, or you're a bit rusty, check out the following links for
+more information:
+* [What I Wish I Knew When Learning Haskell - GADTs](http://dev.stephendiehl.com/hask/#gadts)
+* [Haskellforall](http://www.haskellforall.com/2012/06/gadts.html)
+* [Haskell Wiki](https://wiki.haskell.org/Generalised_algebraic_datatype)
+
+## First concrete route definition
+
+We have the logical definition of our route in the `MyRoute_Main` constructor, and the next step is
+to create the concrete definition of that route for our application. We will do this using
+`Encoder`s and some others that we will discuss along the way.
+
+Below the `MyRoute` type, create a function with the following type signature:
+
+```haskell
+myFrontendRoutes :: forall a. MyRoute a -> SegmentResult (Either Text) (Either Text) a
+myFrontendRoutes = _todo
+```
+
+This function will serve as a smaller piece in a mechanism that manages all of the `obelisk-route`
+routes for our application, we'll go into more detail about that later. We will create a `case`
+expression that will match on the value of our route and provide `SegmentResult`.
+
+### Aside: `SegmentResult`
+
+This type is part of the interface to the `pathComponentEncoder` function. Because routes may be
+nested in the definition of other routes. All of the routes related to pull requests nested under
+the route for a repository, for example. We need a way to describe whether a route may have more
+segments or if we've reached the end.
+
+To do this, the `SegmentResult` has two constructors, one recursive (`PathSegment`) allowing for
+more structure, and the other terminating (`PathEnd`) indicating that this route is complete. Refer
+to the Haddock documentation for more detail information.
+
+----
+
+Lets create our `case` expression and add our first route. Update the body of `myFrontendRoutes`
+with a `case` expression with the first match being our `MyRoute_Main` constructor. Add a typed-hole
+on the right hand side of the arrow:
+
+```haskell
+myFrontendRoutes :: forall a. MyRoute a -> SegmentResult (Either Text) (Either Text) a
+myFrontendRoutes myRs = case myRs of
+  MyRoute_Main -> _todo_
+```
+
+Recall that we want this route to be represented in the addressbar as `/`, which we can see has no
+further information in it so the constructor from `SegmentResult` we need is `PathEnd`. Update our
+typed hole to be the argument to this constructor:
+
+```haskell
+  MyRoute_Main -> PathEnd _todo
+```
+
+typed-hole information
+aside: links on typed holes
+
+description of unitEncoder and lack of need for query params
 
 ## Simple route with one parameter
 
@@ -100,16 +191,6 @@ Add the following constructor to `FrontendRoute` in `Common.Route`:
 
 This constructor indicates that we have a `FrontendRoute` that when successfully loaded, will
 provide the current user ID `Int` that was input on that route.
-
-> The naming of the route 'FrontendRoute_User' is an Obelisk convention of including the type
-> name in individual constructor names. This helps disambiguate the code at the 'cost' of a few
-> extra keystrokes. As an example:
->
-> ```haskell
-> data Foo
->   = Foo_ConstructorA
->   | Foo_ConstructorB
-> ```
 
 #### The `BackendRoute` & `FrontendRoute` types
 
