@@ -58,7 +58,6 @@ import System.FilePath
 import System.IO.Error
 import System.IO.Temp
 import System.PosixCompat.Files (getSymbolicLinkStatus, modificationTime)
-import System.Which (staticWhich)
 import qualified Text.URI as URI
 
 import Obelisk.App (MonadObelisk)
@@ -180,14 +179,14 @@ getNixSha256ForUriUnpacked
 getNixSha256ForUriUnpacked uri =
   withExitFailMessage ("nix-prefetch-url: Failed to determine sha256 hash of URL " <> gitUriToText uri) $ do
     [hash] <- fmap T.lines $ readProcessAndLogOutput (Debug, Debug) $
-      proc $(staticWhich "nix-prefetch-url") ["--unpack", "--type", "sha256", T.unpack $ gitUriToText uri]
+      proc nixPrefetchUrlPath ["--unpack", "--type", "sha256", T.unpack $ gitUriToText uri]
     pure hash
 
 nixPrefetchGit :: MonadObelisk m => GitUri -> Text -> Bool -> m NixSha256
 nixPrefetchGit uri rev fetchSubmodules =
   withExitFailMessage ("nix-prefetch-git: Failed to determine sha256 hash of Git repo " <> gitUriToText uri <> " at " <> rev) $ do
     out <- readProcessAndLogStderr Debug $
-      proc $(staticWhich "nix-prefetch-git") $ filter (/="")
+      proc nixPrefetchGitPath $ filter (/="")
         [ "--url", T.unpack $ gitUriToText uri
         , "--rev", T.unpack rev
         , if fetchSubmodules then "--fetch-submodules" else ""
