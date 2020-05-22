@@ -1,6 +1,6 @@
 name: obelisk-route
 version: 0.2
-cabal-version: >= 1.2
+cabal-version: >= 1.8
 build-type: Simple
 
 library
@@ -40,3 +40,15 @@ library
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend
   ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+
+test-suite route-tests
+  type: exitcode-stdio-1.0
+  hs-source-dirs: tests
+  main-is: Main.hs
+  build-depends: base
+               , lens
+               , text
+               , tasty
+               , tasty-quickcheck
+               , obelisk-route
+               , QuickCheck

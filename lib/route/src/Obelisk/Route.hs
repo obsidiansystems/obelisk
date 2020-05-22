@@ -31,6 +31,8 @@ module Obelisk.Route
   , Encoder
   , EncoderImpl (..)
   , EncoderFunc (..)
+  , CanSafeShowRead (..)
+  , isCanSafeShowReadValidFor
 
   -- * Patterns, operators, and utilities
   , (:.)
@@ -255,6 +257,28 @@ mapSome f (Some a) = Some $ f a
 
 hoistR :: (forall x. f x -> g x) -> R f -> R g
 hoistR f (x :=> Identity y) = f x :/ y
+
+-- | A typeclass for types that have 'Read' and 'Show' instances that are inverses of one another.
+--
+-- All instances of this type class must satisfy the following law:
+--
+-- @
+-- forall a. reads (show a) === [(a, "")]
+-- @
+--
+-- This lets us create trivial 'Encoder's via these instances.
+--
+class (Read a, Show a) => CanSafeShowRead a where -- TODO: Not sure where the 'Read/Show' constraints should live??
+  _ShowRead :: Iso' a String
+  _ShowRead = iso show read
+
+isCanSafeShowReadValidFor :: (Eq a, CanSafeShowRead a) => a -> Bool
+isCanSafeShowReadValidFor a = reads (show a) == [(a, "")] -- Test law for types from documentation
+  && view (from _ShowRead) (view _ShowRead a) == a -- test iso is implemented correctly
+
+instance CanSafeShowRead String
+instance CanSafeShowRead Text
+instance CanSafeShowRead Int
 
 --------------------------------------------------------------------------------
 -- Dealing with pairs (i.e. non-dependently-typed subroutes/paths)
