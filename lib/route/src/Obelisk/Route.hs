@@ -272,6 +272,10 @@ class (Read a, Show a) => CanSafeShowRead a where -- TODO: Not sure where the 'R
   _ShowRead :: Iso' a String
   _ShowRead = iso show read
 
+-- | Helper function for testing that instances of 'CanSafeShowRead' satisfy the inverse law.
+--
+-- It is recommended to combine this function with a property based testing library.
+--
 isCanSafeShowReadValidFor :: (Eq a, CanSafeShowRead a) => a -> Bool
 isCanSafeShowReadValidFor a = reads (show a) == [(a, "")] -- Test law for types from documentation
   && view (from _ShowRead) (view _ShowRead a) == a -- test iso is implemented correctly
