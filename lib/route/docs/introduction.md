@@ -62,11 +62,11 @@ Avoid approaching this package as a collection of 'encoders' and 'decoders' for 
 things and things into strings. This will, more often than not, lead to you fighting the API and
 making things needlessly difficult.
 
-As we build up some examples in this guide, we will demonstrate how to think about and explain your
-abstract routes as concrete definitions using `Encoder`s as pure functions. You will see that
-`obelisk-route` already has most of the tools you need to construct that concrete definition. We'll
-also cover what to do when it doesn't, and what you need to know to ensure that you build correct
-and composable pieces.
+As we build up some examples in this guide, we will demonstrate how to think about your abstract
+routes as concrete definitions using `Encoder`s as pure functions. You will see that `obelisk-route`
+already has most of the tools you need to construct that concrete definition. We'll also cover what
+to do when it doesn't, and what you need to know to ensure that you build correct and composable
+pieces.
 
 #### Obelisk live development environment
 
