@@ -195,7 +195,7 @@ To try out the **experimental** [`ghcide`](https://github.com/digital-asset/ghci
       cat > hie-bios.sh <<'EOF'
       #!/usr/bin/env bash
       source "$HOME/.bash_profile"; # NOTE: Some editors need help finding 'ob' and this assumes that `ob` is made available on your `$PATH` in `.bash_profile`
-      ob internal export-ghci-configuration > "$HIE_BIOS_OUTPUT"
+      ob internal export-ghci-configuration --no-interpret .obelisk/impl > "$HIE_BIOS_OUTPUT"
       EOF
       chmod +x hie-bios.sh
       ```
