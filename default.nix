@@ -106,6 +106,7 @@ in rec {
       services.openssh.enable = true;
       services.openssh.permitRootLogin = "prohibit-password";
 
+      security.acme.acceptTerms = true;
       security.acme.certs = if enableHttps then {
         "${routeHost}".email = adminEmail;
       } else {};
