@@ -130,10 +130,10 @@ readCreateProcessWithExitCode procSpec = do
 -- | Like `System.Process.readProcess` but logs the combined output (stdout and stderr)
 -- with the corresponding severity.
 --
--- Usually this function is called as `callProcessAndLogOutput (Debug, Error)`. However
+-- Usually this function is called as `readProcessAndLogOutput (Debug, Error)`. However
 -- some processes are known to spit out diagnostic or informative messages in stderr, in
 -- which case it is advisable to call it with a non-Error severity for stderr, like
--- `callProcessAndLogOutput (Debug, Debug)`.
+-- `readProcessAndLogOutput (Debug, Debug)`.
 readProcessAndLogOutput
   :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
   => (Severity, Severity) -> ProcessSpec -> m Text
