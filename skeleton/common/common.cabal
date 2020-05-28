@@ -12,3 +12,4 @@ library
   exposed-modules:
     Common.Api
     Common.Route
+  ghc-options: -Wall

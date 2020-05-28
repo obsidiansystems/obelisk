@@ -5,10 +5,16 @@ This project's release branch is `master`. This log is written from the perspect
 ## Unreleased
 
 * ([#715](https://github.com/obsidiansystems/obelisk/pull/715)) In `Obelisk.Route` deprecate `isoEncoder` and `prismEncoder` in favor of more precisely named `viewEncoder` and `reviewEncoder` (respectively) and improve documentation regarding contravariance of `reviewEncoder`.
+* ([#739](https://github.com/obsidiansystems/obelisk/pull/739)) Improve `ob shell` by allowing commands to be passed verbatim after a `--` argument. For example, `ob shell 'run command'` can now be written `ob shell -- run command`.
+* ([#735](https://github.com/obsidiansystems/obelisk/pull/735)) Fix regression causing custom `Prelude`s to break `ob run`/`ob watch`/`ob repl`.
+* ([#737](https://github.com/obsidiansystems/obelisk/pull/737)) Fix bug causing custom `Prelude`s to break `ob profile`.
+* ([#742](https://github.com/obsidiansystems/obelisk/pull/742), [#57](https://github.com/obsidiansystems/obelisk/pull/57), [#406](https://github.com/obsidiansystems/obelisk/pull/406)) Enable `-dedupe` and `-DGHCJS_BROWSER` in GHCJS builds to make JavaScript output considerably smaller leading to faster load/parse times and faster build times.
+* ([#742](https://github.com/obsidiansystems/obelisk/pull/742)) Update `reflex-platform` which includes:
+    * A new version of GHCJS where `-dedupe` is fixed.
 
 ## v0.8.0.0
 
-* ([#674](https://github.com/obsidiansystems/obelisk/pull/674), [#711](https://github.com/obsidiansystems/obelisk/pull/711)) Introduce a new thunk format to support accessing the thunk's source directly when packed. When packed, thunks have an additional file called `thunk.nix` and `default.nix` is now a think wrapper around that.
+* ([#674](https://github.com/obsidiansystems/obelisk/pull/674), [#711](https://github.com/obsidiansystems/obelisk/pull/711)) Introduce a new thunk format to support accessing the thunk's source directly when packed. When packed, thunks have an additional file called `thunk.nix` and `default.nix` is now a thin wrapper around that.
 * ([#665](https://github.com/obsidiansystems/obelisk/pull/665)) Add `--interpret` and `--no-interpret` options to `ob run`/`ob watch`/`ob repl`/`ob shell`. These options allow you to pick which paths will be pre-compiled by `nix` when entering the shell/session and which won't. For example `ob run --no-interpret dep` will ensure that any dependencies found in `./dep` will be built by `nix` before loading the rest of the project into the `ghci` session. The same configuration for `ob shell` will ensure that those packages are built and available in the `ghc` package database inside the shell.
 
   **NOTE:** `ob shell`'s default behavior is now different. By default it now behaves like `ob run`/`ob watch`/`ob repl` in that it does *not* pre-build any packages whose `.cabal` or `package.yaml` files are found in the project. To regain the previous behavior, use `ob shell --no-interpret . --interpret backend --interpret common --interpret frontend` from the project root.
