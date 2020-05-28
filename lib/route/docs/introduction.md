@@ -9,7 +9,7 @@ Most importantly it has been designed and built to provide the following guarant
 
 * **Every route value can be encoded to a URL**
 
-Every route that you declare in your types will produce a valid URL, i.e. encoding cannot fail.
+Every route that you declare in your types will produce a valid URL; that is, encoding cannot fail.
 
 * **When you decode something you've encoded, you'll always get the same value back**
 
@@ -20,11 +20,11 @@ decode . encode = pure
 Routes declared using `obelisk-route` are bidirectional, meaning that any route that can be encoded
 to types and matched on can also be encoded as a url *without losing information*.
 
-* **Common modifications made to routes, whereever possible, will be caught by the compiler.**
+* **Common modifications made to routes, where ever possible, will be caught by the compiler.**
 
 When you make common modifications to routes, or a route is added or removed, there will be
-"incomplete case" and similar warnings everywhere you need to update your application. The type
-system also makes it *much* easier to catch those easy-to-forget issues such as; updating nav-bars,
+"incomplete case" and similar warnings wherever you need to update your application. The type
+system also makes it *much* easier to catch those easy-to-forget issues, such as updating nav-bars,
 or that breadcrumb widget that needs a human-readable description.
 
 * **Behaviour of routes is identical for Backend and Frontend**
@@ -39,7 +39,7 @@ backend **or** the frontend. A POST request makes no sense for the frontend of a
 do not support creating this type of route. As it would be difficult to impossible to enforce if
 the routing system worked differently on the backend vs the frontend.
 
-## Thinking in routes
+## The way of the Obelisk Route
 
 The way to approach building routes with `obelisk-route` is to focus on your Route data structure.
 
@@ -48,10 +48,10 @@ page the user might want to visit.  Only once that is clear, move on to thinking
 logical pages ought to appear in the user's address bar.  For instance, you might want each user's
 profile to show up at `/user/$userid`.
 
-Finally, consider how you want to handle URLs with slight differences, like an extra trailing slash
-or different capitalization, or URLs whose rendering format has changed.  By doing things in this
-order, you design your routes around your application, rather than designing your application around
-your routes.
+Finally, consider how you want to handle URLs with slight differences; an extra trailing slash
+different capitalization, or URLs whose rendering format has changed. By doing things in this
+order, you design your routes around your application, rather than designing your application
+around your routes.
 
 We then write the definition of the route using `Encoder`s. These may be thought of as small pure
 functions that _compose_ together using `(.)` to build the concrete definition of your routing
@@ -66,32 +66,30 @@ pieces.
 
 #### Obelisk live development environment
 
-For best results, work through this tutorial using a freshly created Obelisk application. Refer to the Obelisk documentation for [Developing an Obelisk project](https://github.com/obsidiansystems/obelisk#developing-an-obelisk-project).
+For best results, work through this document using a freshly created Obelisk application. Refer
+to the Obelisk documentation for [Developing an Obelisk project](https://github.com/obsidiansystems/obelisk#developing-an-obelisk-project).
 
-## Our first route type
+## The first route type
 
 The first route we will create will be for the main landing page of our application. There is only
 one possible route associated with this page, so the value for our route will have only one possible
-instantiation. For reasons that will be covered in a later section, we create this data type using a
-GADT to ensure we have the flexibilty in the types that we need.
+instantiation.
 
-When it comes to how that route will present itself to the user in the addressbar, it will be our
-main page and at the root of all things so we want it to be only: `/`.
+When it comes to how that route will present itself to the user in the address bar, it will be our
+main page and at the root of all things so it must be `/`.
 
-The routes for new Obelisk application are in the `Common.Route` module. We will create our type
-here:
+The routes for new a Obelisk application are in the `Common.Route` module. We will follow this
+convention and create our type there:
 
 ```haskell
-data MyRoute :: * -> * where
-  MyRoute_Main :: MyRoute ()
+data MyRoute = MyRoute_Main
+  deriving (Show, Eq, Ord, Generic)
 ```
 
-The route type needs to be flexible so that we're able to have different types for different routes,
-which is why the `MyRoute` type is parameterised over another type.
-
-The constructor for our main page is `MyRoute_Main` and it has a type of `MyRoute ()` because there
-is only one way to create this value. This value will be used in our `case` expressions to decide
-what code to run, and when we're creating links to this page.
+The constructor for our main page is `MyRoute_Main` and no parameters because there is only one
+way to create this value. This value will be used in our `case` expressions to decide what code
+to run, and when we're creating links to this page. Also add the deriving clause as we will need
+these instances as our routes grow.
 
 > The naming of the route MyRoute_Main is an Obelisk convention of including the type
 > name in individual constructor names. This helps disambiguate the code at the 'cost' of a few
@@ -103,29 +101,381 @@ what code to run, and when we're creating links to this page.
 >   | Foo_ConstructorB
 > ```
 
+## First concrete route definition
 
-If you've not encountered GADTs before, or you're a bit rusty, check out the following links for
-more information:
+We have the logical definition of our route in the `MyRoute_Main` constructor, and the next step
+is to create the concrete definition of that route for our application. We will do this by
+building our first `Encoder`. Below the `MyRoute` type, create a function with the following type
+signature:
+
+```haskell
+myRouteEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => Encoder check parse () PageName
+myRouteEncoder =
+  undefined
+```
+
+You will need the constraints to satisfy the typechecker for `check` and `parse`, but they're not
+important to what we're doing at the moment.
+
+#### The `Encoder` type
+
+This is the primary building block for any route definition:
+
+```haskell
+-- The 'check' and 'parse' type variables will be covered later
+data Encoder check parse a b
+```
+
+You can think of an `Encoder check parse a b` as a thing of type `a -> b`. Indeed, `Encoder`s may be
+treated as you would any pure function, including composing them using `(.)`. Because `Encoder` has
+an instance of `Category`.
+
+However the `(.)` operator from `Prelude` is specialised to the function arrow type `(->)` so we
+must import the more general version from the `Control.Category` module, because it uses the
+`Category` typeclass constraint:
+
+```haskell
+-- (.) from Prelude
+(.) :: (b -> c) -> (a -> b) -> a -> c
+
+-- (.) from Control.Category
+(.) :: Category cat => cat b c -> cat a b -> cat a c
+```
+
+The `Encoder` type is an instance of `Category` so we need to use the more general function. Ensure
+that `(.)` is imported correctly at the top of `Common.Route`:
+
+ ```haskell
+import Prelude hiding ((.))
+import Control.Category
+```
+
+If you use the `(.)` from `Prelude` to compose `Encoder`s then you will end up with type errors
+similar to the following:
+
+```shell
+    • Couldn't match expected type ‘b0 -> c0’
+                  with actual type ‘Encoder check0 parse0 [Text] PageName’
+    • In the first argument of ‘(.)’, namely ‘pathOnlyEncoder’
+```
+
+You can see that it expected something of type `b0 -> c0` whereas we're wanting to compose
+`Encoder`s, although we can treat `Encoder` as pure functions, the types are distinct.
+
+----
+
+Within the `Obelisk.Route` module are many pre-built `Encoders`, for our purposes we need to find
+one that can be used to satisfy the `() -> PageName` shaped hole and ensure the route structure
+we require. The `Encoder` that meets this requirement is the `unitEncoder`, which has the
+following type:
+
+```haskell
+-- Constraints elided for brevity
+unitEncoder :: (...) => r -> Encoder check parse () r
+```
+
+The `()` is equivalent to our current `MyRoute` type, because there is only possible way to
+construct a value of type `MyRoute`. Also when this route is encoded as a URL there should be
+only one possible output.
+
+Update `myRouteEncoder` to use this `Encoder` and place a 'typed hole' as the argument:
+
+```haskell
+myRouteEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => Encoder check parse () PageName
+myRouteEncoder =
+  unitEncoder
+```
+
+We need to provide an input to `unitEncoder` and that input has of type `PageName`. The
+`PageName` type is a combination of the URL and a query string and is the target type of a
+_complete_ route `Encoder`. Individual `Encoder`s will work with different types, but often the
+final type of a chain of `Encoder`s will be a `PageName`. It is unlikely you will ever need to
+construct this type yourself as `obelisk-route` has functions that will handle that for you.
+
+For our purposes, the `PageName` needs to be completely empty as our route `MyRoute_Main`
+corresponds to the `/` URL. To create an empty `PageName` we can lean on `Monoid` and use
+`mempty`. The `Encoder` definition now looks like:
+
+```haskell
+myRouteEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => Encoder check parse () PageName
+myRouteEncoder =
+  unitEncoder mempty
+```
+
+Note that our type `MyRoute` does not appear in this signature, this is because we have only one
+possible way to construct a value of type `MyRoute` and only one possible URL. Until there are
+more routes the `()` or unit type is equivalent to our `MyRoute` type. When we add more routes
+then this will change accordingly.
+
+## Adding a 404 page
+
+Next we're going to add a 404 page to our list of routes. This route will be similar to our main
+route in that there will be only one possible instantiation of this route. The representation in
+the address bar will of course be different. But similarily there will only be one possible
+route, in this case the expected route will be `/missing`.
+
+To represent this we will extend the `MyRoute` type with another constructor:
+
+```haskell
+data MyRoute
+  = MyRoute_Main
+  | MyRoute_Missing
+  deriving (Show, Eq, Ord, Generic)
+```
+
+Now that we have the logical definition of our 404 route we will extend our `Encoder` to account
+for the new constructor. Note that now we have more than one constructor for our `MyRoute` type
+so the type signature for our `Encoder` has to change as `()` is no longer correct.
+
+The `Encoder` type is now:
+
+```haskell
+myRouteEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     , MonadError Text check
+     )
+  => Encoder check parse MyRoute PageName
+myRouteEncoder =
+```
+
+The `Encoder` must now distinguish between routes whilst maintaining all of the required
+guarantees. We will use the `enumEncoder` to help us build our `Encoder`. Lets have a look at its
+type:
+
+```haskell
+enumEncoder
+  :: forall parse check p r
+  . ( Universe p
+    ... -- some constraints elided
+    )
+  => (p -> r)
+  -> Encoder check parse p r
+```
+
+Whereas the `unitEncoder` had a static value input for the `r` value, the `enumEncoder` needs a
+function: `p -> r` to decide how to encode the different values of the enumeration. To further
+explain this, replace `unitEncoder` with `enumEncoder` and `mempty` with a 'typed hole': `_todo`,
+then save the file.
+
+### Aside: Typed holes
+
+That `_todo` is called a 'type hole' and they allow you ask GHC "what should be the type of the
+thing at `_todo`". They are very useful for debugging and incremental development. They may be used
+any where you can use a function or a value. For more information on type holes, we recommend the following:
+
+- [What I Wish I Knew When Learning Haskell - Type Holes](http://dev.stephendiehl.com/hask/#type-holes)
+- [GHC Manual - Typed Holes](https://downloads.haskell.org/~ghc/7.8.4/docs/html/users_guide/typed-holes.html)
+
+These are a _very_ useful tool for building & debugging your program. But do not succumb to 'type
+tetris'. This is when you find yourself replacing typed holes with the first thing that satisfies
+the type checker, but doesn't necessarily result in a useful or correct program.
+
+----
+
+If your following along with either `ob run` or [`ghcid`](https://github.com/ndmitchell/ghcid)
+the output will now contain two errors. We will deal with them in turn:
+
+The first is related to the `Universe` constraint:
+
+```shell
+    • Could not deduce (Universe MyRoute)
+        arising from a use of ‘enumEncoder’
+      from the context: (Applicative check, MonadError Text parse)
+        bound by the type signature for:
+        ...
+```
+
+The `enumEncoder` uses the `Universe` instance to ensure coverage over every possible value for
+type `p`. We'll leverage `Generic`s to make GHC do this for us. Add the following instance of
+`Universe` for `MyRoute`:
+
+```haskell
+instance Universe MyRoute where
+  universe = universeGeneric
+```
+
+Save the file and the next error is feedback from the 'typed hole':
+
+```shell
+    • Found hole: _todo :: MyRoute -> PageName
+      Or perhaps ‘_todo’ is mis-spelled, or not in scope
+    • In the first argument of ‘enumEncoder’, namely ‘_todo’
+      In the expression: enumEncoder _todo
+```
+
+This is the specialised type for the `p -> r` function for `enumEncoder`. We have to write the function that describes how to create the `PageName` for each value of our sum type. Remove the typed hole and replace it with a function that contains a case expression:
+
+```haskell
+myRouteEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     , MonadError Text check
+     )
+  => Encoder check parse MyRoute PageName
+myRouteEncoder = enumEncoder $ \myRoute -> case myRoute of
+```
+
+A slightly nicer way of writing this is to turn on the [`LambdaCase`](http://dev.stephendiehl.com/hask/#lambdacase) [language extension](http://dev.stephendiehl.com/hask/#language-extensions). Which is exactly the same as what we have but tidy:
+
+```haskell
+myRouteEncoder = enumEncoder $ \case
+  MyRoute_Main -> _mainTodo
+  MyRoute_Missing -> _missingTodo
+```
+
+Now to fill in the missing pieces. The `PageName` for the main page is the same default value we
+provided before: `mempty` as it has no path and no query parameters. The path for the
+`MyRoute_Missing` page will be placed at `/missing` so as not to overlap with the main page. To
+do that we construct the corresponding `PageName` value. Where `PageName` is a tuple of the list
+of path segements (`[Text]`) and a map of the query parameters (`Map Text Text`):
+
+```haskell
+myRouteEncoder = enumEncoder $ \case
+  MyRoute_Main -> mempty
+  MyRoute_Missing -> (["missing"], mempty)
+```
+
+The missing page has only a single path segment and no query parameters so we create a singleton
+list and an empty map. Now we have a concrete definition of both of the `MyRoute` routes.
+
+Were we to add another route to our data `MyRoute` data structure, a contact page for example.
+After we added the constructor to the `MyRoute` type the compiler would provide a non-exhaustive
+pattern match warning until we updated this `case` expression to handle the new route.
+
+The warning would be similar to this:
+
+```shell
+common/src/Common/Route.hs:(77,36)-(79,42): warning: [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a case alternative: Patterns not matched: MyRoute_Contact
+   |
+77 | myRouteMainEncoder = enumEncoder $ \case
+   |                                    ^^^^^...
+```
+
+## Nested Routes
+
+Applications often have a hierarchy to keep functionality organised. You are able to identify a
+request as belonging to a particular category and hand it off accordingly, the thing you've handed
+the request to is then responsible for handling the finer details. The end result being that the
+whole system may be quite complex but the individual components are easier to create, maintain, and
+more obviously correct due to their constrained scope.
+
+This package lets you create modular and nested routes that enable them to match the hierarchy of
+your application rather than dictating it. We will add two sets of nested routes; one to represent
+sending routes to a backend API, and the other to represent the frontend of our application.
+
+These routes will be similar to the routes we've already created to avoid overloading on new
+concepts. Each set of routes will have one single possible page per route. Add the new routes above
+the `MyRoute` type in the `Common.Route` module:
+
+The backend routes:
+
+```haskell
+data ApiRoute :: * -> * where
+  ApiRoute_Status :: ApiRoute () -- what is the current status of our api.
+  ApiRoute_Version :: ApiRoute () -- what is the current running version of our api.
+  ApiRoute_Uptime :: ApiRoute () -- how long has our api been up and running.
+```
+
+The frontend routes:
+
+```haskell
+data AppRoute :: * -> * where
+  AppRoute_Register :: AppRoute () -- user registration page
+  AppRoute_Contact :: AppRoute () -- display of contact information
+  AppRoute_About :: AppRoute () -- about us
+```
+
+You'll notice that these routes appear to be _more_ complex than the `MyRoute` type. The reason for
+that is we need more flexibility in the types to be able to combine the different route
+structures. These are [Generalised Algebraic Data Types](http://dev.stephendiehl.com/hask/#gadts),
+or GADTs. The extra flexibility that we need is the additional type argument, indicated in the first
+line of the type definition. This allows us to chain the routes together and ensure that the types
+are correct.
+
+If you've not encountered GADTs before, or you're a bit rusty, check out the following links for more information:
 * [What I Wish I Knew When Learning Haskell - GADTs](http://dev.stephendiehl.com/hask/#gadts)
 * [Haskellforall](http://www.haskellforall.com/2012/06/gadts.html)
 * [Haskell Wiki](https://wiki.haskell.org/Generalised_algebraic_datatype)
 
-## First concrete route definition
+----
 
-We have the logical definition of our route in the `MyRoute_Main` constructor, and the next step is
-to create the concrete definition of that route for our application. We will do this using
-`Encoder`s and some others that we will discuss along the way.
-
-Below the `MyRoute` type, create a function with the following type signature:
+Build the `Encoder` for the `ApiRoute` type, starting as always, with the type signature:
 
 ```haskell
-myFrontendRoutes :: forall a. MyRoute a -> SegmentResult (Either Text) (Either Text) a
-myFrontendRoutes = _todo
+apiRouteEncoder
+  :: ( MonadError Text check
+     , MonadError Text parse
+     )
+  => Encoder check parse (R ApiRoute) PageName
 ```
 
-This function will serve as a smaller piece in a mechanism that manages all of the `obelisk-route`
-routes for our application, we'll go into more detail about that later. We will create a `case`
-expression that will match on the value of our route and provide `SegmentResult`.
+Similar to our first `Encoder` this will contain the concrete definitions of the routes for the
+`ApiRoute` type. Unlike the `MyRoute` encoder however, we must use the `R` type to wrap our route
+type due to the extra type argument that definition of `ApiRoute` requires.
+
+### Aside: The `R` type
+
+The `R` type is an alias that wraps a set of routes, such as `ApiRoute`. When writing the GADTs for
+routes, the type of the routes requires a type argument which is then fixed for each individual
+constructor in that GADT.
+
+See the first line of the definition of the `ApiRoute` type:
+
+```haskell
+data ApiRoute :: * -> * where
+```
+
+That `* -> *` type means that the type of `ApiRoute` needs to be applied to another type before GHC
+considers it to be a complete type. When we define a constructor, we provide this type argument:
+
+```haskell
+  ApiRoute_Status :: ApiRoute ()
+```
+
+When we need to refer to _all_ of the routes in `ApiRoute`, we can't provide any single type
+argument, because all of the routes would then be restricted to that one type.
+
+To solve this, we use the `R` type alias to wrap the type constructor for the GADT with a [`DSum`
+(dependent sum)][dsumtype]. This then defers the resolution of that type argument, and enables us to
+refer to an entire set of routes in a type signature without sacrificing flexibility.
+
+[dsumtype]: https://hackage.haskell.org/package/dependent-sum-0.7.1.0/docs/Data-Dependent-Sum.html#t:DSum
+
+----
+
+Because we're defining an `Encoder` for a type of `(R p)` we will use the `pathComponentEncoder`
+function. This `Encoder` is purpose built for these types of route. Additionally, the type that forms part of
+the interface, `SegmentResult`, allows more complex route definitions. This function works
+similarly to the `enumEncoder` which we know already:
+
+```haskell
+apiRouteEncoder
+  :: ( MonadError Text check
+     , MonadError Text parse
+     )
+  => Encoder check parse (R ApiRoute) PageName
+apiRouteEncoder = pathComponentEncoder $ \case
+  ApiRoute_Status -> _statusTodo
+  ApiRoute_Version -> _versionTodo
+  ApiRoute_Uptime -> _updateTodo
+```
+
+Instead of `PageName`, we now have to return a `SegmentResult` on the right hand side of the `case` expression.
 
 ### Aside: `SegmentResult`
 
@@ -134,34 +484,50 @@ nested in the definition of other routes. All of the routes related to pull requ
 the route for a repository, for example. We need a way to describe whether a route may have more
 segments or if we've reached the end.
 
-To do this, the `SegmentResult` has two constructors, one recursive (`PathSegment`) allowing for
-more structure, and the other terminating (`PathEnd`) indicating that this route is complete. Refer
-to the Haddock documentation for more detail information.
+To do this, the `SegmentResult` has two constructors, one recursive allowing for more structure, and
+the other terminating, indicating that this path is complete. Refer to the Haddock documentation for
+more detail information.
+
+The recursive constructor has the following type:
+
+```haskell
+PathSegment Text (Encoder check parse a PageName)
+```
+
+This lets us specify a fixed component of a path, and then we must also provide an `Encoder` to turn
+this value (the one on the left hand side of the case expression) into the remainder of the route.
+
+The other constructor:
+
+```haskell
+PathEnd (Encoder check parse a (Map Text (Maybe Text)))
+```
+
+Indicates that the path is complete and requires an `Encoder` to turn this value into query parameters.
 
 ----
 
-Lets create our `case` expression and add our first route. Update the body of `myFrontendRoutes`
-with a `case` expression with the first match being our `MyRoute_Main` constructor. Add a typed-hole
-on the right hand side of the arrow:
+The value we're matching on is `ApiRoute_Status` and it is similar to the `MyRoute_Missing` route
+from earlier. The constructor has no arguments so there is only one possible instantiation, and we
+have a static text component, "status", to differentiate it from the `/` path.
 
 ```haskell
-myFrontendRoutes :: forall a. MyRoute a -> SegmentResult (Either Text) (Either Text) a
-myFrontendRoutes myRs = case myRs of
-  MyRoute_Main -> _todo_
+  ApiRoute_Status -> PathSegment "status" $ unitEncoder mempty
 ```
 
-Recall that we want this route to be represented in the addressbar as `/`, which we can see has no
-further information in it so the constructor from `SegmentResult` we need is `PathEnd`. Update our
-typed hole to be the argument to this constructor:
+MyRoute_App AppRoutes ~ /app/{register, contact, about}
+Needs: R, pathComponentEncoder, SegmentResult
 
-```haskell
-  MyRoute_Main -> PathEnd _todo
-```
+Aside: This lets you treat paths modularly
 
-typed-hole information
-aside: links on typed holes
 
-description of unitEncoder and lack of need for query params
+#############################################################################################################
+new content ends here
+#############################################################################################################
+
+#############################################################################################################
+old content that is being restructured starts here
+#############################################################################################################
 
 ## Simple route with one parameter
 
@@ -169,16 +535,14 @@ We're going to add a homepage for every user, which is it be parameterised on th
 ID. Expressed abstractly it might look something like this:
 
 ```haskell
-data Route = Route_User Int
+data MyRoute
+  = MyRoute_Main
+  | MyRoute_UserHome Text
 ```
 
 ### Defining our route as a type
 
 To create the route itself, we will add a constructor to the `FrontendRoute` GADT in `Common.Route`.
-
-The purpose of this constructor is to give a name and a value to a particular route. It provides a
-constructor to match on when we're deciding what code to run. It will also be used to help build
-type-safe links within our application, as well as declare what types are expected from the route.
 
 Recall that our abstract route definition was a homepage for every user, parameterised over their
 user ID. Now we begin to make this into a concrete definition.
@@ -191,94 +555,6 @@ Add the following constructor to `FrontendRoute` in `Common.Route`:
 
 This constructor indicates that we have a `FrontendRoute` that when successfully loaded, will
 provide the current user ID `Int` that was input on that route.
-
-#### The `BackendRoute` & `FrontendRoute` types
-
-A freshly generated Obelisk application comes with two GADTs for backend and frontend routes in the
-`Common.Route` module. These are `BackendRoute` and `FrontendRoute`, respectively.
-
-For more info on GADTs check out the following links:
-* [Haskell Wiki](https://wiki.haskell.org/Generalised_algebraic_datatype)
-* [What I Wish I Knew When Learning Haskell - GADTs](http://dev.stephendiehl.com/hask/#gadts)
-* [Haskellforall](http://www.haskellforall.com/2012/06/gadts.html)
-
-`BackendRoute` is for serving static things or deferring to other backend endpoints. Such as:
-- "static/files/img/:imgName:"
-- "api/..." where the "..." portion is managed by a REST endpoint package of your choice.
-
-These backend routes can run their own code or hand off to a different request handling package,
-such as `servant`, for a finer grained set of REST endpoints.
-
-`FrontendRoute` is for managing the frontend routing of your application. Such as:
-- "blog/:userId:/:postId:"
-- "dashboard?optionA=true".
-
-Building routes for either one is the same process. The only distinction is that the names indicate
-who is _serving_ the routes. Keeping the types separate enforces the distinction at compile time and
-helps to prevent errors.
-
-### Building our route from segments
-
-If you're following along with `ob run` then after you add the new constructor and save the
-file. New incompleteness warnings will have appeared in the output of `ob run`. This is the type
-system helping us out by pointing out the next steps for us now that we've extended our
-`FrontendRoutes` type.
-
-The next step is to fill in the definition of our new route. We do this by extending the `case`
-expression in the `fullRouteEncoder`, the same function that has the `FrontendRoute_Main` route that
-we discussed previously.
-
-
-Add our new constructor as another pattern in the `case` expression for the frontend routes. For now
-add a type-hole on the right hand side of our new `case` expression and save the file. The `ob run`
-output will update and tell you the type of the expression that it is expecting:
-
-```haskell
-fullRouteEncoder
-  :: Encoder (Either Text) Identity (R (FullRoute BackendRoute FrontendRoute)) PageName
-fullRouteEncoder = mkFullRouteEncoder
-  (FullRoute_Backend BackendRoute_Missing :/ ())
-  (\case
-      BackendRoute_Missing -> PathSegment "missing" $ unitEncoder mempty)
-  (\case
-      FrontendRoute_Main -> PathEnd $ unitEncoder mempty
-      -- Add the new constructor here
-      FrontendRoute_User -> _todo
-  )
-```
-
-The output will be:
-
-```shell
-    • Found hole:
-        _todo :: SegmentResult (Either Text) (Either Text) Int
-      Or perhaps ‘_todo’ is mis-spelled, or not in scope
-```
-
-This is telling us that we have to construct a `SegmentResult` to be paired with our
-`FrontendRoute_User` constructor to form part of the complete `Encoder` for `FrontendRoutes`.
-
-The `SegmentResult` type has two constructors. The one that we need is the `PathSegment` constructor:
-
-```haskell
-  | PathSegment Text (Encoder check parse a PageName)
-```
-
-This is because our route definition has multiple parts, one of which is static. Use the literal
-value "user" as the first argument to the constructor, leaving a typed hole as the second
-argument. The `case` expression should now look like this:
-
-```haskell
-  FrontendRoute_User -> PathSegment "user" _todo
-```
-
-The output from `ob run` will update and look something like this:
-
-```shell
-    • Found hole:
-        _todo :: Encoder (Either Text) (Either Text) Int PageName
-      Or perhaps ‘_todo’ is mis-spelled, or not in scope
-```
 
 #### The `Encoder` type
 
@@ -386,15 +662,6 @@ Recall that our typed hole tells us we need to construct a value of the followin
 _todo :: Encoder (Either Text) (Either Text) Int PageName
 ```
 
-#### Aside `PageName`
-
-This type is a combination of the URL and a query string and is the target type of a _complete_
-route `Encoder`. Individual `Encoder`s will work with different types, but often the final type of a
-chain of `Encoder`s will be a `PageName`. It is unlikely you will ever need to construct this type
-yourself as `obelisk-route` has functions that will handle that for you.
-
-----
-
 We can safely simplify the type of `unsafeShowEncoder` for the sake of understanding:
 
 ```haskell
@@ -478,16 +745,6 @@ type that we added our user route to. This tells us which routes are available f
 in this function. We can't accidentally match on a route that is not part of that type, it would
 be a compile error.
 
-#### Aside: `R`
-
-The `R` type is an alias that lets us talk about a set of routes, such as `FrontendRoute`, as a
-whole. The GADT for routes are declared with a single type variable, and that type variable is fixed
-for each individual route in that GADT. It would not be possible to use the individual routes if we
-were forced to leave the type variable exposed. The function would never type-check. By using the
-type alias that wraps the type constructor for the GADT with a [`DSum` (dependent sum)](https://hackage.haskell.org/package/dependent-sum-0.7.1.0/docs/Data-Dependent-Sum.html#t:DSum) we can specify the available routes in a type signature.
-
-----
-
 At the top of our `_frontend_body` function, before the `do`, we're going to insert the
 `subRoute_` function and turn this entire function into a `case` expression that shows different
 content based on the current route. The existing content will be moved into the branch for
@@ -561,7 +818,7 @@ function `(:/)` from `Obelisk.Route`, and we provide the required input of an `I
 type of `FrontendRoute_User`. Then we create a child widget with some content that when clicked will
 take us to the user page.
 
-Similarily, we can create a link on the user page to take us to the main page:
+Similarly, we can create a link on the user page to take us to the main page:
 
 ```haskell
 routeLink (FrontendRoute_Main :/ ()) $
