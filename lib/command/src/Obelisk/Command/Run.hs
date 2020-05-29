@@ -14,7 +14,7 @@ module Obelisk.Command.Run where
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
 import Control.Lens (ifor, (.~), (&))
-import Control.Monad (filterM, unless, void)
+import Control.Monad (filterM, unless)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -67,17 +67,14 @@ import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
 import Obelisk.CliApp (
     Severity (..),
-    CliT (..),
-    HasCliConfig,
-    createProcess_,
     failWith,
     proc,
     putLog,
     readCreateProcessWithExitCode,
     readProcessAndLogStderr,
+    runProcess_,
     setCwd,
     setDelegateCtlc,
-    waitForProcess,
     withSpinner,
     callCommand,
     getCliConfig,
@@ -160,7 +157,7 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
   liftIO $ createDirectoryIfMissing True $ takeDirectory $ root </> profileBaseName
   putLog Debug $ "Storing profiled data under base name of " <> T.pack (root </> profileBaseName)
   freePort <- getFreePort
-  (_, _, _, ph) <- createProcess_ "runProfExe" $ setCwd (Just root) $ setDelegateCtlc True $ proc (outPath </> "bin" </> "ob-run") $
+  runProcess_ $ setCwd (Just root) $ setDelegateCtlc True $ proc (outPath </> "bin" </> "ob-run") $
     [ show freePort
     , T.unpack assets
     , profileBaseName
@@ -168,7 +165,6 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
     , "-po" <> profileBaseName
     ] <> rtsFlags
       <> [ "-RTS" ]
-  void $ waitForProcess ph
 
 run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 run root interpretPaths = do
