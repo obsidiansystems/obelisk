@@ -743,5 +743,159 @@ Now that we have the two `Encoder`s we need, we compose them together:
 
 ## Multiple Parameters
 
+Sometimes one parameter isn't enough and you need more information, these parameters might be
+grouped together in sequence because they're all associated with a single route. An example might be
+puzzles hidden in your application that provide three inputs, that when combined will take the user
+to the prize page:
 
-## Query Parameters
+```shell
+/app/code/$solutionA/$solutionB/$solutionC
+```
+
+An alternative requirement might be that there is a set of nested routes that have a parameter and
+one of those nested routes requires its own parameters. Such as a route for a specific repository
+for a specific user:
+
+```haskell
+/app/user/$userId/repository/$repoId
+```
+
+Each of these requires a different approach because the parameters appear at different positions
+along the route. The main difference is in how the type of the route constructor is defined.
+
+### In sequence
+
+In the first example, there are puzzles that provide three inputs and when combined into a single
+route will take the user to a specific page. This is only a single logical page but it has three
+required inputs and the path would appear in the address bar as follows:
+
+```shell
+/app/code/$solutionA/$solutionB/$solutionC
+```
+
+Defining the first part of our constructor leads to an interesting question: What is the type that
+this constructor will be parameterised by? Within `obelisk-route` is the type alias `(:.)` which is
+an alias for a tuple `(,).`This allows us to express multiple possibly different types as the
+type for a route constructor. Assuming that our puzzle solutions will be an `Int` value, a `Text`
+value, and a final `Int` value, then our route is defined as:
+
+```haskell
+  AppRoute_CodePrize :: AppRoute (Int :. Text :. Int)
+```
+
+Which is equivalent to the following but easier to read:
+
+```haskell
+  AppRoute_CodePrize :: AppRoute (Int, (Text, Int))
+```
+
+Now it is a matter of building our `Encoder` to process the individual segments and package them all
+up as required. To handle the `(:.)` portion of the encoding process, we're going to use the
+`pathParamEncoder` that has the following type:
+
+```haskell
+pathParamEncoder
+  :: ( ... )
+  => Encoder check parse item Text
+  -> Encoder check parse rest PageName
+  -> Encoder check parse (item :. rest) PageName
+```
+
+This function requires two `Encoder`s, one for the initial parameter `item`, and another for the
+`rest` of the route. In this case it will be another `pathParamEncoder` because the second parameter
+is another tuple. We will assume we already have an `R AppRout` `Encoder` defined using
+`pathParamEncoder` and extend it with another branch on the `case` expression:
+
+```haskell
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+    _itemEncoder
+    _restEncoder
+```
+
+The types of the two typed holes are :
+
+```haskell
+_itemEncoder :: Encoder check parse Int Text
+_restEncoder :: Encoder check parse (Text :. Int) PageName
+```
+
+To start working on the first `Encoder`, we can take that type signature and create our `Encoder` in
+somewhere else in this file in case we need it again:
+
+```haskell
+intTextEncoder :: Encoder check parse Int Text
+intTextEncoder = _itemEncoder
+```
+
+We're going to lean on the `Show` & `Read` instances for `Int` because for `Int` these typeclasses
+are inverses of one another, meaning that we don't lose any information about the `Int` value. So
+we're able to leverage these instances to create a safely bidirectional `Encoder`. To do this, we
+will use the `reviewEncoder` and a `Prism` from the `lens` library to do all the work for us:
+
+```haskell
+reviewEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => Prism' b a
+  -> Encoder check parse a b
+```
+
+```haskell
+_Show
+  :: ( Read a
+     , Show a
+     )
+  => Prism' String a
+```
+
+There's more than a few type variables here but you can use a repl to check the type when they are
+combined:
+
+```haskell
+reviewEncoder _Show
+  :: ( MonadError Text parse
+     , Applicative check
+     , Read a
+     , Show a
+     )
+  => Encoder check parse a String
+```
+
+When combined they provide an `Encoder` that will `show` the value of type `a` when creating the URL
+segment, and `read` when trying to turn that segment of the URL into a value of type `a`. This is
+only safe to do because we know that the `Show` and `Read` instances for `Int` are inverses. Refer
+to the Haddock documentation for `unsafeShowEncoder` for more information.
+
+Add this to our `Encoder` to the right of the typed hole and compose them with `(.)`:
+
+```haskell
+intTextEncoder :: Encoder check parse Int Text
+intTextEncoder = _itemEncoder . reviewEncoder _Show
+```
+
+Now the typed hole has a type of:
+
+```haskell
+_itemEncoder :: :: Encoder check parse String Text
+```
+
+Which is hole that we have the perfect `Encoder` for:
+
+```haskell
+packTextEncoder :: (..., IsText text) => Encoder check parse String text
+```
+
+Perhaps unsurprisingly, `Text` is an instance of `IsText` so we're able to compose this `Encoder`
+with our `reviewEncoder` and complete this particular step:
+
+```haskell
+intTextEncoder :: Encoder check parse Int Text
+intTextEncoder = packTextEncoder . reviewEncoder _Show
+```
+
+...
+
+## Query Parameter
+
+AppRoutes_PictureOfTheDay ~ /app/potd/$year/$month/$day?img_x=800&img_y=600
