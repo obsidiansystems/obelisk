@@ -19,6 +19,7 @@ import Data.Bool (bool)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (for_)
 import Data.Function (fix)
+import Data.List (isInfixOf)
 import qualified Data.Map as Map
 import Data.Semigroup ((<>))
 import qualified Data.Set as Set
@@ -204,6 +205,22 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
   describe "ob run" $ {- NOT parallel $ -} do
     it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir' Nothing httpManager
     it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir' (Just "frontend") httpManager
+
+  describe "ob repl" $ do
+    it "accepts stdin commands" $ inTmpObInit $ \_ -> do
+      setStdin "print 3\n:q"
+      output <- runOb ["repl"]
+      liftIO $ assertBool "" $
+        [ "*Obelisk.Run Obelisk.Run Frontend Backend> 3"
+        , "*Obelisk.Run Obelisk.Run Frontend Backend> Leaving GHCi."
+        ] `isInfixOf` T.lines (T.strip output)
+    it "works with custom Prelude" $ inTmpObInit $ \_ -> do
+      writefile "common/src/Prelude.hs"
+        "{-# LANGUAGE PackageImports #-} module Prelude (module X) where import \"base\" Prelude as X"
+      setStdin ":q"
+      output <- runOb ["repl"]
+      liftIO $ assertBool "" $
+        "*Obelisk.Run Obelisk.Run Frontend Backend> Leaving GHCi." `T.isInfixOf` output
 
   describe "obelisk project" $ parallel $ do
     it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskRepoReadOnly]
