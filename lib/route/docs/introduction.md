@@ -128,42 +128,8 @@ data Encoder check parse a b
 ```
 
 You can think of an `Encoder check parse a b` as a thing of type `a -> b`. Indeed, `Encoder`s may be
-treated as you would any pure function, including composing them using `(.)`. Because `Encoder` has
-an instance of `Category`.
+treated as you would any pure function, including composing them.
 
-However the `(.)` operator from `Prelude` is specialised to the function arrow type `(->)` so we
-must import the more general version from the `Control.Category` module, because it uses the
-`Category` typeclass constraint:
-
-```haskell
--- (.) from Prelude
-(.) :: (b -> c) -> (a -> b) -> a -> c
-
--- (.) from Control.Category
-(.) :: Category cat => cat b c -> cat a b -> cat a c
-```
-
-The `Encoder` type is an instance of `Category` so we need to use the more general function. Ensure
-that `(.)` is imported correctly at the top of `Common.Route`:
-
- ```haskell
-import Prelude hiding ((.))
-import Control.Category
-```
-
-If you use the `(.)` from `Prelude` to compose `Encoder`s then you will end up with type errors
-similar to the following:
-
-```shell
-    • Couldn't match expected type ‘b0 -> c0’
-                  with actual type ‘Encoder check0 parse0 [Text] PageName’
-    • In the first argument of ‘(.)’, namely ‘pathOnlyEncoder’
-```
-
-You can see that it expected something of type `b0 -> c0` whereas we're wanting to compose
-`Encoder`s, although we can treat `Encoder` as pure functions, the types are distinct.
-
-----
 
 Within the `Obelisk.Route` module are many pre-built `Encoders`, for our purposes we need to find
 one that can be used to satisfy the `() -> PageName` shaped hole and ensure the route structure
@@ -632,7 +598,7 @@ Now all of these routes are organised in a way that makes sense _for this applic
 nested and top-level `Encoder`s are independent of one another and can be moved and altered without
 impacting the other.
 
-If `AppRoute` is extended or made more complex, those changes are localised to the `appRouteEncoder`. 
+If `AppRoute` is extended or made more complex, those changes are localised to the `appRouteEncoder`.
 
 If `ApiRoute_Status` needs to be extended with its own nested routes then it can be separated into
 its own `Encoder` and again those changes are kept local to that `Encoder`.
@@ -645,3 +611,137 @@ structure _where it makes sense for their application_.
 
 If you have repeated functionality in your application you could abstract out the differences and
 package the similarities, routes and all!
+
+## Add parameter to a nested route
+
+Suppose we want to use part of the route input as a value that is available for use at the
+destination. Let's assuming we want to add a homepage for every user. To do so we will need a route
+to represent a path to the homepage for _every possible user ID_, which means we parameterise this
+route by the type that represents every possible user ID.
+
+Our application has `Text` based user IDs, but we're responsible Haskellers so we will use a
+`newtype` to wrap this value up and keep our code cleaner:
+
+```haskell
+newtype UserID = UserID { unUserID :: Text } deriving (Show, Eq)
+makeWrapped ''UserID
+```
+
+That final line is template haskell from the [lens](https://hackage.haskell.org/package/lens)
+library that will generate a `Wrapped` typeclass instance for us. This provides a useful `Prism` for
+us that makes writing the `Encoder`, and using the `UserID` type itself, easier.
+
+Now we can define the route constructor as:
+
+```haskell
+  AppRoute_UserHome :: AppRoute UserID
+```
+
+This type represents one logical page per instantiation per possible user ID. In the address bar
+this will appear as : `/app/user/$UserID`. We will assume we have existing routes already defined
+using `pathComponentEncoder` and extend that `case` expression to include this new route:
+
+```haskell
+  -- New route branch in the case expression
+  AppRoute_UserHome -> PathSegment "user" _userhomeTodo
+```
+
+Similar to other routes, we have a static component, `"user"`, and we have a typed hole that we need
+to fill in. In this instance the typed hole as the following type:
+
+```haskell
+_userhomeTodo :: Encoder check parse UserID PageName
+```
+
+To build this `Encoder` we're going to be composing existing `Encoder`s. However the `(.)` operator
+from `Prelude` is specialised to the function arrow type `(->)` so we must import the more general
+version from the `Control.Category` module, because it uses the `Category` typeclass constraint:
+
+```haskell
+-- (.) from Prelude
+(.) :: (b -> c) -> (a -> b) -> a -> c
+
+-- (.) from Control.Category
+(.) :: Category cat => cat b c -> cat a b -> cat a c
+```
+
+The `Encoder` type is an instance of `Category` so we need to use the more general function. To ensure
+that the correct `(.)` is imported use the following snippet:
+
+ ```haskell
+-- This imports everything from Prelude except for (.)
+import Prelude hiding ((.))
+
+-- This imports everything from Control.Category
+import Control.Category
+```
+
+If you use the `(.)` from `Prelude` to compose `Encoder`s then you will end up with type errors
+similar to the following:
+
+```shell
+    • Couldn't match expected type ‘b0 -> c0’
+                  with actual type ‘Encoder check0 parse0 [Text] PageName’
+    • In the first argument of ‘(.)’, namely ‘pathOnlyEncoder’
+```
+
+You can see that it expected something of type `b0 -> c0` whereas we're wanting to compose
+`Encoder`s, although we can treat `Encoder` as pure functions, the types are distinct.
+
+----
+
+This package does not have any single `Encoder` that will satisfy that type. This is by design as
+what this package does provide is the smaller pieces we need to _build_ this `Encoder`. Small
+`Encoder`s that do one thing and do it correctly, such that we can compose these `Encoder` to
+perform the steps we need.
+
+Of the entire path: `/app/user/$userid`. The `user` section is nested in the `app` segment, so the
+`Encoder` we need to build must target the `$userid` segment, and only that segment, of the route.
+
+This is done using the following `Encoder`:
+
+```haskell
+singlePathSegmentEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => Encoder check parse Text PageName
+```
+
+The `singlePathSegmentEncoder` may be thought of as a function from `Text -> PageName`, and because
+`Encoder`s are bidirectional, we may also think of this as a function from `PageName -> Text`.
+
+We need an `Encoder` that acts as a function from `Text -> UserID` in one direction and `UserID ->
+Text` in the other. This is where the `Wrapped` typeclass we derived earlier comes in handy as that
+typeclass is a generalisation of these functions. The following `Encoder` leverages this typeclass
+to provide this `Encoder`:
+
+```haskell
+unwrappedEncoder
+  :: ( Wrapped a
+     , Applicative check
+     , Applicative parse
+     )
+  => Encoder check parse a (Unwrapped a)
+```
+
+The type `(Unwrapped a)` is an associated type from the `Wrapped` typeclass that represents the type that
+the `newtype` wraps. In our case the type variable `a` can be replaced with `UserID` and `Unwrapped
+UserID` with `Text`. These replacements give us an `Encoder` of the following type:
+
+
+```haskell
+unwrappedEncoder :: (...) => Encoder check parse UserID Text
+```
+
+Now that we have the two `Encoder`s we need, we compose them together:
+
+```haskell
+  -- New route branch in the case expression
+  AppRoute_UserHome -> PathSegment "user" $ singlePathsegmentEncoder . unwrappedEncoder
+```
+
+## Multiple Parameters
+
+
+## Query Parameters
