@@ -220,9 +220,11 @@ withProcess process f =
       (\x -> x { std_out = CreatePipe , std_err = CreatePipe }) process
     )
     (liftIO . Process.cleanupProcess)
-    (\(_, Just out, Just err, p) -> do
-      f out err -- Pass the handles to the passed function
-      (out, err) <$ (exitCodeToException process =<< waitForProcess p)
+    (\case
+      (_, Just out, Just err, p) -> do
+        f out err
+        (out, err) <$ (exitCodeToException process =<< waitForProcess p)
+      _ -> error "withProcess: createProcess did not provide handles for CreatePipe as expected"
     )
 
 -- | Runs a process to completion failing if it does not exit cleanly.
@@ -230,7 +232,7 @@ runProcess_
   :: (MonadIO m, CliLog m, CliThrow e m, MonadMask m, AsProcessFailure e, MonadFail m)
   => ProcessSpec -> m ()
 runProcess_ process =
-  bracketOnError -- TODO: Wrap exceptions up in ProcessFailure
+  bracketOnError
     (createProcess process)
     (liftIO . Process.cleanupProcess)
     (\(_, _, _, ph) -> exitCodeToException process =<< waitForProcess ph)
