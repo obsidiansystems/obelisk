@@ -345,7 +345,7 @@ common/src/Common/Route.hs:(77,36)-(79,42): warning: [-Wincomplete-patterns]
    |                                    ^^^^^...
 ```
 
-## Nested Routes
+## Nested Routes {#nestedRoutes}
 
 Applications often have a hierarchy to keep things organised. A request is identified as belonging
 to a particular sub-category and handed off accordingly, that sub-category is then responsible for
@@ -612,7 +612,7 @@ structure _where it makes sense for their application_.
 If you have repeated functionality in your application you could abstract out the differences and
 package the similarities, routes and all!
 
-## Add parameter to a nested route
+## Add parameter to a nested route {#nestedRouteParam}
 
 Suppose we want to use part of the route input as a value that is available for use at the
 destination. Let's assuming we want to add a homepage for every user. To do so we will need a route
@@ -741,7 +741,7 @@ Now that we have the two `Encoder`s we need, we compose them together:
   AppRoute_UserHome -> PathSegment "user" $ singlePathsegmentEncoder . unwrappedEncoder
 ```
 
-## Multiple Parameters
+## Multiple Parameters {#multipleParams}
 
 Sometimes one parameter isn't enough and you need more information, these parameters might be
 grouped together in sequence because they're all associated with a single route. An example might be
@@ -1024,8 +1024,8 @@ Of most interest to us is the `AppRoute` definition, where the `AppRoute_UserRou
 possible `UserRoute` that will also be paired with the given `UserId`. This is indicated by the
 pairing `(:.)` of the `UserId` and `R UserRoute`.
 
-To build the concrete definition of this route, we combine the techniques of [Routes with single
-parameter], [Nested Routes], and [Multiple Parameters].
+To build the concrete definition of this route, we combine the techniques of [nested routes with single
+parameter](#nestedRouteParam), [Nested Routes](#nestedRoutes), and [Multiple Parameters](#multipleParams).
 
 Starting with the top level `myRouteEncoder`, as we did earlier using `pathComponentEncoder`:
 
@@ -1168,9 +1168,9 @@ route using `singlePathSegmentEncoder`:
 ### With another path parameter
 
 Sometimes query parameters are included alongside other route parameters. Taking the "repository"
-route from the [Multiple Parameters] section, if we wanted to be able to view a specific commit. It
-doesn't necessarily make sense to make an entirely new page for that, as it is a configurable state
-of the existing page. So we're able to take the existing route type:
+route from the [Multiple Parameters](#multipleParams) section, if we wanted to be able to view a
+specific commit. It doesn't necessarily make sense to make an entirely new page for that, as it is a
+configurable state of the existing page. So we're able to take the existing route type:
 
 ```haskell
   UserRoute_Repository :: UserRoute RepoId
