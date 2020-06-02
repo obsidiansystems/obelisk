@@ -830,7 +830,7 @@ intTextEncoder = _itemEncoder
 We're going to lean on the `Show` & `Read` instances for `Int` because for `Int` these typeclasses
 are inverses of one another, meaning that we don't lose any information about the `Int` value. So
 we're able to leverage these instances to create a safely bidirectional `Encoder`. To do this, we
-will use the `reviewEncoder` and a `Prism` from the `lens` library to do all the work for us:
+will use the `reviewEncoder` with a `Prism` from the `lens` library to do all the work for us:
 
 ```haskell
 reviewEncoder
@@ -842,11 +842,7 @@ reviewEncoder
 ```
 
 ```haskell
-_Show
-  :: ( Read a
-     , Show a
-     )
-  => Prism' String a
+_Show :: (Read a, Show a) => Prism' String a
 ```
 
 There's more than a few type variables here but you can use a repl to check the type when they are
@@ -887,15 +883,329 @@ packTextEncoder :: (..., IsText text) => Encoder check parse String text
 ```
 
 Perhaps unsurprisingly, `Text` is an instance of `IsText` so we're able to compose this `Encoder`
-with our `reviewEncoder` and complete this particular step:
+with our `reviewEncoder` to complete this `Encoder`:
 
 ```haskell
 intTextEncoder :: Encoder check parse Int Text
-intTextEncoder = packTextEncoder . reviewEncoder _Show
+intTextEncoder = reviewEncoder (unpacked . _Show)
 ```
 
-...
+Replace the `_itemEncoder` with this `Encoder`:
 
-## Query Parameter
+```haskell
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+    intTextEncoder
+    _restEncoder
+```
 
-AppRoutes_PictureOfTheDay ~ /app/potd/$year/$month/$day?img_x=800&img_y=600
+Now onto the next part of our `Encoder`. Checking the `_restEncoder` typed hole, we can see that it
+has the following type:
+
+```haskell
+_restEncoder :: Encoder (Either Text) (Either Text) (Text :. Int) PageName
+```
+
+This `Encoder` is for the next two parameters of our tuple, so we can start building this `Encoder`
+using the `pathParamEncoder`. This once again reduces the work to two separate `Encoder`s that do
+the minimum we need, and the `pathParamEncoder` handles the tupling for us:
+
+
+```haskell
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+    intTextEncoder
+    $ pathParamEncoder
+      _itemEncoder
+      _restEncoder
+```
+
+We repeat the process of working through the typed holes to build or find the `Encoder`s we need to
+define our route. The `_itemEncoder` is now the second parameter to our tuple, which is a `Text`
+value so the typed hole has the following type:
+
+```haskell
+_itemEncoder :: Encoder check parse Text Text
+```
+
+Remembering that an `Encoder check parse a b` may be viewed as a function of type `a -> b`. In this
+case it would be equivalent to a function of type `a -> a` as both types are the same. This is
+equivalent to the `id` function, which is part of the `Category` typeclass, of which `Encoder` has
+an instance. Thus the `Encoder` is `id`:
+
+```haskell
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+    intTextEncoder
+    $ pathParamEncoder
+      id
+      _restEncoder
+```
+
+The final `_restEncoder` typed hole has the following type, as the last value in the tuple and the
+path itself:
+
+```haskell
+_restEncoder :: Encoder check parse Int PageName
+```
+
+We're able to re-use the `intTextEncoder` that we built earlier if we compose it with the
+`singlePathSegmentEncoder`, which has the following type:
+
+```haskell
+singlePathSegmentEncoder :: (...) => Encoder check parse Text PageName
+```
+
+Making the final `Encoder` for the `(Int :. Text :. Int)` type:
+
+```haskell
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+    intTextEncoder
+    $ pathParamEncoder
+      id
+      (singlePathSegmentEncoder . intTextEncoder)
+```
+
+### Aside: `unsafeShowEncoder`
+
+Another `Encoder` that we could used as the final `_restEncoder` is the `unsafeShowEncoder`:
+
+```haskell
+unsafeShowEncoder
+  :: ( MonadError Text parse
+     , Read a
+     , Show a
+     , Applicative check
+     )
+  => Encoder check parse a PageName
+```
+
+Similar to the `reviewEncoder _Show` that we built earlier, it uses the `Show` and `Read` instances
+by returns a `PageName`. This one `Encoder` can be used in place of the composition of:
+
+```haskell
+singlePathSegmentEncoder . intTextEncoder
+```
+
+But if we changed the type of the final parameter of the tuple from `Int`to a type that had
+instances of `Show` and `Read`, but those instances were _not_ inverses of one another. The compiler
+would not catch that change and you would need to have tests in place to catch that issue.
+
+It's not the use of `Show` and `Read` that is unsafe, it's that if the types change and the
+instances exist then the compiler will automatically use those instances. Which might not be what
+you want.
+
+### Nested parameters
+
+Another situation where you might have multiple parameters is when there are nested routes and an
+upper level of the nesting has a parameter along with one or more of the nested routes:
+
+```haskell
+/app/user/$userId/repository/$repoId
+```
+
+For this example we will use the following `newtypes` and routes:
+
+```haskell
+newtype UserId = UserId { unUserId :: Int } deriving (Show, Eq)
+makeWrapped ''UserId
+
+newtype RepoId = RepoId { unRepoId :: Int } deriving (Show, Eq)
+makeWrapped ''RepoId
+
+data UserRoute :: * -> * where
+  UserRoute_Repository :: UserRoute RepoId
+
+data AppRoute :: * -> * where
+  AppRoute_UserRoute :: AppRoute (UserId :. R UserRoute)
+
+data MyRoute :: * -> * where
+  MyRoute_AppRoute :: MyRoute (R AppRoute)
+```
+
+Of most interest to us is the `AppRoute` definition, where the `AppRoute_UserRoute` represents every
+possible `UserRoute` that will also be paired with the given `UserId`. This is indicated by the
+pairing `(:.)` of the `UserId` and `R UserRoute`.
+
+To build the concrete definition of this route, we combine the techniques of [Routes with single
+parameter], [Nested Routes], and [Multiple Parameters].
+
+Starting with the top level `myRouteEncoder`, as we did earlier using `pathComponentEncoder`:
+
+```haskell
+myRouteEncoder :: (...) => Encoder check parse (R MyRoute) PageName
+myRouteEncoder = pathComponentEncoder $ \case
+  MyRoute_AppRoute -> PathSegment "app" appRouteEncoder
+```
+
+We then create the `appRouteEncoder` where we define the route with the first parameter:
+
+```haskell
+appRouteEncoder :: (...) => Encoder check parse (R AppRoute) PageName
+appRouteEncoder = pathComponentEncoder $ \case
+  AppRoute_UserRoute -> PathSegment "user" $ _f
+```
+
+We're building an `Encoder` for set of routes (`R UserRoute`) as we've done before, but this time we have an
+extra parameter: `UserId`. As before we use the `pathParamEncoder` to manage the tupling for us:
+
+```haskell
+appRouteEncoder :: (...) => Encoder check parse (R AppRoute) PageName
+appRouteEncoder = pathComponentEncoder $ \case
+  AppRoute_UserRoute -> PathSegment "user" $ pathParamEncoder
+
+    -- Encoder check parse UserId Text
+    _userIdEncoder
+
+    -- Encoder check parse (R UserRoute) PageName
+    _userRouteEncoder
+```
+
+Constructing the `Encoder` for the `UserId` is the same as we have before when dealing with a
+`newtype` that has an instance of `Wrapped`:
+
+```haskell
+appRouteEncoder :: (...) => Encoder check parse (R AppRoute) PageName
+appRouteEncoder = pathComponentEncoder $ \case
+  AppRoute_UserRoute -> PathSegment "user" $ pathParamEncoder
+
+    -- Encoder check parse UserId Text
+    (reviewEncoder (unpacked . _Show) . unwrappedEncoder)
+
+    -- Encoder check parse (R UserRoute) PageName
+    userRouteEncoder
+```
+
+Now we complete the route by defining the `Encoder` for `R UserRoute`:
+
+```haskell
+userRouteEncoder :: (...) => Encoder check parse (R UserRoute) PageName
+userRouteEncoder = pathComponentEncoder $ \case
+  UserRoute_Repository -> PathSegment "repository" $ singlePathSegmentEncoder
+    . reviewEncoder (unpacked . _Show)
+    . unwrappedEncoder
+```
+
+## Query Parameters
+
+This package has the capability to collect the various query parameters that may be included as part
+of a route. Query parameters can be collected on their own:
+
+```
+/app/picture-of-the-day?width=800&height=600
+```
+
+Or they may be collected along with other route parameters:
+
+```
+/app/user/$userid/repository/$repoid?commit=abc1234
+```
+
+There is support for collecting all the parameters including duplicates, as well as support of going
+directly to a `Map` type that will remove all the duplicates.
+
+### Only query parameters (no duplicate keys)
+
+Displaying a 'picture of the day' that allows the user to set the height and width of the image is
+an example of a route that only has a single logical page but is configurable through query parameters:
+
+```
+/app/picture-of-the-day?width=800&height=600
+```
+
+The type of this route will only have arguments that represent the query parameters, without
+duplicates so the type of our route argument will be a `Map`:
+
+```haskell
+  AppRoute_POTD :: AppRoute (Map Text (Maybe Text))
+```
+
+The types of the values of the `Map` are `Maybe Text` because a parameter may not require an
+explicit value, including the parameter at all could be sufficient.
+
+For our type we have no additional parameters and no nesting, we're only interested in the query
+parameters. The `Encoder` for this task is the `queryOnlyEncoder`:
+
+```haskell
+queryOnlyEncoder :: (...) => Encoder check parse (Map Text (Maybe Text)) PageName
+```
+
+Assuming an `appRouteEncoder :: Encoder check parse (R AppRoute) PageName` that is defined using the
+`pathComponentEncoder`, we will extend the `case` expression:
+
+```haskell
+  AppRoute_POTD -> PathSegment "picture-of-the-day" queryOnlyEncoder
+```
+
+### Only query parameters (allow duplicate keys)
+
+Sometimes being able to collect duplicate query parameter keys is useful. A page that splits people
+into teams based on favourite colour could allow names to be input as values for the colours that
+are the keys:
+
+```
+/app/team-maker?blue=fred&red=susan&blue=sally&yellow=sam&red=steve
+```
+
+As with the previous example we have a single logical page that will reconfigure itself based on the
+provided query options. This time however we want all of the query parameters, including duplicates:
+
+```haskell
+  AppRoute_TeamMaker :: AppRoute [(Text, Maybe Text)]
+```
+
+We will use the `queryParametersTextEncoder` to build this `Encoder`:
+
+```haskell
+queryParametersTextEncoder :: (...) => Encoder check parse [(Text, Maybe Text)] Text
+```
+
+Note that unlike the `queryOnlyEncoder` this one does encode to a `PageName` as there may be other
+components on the route, so we will indicate that the query parameters are the only part of this
+route using `singlePathSegmentEncoder`:
+
+```haskell
+  AppRoute_TeamMaker -> PathSegment "team-maker" $ singlePathSegmentEncoder . queryParametersTextEncoder
+```
+
+### With another path parameter
+
+Sometimes query parameters are included alongside other route parameters. Taking the "repository"
+route from the [Multiple Parameters] section, if we wanted to be able to view a specific commit. It
+doesn't necessarily make sense to make an entirely new page for that, as it is a configurable state
+of the existing page. So we're able to take the existing route type:
+
+```haskell
+  UserRoute_Repository :: UserRoute RepoId
+```
+
+Then modify it to be to accept a `Map` of query parameters, as well as the `RepoId`:
+
+```haskell
+  UserRoute_Repository :: UserRoute (RepoId :. Map Text (Maybe Text))
+```
+
+Note the reuse of the `(:.)` operator to combine the two route inputs. This provides a hint as to
+how we can modify the existing `Encoder` for this route:
+
+```haskell
+  UserRoute_Repository -> PathSegment "repository"
+    $ singlePathSegmentEncoder . reviewEncoder (unpacked . _Show) . unwrappedEncoder
+```
+
+To now require the `RepoId` and have the capability to handle query parameters:
+
+```haskell
+  UserRoute_Repository -> PathSegment "repository" $ pathParamEncoder repoIdEncoder queryOnlyEncoder
+  where
+    repoIdEncoder :: (..) => Encoder check parse RepoId Text
+    repoIdEncoder = reviewEncoder (unpacked . _Show) . unwrappedEncoder
+```
+
+To keep things a little more organised, we factor out the `Encoder` for the `RepoId`, which does is
+more general than the type signature suggests, but we're keeping things fixed for the moment. We
+pass this `Encoder` as the first argument to `pathParamEncoder`. Finally we use the
+`queryOnlyEncoder` to take any query parameters and turn them into the `Map` we require.
+
+This route changes to now have the following possible representation in the address bar:
+
+```
+/app/user/$userid/repository/$repoid?commit=abc1234
+```
