@@ -39,7 +39,7 @@ backend **or** the frontend. A POST request makes no sense for the frontend of a
 do not support creating this type of route. As it would be difficult to impossible to enforce if
 the routing system worked differently on the backend vs the frontend.
 
-## The way of the Obelisk Route
+## Obelisk route mental model
 
 The way to approach building routes with `obelisk-route` is to focus on your Route data structure.
 
@@ -59,10 +59,9 @@ structure. By composing and building routes from pieces that are so small that t
 correct", you can be confident that the composition of those individual pieces is also correct.
 
 As we build up some examples in this guide, we will demonstrate how to think about your abstract
-routes as concrete definitions using `Encoder`s as pure functions. You will see that `obelisk-route`
-already has most of the tools you need to construct that concrete definition. We'll also cover what
-to do when it doesn't, and what you need to know to ensure that you build correct and composable
-pieces.
+routes as concrete definitions using `Encoder`s. You will see that `obelisk-route` already has most
+of the tools you need to construct that concrete definition. We'll also cover what to do when it
+doesn't, and what you need to know to ensure that you build correct and composable pieces.
 
 #### Obelisk live development environment
 
@@ -71,13 +70,13 @@ to the Obelisk documentation for [Developing an Obelisk project](https://github.
 
 ## Your route as a type
 
-This route will be for the main landing page of our application. There is only one possible route
+This route will be the main landing page of our application. There is only one possible route
 associated with this page, so the value for our route must have only one possible instantiation.
 
 When it comes to how that route will present itself to the user in the address bar, it will be our
 main page and at the root of all things so it must be `/`.
 
-The routes for a Obelisk application live `Common.Route` and nearby modules. We will follow
+The routes for a Obelisk application often live `Common.Route` and nearby modules. We will follow
 this convention and create our type there:
 
 ```haskell
@@ -86,20 +85,18 @@ data MyRoute = MyRoute_Main
 ```
 
 The constructor for our main page is `MyRoute_Main` with no parameters. This value will be used in
-our `case` expressions to decide what code to run, and when we're creating links to this page. Also
-add the deriving clause as we will need these instances as our routes grow.
+our `case` expressions to decide what code to run and when we're creating links to this page. Be
+sure to include the deriving clause as we will need these instances.
 
-> The naming of the route MyRoute_Main is an Obelisk convention of including the type
-> name in individual constructor names. This helps disambiguate the code at the 'cost' of a few
-> extra keystrokes. As an example:
+> The naming of the route MyRoute_Main is an Obelisk convention of including the type name in
+> individual constructor names. This helps disambiguate the code at the 'cost' of a few extra
+> keystrokes. As an example:
 >
 > ```haskell
 > data Foo
 >   = Foo_ConstructorA
 >   | Foo_ConstructorB
 > ```
-
-## First concrete route definition
 
 We have the logical definition of the route as the `MyRoute_Main` constructor, and the next step is
 to create the concrete definition of that route for our application. We will do this by building our
@@ -110,40 +107,57 @@ myRouteEncoder
   :: ( Applicative check
      , MonadError Text parse
      )
-  => Encoder check parse () PageName
+  => Encoder check parse MyRoute PageName
 myRouteEncoder =
   undefined
 ```
 
-You will need the constraints to satisfy the typechecker for `check` and `parse`, but they're not
-important to what we're doing at the moment.
+You will need the constraints to satisfy the typechecker for the type variables; `check`, and
+`parse`. They're not important to what we're doing now.
 
 #### The `Encoder` type
 
 This is the primary building block for any route definition:
 
 ```haskell
--- The 'check' and 'parse' type variables will be covered later
 data Encoder check parse a b
 ```
 
-You can think of an `Encoder check parse a b` as a thing of type `a -> b`. Indeed, `Encoder`s may be
-treated as you would any pure function, including composing them.
+An `Encoder check parse a b` may be thought of as small pure functions of type: `a -> b`. Thinking
+of them like this may provide some intuition. As `Encoder`s may be composed using `(.)` and in some
+ways treated as if they were nothing but pure functions. In practice they are more complex than
+this, but it is a good place to start.
 
+The `check` and `parse` types are related to the functions that the `Encoder` uses to encode or
+validate route input. When using existing `Encoder`s these type variables are often able to be
+ignored. They are more relevant when you're building your own `Encoder`s.
 
-Within the `Obelisk.Route` module are many pre-built `Encoders`, for our purposes we need to find
-one that can be used to satisfy the `() -> PageName` shaped hole and ensure the route structure
-we require. The `Encoder` that meets this requirement is the `unitEncoder`, which has the
-following type:
+They are also bidirectional so the one `Encoder` will handle going from `a` to `b` and
+back. Importantly, a correctly built `Encoder` will not lose information, regardless of which
+direction the information is travelling:
 
 ```haskell
--- Constraints elided for brevity
-unitEncoder :: (...) => r -> Encoder check parse () r
+forall a. decode (encode a) == pure a
 ```
 
-The `()` is equivalent to our current `MyRoute` type, because there is only possible way to
-construct a value of type `MyRoute`. Also when this route is encoded as a URL there should be
-only one possible output.
+----
+
+Within the `Obelisk.Route` module are many pre-built `Encoders`, the one we will use is the `enumEncoder`:
+
+```haskell
+enumEncoder
+  :: forall parse check p r.
+     ( Universe p
+     , Show p
+     , Ord p
+     , Ord r
+     , MonadError Text parse
+     , MonadError Text check
+     , Show r
+     )
+  => (p -> r)
+  -> Encoder check parse p r
+```
 
 Update `myRouteEncoder` to use this `Encoder` and place a 'typed hole' as the argument:
 
@@ -152,104 +166,30 @@ myRouteEncoder
   :: ( Applicative check
      , MonadError Text parse
      )
-  => Encoder check parse () PageName
-myRouteEncoder =
-  unitEncoder
-```
-
-We need to provide an input to `unitEncoder` and that input has of type `PageName`. The
-`PageName` type is a combination of the URL and a query string and is the target type of a
-_complete_ route `Encoder`. Individual `Encoder`s will work with different types, but often the
-final type of a chain of `Encoder`s will be a `PageName`. It is unlikely you will ever need to
-construct this type yourself as `obelisk-route` has functions that will handle that for you.
-
-For our purposes, the `PageName` needs to be completely empty as our route `MyRoute_Main`
-corresponds to the `/` URL. To create an empty `PageName` we can lean on `Monoid` and use
-`mempty`. The `Encoder` definition now looks like:
-
-```haskell
-myRouteEncoder
-  :: ( Applicative check
-     , MonadError Text parse
-     )
-  => Encoder check parse () PageName
-myRouteEncoder =
-  unitEncoder mempty
-```
-
-Note that our type `MyRoute` does not appear in this signature, this is because we have only one
-possible way to construct a value of type `MyRoute` and only one possible URL. Until there are
-more routes the `()` or unit type is equivalent to our `MyRoute` type. When we add more routes
-then this will change accordingly.
-
-## Adding a 404 page
-
-Next we're going to add a 404 page to our list of routes. This route will be similar to our main
-route in that there will be only one possible instantiation of this route. The representation in
-the address bar will of course be different. But similarily there will only be one possible
-route, in this case the expected route will be `/missing`.
-
-To represent this we will extend the `MyRoute` type with another constructor:
-
-```haskell
-data MyRoute
-  = MyRoute_Main
-  | MyRoute_Missing
-  deriving (Show, Eq, Ord, Generic)
-```
-
-Now that we have the logical definition of our 404 route we will extend our `Encoder` to account
-for the new constructor. Note that now we have more than one constructor for our `MyRoute` type
-so the type signature for our `Encoder` has to change as `()` is no longer correct.
-
-The `Encoder` type is now:
-
-```haskell
-myRouteEncoder
-  :: ( Applicative check
-     , MonadError Text parse
-     , MonadError Text check
-     )
   => Encoder check parse MyRoute PageName
-myRouteEncoder =
+myRouteEncoder = enumEncoder _todo
 ```
-
-The `Encoder` must now distinguish between routes whilst maintaining all of the required
-guarantees. We will use the `enumEncoder` to help us build our `Encoder`. Lets have a look at its
-type:
-
-```haskell
-enumEncoder
-  :: forall parse check p r
-  . ( Universe p
-    ... -- some constraints elided
-    )
-  => (p -> r)
-  -> Encoder check parse p r
-```
-
-Whereas the `unitEncoder` had a static value input for the `r` value, the `enumEncoder` needs a
-function: `p -> r` to decide how to encode the different values of the enumeration. To further
-explain this, replace `unitEncoder` with `enumEncoder` and `mempty` with a 'typed hole': `_todo`,
-then save the file.
-
 ### Aside: Typed holes
 
-That `_todo` is called a 'type hole' and they allow you ask GHC "what should be the type of the
+That `_todo` is called a 'typed hole' and they allow you ask GHC "what should be the type of the
 thing at `_todo`". They are very useful for debugging and incremental development. They may be used
-any where you can use a function or a value. For more information on type holes, we recommend the following:
+anywhere you can use a function or a value. For more information on typed holes, see the following links:
 
 - [What I Wish I Knew When Learning Haskell - Type Holes](http://dev.stephendiehl.com/hask/#type-holes)
 - [GHC Manual - Typed Holes](https://downloads.haskell.org/~ghc/7.8.4/docs/html/users_guide/typed-holes.html)
 
-These are a _very_ useful tool for building & debugging your program. But do not succumb to 'type
+They are a _very_ useful tool for building & debugging your program. But do not succumb to 'type
 tetris'. This is when you find yourself replacing typed holes with the first thing that satisfies
 the type checker, but doesn't necessarily result in a useful or correct program.
 
+Typed holes don't have to be called `_todo`, you can give them any valid Haskell identifier name, as
+long as they start with `_` and don't clash with anything other names.
+
 ----
 
-If your following along with either `ob run` or [`ghcid`](https://github.com/ndmitchell/ghcid)
-the output will now contain two errors. We will deal with them in turn:
+If you're following along with either `ob run` or [`ghcid`](https://github.com/ndmitchell/ghcid), or
+building as you go, the output will now contain two errors relating to our use of `enumEncoder`,
+we'll deal with them in turn:
 
 The first is related to the `Universe` constraint:
 
@@ -261,9 +201,10 @@ The first is related to the `Universe` constraint:
         ...
 ```
 
-The `enumEncoder` uses the `Universe` instance to ensure coverage over every possible value for
-type `p`. We'll leverage `Generic`s to make GHC do this for us. Add the following instance of
-`Universe` for `MyRoute`:
+The `enumEncoder` uses the `Universe` typeclass to ensure coverage for every possible value for type
+`p`. We need an instance of this typeclass for our `MyRoute` type in order to use `enumEncoder`, we
+don't have to do much as we can leverage `Generic`s to make GHC do this for us. Add the following
+instance of `Universe` for `MyRoute`:
 
 ```haskell
 instance Universe MyRoute where
@@ -279,7 +220,10 @@ Save the file and the next error is feedback from the 'typed hole':
       In the expression: enumEncoder _todo
 ```
 
-This is the specialised type for the `p -> r` function for `enumEncoder`. We have to write the function that describes how to create the `PageName` for each value of our sum type. Remove the typed hole and replace it with a function that contains a case expression:
+This is the specialised type for the `p -> r` function for `enumEncoder`. We have to write the
+function that describes how to create the `PageName` for each value of our sum type. We might only have a
+single constructor at the moment but replace the `_todo` typed hole with a `case` expression to
+match on the `MyRoute` input, leaving a typed hole on the right hand side of the `->`:
 
 ```haskell
 myRouteEncoder
@@ -289,25 +233,89 @@ myRouteEncoder
      )
   => Encoder check parse MyRoute PageName
 myRouteEncoder = enumEncoder $ \myRoute -> case myRoute of
+  MyRoute_Main -> _todo
+```
+
+This new typed hole will inform us that the return type of this `case` expression needs to be
+something of type `PageName`.
+
+The `PageName` type is an alias for a tuple of URL and any query parameters:
+
+- The URL as a list of the individual route segments: `[Text]`.
+- Query parameters represented using `Map Text (Maybe Text)`.
+
+It is the target type of a _complete_ route `Encoder`.
+
+The URL of our main pain is `/` which is represented by an empty list and because we don't have any
+query parameters, that will be an empty map.
+
+Fill in the typed hole with an empty `PageName` tuple:
+
+```haskell
+myRouteEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     , MonadError Text check
+     )
+  => Encoder check parse MyRoute PageName
+myRouteEncoder = enumEncoder $ \myRoute -> case myRoute of
+  MyRoute_Main -> ([], mempty)
+```
+
+NB: `Map` has an instance of `Monoid`, so we can use `mempty` to create an empty `Map` for us.
+
+We now have an `Encoder` that represents the concrete definition of our route structure. The single
+page with only one possible constructor `MyRoute_Main` and it's representation in the address bar:
+`([], mempty)`.
+
+## Adding a 404 page
+
+Next we're going to add a 404 page to our list of routes. This route will be similar to our main
+route in that there will be only one possible instantiation of this route. The representation in the
+address bar will of course be different. But similarily there will only be one possible route, in
+this case the expected route will be `/missing`.
+
+To represent this we will extend the `MyRoute` type with another constructor:
+
+```haskell
+data MyRoute
+  = MyRoute_Main
+  | MyRoute_Missing
+  deriving (Show, Eq, Ord, Generic)
+```
+
+Now that we have the logical definition of our 404 route we will alter our `Encoder` to account for
+the new constructor. We will add to the `case` expression to match on the different constructors and
+let us the define the correct `PageName` for the 404 page:
+
+```haskell
+myRouteEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     , MonadError Text check
+     )
+  => Encoder check parse MyRoute PageName
+myRouteEncoder = enumEncoder $ \myRoute -> case myRoute of
+  MyRoute_Main -> ([], mempty)
+  MyRoute_Missing -> _missingTodo
 ```
 
 A slightly nicer way of writing this is to turn on the [`LambdaCase`](http://dev.stephendiehl.com/hask/#lambdacase) [language extension](http://dev.stephendiehl.com/hask/#language-extensions). Which is exactly the same as what we have but tidy:
 
 ```haskell
 myRouteEncoder = enumEncoder $ \case
-  MyRoute_Main -> _mainTodo
+  MyRoute_Main -> ([], mempty)
   MyRoute_Missing -> _missingTodo
 ```
 
-Now to fill in the missing pieces. The `PageName` for the main page is the same default value we
-provided before: `mempty` as it has no path and no query parameters. The path for the
-`MyRoute_Missing` page will be placed at `/missing` so as not to overlap with the main page. To
-do that we construct the corresponding `PageName` value. Where `PageName` is a tuple of the list
-of path segements (`[Text]`) and a map of the query parameters (`Map Text Text`):
+The path for the `MyRoute_Missing` page is `/missing` so as not to overlap with the main page. To
+construct the corresponding `PageName` value we use a single element list, because our route path
+has only a single segment: "missing". There are still no query parameters so that part of the
+`PageName` is still an empty `Map`:
 
 ```haskell
 myRouteEncoder = enumEncoder $ \case
-  MyRoute_Main -> mempty
+  MyRoute_Main -> ([], mempty)
   MyRoute_Missing -> (["missing"], mempty)
 ```
 
@@ -326,9 +334,6 @@ and if you change the type of a route the application will not build until you f
 where it appears.
 
 ----
-
-The missing page has only a single path segment and no query parameters so we create a singleton
-list and an empty map. Now we have a concrete definition of both of the `MyRoute` routes.
 
 Were we to add another route to our data `MyRoute` data structure, a contact page for example.
 After we added the constructor to the `MyRoute` type the compiler would provide a non-exhaustive
@@ -568,13 +573,13 @@ instance Universe AppRoute where
 The `Encoder` for each of these routes is defined using the `enumEncoder`:
 
 ```haskell
-apiRouteEncoder :: (...) => Encoder check parse ApiRoute Encoder
+apiRouteEncoder :: (_) => Encoder check parse ApiRoute Encoder
 apiRouteEncoder = enumEncoder $ \case
   ApiRoute_Status -> (["status"], mempty)
   ApiRoute_Version -> (["version"], mempty)
   ApiRoute_Uptime -> (["uptime"], mempty)
 
-appRouteEncoder :: (...) => Encoder check parse AppRoute Encoder
+appRouteEncoder :: _ => Encoder check parse AppRoute Encoder
 appRouteEncoder = enumEncoder $ \case
   AppRoute_Register -> (["register"], mempty)
   AppRoute_Contact -> (["contact"], mempty)
@@ -731,7 +736,7 @@ UserID` with `Text`. These replacements give us an `Encoder` of the following ty
 
 
 ```haskell
-unwrappedEncoder :: (...) => Encoder check parse UserID Text
+unwrappedEncoder :: _ => Encoder check parse UserID Text
 ```
 
 Now that we have the two `Encoder`s we need, we compose them together:
@@ -950,7 +955,7 @@ We're able to re-use the `intTextEncoder` that we built earlier if we compose it
 `singlePathSegmentEncoder`, which has the following type:
 
 ```haskell
-singlePathSegmentEncoder :: (...) => Encoder check parse Text PageName
+singlePathSegmentEncoder :: _ => Encoder check parse Text PageName
 ```
 
 Making the final `Encoder` for the `(Int :. Text :. Int)` type:
@@ -1030,7 +1035,7 @@ parameter](#nestedRouteParam), [Nested Routes](#nestedRoutes), and [Multiple Par
 Starting with the top level `myRouteEncoder`, as we did earlier using `pathComponentEncoder`:
 
 ```haskell
-myRouteEncoder :: (...) => Encoder check parse (R MyRoute) PageName
+myRouteEncoder :: _ => Encoder check parse (R MyRoute) PageName
 myRouteEncoder = pathComponentEncoder $ \case
   MyRoute_AppRoute -> PathSegment "app" appRouteEncoder
 ```
@@ -1038,7 +1043,7 @@ myRouteEncoder = pathComponentEncoder $ \case
 We then create the `appRouteEncoder` where we define the route with the first parameter:
 
 ```haskell
-appRouteEncoder :: (...) => Encoder check parse (R AppRoute) PageName
+appRouteEncoder :: _ => Encoder check parse (R AppRoute) PageName
 appRouteEncoder = pathComponentEncoder $ \case
   AppRoute_UserRoute -> PathSegment "user" $ _f
 ```
@@ -1047,7 +1052,7 @@ We're building an `Encoder` for set of routes (`R UserRoute`) as we've done befo
 extra parameter: `UserId`. As before we use the `pathParamEncoder` to manage the tupling for us:
 
 ```haskell
-appRouteEncoder :: (...) => Encoder check parse (R AppRoute) PageName
+appRouteEncoder :: _ => Encoder check parse (R AppRoute) PageName
 appRouteEncoder = pathComponentEncoder $ \case
   AppRoute_UserRoute -> PathSegment "user" $ pathParamEncoder
 
@@ -1062,7 +1067,7 @@ Constructing the `Encoder` for the `UserId` is the same as we have before when d
 `newtype` that has an instance of `Wrapped`:
 
 ```haskell
-appRouteEncoder :: (...) => Encoder check parse (R AppRoute) PageName
+appRouteEncoder :: _ => Encoder check parse (R AppRoute) PageName
 appRouteEncoder = pathComponentEncoder $ \case
   AppRoute_UserRoute -> PathSegment "user" $ pathParamEncoder
 
@@ -1076,7 +1081,7 @@ appRouteEncoder = pathComponentEncoder $ \case
 Now we complete the route by defining the `Encoder` for `R UserRoute`:
 
 ```haskell
-userRouteEncoder :: (...) => Encoder check parse (R UserRoute) PageName
+userRouteEncoder :: _ => Encoder check parse (R UserRoute) PageName
 userRouteEncoder = pathComponentEncoder $ \case
   UserRoute_Repository -> PathSegment "repository" $ singlePathSegmentEncoder
     . reviewEncoder (unpacked . _Show)
@@ -1124,7 +1129,7 @@ For our type we have no additional parameters and no nesting, we're only interes
 parameters. The `Encoder` for this task is the `queryOnlyEncoder`:
 
 ```haskell
-queryOnlyEncoder :: (...) => Encoder check parse (Map Text (Maybe Text)) PageName
+queryOnlyEncoder :: _ => Encoder check parse (Map Text (Maybe Text)) PageName
 ```
 
 Assuming an `appRouteEncoder :: Encoder check parse (R AppRoute) PageName` that is defined using the
@@ -1154,7 +1159,7 @@ provided query options. This time however we want all of the query parameters, i
 We will use the `queryParametersTextEncoder` to build this `Encoder`:
 
 ```haskell
-queryParametersTextEncoder :: (...) => Encoder check parse [(Text, Maybe Text)] Text
+queryParametersTextEncoder :: _ => Encoder check parse [(Text, Maybe Text)] Text
 ```
 
 Note that unlike the `queryOnlyEncoder` this one does encode to a `PageName` as there may be other
@@ -1176,14 +1181,14 @@ configurable state of the existing page. So we're able to take the existing rout
   UserRoute_Repository :: UserRoute RepoId
 ```
 
-Then modify it to be to accept a `Map` of query parameters, as well as the `RepoId`:
+Then modify it to accept a `Map` of query parameters as well as the `RepoId`:
 
 ```haskell
   UserRoute_Repository :: UserRoute (RepoId :. Map Text (Maybe Text))
 ```
 
 Note the reuse of the `(:.)` operator to combine the two route inputs. This provides a hint as to
-how we can modify the existing `Encoder` for this route:
+how we will modify the existing `Encoder` for this route:
 
 ```haskell
   UserRoute_Repository -> PathSegment "repository"
@@ -1199,10 +1204,10 @@ To now require the `RepoId` and have the capability to handle query parameters:
     repoIdEncoder = reviewEncoder (unpacked . _Show) . unwrappedEncoder
 ```
 
-To keep things a little more organised, we factor out the `Encoder` for the `RepoId`, which does is
-more general than the type signature suggests, but we're keeping things fixed for the moment. We
-pass this `Encoder` as the first argument to `pathParamEncoder`. Finally we use the
-`queryOnlyEncoder` to take any query parameters and turn them into the `Map` we require.
+We factor out the `Encoder` for the `RepoId` to keep things a bit more organised, which is more
+general than the type signature suggests, but we're keeping things fixed for the moment. Pass this
+`Encoder` as the first argument to `pathParamEncoder` then use the `queryOnlyEncoder` to take any
+query parameters and turn them into the `Map` we require.
 
 This route changes to now have the following possible representation in the address bar:
 
