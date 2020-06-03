@@ -187,9 +187,8 @@ long as they start with `_` and don't clash with anything other names.
 
 ----
 
-If you're following along with either `ob run` or [`ghcid`](https://github.com/ndmitchell/ghcid), or
-building as you go, the output will now contain two errors relating to our use of `enumEncoder`,
-we'll deal with them in turn:
+If you're following along with either `ob run`, [`ghcid`](https://github.com/ndmitchell/ghcid), or
+building as you go, the output will now contain two errors relating to our use of `enumEncoder`.
 
 The first is related to the `Universe` constraint:
 
@@ -272,8 +271,7 @@ page with only one possible constructor `MyRoute_Main` and it's representation i
 
 Next we're going to add a 404 page to our list of routes. This route will be similar to our main
 route in that there will be only one possible instantiation of this route. The representation in the
-address bar will of course be different. But similarily there will only be one possible route, in
-this case the expected route will be `/missing`.
+address bar will be different, in this case the expected route will be `/missing`.
 
 To represent this we will extend the `MyRoute` type with another constructor:
 
@@ -328,10 +326,10 @@ anything, you have to manually build up routes again. If any of those routes cha
 tedious and error-prone process to find and fix all the constructed links.
 
 Obelisk routes are bidirectional, which means the `Encoder` that you create works as both a 'pattern
-match' for incoming routes. And the route types operate as a type safe mechanism for _creating_
-links in your application. It is a compile error to try to use route constructors that don't exist,
-and if you change the type of a route the application will not build until you fix that change every
-where it appears.
+match' for incoming routes. The route types operate as a type safe mechanism for _creating_ links in
+your application. It is a compile error to try to use route constructors that don't exist, and if
+you change the type of a route the application will not build until you fix that change every where
+it appears.
 
 ----
 
@@ -384,15 +382,9 @@ handle them separately. In earlier sections the route had a single possible inst
 it could be _any_ one of the sub-routes.
 
 To achieve the desired modularity we use the type of the sub-route as an argument to this top-level
-route constructor. Meaning that this route may have as many possible values as there are values of
-the sub-route.
+route constructor.
 
-When it comes to how this appears in the address bar, we're only concerned with how this segment of
-the sub-route. How the rest of the route appears is the responsibility of the sub-route `Encoder`.
-
-We will build this route in `Common.Route` using a [Generalised Algebraic Data Type](http://dev.stephendiehl.com/hask/#gadts),
-or 'GADT'. The reason for this is that it allows `obelisk-route` to leverage the available type
-information for greater type-safety and to provide the guarantees that this package is built upon.
+We will build this route in `Common.Route` using a [Generalised Algebraic Data Type](http://dev.stephendiehl.com/hask/#gadts), or 'GADT'. Part of the reason for this is that it more providese more detailed type information for greater type-safety that aid in providing the guarantees that this package is built upon.
 
 If you've not encountered GADTs before, or you're a bit rusty, check out the following links for more information:
 * [What I Wish I Knew When Learning Haskell - GADTs](http://dev.stephendiehl.com/hask/#gadts)
@@ -407,17 +399,17 @@ provide enough of information to be able to get by.
 In the `Common.Route` module add the following line:
 
 ```haskell
-data MyRoute :: * -> * where
+data NestedRoute :: * -> * where
 ```
 
-This is the declaration of our `MyRoute` type with extra type information that says this type
+This is the declaration of our `NestedRoute` type with extra type information that says this type
 requires an additional type argument. We'll see that type argument be provided when we add the
 constructors for the sub-routes:
 
 ```haskell
-data MyRoute :: * -> * where
-  MyRoute_API :: MyRoute ApiRoute
-  MyRoute_APP :: MyRoute AppRoute
+data NestedRoute :: * -> * where
+  NestedRoute_API :: NestedRoute ApiRoute
+  NestedRoute_APP :: NestedRoute AppRoute
 
 -- Template Haskell to generate required instances.
 deriveRouteComponent ''MyRoute
@@ -428,23 +420,23 @@ convention of including the type name. On the right hand side of the `::` we pro
 for each constructor.
 
 Earlier we mentioned that each route for our top level with be either backend or frontend and the
-argument would be the type of every possible sub-route. The `MyRoute_API` constructor requires
+argument would be the type of every possible sub-route. The `NestedRoute_API` constructor requires
 one argument of type: `ApiRoute` or `AppRoute`, we will implement these later.
 
 Now that we have the logical structure of our route defined, we will start writing the `Encoder` to
 build our concrete definition:
 
 ```haskell
-myRouteEncoder
+nestedRouteEncoder
   :: ( MonadError Text check
      , MonadError Text parse
      )
-  => Encoder check parse (R MyRoute) PageName
-myRouteEncoder = _todo
+  => Encoder check parse (R NestedRoute) PageName
+nestedRouteEncoder = _todo
 ```
 
 This similar to earlier `Encoder`s with the main difference being the use of the `R` type to wrap
-our `MyRoute` type. The `Encoder` we will use is `pathComponentEncoder`, which works almost exactly
+our `NestedRoute` type. The `Encoder` we will use is `pathComponentEncoder`, which works almost exactly
 like `enumEncoder` with the ability to leverage the extra type information carried by our GADT.
 
 ```haskell
@@ -459,8 +451,8 @@ pathComponentEncoder
   -> Encoder check parse (R p) PageName
 ```
 
-Where the type variable `p` is replaced by `MyRoute` and the Template Haskell we added after our
-`MyRoute` definition will take care of the constraints for this function. Of interest to us is the
+Where the type variable `p` is replaced by `NestedRoute` and the Template Haskell we added after our
+`NestedRoute` definition will take care of the constraints for this function. Of interest to us is the
 function we need to write to make this `Encoder` work:
 
 ```haskell
@@ -506,14 +498,14 @@ Refer to the Haddock documentation for more detail information.
 Create the function from a `case` expression and place a typed hole on the right hand side of each branch:
 
 ```haskell
-myRouteEncoder
+nestedRouteEncoder
   :: ( MonadError Text check
      , MonadError Text parse
      )
-  => Encoder check parse (R MyRoute) PageName
-myRouteEncoder = pathComponentEncoder $
-  MyRoute_API -> _apiTodo
-  MyRoute_APP -> _appTodo
+  => Encoder check parse (R NestedRoute) PageName
+nestedRouteEncoder = pathComponentEncoder $
+  NestedRoute_API -> _apiTodo
+  NestedRoute_APP -> _appTodo
 ```
 
 The type of `pathComponentEncoder` indicates we need to return a type `SegmentResult`. Because both
@@ -525,12 +517,12 @@ PathSegment Text (Encoder check parse a PageName)
 ```
 
 Add this constructor to the right hand side of the `case` branches each route. Use "api" as the
-first argument for `MyRoute_API`, and "app" for `MyRoute_APP`. Leave a typed hole as the
+first argument for `NestedRoute_API`, and "app" for `NestedRoute_APP`. Leave a typed hole as the
 second argument for both:
 
 ```haskell
-  MyRoute_API -> PathSegment "api" _apiTodo
-  MyRoute_APP -> PathSegment "app" _appTodo
+  NestedRoute_API -> PathSegment "api" _apiTodo
+  NestedRoute_APP -> PathSegment "app" _appTodo
 ```
 
 The type of the `_apiTodo` hole will be:
@@ -589,14 +581,14 @@ appRouteEncoder = enumEncoder $ \case
 These can replace the typed holes to complete our `Encoder` with nested routes:
 
 ```haskell
-myRouteEncoder
+nestedRouteEncoder
   :: ( MonadError Text check
      , MonadError Text parse
      )
-  => Encoder check parse (R MyRoute) PageName
-myRouteEncoder = pathComponentEncoder $
-  MyRoute_API -> PathSegment "api" apiRouteEncoder
-  MyRoute_APP -> PathSegment "app" appRouteEncoder
+  => Encoder check parse (R NestedRoute) PageName
+nestedRouteEncoder = pathComponentEncoder $
+  NestedRoute_API -> PathSegment "api" apiRouteEncoder
+  NestedRoute_APP -> PathSegment "app" appRouteEncoder
 ```
 
 Now all of these routes are organised in a way that makes sense _for this application_. Both the
