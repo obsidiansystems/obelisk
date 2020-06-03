@@ -5,4 +5,4 @@
 
 A package for defining type-safe bidirectional routes for your Obelisk application.
 
-Documentation can be found in the `docs/` folder.
+Documentation is in [the introduction.md file](docs/introduction.md).
