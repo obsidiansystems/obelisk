@@ -669,16 +669,17 @@ us that makes writing the `Encoder`, and using the `UserID` type itself, easier.
 Now we can define the route constructor as:
 
 ```haskell
-  AppRoute_UserHome :: AppRoute UserID
+  FrontendApp_UserHome :: FrontendApp UserID
 ```
 
 This type represents one logical page per instantiation per possible user ID. In the address bar
-this will appear as : `/app/user/$UserID`. We will assume we have existing routes already defined
-using `pathComponentEncoder` and extend that `case` expression to include this new route:
+this will appear as : `/user/$UserID`. After adding this new route, we will start seeing a
+warning that not all of our route constructors are accounted for in the `Encoder`.
+
+Extend that `case` expression to include this new route:
 
 ```haskell
-  -- New route branch in the case expression
-  AppRoute_UserHome -> PathSegment "user" _userhomeTodo
+  FrontendApp_UserHome -> PathSegment "user" _userhomeTodo
 ```
 
 Similar to other routes, we have a static component, `"user"`, and we have a typed hole that we need
@@ -688,8 +689,9 @@ to fill in. In this instance the typed hole as the following type:
 _userhomeTodo :: Encoder check parse UserID PageName
 ```
 
-To build this `Encoder` we're going to be composing existing `Encoder`s. However the `(.)` operator
-from `Prelude` is specialised to the function arrow type `(->)` so we must import the more general
+In order to fill this typed hole we need to provide an `Encoder` that turns a `UserID` into a
+`PageName`. To do we're going to be composing existing `Encoder`s. However the `(.)` operator from
+`Prelude` is specialised to the function arrow type `(->)` so we must import the more general
 version from the `Control.Category` module, because it uses the `Category` typeclass constraint:
 
 ```haskell
@@ -721,16 +723,16 @@ similar to the following:
 ```
 
 You can see that it expected something of type `b0 -> c0` whereas we're wanting to compose
-`Encoder`s, although we can treat `Encoder` as pure functions, the types are distinct.
+`Encoder`s. Although we can _think of_ `Encoder`s like they are pure functions, the types are
+distinct so we must use the correct function to compose them.
 
 ----
 
-This package does not have any single `Encoder` that will satisfy that type. This is by design as
-what this package does provide is the smaller pieces we need to _build_ this `Encoder`. Small
-`Encoder`s that do one thing and do it correctly, such that we can compose these `Encoder` to
-perform the steps we need.
+This package does not have any single `Encoder` that will satisfy that type. What this package
+provides is the smaller pieces we need to _build_ this `Encoder`. Small `Encoder`s that do one thing
+and do it correctly, such that we can compose these `Encoder` to perform the steps we need.
 
-Of the entire path: `/app/user/$userid`. The `user` section is nested in the `app` segment, so the
+Of the entire path: `/user/$userid`. The `user` section is nested in the `app` segment, so the
 `Encoder` we need to build must target the `$userid` segment, and only that segment, of the route.
 
 This is done using the following `Encoder`:
@@ -743,13 +745,14 @@ singlePathSegmentEncoder
   => Encoder check parse Text PageName
 ```
 
-The `singlePathSegmentEncoder` may be thought of as a function from `Text -> PageName`, and because
-`Encoder`s are bidirectional, we may also think of this as a function from `PageName -> Text`.
+The `singlePathSegmentEncoder` is an `Encoder` that will ignore any query parameters and focus only
+on a single segment in the path, disregarding any further segments. Using the intuition of thinking
+about `Encoder` like a pure function, this particular one is like a function from `Text` to
+`PageName`.
 
-We need an `Encoder` that acts as a function from `Text -> UserID` in one direction and `UserID ->
-Text` in the other. This is where the `Wrapped` typeclass we derived earlier comes in handy as that
-typeclass is a generalisation of these functions. The following `Encoder` leverages this typeclass
-to provide this `Encoder`:
+We will also need an `Encoder` that to go from `UserID` to `Text`. This is where the `Wrapped`
+typeclass we derived earlier comes in handy as that typeclass is a generalisation of these
+functions. The following `Encoder` leverages this typeclass to provide this `Encoder`:
 
 ```haskell
 unwrappedEncoder
@@ -773,7 +776,7 @@ Now that we have the two `Encoder`s we need, we compose them together:
 
 ```haskell
   -- New route branch in the case expression
-  AppRoute_UserHome -> PathSegment "user" $ singlePathsegmentEncoder . unwrappedEncoder
+  FrontendApp_UserHome -> PathSegment "user" $ singlePathsegmentEncoder . unwrappedEncoder
 ```
 
 ## Multiple Parameters {#multipleParams}
@@ -815,13 +818,13 @@ type for a route constructor. Assuming that our puzzle solutions will be an `Int
 value, and a final `Int` value, then our route is defined as:
 
 ```haskell
-  AppRoute_CodePrize :: AppRoute (Int :. Text :. Int)
+  FrontendApp_CodePrize :: FrontendApp (Int :. Text :. Int)
 ```
 
 Which is equivalent to the following but easier to read:
 
 ```haskell
-  AppRoute_CodePrize :: AppRoute (Int, (Text, Int))
+  FrontendApp_CodePrize :: FrontendApp (Int, (Text, Int))
 ```
 
 Now it is a matter of building our `Encoder` to process the individual segments and package them all
@@ -838,11 +841,10 @@ pathParamEncoder
 
 This function requires two `Encoder`s, one for the initial parameter `item`, and another for the
 `rest` of the route. In this case it will be another `pathParamEncoder` because the second parameter
-is another tuple. We will assume we already have an `R AppRout` `Encoder` defined using
-`pathParamEncoder` and extend it with another branch on the `case` expression:
+is another tuple. Lets extend the `frontendAppRouteEncoder` with another branch on the `case` expression:
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
     _itemEncoder
     _restEncoder
 ```
@@ -928,7 +930,7 @@ intTextEncoder = reviewEncoder (unpacked . _Show)
 Replace the `_itemEncoder` with this `Encoder`:
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
     intTextEncoder
     _restEncoder
 ```
@@ -946,7 +948,7 @@ the minimum we need, and the `pathParamEncoder` handles the tupling for us:
 
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
     intTextEncoder
     $ pathParamEncoder
       _itemEncoder
@@ -967,7 +969,7 @@ equivalent to the `id` function, which is part of the `Category` typeclass, of w
 an instance. Thus the `Encoder` is `id`:
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
     intTextEncoder
     $ pathParamEncoder
       id
@@ -991,7 +993,7 @@ singlePathSegmentEncoder :: _ => Encoder check parse Text PageName
 Making the final `Encoder` for the `(Int :. Text :. Int)` type:
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
     intTextEncoder
     $ pathParamEncoder
       id
