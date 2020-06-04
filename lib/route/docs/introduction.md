@@ -350,16 +350,67 @@ it appears.
 ## Nested Routes {#nestedRoutes}
 
 Applications often have a hierarchy to keep things organised. A request is identified as belonging
-to a particular sub-category and handed off accordingly, that sub-category is then responsible for
+to a particular sub-category and handed off accordingly, the sub-category is then responsible for
 handling the finer details. The end result being that the whole system may be quite complex but the
 individual components are easier to create, maintain, and more obviously correct due to their
 constrained scope.
 
 This section will have a top level `Encoder` with two sets of nested routes; one for a backend API,
 and another for the frontend of our application. The nested routes will be kept simple as the focus
-is on how to nest them.
+is on how to nest them. This hypothetical system is comprised of two subsystems, with the following
+functionality:
 
-The backend api routes are:
+The backend offers three different functions:
+
+- check the status of the system
+- request the current version of the system
+- request the current uptime duration
+
+The frontend has three pages:
+
+- user registration page
+- 'contact us' page
+- 'about us' page
+
+Lets think about what the abstract definition of these routes might look like. We have six unique
+bits of functionality that we want to account for, so we could have a single structure that has
+everything in one big list. But that doesn't reflect that there are two logically separate systems,
+and the routes must conform to our needs, not the other way around.
+
+To anyone using our system however there is no such separation, so we need a way to decide how to
+delegate properly. For that we need another top level structure that is able to decide if something
+is a backend or frontend request. This top level shouldn't do anything but decide which system to
+forward the request to, but in doing so it would present the appearance of this 'single' system
+_and_ allow us to maintain the logical distinction and keep things organised.
+
+So we know that at a high level we need the following abstract route structures:
+
+- `BackendApi` for the backend
+- `FrontendApp` for the frontend
+- `TopLevel` to delegate
+
+Based on the earlier descriptions of the different backend and frontend functionality we can divide
+them up into the following data structures:
+
+```haskell
+data BackendApi
+  = BackendApi_Status
+  | BackendApi_Version
+  | BackendApi_Uptime
+  deriving (Show, Eq, Ord, Enum, Bounded)
+
+instance Universe BackendApi
+
+data FrontendApp
+  = FrontendApp_Register
+  | FrontendApp_Contact
+  | FrontendApp_About
+  deriving (Show, Eq, Ord, Enum, Bounded)
+
+instance Universe FrontendApp
+```
+
+As for the representation of these routes as paths, the backend api routes are:
 
 - `/status`
 - `/version`
@@ -371,14 +422,17 @@ The frontend routes are:
 - `/contact`
 - `/about`
 
-Our goal is to nest these routes like so:
+We'll define the `Encoder`s for these later using `enumEncoder`s as we have done in earlier
+sections. The focus here is on the `TopLevel` structure to perform the delegation and maintain
+the organisation we require.
 
-- `/api/...` ~ backend
-- `/app/...` ~ frontend
+We want a structure that will allow us to organise the two sub-systems into a hierarchy, keeping
+their respective paths isolated from one another and ensure that neither sub-system, nor this top
+level, have or need any special awareness of each other.
 
-We will create types that allow us to 'chain' together the different structures while enabling us to
-handle them separately. In earlier sections the route had a single possible instantiation, but now
-it could be _any_ one of the sub-routes.
+To that end we will create a type that will allow us to 'chain' together the different structures
+while enabling us to handle them separately. In earlier sections the route had a single possible
+instantiation, but a route for the `TopLevel` could be _any_ one of the sub-routes.
 
 To achieve the desired modularity we use the type of the sub-route as an argument to this top-level
 route constructor.
@@ -398,44 +452,51 @@ provide enough of information to be able to get by.
 In the `Common.Route` module add the following line:
 
 ```haskell
-data NestedRoute :: * -> * where
+data TopLevel :: * -> * where
 ```
 
-This is the declaration of our `NestedRoute` type with extra type information that says this type
+This is the declaration of our `TopLevel` type with extra type information that says this type
 requires an additional type argument. We'll see that type argument be provided when we add the
 constructors for the sub-routes:
 
 ```haskell
-data NestedRoute :: * -> * where
-  NestedRoute_API :: NestedRoute ApiRoute
-  NestedRoute_APP :: NestedRoute AppRoute
+data TopLevel :: * -> * where
+  TopLevel_API :: TopLevel BackendApi
+  TopLevel_APP :: TopLevel FrontendApp
 
 -- Template Haskell to generate required instances.
-deriveRouteComponent ''MyRoute
+deriveRouteComponent ''TopLevel
 ```
 
 These are our constructors for the routes. As in earlier sections, these following the naming
 convention of including the type name. On the right hand side of the `::` we provide explicit type
 for each constructor.
 
-Earlier we mentioned that each route for our top level with be either backend or frontend and the
-argument would be the type of every possible sub-route. The `NestedRoute_API` constructor requires
-one argument of type: `ApiRoute` or `AppRoute`, we will implement these later.
-
 Now that we have the logical structure of our route defined, we will start writing the `Encoder` to
-build our concrete definition:
+build our concrete definition. Each constructor now represents either all possible routes to either
+`BackendApi` or `FrontendApp` with the logical distinction between the two.
+
+The following paths will be defined in our `Encoder` and as with our constructors the `Encoder` for
+the `TopLevel` is only aware of and responsible for enough of the structure to handle deciding which
+sub-structure provide the `Encoder` for. This `Encoder` has zero knowledge of any of the sub-routes
+and only handles the minimum to perform its task:
+
+- `/api/...` ~ backend
+- `/app/...` ~ frontend
+
+With those paths in mind we can start constructing our `Encoder`:
 
 ```haskell
-nestedRouteEncoder
+topLevelRouteEncoder
   :: ( MonadError Text check
      , MonadError Text parse
      )
-  => Encoder check parse (R NestedRoute) PageName
-nestedRouteEncoder = _todo
+  => Encoder check parse (R TopLevel) PageName
+topLevelRouteEncoder = _todo
 ```
 
 This similar to earlier `Encoder`s with the main difference being the use of the `R` type to wrap
-our `NestedRoute` type. The `Encoder` we will use is `pathComponentEncoder`, which works almost exactly
+our `TopLevel` type. The `Encoder` we will use is `pathComponentEncoder`, which works almost exactly
 like `enumEncoder` with the ability to leverage the extra type information carried by our GADT.
 
 ```haskell
@@ -450,8 +511,8 @@ pathComponentEncoder
   -> Encoder check parse (R p) PageName
 ```
 
-Where the type variable `p` is replaced by `NestedRoute` and the Template Haskell we added after our
-`NestedRoute` definition will take care of the constraints for this function. Of interest to us is the
+Where the type variable `p` is replaced by `TopLevel` and the Template Haskell we added after our
+`TopLevel` definition will take care of the constraints for this function. Of interest to us is the
 function we need to write to make this `Encoder` work:
 
 ```haskell
@@ -497,14 +558,14 @@ Refer to the Haddock documentation for more detail information.
 Create the function from a `case` expression and place a typed hole on the right hand side of each branch:
 
 ```haskell
-nestedRouteEncoder
+topLevelRouteEncoder
   :: ( MonadError Text check
      , MonadError Text parse
      )
-  => Encoder check parse (R NestedRoute) PageName
-nestedRouteEncoder = pathComponentEncoder $
-  NestedRoute_API -> _apiTodo
-  NestedRoute_APP -> _appTodo
+  => Encoder check parse (R TopLevel) PageName
+topLevelRouteEncoder = pathComponentEncoder $
+  TopLevel_API -> _apiTodo
+  TopLevel_APP -> _appTodo
 ```
 
 The type of `pathComponentEncoder` indicates we need to return a type `SegmentResult`. Because both
@@ -516,87 +577,61 @@ PathSegment Text (Encoder check parse a PageName)
 ```
 
 Add this constructor to the right hand side of the `case` branches each route. Use "api" as the
-first argument for `NestedRoute_API`, and "app" for `NestedRoute_APP`. Leave a typed hole as the
+first argument for `TopLevel_API`, and "app" for `TopLevel_APP`. Leave a typed hole as the
 second argument for both:
 
 ```haskell
-  NestedRoute_API -> PathSegment "api" _apiTodo
-  NestedRoute_APP -> PathSegment "app" _appTodo
+  TopLevel_API -> PathSegment "api" _apiTodo
+  TopLevel_APP -> PathSegment "app" _appTodo
 ```
 
 The type of the `_apiTodo` hole will be:
 
 ```haskell
     • Found hole:
-        _apiTodo :: Encoder check parse ApiRoute PageName
+        _apiTodo :: Encoder check parse BackendApi PageName
 ```
 
 To satisfy this type, we will build the `Encoder`s for the backend and frontend and then replace
 these holes with their respective `Encoder`s. We won't dwell on these `Encoder`s as they are built
 using techniques we have already covered.
 
-The API routes we listed earlier are:
-
-```haskell
-data ApiRoute
-  = ApiRoute_Status -- '../status'
-  | ApiRoute_Version -- '../version'
-  | ApiRoute_Uptime -- '../uptime'
-  deriving (Show, Eq, Ord, Generic)
-
-instance Universe ApiRoute where
-  universe = universeGeneric
-```
-
-The frontend routes are:
-
-```haskell
-data AppRoute
-  = AppRoute_Register -- '../register'
-  | AppRoute_Contact -- '../contact'
-  | AppRoute_About -- '../about'
-  deriving (Show, Eq, Ord, Generic)
-
-instance Universe AppRoute where
-  universe = universeGeneric
-```
-
 The `Encoder` for each of these routes is defined using the `enumEncoder`:
 
 ```haskell
-apiRouteEncoder :: (_) => Encoder check parse ApiRoute Encoder
-apiRouteEncoder = enumEncoder $ \case
-  ApiRoute_Status -> (["status"], mempty)
-  ApiRoute_Version -> (["version"], mempty)
-  ApiRoute_Uptime -> (["uptime"], mempty)
+backendApiRouteEncoder :: (_) => Encoder check parse BackendApi Encoder
+backendApiRouteEncoder = enumEncoder $ \case
+  BackendApi_Status -> (["status"], mempty)
+  BackendApi_Version -> (["version"], mempty)
+  BackendApi_Uptime -> (["uptime"], mempty)
 
-appRouteEncoder :: _ => Encoder check parse AppRoute Encoder
-appRouteEncoder = enumEncoder $ \case
-  AppRoute_Register -> (["register"], mempty)
-  AppRoute_Contact -> (["contact"], mempty)
-  AppRoute_About -> (["about"], mempty)
+frontendAppRouteEncoder :: _ => Encoder check parse FrontendApp Encoder
+frontendAppRouteEncoder = enumEncoder $ \case
+  FrontendApp_Register -> (["register"], mempty)
+  FrontendApp_Contact -> (["contact"], mempty)
+  FrontendApp_About -> (["about"], mempty)
 ```
 
 These can replace the typed holes to complete our `Encoder` with nested routes:
 
 ```haskell
-nestedRouteEncoder
+topLevelRouteEncoder
   :: ( MonadError Text check
      , MonadError Text parse
      )
-  => Encoder check parse (R NestedRoute) PageName
-nestedRouteEncoder = pathComponentEncoder $
-  NestedRoute_API -> PathSegment "api" apiRouteEncoder
-  NestedRoute_APP -> PathSegment "app" appRouteEncoder
+  => Encoder check parse (R TopLevel) PageName
+topLevelRouteEncoder = pathComponentEncoder $
+  TopLevel_API -> PathSegment "api" backendApiRouteEncoder
+  TopLevel_APP -> PathSegment "app" frontendAppRouteEncoder
 ```
 
 Now all of these routes are organised in a way that makes sense _for this application_. Both the
 nested and top-level `Encoder`s are independent of one another and can be moved and altered without
 impacting the other.
 
-If `AppRoute` is extended or made more complex, those changes are localised to the `appRouteEncoder`.
+If `FrontendApp` is extended or made more complex, those changes are localised to the `frontendAppRouteEncoder`.
 
-If `ApiRoute_Status` needs to be extended with its own nested routes then it can be separated into
+If `BackendApi_Status` needs to be extended with its own nested routes then it can be separated into
 its own `Encoder` and again those changes are kept local to that `Encoder`.
 
 ### Aside: Packaged routes
@@ -604,6 +639,10 @@ its own `Encoder` and again those changes are kept local to that `Encoder`.
 This modularity allows you to package entire route structures and their functionality into a
 standalone Haskell package that other people can import and use. Plugging it into their route
 structure _where it makes sense for their application_.
+
+It's important to note here that when using your routes in their application, they could leverage
+the abstract definition of your routes and substitute their own encoding. This would allow them to
+replace functionality provided by your routes as per their needs without breaking existing links.
 
 If you have repeated functionality in your application you could abstract out the differences and
 package the similarities, routes and all!
@@ -624,7 +663,7 @@ makeWrapped ''UserID
 ```
 
 That final line is template haskell from the [lens](https://hackage.haskell.org/package/lens)
-library that will generate a `Wrapped` typeclass instance for us. This provides a useful `Prism` for
+library that will generate a `Wrapped` typeclass instance for us. This provides a useful `Iso` for
 us that makes writing the `Encoder`, and using the `UserID` type itself, easier.
 
 Now we can define the route constructor as:
