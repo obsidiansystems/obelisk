@@ -3,9 +3,11 @@
 [![Haskell Programming Language](https://img.shields.io/badge/language-Haskell-blue.svg)](http://www.haskell.org)
 [![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)](https://tldrlegal.com/license/bsd-3-clause-license-%28revised%29)
 
+Obelisk is an opinionated, batteries-included framework for building production-ready web and mobile applications in [Haskell](https://www.haskell.org/). It's goal is to represent a cohesive, highly-curated set of choices that [Obsidian Systems](https://obsidian.systems/) has made for building these types of applications in a way that is extremely fast but does not compromise on production readiness.
 
-Obelisk provides an easy way to develop and deploy your [Reflex](https://github.com/reflex-frp/reflex) project as web apps and as mobile apps.
-
+- [Overview](#installing-obelisk)
+  - [Why would I use it?](#why-would-i-use-it)
+  - [Who should consider using it?](#who-should-consider-using-it)
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
   - [Adding Packages](#adding-packages)
@@ -25,7 +27,18 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
   - [iOS](#ios)
   - [Android](#android)
 
+## Overview
+
+### Why would I use it?
+
+Obelisk allows you to build high-quality, high-performance web and mobile applications very quickly using [Reflex](https://reflex-frp.org/). In minutes you can go from an empty directory to a working prototype of an interactive application that works on web, iOS, and Android, all sharing the same Haskell codebase! Obelisk's development environment also enables extremely rapid prototyping and feedback. You can take advantage of Haskell's type system across the frontend and backend boundary. This means changes to your backend that would break your frontend are immediately detected during development and Haskell's compiler is able to give you a complete "TODO" list of what needs to be updated.
+
+### Who should consider using it?
+
+Obelisk is targeted primarily at Haskell developers who want to build high-quality web and/or mobile applications in Haskell without the distractions of manually choosing and integrating technology for every piece of the system.
+
 ## Installing Obelisk
+
 1. [Install Nix](https://nixos.org/nix/).
     If you already have Nix installed, make sure you have version 2.0 or higher.  To check your current version, run `nix-env --version`.
 1. Set up nix caches
