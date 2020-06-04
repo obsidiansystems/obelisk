@@ -234,6 +234,21 @@ myRouteEncoder
 myRouteEncoder = enumEncoder $ \myRoute -> case myRoute of
   MyRoute_Main -> _todo
 ```
+A slightly nicer way of writing a `case` expression when you're matching on a single input to a
+lambda is to turn on the [`LambdaCase`](http://dev.stephendiehl.com/hask/#lambdacase) [language
+extension](http://dev.stephendiehl.com/hask/#language-extensions). This will work exactly the same
+as a normal case expression, but it is a bit tidier:
+
+```haskell
+myRouteEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     , MonadError Text check
+     )
+  => Encoder check parse MyRoute PageName
+myRouteEncoder = enumEncoder $ \case
+  MyRoute_Main -> _todo
+```
 
 This new typed hole will inform us that the return type of this `case` expression needs to be
 something of type `PageName`.
@@ -257,7 +272,7 @@ myRouteEncoder
      , MonadError Text check
      )
   => Encoder check parse MyRoute PageName
-myRouteEncoder = enumEncoder $ \myRoute -> case myRoute of
+myRouteEncoder = enumEncoder $ \case
   MyRoute_Main -> ([], mempty)
 ```
 
@@ -301,28 +316,13 @@ account for the new constructor. We will add to the `case` expression to match o
 constructors and let us the define the correct `PageName` for the new page:
 
 ```haskell
-myRouteEncoder
-  :: ( Applicative check
-     , MonadError Text parse
-     , MonadError Text check
-     )
-  => Encoder check parse MyRoute PageName
-myRouteEncoder = enumEncoder $ \myRoute -> case myRoute of
-  MyRoute_Main -> ([], mempty)
-  MyRoute_PrivacyPolicy -> _privacyTodo
-```
-
-A slightly nicer way of writing this is to turn on the [`LambdaCase`](http://dev.stephendiehl.com/hask/#lambdacase) [language extension](http://dev.stephendiehl.com/hask/#language-extensions). Which is exactly the same as what we have but tidy:
-
-```haskell
 myRouteEncoder = enumEncoder $ \case
   MyRoute_Main -> ([], mempty)
   MyRoute_PrivacyPolicy -> _privacyTodo
 ```
 
-The path for the `MyRoute_PrivacyPolicy` page is `/privacy` so as not to overlap with the main
-page. To construct the corresponding `PageName` value we use a single element list, because our
-route path has only a single segment: `"privacy"`.
+The path for the `MyRoute_PrivacyPolicy` page is `/privacy`. To construct the corresponding
+`PageName` value we use a single element list as the path has only a single segment: `"privacy"`.
 
 There are still no query parameters so that part of the `PageName` is still an empty `Map`:
 
