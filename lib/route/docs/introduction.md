@@ -81,7 +81,7 @@ this convention and create our type there:
 
 ```haskell
 data MyRoute = MyRoute_Main
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Enum, Bounded)
 ```
 
 The constructor for our main page is `MyRoute_Main` with no parameters. This value will be used in
@@ -202,12 +202,12 @@ The first is related to the `Universe` constraint:
 
 The `enumEncoder` uses the `Universe` typeclass to ensure coverage for every possible value for type
 `p`. We need an instance of this typeclass for our `MyRoute` type in order to use `enumEncoder`, we
-don't have to do much as we can leverage `Generic`s to make GHC do this for us. Add the following
-instance of `Universe` for `MyRoute`:
+don't have to do much as there is a default implementation for any type that has instances for
+`Enum` and `Bounded`, which we have already derived. So all we need to do is declare that we have an
+instance for our type like so:
 
 ```haskell
-instance Universe MyRoute where
-  universe = universeGeneric
+instance Universe MyRoute
 ```
 
 Save the file and the next error is feedback from the 'typed hole':
@@ -267,24 +267,25 @@ We now have an `Encoder` that represents the concrete definition of our route st
 page with only one possible constructor `MyRoute_Main` and it's representation in the address bar:
 `([], mempty)`.
 
-## Adding a 404 page
+## Adding another page
 
-Next we're going to add a 404 page to our list of routes. This route will be similar to our main
-route in that there will be only one possible instantiation of this route. The representation in the
-address bar will be different, in this case the expected route will be `/missing`.
+Next we're going to add a privacy policy page to our list of routes. This route will be similar to
+our main route in that there will be only one possible instantiation of this route. The
+representation in the address bar will be different, in this case the expected route will be
+`/privacy`.
 
 To represent this we will extend the `MyRoute` type with another constructor:
 
 ```haskell
 data MyRoute
   = MyRoute_Main
-  | MyRoute_Missing
-  deriving (Show, Eq, Ord, Generic)
+  | MyRoute_PrivacyPolicy
+  deriving (Show, Eq, Ord, Enum, Bounded)
 ```
 
-Now that we have the logical definition of our 404 route we will alter our `Encoder` to account for
-the new constructor. We will add to the `case` expression to match on the different constructors and
-let us the define the correct `PageName` for the 404 page:
+Now that we have the logical definition of our privacy policy route we will alter our `Encoder` to
+account for the new constructor. We will add to the `case` expression to match on the different
+constructors and let us the define the correct `PageName` for the new page:
 
 ```haskell
 myRouteEncoder
@@ -295,7 +296,7 @@ myRouteEncoder
   => Encoder check parse MyRoute PageName
 myRouteEncoder = enumEncoder $ \myRoute -> case myRoute of
   MyRoute_Main -> ([], mempty)
-  MyRoute_Missing -> _missingTodo
+  MyRoute_PrivacyPolicy -> _privacyTodo
 ```
 
 A slightly nicer way of writing this is to turn on the [`LambdaCase`](http://dev.stephendiehl.com/hask/#lambdacase) [language extension](http://dev.stephendiehl.com/hask/#language-extensions). Which is exactly the same as what we have but tidy:
@@ -303,18 +304,19 @@ A slightly nicer way of writing this is to turn on the [`LambdaCase`](http://dev
 ```haskell
 myRouteEncoder = enumEncoder $ \case
   MyRoute_Main -> ([], mempty)
-  MyRoute_Missing -> _missingTodo
+  MyRoute_PrivacyPolicy -> _privacyTodo
 ```
 
-The path for the `MyRoute_Missing` page is `/missing` so as not to overlap with the main page. To
-construct the corresponding `PageName` value we use a single element list, because our route path
-has only a single segment: "missing". There are still no query parameters so that part of the
-`PageName` is still an empty `Map`:
+The path for the `MyRoute_PrivacyPolicy` page is `/privacy` so as not to overlap with the main
+page. To construct the corresponding `PageName` value we use a single element list, because our
+route path has only a single segment: `"privacy"`.
+
+There are still no query parameters so that part of the `PageName` is still an empty `Map`:
 
 ```haskell
 myRouteEncoder = enumEncoder $ \case
   MyRoute_Main -> ([], mempty)
-  MyRoute_Missing -> (["missing"], mempty)
+  MyRoute_PrivacyPolicy -> (["privacy"], mempty)
 ```
 
 #### Wait a minute, shouldn't I be matching on the route on the left?
