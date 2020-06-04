@@ -283,7 +283,20 @@ data MyRoute
   deriving (Show, Eq, Ord, Enum, Bounded)
 ```
 
-Now that we have the logical definition of our privacy policy route we will alter our `Encoder` to
+Because we have added another route and we're using a `case` expression in the `enumEncoder`, the
+compiler will start displaying warnings about 'non-exhaustive' pattern matches. These may even be
+regarded as errors depending on your compiler options. The compiler output will look a bit like this:
+
+```shell
+common/src/Common/Route.hs:(77,36)-(79,42): warning: [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a case alternative: Patterns not matched: MyRoute_PrivacyPolicy
+   |
+77 | myRouteEncoder = enumEncoder $ \case
+   |                                ^^^^^...
+```
+
+With the logical definition of our privacy policy route created, we will alter our `Encoder` to
 account for the new constructor. We will add to the `case` expression to match on the different
 constructors and let us the define the correct `PageName` for the new page:
 
@@ -321,11 +334,10 @@ myRouteEncoder = enumEncoder $ \case
 
 #### Wait a minute, shouldn't I be matching on the route on the left?
 
-In many routing systems you match directly on the route input and break it down as required. This
-process can be fragile and has limitations. Additionally you are left on your own when comes to
-creating links in your application. Because there is no way to relate the structure of a route to
-anything, you have to manually build up routes again. If any of those routes change it can be a
-tedious and error-prone process to find and fix all the constructed links.
+In many routing systems you match directly on the route input and break it down as required. However
+this often means that you are left on your own when comes to creating links for these routes because
+there is no way to relate the structure of a route to anything. If any of those routes change it can
+be a tedious and error-prone process to find and fix all the constructed links.
 
 Obelisk routes are bidirectional, which means the `Encoder` that you create works as both a 'pattern
 match' for incoming routes. The route types operate as a type safe mechanism for _creating_ links in
@@ -334,21 +346,6 @@ you change the type of a route the application will not build until you fix that
 it appears.
 
 ----
-
-Were we to add another route to our data `MyRoute` data structure, a contact page for example.
-After we added the constructor to the `MyRoute` type the compiler would provide a non-exhaustive
-pattern match warning until we updated this `case` expression to handle the new route.
-
-The warning would be similar to this:
-
-```shell
-common/src/Common/Route.hs:(77,36)-(79,42): warning: [-Wincomplete-patterns]
-    Pattern match(es) are non-exhaustive
-    In a case alternative: Patterns not matched: MyRoute_Contact
-   |
-77 | myRouteMainEncoder = enumEncoder $ \case
-   |                                    ^^^^^...
-```
 
 ## Nested Routes {#nestedRoutes}
 
