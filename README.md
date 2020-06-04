@@ -17,7 +17,6 @@ Obelisk is an opinionated, batteries-included framework for building production-
   - [Running over HTTPS](#running-over-https)
   - [IDE Support](#ide-support)
     - [Terminal-based feedback](#terminal-based-feedback)
-    - [Experimental `ghcide` support](#experimental-ghcide-support)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [Default EC2 Deployment](#default-ec2-deployment)
