@@ -50,7 +50,7 @@ If the standard packages (`frontend`, `backend`, and `common`) are not enough, y
 project ./. ({ pkgs, ... }: {
 # ...
   packages = {
-    another = ./another;
+    another = ./dep/another;
   };
 # ...
 ```
