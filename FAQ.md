@@ -1,6 +1,6 @@
 # Frequently Asked Questions
 
-1. [How do I fix invalid entitlements?  ](#how-do-i-fix-invalid-entitlements)
+1. [How do I fix invalid entitlements?](#how-do-i-fix-invalid-entitlements)
 1. [`ob thunk update` or `ob deploy update` fails](#ob-thunk-update-or-ob-deploy-update-fails)
 1. [How do I fix `Ambiguous module name` errors?](#how-do-i-fix-ambiguous-module-name-errors)
 
@@ -18,7 +18,7 @@ Fixing the value of `ios.bundleIdentifier` should fix the error.
 ### `ob thunk update` or `ob deploy update` fails
 Whenever an `ob` command fails, try re-running it with `-v`.
 
-If you're using a private repo, and you get a failure in nix-prefetch-url, you may need to unpack and repack the thunk.  Here's some example output that shows this issue:
+If you're using a private repo, and you get a failure in `nix-prefetch-url`, you may need to unpack and repack the thunk.  Here's some example output that shows this issue:
 
 ```
 Starting Obelisk </nix/store/j8wls8a89xr6s1a47lg6g83gnbdrfd0l-obelisk-command-0.1/bin/.ob-wrapped> args=["deploy","update","-v"] logging-level=Debug
@@ -38,7 +38,7 @@ nix-prefetch-url: Failed to determine sha256 hash of URL https://github.com/obsi
 
 And here's how you can fix it:
 
-```
+```bash
 ob thunk unpack $SOME_THUNK
 ob thunk pack $SOME_THUNK
 ```
@@ -58,4 +58,3 @@ error:
 ```
 then specify the package you want in the import, e.g:
 `import "cryptonite" Crypto.Hash`
-
