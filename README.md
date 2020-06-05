@@ -101,23 +101,6 @@ Obelisk officially supports terminal-based feedback (akin to [`ghcid`](https://g
 
 ## Deploying
 
-### Locally
-
-Build everything:
-
-```bash
-nix-build -A exe --no-out-link
-```
-
-Copy the result to a new directory, add configuration, and run!
-
-```bash
-mkdir test-app
-ln -s $(nix-build -A exe --no-out-link)/* test-app/
-cp -r config test-app
-(cd test-app && ./backend)
-```
-
 ### Default EC2 Deployment
 
 In this section we will demonstrate how to deploy your Obelisk app to an Amazon EC2 instance. Obelisk deployments are configured for EC2 by default (see [Custom Non-EC2 Deployment](#custom-non-ec2-deployment)).
@@ -181,6 +164,23 @@ Here's a `module.nix` that is configured for deployment to a VirtualBox VM (runn
 ```
 
 The `{...}:` and following is the [NixOS module](https://nixos.org/nixos/manual/index.html#sec-writing-modules) definition.
+
+### Locally
+
+To get a full build of your app to run locally:
+
+```bash
+nix-build -A exe --no-out-link
+```
+
+Copy the result to a new directory, add configuration, and run!
+
+```bash
+mkdir test-app
+ln -s $(nix-build -A exe --no-out-link)/* test-app/
+cp -r config test-app
+(cd test-app && ./backend)
+```
 
 ### From macOS
 
