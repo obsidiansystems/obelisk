@@ -801,8 +801,12 @@ for a specific user:
 ```
 
 Each of these requires a slightly different approach because the parameters appear at different
-positions along the route. The main difference is in how the type of the route constructor is
-defined.
+positions along the route. The reason is that when we have a 'non-parameter' route segment, this
+signals that there is a decision to be made as we proceed further down into the route hierarchy.
+
+- In the case of `code/$solutionA/$solutionB/$solutionC`, we expect the types of the abstract routes to stay consistent as we go from `A` to `B` to `C`. those types can't change.
+
+- However, in `user/$userId`, we expect that the next path segment could be "repository", or if we had implemented other routes, it could be a different structure with its own subroutes.
 
 ### In sequence
 
