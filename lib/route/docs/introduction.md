@@ -800,9 +800,10 @@ for a specific user:
 /app/user/$userId/repository/$repoId
 ```
 
-Each of these requires a slightly different approach because the parameters appear at different
-positions along the route. The reason is that when we have a 'non-parameter' route segment, this
-signals that there is a decision to be made as we proceed further down into the route hierarchy.
+Each require a slightly different approach because the parameters appear at different positions
+along the route. This is important to note because when we have a 'non-parameter' route segment,
+such as "user", it indicates that a decision needs to be made as to how we proceed down the route
+hierarchy.
 
 - In the case of `code/$solutionA/$solutionB/$solutionC`, we expect the types of the abstract routes to stay consistent as we go from `A` to `B` to `C`. those types can't change.
 
