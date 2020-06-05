@@ -24,6 +24,7 @@ Obelisk is an opinionated, batteries-included framework for building production-
 - [Mobile](#mobile)
   - [iOS](#ios)
   - [Android](#android)
+- [Frequently Asked Questions (FAQ)](#frequently-asked-questions-faq)
 
 ## Overview
 
@@ -342,3 +343,8 @@ This should copy over and install the application on your device (if you see a  
 ##### Build a release version
 
 After having configured signing for your app, you may proceed to build a release version of the app. This is no different to how you build the non-release version, so consult the section [Android](#android) further above for exact instructions on building and deploying to your device.
+
+
+## Frequently Asked Questions (FAQ)
+
+Refer to [FAQ](FAQ.md).
