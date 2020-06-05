@@ -385,29 +385,29 @@ _and_ allow us to maintain the logical distinction and keep things organised.
 
 So we know that at a high level we need the following abstract route structures:
 
-- `BackendApi` for the backend
-- `FrontendApp` for the frontend
+- `ApiRoute` for the backend
+- `AppRoute` for the frontend
 - `TopLevel` to delegate
 
 Based on the earlier descriptions of the different backend and frontend functionality we can divide
 them up into the following data structures:
 
 ```haskell
-data BackendApi
-  = BackendApi_Status
-  | BackendApi_Version
-  | BackendApi_Uptime
+data ApiRoute
+  = ApiRoute_Status
+  | ApiRoute_Version
+  | ApiRoute_Uptime
   deriving (Show, Eq, Ord, Enum, Bounded)
 
-instance Universe BackendApi
+instance Universe ApiRoute
 
-data FrontendApp
-  = FrontendApp_Register
-  | FrontendApp_Contact
-  | FrontendApp_About
+data AppRoute
+  = AppRoute_Register
+  | AppRoute_Contact
+  | AppRoute_About
   deriving (Show, Eq, Ord, Enum, Bounded)
 
-instance Universe FrontendApp
+instance Universe AppRoute
 ```
 
 As for the representation of these routes as paths, the backend api routes are:
@@ -455,14 +455,14 @@ In the `Common.Route` module add the following line:
 data TopLevel :: * -> * where
 ```
 
-This is the declaration of our `TopLevel` type with extra type information that says this type
-requires an additional type argument. We'll see that type argument be provided when we add the
-constructors for the sub-routes:
+This is the declaration of our `TopLevel` type, the `* -> *` annotation indicates that this type
+requires an additional type argument. This is the part of the abstract route definition that will be
+determined once we know which constructor will be used:
 
 ```haskell
 data TopLevel :: * -> * where
-  TopLevel_API :: TopLevel BackendApi
-  TopLevel_APP :: TopLevel FrontendApp
+  TopLevel_API :: TopLevel ApiRoute
+  TopLevel_APP :: TopLevel AppRoute
 
 -- Template Haskell to generate required instances.
 deriveRouteComponent ''TopLevel
@@ -474,7 +474,7 @@ for each constructor.
 
 Now that we have the logical structure of our route defined, we will start writing the `Encoder` to
 build our concrete definition. Each constructor now represents either all possible routes to either
-`BackendApi` or `FrontendApp` with the logical distinction between the two.
+`ApiRoute` or `AppRoute` with the logical distinction between the two.
 
 The following paths will be defined in our `Encoder` and as with our constructors the `Encoder` for
 the `TopLevel` is only aware of and responsible for enough of the structure to handle deciding which
@@ -589,7 +589,7 @@ The type of the `_apiTodo` hole will be:
 
 ```haskell
     • Found hole:
-        _apiTodo :: Encoder check parse BackendApi PageName
+        _apiTodo :: Encoder check parse ApiRoute PageName
 ```
 
 To satisfy this type, we will build the `Encoder`s for the backend and frontend and then replace
@@ -599,17 +599,17 @@ using techniques we have already covered.
 The `Encoder` for each of these routes is defined using the `enumEncoder`:
 
 ```haskell
-backendApiRouteEncoder :: (_) => Encoder check parse BackendApi Encoder
-backendApiRouteEncoder = enumEncoder $ \case
-  BackendApi_Status -> (["status"], mempty)
-  BackendApi_Version -> (["version"], mempty)
-  BackendApi_Uptime -> (["uptime"], mempty)
+apiRouteEncoder :: (_) => Encoder check parse ApiRoute Encoder
+apiRouteEncoder = enumEncoder $ \case
+  ApiRoute_Status -> (["status"], mempty)
+  ApiRoute_Version -> (["version"], mempty)
+  ApiRoute_Uptime -> (["uptime"], mempty)
 
-frontendAppRouteEncoder :: _ => Encoder check parse FrontendApp Encoder
-frontendAppRouteEncoder = enumEncoder $ \case
-  FrontendApp_Register -> (["register"], mempty)
-  FrontendApp_Contact -> (["contact"], mempty)
-  FrontendApp_About -> (["about"], mempty)
+appRouteEncoder :: _ => Encoder check parse AppRoute Encoder
+appRouteEncoder = enumEncoder $ \case
+  AppRoute_Register -> (["register"], mempty)
+  AppRoute_Contact -> (["contact"], mempty)
+  AppRoute_About -> (["about"], mempty)
 ```
 
 These can replace the typed holes to complete our `Encoder` with nested routes:
@@ -621,17 +621,17 @@ topLevelRouteEncoder
      )
   => Encoder check parse (R TopLevel) PageName
 topLevelRouteEncoder = pathComponentEncoder $
-  TopLevel_API -> PathSegment "api" backendApiRouteEncoder
-  TopLevel_APP -> PathSegment "app" frontendAppRouteEncoder
+  TopLevel_API -> PathSegment "api" apiRouteEncoder
+  TopLevel_APP -> PathSegment "app" appRouteEncoder
 ```
 
 Now all of these routes are organised in a way that makes sense _for this application_. Both the
 nested and top-level `Encoder`s are independent of one another and can be moved and altered without
 impacting the other.
 
-If `FrontendApp` is extended or made more complex, those changes are localised to the `frontendAppRouteEncoder`.
+If `AppRoute` is extended or made more complex, those changes are localised to the `appRouteEncoder`.
 
-If `BackendApi_Status` needs to be extended with its own nested routes then it can be separated into
+If `ApiRoute_Status` needs to be extended with its own nested routes then it can be separated into
 its own `Encoder` and again those changes are kept local to that `Encoder`.
 
 ### Aside: Packaged routes
@@ -669,7 +669,7 @@ us that makes writing the `Encoder`, and using the `UserID` type itself, easier.
 Now we can define the route constructor as:
 
 ```haskell
-  FrontendApp_UserHome :: FrontendApp UserID
+  AppRoute_UserHome :: AppRoute UserID
 ```
 
 This type represents one logical page per instantiation per possible user ID. In the address bar
@@ -679,7 +679,7 @@ warning that not all of our route constructors are accounted for in the `Encoder
 Extend that `case` expression to include this new route:
 
 ```haskell
-  FrontendApp_UserHome -> PathSegment "user" _userhomeTodo
+  AppRoute_UserHome -> PathSegment "user" _userhomeTodo
 ```
 
 Similar to other routes, we have a static component, `"user"`, and we have a typed hole that we need
@@ -747,12 +747,14 @@ singlePathSegmentEncoder
 
 The `singlePathSegmentEncoder` is an `Encoder` that will ignore any query parameters and focus only
 on a single segment in the path, disregarding any further segments. Using the intuition of thinking
-about `Encoder` like a pure function, this particular one is like a function from `Text` to
-`PageName`.
+about `Encoder` like a pure function, this `Encoder` is like a function from `Text` to `PageName`.
 
 We will also need an `Encoder` that to go from `UserID` to `Text`. This is where the `Wrapped`
-typeclass we derived earlier comes in handy as that typeclass is a generalisation of these
-functions. The following `Encoder` leverages this typeclass to provide this `Encoder`:
+typeclass we derived earlier comes in handy as that typeclass lets deal with all kinds of `newtype`
+wrappers in a consistent way. We don't need their unique constructors and deconstructors, the
+typeclass abstracts that away.
+
+The following `Encoder` leverages this typeclass to provide this `Encoder`:
 
 ```haskell
 unwrappedEncoder
@@ -776,7 +778,7 @@ Now that we have the two `Encoder`s we need, we compose them together:
 
 ```haskell
   -- New route branch in the case expression
-  FrontendApp_UserHome -> PathSegment "user" $ singlePathsegmentEncoder . unwrappedEncoder
+  AppRoute_UserHome -> PathSegment "user" $ singlePathsegmentEncoder . unwrappedEncoder
 ```
 
 ## Multiple Parameters {#multipleParams}
@@ -798,8 +800,9 @@ for a specific user:
 /app/user/$userId/repository/$repoId
 ```
 
-Each of these requires a different approach because the parameters appear at different positions
-along the route. The main difference is in how the type of the route constructor is defined.
+Each of these requires a slightly different approach because the parameters appear at different
+positions along the route. The main difference is in how the type of the route constructor is
+defined.
 
 ### In sequence
 
@@ -818,13 +821,13 @@ type for a route constructor. Assuming that our puzzle solutions will be an `Int
 value, and a final `Int` value, then our route is defined as:
 
 ```haskell
-  FrontendApp_CodePrize :: FrontendApp (Int :. Text :. Int)
+  AppRoute_CodePrize :: AppRoute (Int :. Text :. Int)
 ```
 
 Which is equivalent to the following but easier to read:
 
 ```haskell
-  FrontendApp_CodePrize :: FrontendApp (Int, (Text, Int))
+  AppRoute_CodePrize :: AppRoute (Int, (Text, Int))
 ```
 
 Now it is a matter of building our `Encoder` to process the individual segments and package them all
@@ -841,10 +844,10 @@ pathParamEncoder
 
 This function requires two `Encoder`s, one for the initial parameter `item`, and another for the
 `rest` of the route. In this case it will be another `pathParamEncoder` because the second parameter
-is another tuple. Lets extend the `frontendAppRouteEncoder` with another branch on the `case` expression:
+is another tuple. Lets extend the `appRouteEncoder` with another branch on the `case` expression:
 
 ```haskell
-  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
     _itemEncoder
     _restEncoder
 ```
@@ -856,82 +859,31 @@ _itemEncoder :: Encoder check parse Int Text
 _restEncoder :: Encoder check parse (Text :. Int) PageName
 ```
 
-To start working on the first `Encoder`, we can take that type signature and create our `Encoder` in
-somewhere else in this file in case we need it again:
-
-```haskell
-intTextEncoder :: Encoder check parse Int Text
-intTextEncoder = _itemEncoder
-```
-
 We're going to lean on the `Show` & `Read` instances for `Int` because for `Int` these typeclasses
 are inverses of one another, meaning that we don't lose any information about the `Int` value. So
 we're able to leverage these instances to create a safely bidirectional `Encoder`. To do this, we
-will use the `reviewEncoder` with a `Prism` from the `lens` library to do all the work for us:
+will use the `unsafeTshowEncoder`:
 
 ```haskell
-reviewEncoder
-  :: ( Applicative check
+unsafeTshowEncoder
+  :: ( Show a
+     , Read a
+     , Applicative check
      , MonadError Text parse
      )
-  => Prism' b a
-  -> Encoder check parse a b
+  => Encoder check parse a Text
 ```
 
-```haskell
-_Show :: (Read a, Show a) => Prism' String a
-```
-
-There's more than a few type variables here but you can use a repl to check the type when they are
-combined:
-
-```haskell
-reviewEncoder _Show
-  :: ( MonadError Text parse
-     , Applicative check
-     , Read a
-     , Show a
-     )
-  => Encoder check parse a String
-```
-
-When combined they provide an `Encoder` that will `show` the value of type `a` when creating the URL
-segment, and `read` when trying to turn that segment of the URL into a value of type `a`. This is
-only safe to do because we know that the `Show` and `Read` instances for `Int` are inverses. Refer
-to the Haddock documentation for `unsafeShowEncoder` for more information.
-
-Add this to our `Encoder` to the right of the typed hole and compose them with `(.)`:
-
-```haskell
-intTextEncoder :: Encoder check parse Int Text
-intTextEncoder = _itemEncoder . reviewEncoder _Show
-```
-
-Now the typed hole has a type of:
-
-```haskell
-_itemEncoder :: :: Encoder check parse String Text
-```
-
-Which is hole that we have the perfect `Encoder` for:
-
-```haskell
-packTextEncoder :: (..., IsText text) => Encoder check parse String text
-```
-
-Perhaps unsurprisingly, `Text` is an instance of `IsText` so we're able to compose this `Encoder`
-with our `reviewEncoder` to complete this `Encoder`:
-
-```haskell
-intTextEncoder :: Encoder check parse Int Text
-intTextEncoder = reviewEncoder (unpacked . _Show)
-```
+This `Encoder` that will `show` the value of type `a` when creating the URL segment, and `read` when
+trying to turn that segment of the URL into a value of type `a`. This is only safe to do because _we
+know_ that the `Show` and `Read` instances for `Int` are inverses. Refer to the Haddock
+documentation for `unsafeTshowEncoder` for more information.
 
 Replace the `_itemEncoder` with this `Encoder`:
 
 ```haskell
-  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
-    intTextEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+    unsafeTshowEncoder
     _restEncoder
 ```
 
@@ -948,8 +900,8 @@ the minimum we need, and the `pathParamEncoder` handles the tupling for us:
 
 
 ```haskell
-  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
-    intTextEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+    unsafeTshowEncoder
     $ pathParamEncoder
       _itemEncoder
       _restEncoder
@@ -963,14 +915,14 @@ value so the typed hole has the following type:
 _itemEncoder :: Encoder check parse Text Text
 ```
 
-Remembering that an `Encoder check parse a b` may be viewed as a function of type `a -> b`. In this
-case it would be equivalent to a function of type `a -> a` as both types are the same. This is
-equivalent to the `id` function, which is part of the `Category` typeclass, of which `Encoder` has
-an instance. Thus the `Encoder` is `id`:
+Remembering that an `Encoder check parse a b` may be thought of as a function of type `a` to `b`. In
+this case it would be equivalent to a function of type `a` to `a` as both types are the same. This
+is equivalent to the `id` function, which is part of the `Category` typeclass, of which `Encoder`
+has an instance. Thus the `Encoder` is `id`:
 
 ```haskell
-  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
-    intTextEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+    unsafeTshowEncoder
     $ pathParamEncoder
       id
       _restEncoder
@@ -983,7 +935,7 @@ path itself:
 _restEncoder :: Encoder check parse Int PageName
 ```
 
-We're able to re-use the `intTextEncoder` that we built earlier if we compose it with the
+We will use `unsafeTshowEncoder` again, but this time we compose it with the
 `singlePathSegmentEncoder`, which has the following type:
 
 ```haskell
@@ -993,11 +945,11 @@ singlePathSegmentEncoder :: _ => Encoder check parse Text PageName
 Making the final `Encoder` for the `(Int :. Text :. Int)` type:
 
 ```haskell
-  FrontendApp_CodePrize -> PathSegment "code" $ pathSegmentEncoder
-    intTextEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+    unsafeTshowEncoder
     $ pathParamEncoder
       id
-      (singlePathSegmentEncoder . intTextEncoder)
+      (singlePathSegmentEncoder . unsafeTshowEncoder)
 ```
 
 ### Aside: `unsafeShowEncoder`
@@ -1014,16 +966,12 @@ unsafeShowEncoder
   => Encoder check parse a PageName
 ```
 
-Similar to the `reviewEncoder _Show` that we built earlier, it uses the `Show` and `Read` instances
-by returns a `PageName`. This one `Encoder` can be used in place of the composition of:
+It uses the `Show` and `Read` instances by returns a `PageName`. This one `Encoder` can be used in
+place of the composition of:
 
 ```haskell
-singlePathSegmentEncoder . intTextEncoder
+singlePathSegmentEncoder . unsafeTshowEncoder
 ```
-
-But if we changed the type of the final parameter of the tuple from `Int`to a type that had
-instances of `Show` and `Read`, but those instances were _not_ inverses of one another. The compiler
-would not catch that change and you would need to have tests in place to catch that issue.
 
 It's not the use of `Show` and `Read` that is unsafe, it's that if the types change and the
 instances exist then the compiler will automatically use those instances. Which might not be what
@@ -1041,70 +989,60 @@ upper level of the nesting has a parameter along with one or more of the nested 
 For this example we will use the following `newtypes` and routes:
 
 ```haskell
-newtype UserId = UserId { unUserId :: Int } deriving (Show, Eq)
+newtype UserID = UserID { unUserID :: Text } deriving (Show, Eq)
 makeWrapped ''UserId
 
-newtype RepoId = RepoId { unRepoId :: Int } deriving (Show, Eq)
+newtype RepoId = RepoID { unRepoID :: Text } deriving (Show, Eq)
 makeWrapped ''RepoId
 
 data UserRoute :: * -> * where
+  UserRoute_Home :: UserRoute ()
   UserRoute_Repository :: UserRoute RepoId
 
 data AppRoute :: * -> * where
-  AppRoute_UserRoute :: AppRoute (UserId :. R UserRoute)
-
-data MyRoute :: * -> * where
-  MyRoute_AppRoute :: MyRoute (R AppRoute)
+  AppRoute_CodePrize :: AppRoute (Int :. Text :. Int)
+  AppRoute_User :: AppRoute (UserID :. R UserRoute)
 ```
 
-Of most interest to us is the `AppRoute` definition, where the `AppRoute_UserRoute` represents every
-possible `UserRoute` that will also be paired with the given `UserId`. This is indicated by the
-pairing `(:.)` of the `UserId` and `R UserRoute`.
+Of most interest to us is the `AppRoute` definition. The `AppRoute_UserHome` constructor is changed
+to be `AppRoute_User`, because there is more than one route under each `UserID`. Looking at its type
+`(UserID :. R UserRoute)` we can see that this route will need a `UserID` followed by one of the
+routes in `UserRoute`.
 
-To build the concrete definition of this route, we combine the techniques of [nested routes with single
-parameter](#nestedRouteParam), [Nested Routes](#nestedRoutes), and [Multiple Parameters](#multipleParams).
-
-Starting with the top level `myRouteEncoder`, as we did earlier using `pathComponentEncoder`:
-
-```haskell
-myRouteEncoder :: _ => Encoder check parse (R MyRoute) PageName
-myRouteEncoder = pathComponentEncoder $ \case
-  MyRoute_AppRoute -> PathSegment "app" appRouteEncoder
-```
-
-We then create the `appRouteEncoder` where we define the route with the first parameter:
+We will need to updated the `appRouteEncoder` because the name and the type of our constructor has changed:
 
 ```haskell
 appRouteEncoder :: _ => Encoder check parse (R AppRoute) PageName
 appRouteEncoder = pathComponentEncoder $ \case
-  AppRoute_UserRoute -> PathSegment "user" $ _f
+  AppRoute_User -> PathSegment "user" $ _f
 ```
 
-We're building an `Encoder` for set of routes (`R UserRoute`) as we've done before, but this time we have an
-extra parameter: `UserId`. As before we use the `pathParamEncoder` to manage the tupling for us:
+We're building an `Encoder` for set of routes (`R UserRoute`) as we've done before at the same time
+is retrieving the `UserID` parameter that the `AppRoute_UserHome` constructor originally
+required. As before we use the `pathParamEncoder` to manage the tupling for us:
 
 ```haskell
 appRouteEncoder :: _ => Encoder check parse (R AppRoute) PageName
 appRouteEncoder = pathComponentEncoder $ \case
-  AppRoute_UserRoute -> PathSegment "user" $ pathParamEncoder
+  AppRoute_User -> PathSegment "user" $ pathParamEncoder
 
-    -- Encoder check parse UserId Text
+    -- Encoder check parse UserID Text
     _userIdEncoder
 
     -- Encoder check parse (R UserRoute) PageName
     _userRouteEncoder
 ```
 
-Constructing the `Encoder` for the `UserId` is the same as we have before when dealing with a
+Constructing the `Encoder` for the `UserID` is the same as we have before when dealing with a
 `newtype` that has an instance of `Wrapped`:
 
 ```haskell
 appRouteEncoder :: _ => Encoder check parse (R AppRoute) PageName
 appRouteEncoder = pathComponentEncoder $ \case
-  AppRoute_UserRoute -> PathSegment "user" $ pathParamEncoder
+  AppRoute_User -> PathSegment "user" $ pathParamEncoder
 
-    -- Encoder check parse UserId Text
-    (reviewEncoder (unpacked . _Show) . unwrappedEncoder)
+    -- Encoder check parse UserID Text
+    (unsafeTshowEncoder . unwrappedEncoder)
 
     -- Encoder check parse (R UserRoute) PageName
     userRouteEncoder
@@ -1116,7 +1054,7 @@ Now we complete the route by defining the `Encoder` for `R UserRoute`:
 userRouteEncoder :: _ => Encoder check parse (R UserRoute) PageName
 userRouteEncoder = pathComponentEncoder $ \case
   UserRoute_Repository -> PathSegment "repository" $ singlePathSegmentEncoder
-    . reviewEncoder (unpacked . _Show)
+    . unsafeTshowEncoder
     . unwrappedEncoder
 ```
 
@@ -1135,10 +1073,7 @@ Or they may be collected along with other route parameters:
 /app/user/$userid/repository/$repoid?commit=abc1234
 ```
 
-There is support for collecting all the parameters including duplicates, as well as support of going
-directly to a `Map` type that will remove all the duplicates.
-
-### Only query parameters (no duplicate keys)
+### Only query parameters
 
 Displaying a 'picture of the day' that allows the user to set the height and width of the image is
 an example of a route that only has a single logical page but is configurable through query parameters:
@@ -1171,37 +1106,6 @@ Assuming an `appRouteEncoder :: Encoder check parse (R AppRoute) PageName` that 
   AppRoute_POTD -> PathSegment "picture-of-the-day" queryOnlyEncoder
 ```
 
-### Only query parameters (allow duplicate keys)
-
-Sometimes being able to collect duplicate query parameter keys is useful. A page that splits people
-into teams based on favourite colour could allow names to be input as values for the colours that
-are the keys:
-
-```
-/app/team-maker?blue=fred&red=susan&blue=sally&yellow=sam&red=steve
-```
-
-As with the previous example we have a single logical page that will reconfigure itself based on the
-provided query options. This time however we want all of the query parameters, including duplicates:
-
-```haskell
-  AppRoute_TeamMaker :: AppRoute [(Text, Maybe Text)]
-```
-
-We will use the `queryParametersTextEncoder` to build this `Encoder`:
-
-```haskell
-queryParametersTextEncoder :: _ => Encoder check parse [(Text, Maybe Text)] Text
-```
-
-Note that unlike the `queryOnlyEncoder` this one does encode to a `PageName` as there may be other
-components on the route, so we will indicate that the query parameters are the only part of this
-route using `singlePathSegmentEncoder`:
-
-```haskell
-  AppRoute_TeamMaker -> PathSegment "team-maker" $ singlePathSegmentEncoder . queryParametersTextEncoder
-```
-
 ### With another path parameter
 
 Sometimes query parameters are included alongside other route parameters. Taking the "repository"
@@ -1224,7 +1128,7 @@ how we will modify the existing `Encoder` for this route:
 
 ```haskell
   UserRoute_Repository -> PathSegment "repository"
-    $ singlePathSegmentEncoder . reviewEncoder (unpacked . _Show) . unwrappedEncoder
+    $ singlePathSegmentEncoder . unsafeTshowEncoder . unwrappedEncoder
 ```
 
 To now require the `RepoId` and have the capability to handle query parameters:
@@ -1233,7 +1137,7 @@ To now require the `RepoId` and have the capability to handle query parameters:
   UserRoute_Repository -> PathSegment "repository" $ pathParamEncoder repoIdEncoder queryOnlyEncoder
   where
     repoIdEncoder :: (..) => Encoder check parse RepoId Text
-    repoIdEncoder = reviewEncoder (unpacked . _Show) . unwrappedEncoder
+    repoIdEncoder = unsafeTshowEncoder . unwrappedEncoder
 ```
 
 We factor out the `Encoder` for the `RepoId` to keep things a bit more organised, which is more
