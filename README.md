@@ -24,16 +24,18 @@ Obelisk is an opinionated, batteries-included framework for building production-
   - [iOS](#ios)
   - [Android](#android)
 - [Frequently Asked Questions (FAQ)](#frequently-asked-questions-faq)
+- [Contributing](#contributing)
 
 ## Overview
 
-### Why would I use it?
-
 Obelisk allows you to build high-quality web and mobile applications very quickly using [Reflex](https://reflex-frp.org/). In minutes you can go from an empty directory to a interactive application that works on web, iOS, and Android, all sharing the same Haskell codebase! Obelisk's development environment also enables extremely rapid development and feedback. You can take advantage of Haskell's type system across the frontend and backend boundary. This means changes to your backend that would break your frontend are immediately detected during development and vice versa. Obelisk uses Haskell's compiler to give you a complete "TODO list" of what needs to be updated.
+
+Obelisk is targeted primarily at Haskell developers who want to build high-quality web and/or mobile applications in Haskell without the distractions of manually choosing and integrating technology for every piece of the system.
 
 ### Who should consider using it?
 
-Obelisk is targeted primarily at Haskell developers who want to build high-quality web and/or mobile applications in Haskell without the distractions of manually choosing and integrating technology for every piece of the system.
+Obelisk assumes basic knowledge of Haskell, web technologies like HTML and CSS, and a terminal shell like Bash.
+
 
 ## Installing Obelisk
 
@@ -167,7 +169,9 @@ The `{...}:` and following is the [NixOS module](https://nixos.org/nixos/manual/
 
 ### Locally
 
-To get a full build of your app to run locally:
+If you want deploy your application locally or test a production-oriented build you can build and deploy the app as described below.
+
+Build the application:
 
 ```bash
 nix-build -A exe --no-out-link
@@ -313,3 +317,8 @@ After having configured signing for your app, you may proceed to build a release
 ## Frequently Asked Questions (FAQ)
 
 Refer to [FAQ](FAQ.md).
+
+
+## Contributing
+
+Contributions and issue reports are encouraged and appreciated! Refer to the [Contributing](CONTRIBUTING.md) guide for information about getting started.
