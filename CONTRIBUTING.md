@@ -82,13 +82,13 @@ The readme is the first place a lot of people look for information about the rep
 
 ## Development Environment
 
-You may launch `ghcid` for the corresponding project as follows. For example to launch ghcid for `lib/backend` project:
+You can use `ghcid` for live feedback as you develop Obelisk libraries. To launch `ghcid` for `lib/backend` project, for example:
 
 ```bash
 nix-shell -A obeliskEnvs.obelisk-backend --run "cd lib/backend && ghcid"
 ```
 
-Or to launch ghcid for `lib/command` project:
+Or to launch `ghcid` for `lib/command` project:
 
 ```bash
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid"
