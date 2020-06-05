@@ -1,8 +1,66 @@
 # Frequently Asked Questions
 
+1. [How do I declare a new Haskell dependency?](#how-do-i-declare-a-new-haskell-dependency)
+1. [How do I add or override Haskell dependencies in the package set?](#how-do-i-add-or-override-haskell-dependencies-in-the-package-set)
+1. [How do I extend my Obelisk application with more local packages?](#how-do-i-extend-my-obelisk-application-with-more-local-packages)
+1. [How do I use `ob run` over HTTPS?](#how-do-i-use-ob-run-over-https)
 1. [How do I fix invalid entitlements?](#how-do-i-fix-invalid-entitlements)
 1. [`ob thunk update` or `ob deploy update` fails](#ob-thunk-update-or-ob-deploy-update-fails)
 1. [How do I fix `Ambiguous module name` errors?](#how-do-i-fix-ambiguous-module-name-errors)
+
+### How do I declare a new Haskell dependency?
+
+Every component of your Obelisk application is a standard [cabal](https://www.haskell.org/cabal/) package. That means declaring new Haskell dependencies simply involves updating the `build-depends` field in the appropriate cabal file (`backend.cabal` for example). By default, Obelisk will use it's curated package set to choose which version of each package you get. It's possible that the package you need is not already in the curated set or the curated version isn't the one you want. Refer to
+
+### How do I add or override Haskell dependencies in the package set?
+
+To add a Haskell package that doesn't exist in Obelisk's package set or to override the version of a package, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package fetched from GitHub and a specific version of the `waargonaut` package fetched from Hackage, your `default.nix` will look like:
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  overrides = self: super: let
+    aesonSrc = pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "aeson-gadt-th";
+      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
+      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
+    };
+  in
+  {
+    aeson = self.callCabal2nix "aeson" aesonSrc {};
+    waargonaut = self.callHackageDirect {
+      pkg = "waargonaut";
+      ver = "0.8.0.1";
+      sha256 = "1zv28np3k3hg378vqm89v802xr0g8cwk7gy3mr77xrzy5jbgpa39";
+    } {};
+  };
+# ...
+```
+
+For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs "Contributors Guide".
+
+### How do I extend my Obelisk application with more local packages?
+
+If the standard packages (`frontend`, `backend`, and `common`) are not enough, you may add more local packages by defining them with the `packages` attribute in your `default.nix`. The sources of these packages will be automatically loaded by `ob run`/`ob repl`/etc.
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  packages = {
+    another = ./another;
+  };
+# ...
+```
+
+### How do I use `ob run` over HTTPS?
+
+To run your app locally over HTTPS update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+
+Obelisk generates a self-signed certificate for running HTTPS so the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
+
 
 ### How do I fix invalid entitlements?
 
