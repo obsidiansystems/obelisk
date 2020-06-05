@@ -82,31 +82,38 @@ The readme is the first place a lot of people look for information about the rep
 
 ## Development Environment
 
-You can use `ghcid` for live feedback as you develop Obelisk libraries. To launch `ghcid` for `lib/backend` project, for example:
+There are two ways to get live compiler feedback while developing Obelisk libraries. For libraries that are dependencies of the `skeleton` application, the easiest way to get feedback is to
 
 ```bash
-nix-shell -A obeliskEnvs.obelisk-backend --run "cd lib/backend && ghcid"
+cd skeleton
+ob run
 ```
 
-Or to launch `ghcid` for `lib/command` project:
+This `ob run` session only loads modules that are dependencies of the skeleton and `obelisk-run`. For example, `obelisk-asset` and `obelisk-route` are used by the skeleton.
+
+For other libraries like `obelisk-command` you can use `ghcid`. To launch `ghcid` for `lib/command` you can run
 
 ```bash
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid"
 ```
 
-To re-install `ob` from source do
+### Building `ob` for testing
+
+To re-install `ob` from source globally you can do
+
 ```bash
 nix-env -f /path/to/obelisk -iA command
 ```
 
-You can also open a shell with the local version of `ob` available on your `PATH`:
+You can also open a shell with the local version of `ob` available on your `$PATH`:
 
 ```bash
 nix run -f /path/to/obelisk command
 ```
 
+### Hacking on Obelisk from within an Obelisk project
 
-Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
+`ob` will defer to the version found in your project's `.obelisk/impl` directory. To work on that version specifically:
 
 ```bash
 ob thunk unpack ./.obelisk/impl
