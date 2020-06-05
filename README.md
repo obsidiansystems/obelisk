@@ -34,7 +34,7 @@ Obelisk is targeted primarily at Haskell developers who want to build high-quali
 
 ### Who should consider using it?
 
-Obelisk assumes basic knowledge of Haskell, web technologies like HTML and CSS, and a terminal shell like Bash.
+Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Reflex/Reflex-DOM](https://reflex-frp.org/), web technologies like [HTML](https://developer.mozilla.org/en-US/docs/Web/HTML) and [CSS](https://developer.mozilla.org/en-US/docs/Web/CSS), and a terminal shell like [Bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)). Knowledge of [Nix](https://nixos.org/) helps but is not strictly necessary.
 
 
 ## Installing Obelisk
