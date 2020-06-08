@@ -54,6 +54,12 @@ nixBuildExePath = $(staticWhich "nix-build")
 jreKeyToolPath :: FilePath
 jreKeyToolPath = $(staticWhich "keytool")
 
+nixPrefetchGitPath :: FilePath
+nixPrefetchGitPath = $(staticWhich "nix-prefetch-git")
+
+nixPrefetchUrlPath :: FilePath
+nixPrefetchUrlPath = $(staticWhich "nix-prefetch-url")
+
 -- | Nix syntax requires relative paths to be prefixed by @./@ or
 -- @../@. This will make a 'FilePath' that can be embedded in a Nix
 -- expression.

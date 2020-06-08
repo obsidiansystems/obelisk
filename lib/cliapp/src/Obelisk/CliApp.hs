@@ -39,7 +39,9 @@ module Obelisk.CliApp
   , callCommand
   , callProcess
   , callProcessAndLogOutput
+  , createProcess
   , createProcess_
+  , exitCodeToException
   , overCreateProcess
   , proc
   , readCreateProcessWithExitCode
@@ -47,6 +49,7 @@ module Obelisk.CliApp
   , readProcessAndLogStderr
   , readProcessJSONAndLogStderr
   , reconstructCommand
+  , runProcess_
   , setCwd
   , setDelegateCtlc
   , setEnvOverride

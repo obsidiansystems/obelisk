@@ -15,6 +15,7 @@ module Obelisk.Command.Project
   , toImplDir
   , toObeliskDir
   , withProjectRoot
+  , bashEscape
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
@@ -23,6 +24,7 @@ import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
 import qualified Data.Aeson as Json
+import qualified Data.ByteString.UTF8 as BSU
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
@@ -30,15 +32,17 @@ import Data.Function ((&), on)
 import Data.Map (Map)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Traversable (for)
 import System.Directory
 import System.Environment (lookupEnv)
 import System.FilePath
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
-import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
-import System.Posix.Files
+import System.PosixCompat.Files
+import System.PosixCompat.Types
+import System.PosixCompat.User
+import Text.ShellEscape (bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -278,11 +282,14 @@ nixShellRunConfig root isPure command = do
   pure $ def
     & nixShellConfig_pure .~ isPure
     & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
-    & nixShellConfig_run .~ (command <&> \c -> mconcat
-      [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
-      , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
-      , c
+    & nixShellConfig_run .~ (command <&> \cs -> unwords $ concat
+      [ ["export", BSU.toString . bytes . bash $ "NIX_PATH=nixpkgs=" <> encodeUtf8 nixpkgsPath, ";"]
+      , maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
+      , [cs]
       ])
+
+bashEscape :: String -> String
+bashEscape = BSU.toString . bytes . bash . BSU.fromString
 
 nixShellRunProc :: NixShellConfig -> ProcessSpec
 nixShellRunProc cfg = setDelegateCtlc True $ proc "nix-shell" $ runNixShellConfig cfg
@@ -300,7 +307,7 @@ nixShellWithoutPkgs root isPure chdirToRoot packageNamesAndPaths shellAttr comma
   packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
   defShellConfig <- nixShellRunConfig root isPure command
   let setCwd_ = if chdirToRoot then setCwd (Just root) else id
-  (_, _, _, ph) <- createProcess_ "nixShellWithoutPkgs" $ setCwd_ $ nixShellRunProc $ defShellConfig
+  runProcess_ $ setCwd_ $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
         "{root, pkgs, shell}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
           \shellPackages = builtins.fromJSON pkgs;\
@@ -310,18 +317,16 @@ nixShellWithoutPkgs root isPure chdirToRoot packageNamesAndPaths shellAttr comma
         , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
         , strArg "shell" shellAttr
         ]
-  void $ waitForProcess ph
 
 nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 nixShellWithHoogle root isPure shell' command = do
   defShellConfig <- nixShellRunConfig root isPure command
-  (_, _, _, ph) <- createProcess_ "nixShellWithHoogle" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
+  runProcess_ $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
         "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
           \userSettings = super.userSettings // { withHoogle = true; };\
         \})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
-  void $ waitForProcess ph
 
 findProjectAssets :: MonadObelisk m => FilePath -> m Text
 findProjectAssets root = do
