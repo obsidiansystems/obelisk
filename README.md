@@ -5,7 +5,7 @@
 
 <p align="center"><img src="docs/obelisk-logo-640.png" width="50%" alt="Obelisk Logo"></p>
 
-Obelisk is an opinionated, batteries-included framework for building production-ready web and mobile applications in [Haskell](https://www.haskell.org/). It's goal is to represent a cohesive, highly-curated set of choices that [Obsidian Systems](https://obsidian.systems/) has made for building these types of applications in a way that is extremely fast but does not compromise on production readiness.
+Obelisk is an opinionated, batteries-included framework for building production-ready web and mobile applications in [Haskell](https://www.haskell.org/). Its goal is to represent a cohesive, highly-curated set of choices that [Obsidian Systems](https://obsidian.systems/) has made for building these types of applications in a way that is extremely fast but does not compromise on production readiness.
 
 - [Overview](#installing-obelisk)
   - [Why would I use it?](#why-would-i-use-it)
@@ -30,7 +30,7 @@ Obelisk is an opinionated, batteries-included framework for building production-
 
 Obelisk allows you to build high-quality web and mobile applications very quickly using [Reflex](https://reflex-frp.org/). In minutes you can go from an empty directory to a interactive application that works on web, iOS, and Android, all sharing the same Haskell codebase! Obelisk's development environment also enables extremely rapid development and feedback. You can take advantage of Haskell's type system across the frontend and backend boundary. This means changes to your backend that would break your frontend are immediately detected during development and vice versa. Obelisk uses Haskell's compiler to give you a complete "TODO list" of what needs to be updated.
 
-Obelisk is targeted primarily at Haskell developers who want to build high-quality web and/or mobile applications in Haskell without the distractions of manually choosing and integrating technology for every piece of the system.
+Obelisk is targeted primarily at Haskell developers who want to build high-quality web and/or mobile applications in Haskell, without the distractions of manually choosing and integrating technology for every piece of the system.
 
 ### Who should consider using it?
 

@@ -10,7 +10,7 @@
 
 ### How do I declare a new Haskell dependency?
 
-Every component of your Obelisk application is a standard [cabal](https://www.haskell.org/cabal/) package. That means declaring new Haskell dependencies simply involves updating the `build-depends` field in the appropriate cabal file (`backend.cabal` for example). By default, Obelisk will use it's curated package set to choose which version of each package you get. It's possible that the package you need is not already in the curated set or the curated version isn't the one you want. Refer to
+Every component of your Obelisk application is a standard [cabal](https://www.haskell.org/cabal/) package. That means declaring new Haskell dependencies simply involves updating the `build-depends` field in the appropriate cabal file (`backend.cabal` for example). By default, Obelisk will use its curated package set to choose which version of each package you get. It's possible that the package you need is not already in the curated set or the curated version isn't the one you want. See [How do I add or override Haskell dependencies in the package set?](#how-do-i-add-or-override-haskell-dependencies-in-the-package-set) for a solution to this.
 
 ### How do I add or override Haskell dependencies in the package set?
 
@@ -57,15 +57,14 @@ project ./. ({ pkgs, ... }: {
 
 ### How do I use `ob run` over HTTPS?
 
-To run your app locally over HTTPS update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+To run your app locally over HTTPS, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
 
 Obelisk generates a self-signed certificate for running HTTPS so the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
 
 
 ### How do I fix invalid entitlements?
 
-You probably did not set `ios.bundleIdentifier` correctly in `default.nix`.
-When this happens you'll see an error something like this:
+You probably did not set `ios.bundleIdentifier` correctly in `default.nix`. When this happens you'll see an error something like this:
 
 ```
 2018-11-25 09:34:22.438 ios-deploy[58106:8521046] [ !! ] Error 0xe8008016: The executable was signed with invalid entitlements. AMDeviceSecureInstallApplication(0, device, url, options, install_callback, 0)
