@@ -79,7 +79,7 @@ You should now see a NixOS machine in the dashboard:
 
 ![](assets/virtualbox-dashboard-nixos.png)
 
-If you are on a network with DHCP on your wireless or network card then select right-click on the "NixOS" image and click "Settings". Go to the "Network" section and make "Attached to:" set to "Bridged Adapter".
+If you are on a network with DHCP on your wireless or network card then right-click on the "NixOS" image and click "Settings". Go to the "Network" section and make "Attached to:" set to "Bridged Adapter".
 
 ![](assets/virtualbox-image-settings-network.png)
 
