@@ -104,7 +104,7 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
   }
 
--- | 'Bool' with a better name for it's purpose.
+-- | 'Bool' with a better name for its purpose.
 data Interpret = Interpret_Interpret | Interpret_NoInterpret deriving (Eq, Ord, Show)
 
 textInterpret :: Interpret -> Text
