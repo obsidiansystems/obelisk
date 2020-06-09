@@ -28,7 +28,7 @@ Obelisk is an opinionated, batteries-included framework for building production-
 
 ## Overview
 
-Obelisk allows you to build high-quality web and mobile applications very quickly using [Reflex](https://reflex-frp.org/). In minutes you can go from an empty directory to a interactive application that works on web, iOS, and Android, all sharing the same Haskell codebase! Obelisk's development environment also enables extremely rapid development and feedback. You can take advantage of Haskell's type system across the frontend and backend boundary. This means changes to your backend that would break your frontend are immediately detected during development and vice versa. Obelisk uses Haskell's compiler to give you a complete "TODO list" of what needs to be updated.
+Obelisk allows you to build high-quality web and mobile applications very quickly using [Reflex](https://reflex-frp.org/). In minutes you can go from an empty directory to an interactive application that works on web, iOS, and Android, all sharing the same Haskell codebase! Obelisk's development environment also enables extremely rapid development and feedback. You can take advantage of Haskell's type system across the frontend and backend boundary. This means changes to your backend that would break your frontend are immediately detected during development and vice versa. Obelisk uses Haskell's compiler to give you a complete "TODO list" of what needs to be updated.
 
 Obelisk is targeted primarily at Haskell developers who want to build high-quality web and/or mobile applications in Haskell, without the distractions of manually choosing and integrating technology for every piece of the system.
 
