@@ -2,6 +2,10 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## v0.8.0.1
+
+* Backport nixpkgs upgrades to ACME/LetsEncrypt handling so that HTTPS deployments continue to work flawlessly. If your deployment is having trouble renewing LetsEncrypt certificates, upgrade to this version.
+
 ## v0.8.0.0
 
 * ([#674](https://github.com/obsidiansystems/obelisk/pull/674), [#711](https://github.com/obsidiansystems/obelisk/pull/711)) Introduce a new thunk format to support accessing the thunk's source directly when packed. When packed, thunks have an additional file called `thunk.nix` and `default.nix` is now a think wrapper around that.
