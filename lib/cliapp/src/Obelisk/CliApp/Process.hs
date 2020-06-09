@@ -17,6 +17,7 @@ module Obelisk.CliApp.Process
   , callProcessAndLogOutput
   , createProcess
   , createProcess_
+  , exitCodeToException
   , overCreateProcess
   , proc
   , readCreateProcessWithExitCode
@@ -24,6 +25,7 @@ module Obelisk.CliApp.Process
   , readProcessAndLogStderr
   , readProcessJSONAndLogStderr
   , reconstructCommand
+  , runProcess_
   , setCwd
   , setDelegateCtlc
   , setEnvOverride
@@ -32,6 +34,7 @@ module Obelisk.CliApp.Process
   ) where
 
 import Control.Monad ((<=<), join, void)
+import Control.Monad.Catch (MonadMask, bracketOnError)
 import Control.Monad.Except (throwError)
 import Control.Monad.Fail
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -99,7 +102,7 @@ instance AsProcessFailure ProcessFailure where
   asProcessFailure = id
 
 readProcessAndLogStderr
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m, MonadMask m)
   => Severity -> ProcessSpec -> m Text
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
@@ -107,7 +110,7 @@ readProcessAndLogStderr sev process = do
   liftIO $ T.decodeUtf8With lenientDecode <$> BS.hGetContents out
 
 readProcessJSONAndLogStderr
-  :: (Aeson.FromJSON a, MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
+  :: (Aeson.FromJSON a, MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m, MonadMask m)
   => Severity -> ProcessSpec -> m a
 readProcessJSONAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
@@ -130,10 +133,10 @@ readCreateProcessWithExitCode procSpec = do
 -- | Like `System.Process.readProcess` but logs the combined output (stdout and stderr)
 -- with the corresponding severity.
 --
--- Usually this function is called as `callProcessAndLogOutput (Debug, Error)`. However
+-- Usually this function is called as `readProcessAndLogOutput (Debug, Error)`. However
 -- some processes are known to spit out diagnostic or informative messages in stderr, in
 -- which case it is advisable to call it with a non-Error severity for stderr, like
--- `callProcessAndLogOutput (Debug, Debug)`.
+-- `readProcessAndLogOutput (Debug, Debug)`.
 readProcessAndLogOutput
   :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
   => (Severity, Severity) -> ProcessSpec -> m Text
@@ -146,9 +149,7 @@ readProcessAndLogOutput (sev_out, sev_err) process = do
   outText <- liftIO $ T.decodeUtf8With lenientDecode <$> BS.hGetContents out
   putLogRaw sev_out outText
 
-  waitForProcess p >>= \case
-    ExitSuccess -> pure outText
-    ExitFailure code -> throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess process) code
+  outText <$ (exitCodeToException process =<< waitForProcess p)
 
 -- | Like 'System.Process.callProcess' but logs the combined output (stdout and stderr)
 -- with the corresponding severity.
@@ -158,7 +159,7 @@ readProcessAndLogOutput (sev_out, sev_err) process = do
 -- which case it is advisable to call it with a non-Error severity for stderr, like
 -- `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m, MonadMask m)
   => (Severity, Severity) -> ProcessSpec -> m ()
 callProcessAndLogOutput (sev_out, sev_err) process =
   void $ withProcess process $ \out err -> do
@@ -188,12 +189,11 @@ createProcess_ name procSpec = do
   liftIO $ Process.createProcess_ name p
 
 mkCreateProcess :: MonadIO m => ProcessSpec -> m Process.CreateProcess
-mkCreateProcess (ProcessSpec p override') = do
-  case override' of
-    Nothing -> pure p
-    Just override -> do
-      procEnv <- Map.fromList <$> maybe (liftIO getEnvironment) pure (Process.env p)
-      pure $ p { Process.env = Just $ Map.toAscList (override procEnv) }
+mkCreateProcess (ProcessSpec p override') = case override' of
+  Nothing -> pure p
+  Just override -> do
+    procEnv <- Map.fromList <$> maybe (liftIO getEnvironment) pure (Process.env p)
+    pure $ p { Process.env = Just $ Map.toAscList (override procEnv) }
 
 -- | Like `System.Process.callProcess` but also logs (debug) the process being run
 callProcess
@@ -212,18 +212,30 @@ callCommand cmd = do
   liftIO $ Process.callCommand cmd
 
 withProcess
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m, MonadMask m)
   => ProcessSpec -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
-withProcess process f = do -- TODO: Use bracket.
-  -- FIXME: Using `withCreateProcess` here leads to something operating illegally on closed handles.
-  (_, Just out, Just err, p) <- createProcess $ overCreateProcess
-    (\x -> x { std_out = CreatePipe , std_err = CreatePipe }) process
+withProcess process f =
+  bracketOnError
+    (createProcess $ overCreateProcess
+      (\x -> x { std_out = CreatePipe , std_err = CreatePipe }) process
+    )
+    (liftIO . Process.cleanupProcess)
+    (\case
+      (_, Just out, Just err, p) -> do
+        f out err
+        (out, err) <$ (exitCodeToException process =<< waitForProcess p)
+      _ -> error "withProcess: createProcess did not provide handles for CreatePipe as expected"
+    )
 
-  f out err  -- Pass the handles to the passed function
-
-  waitForProcess p >>= \case
-    ExitSuccess -> return (out, err)
-    ExitFailure code -> throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess process) code
+-- | Runs a process to completion failing if it does not exit cleanly.
+runProcess_
+  :: (MonadIO m, CliLog m, CliThrow e m, MonadMask m, AsProcessFailure e, MonadFail m)
+  => ProcessSpec -> m ()
+runProcess_ process =
+  bracketOnError
+    (createProcess process)
+    (liftIO . Process.cleanupProcess)
+    (\(_, _, _, ph) -> exitCodeToException process =<< waitForProcess ph)
 
 -- Create an input stream from the file handle, associating each item with the given severity.
 streamHandle :: Severity -> Handle -> IO (InputStream (Severity, BSC.ByteString))
@@ -241,6 +253,12 @@ streamToLog stream = fix $ \loop -> do
 -- | Wrapper around `System.Process.waitForProcess`
 waitForProcess :: MonadIO m => ProcessHandle -> m ExitCode
 waitForProcess = liftIO . Process.waitForProcess
+
+-- | Converts an 'ExitCode' to an exception when it's non-zero.
+exitCodeToException :: (CliThrow e m, AsProcessFailure e) => ProcessSpec -> ExitCode -> m ()
+exitCodeToException spec = \case
+  ExitSuccess -> pure ()
+  ExitFailure code -> throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess spec) code
 
 -- | Pretty print a 'CmdSpec'
 reconstructCommand :: Process.CmdSpec -> Text
