@@ -8,7 +8,7 @@ This document serves two purposes, the first one is to guide new users that want
 
 ## a) Get Obelisk (Linux, Mac)
 
-There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of Obelisk in different ways. The approach is to clone Obelisk from it's GitHub repository and start a project that uses that local check out.
+There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of Obelisk in different ways. The approach is to clone Obelisk from its GitHub repository and start a project that uses that local check out.
 
 Open a terminal and run the following:
 
