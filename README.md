@@ -8,7 +8,6 @@
 Obelisk is an opinionated, batteries-included framework for building production-ready web and mobile applications in [Haskell](https://www.haskell.org/). Its goal is to represent a cohesive, highly-curated set of choices that [Obsidian Systems](https://obsidian.systems/) has made for building these types of applications in a way that is extremely fast but does not compromise on production readiness.
 
 - [Overview](#overview)
-  - [Why would I use it?](#why-would-i-use-it)
   - [Who should consider using it?](#who-should-consider-using-it)
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
