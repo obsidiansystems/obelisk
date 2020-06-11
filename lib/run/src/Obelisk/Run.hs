@@ -97,9 +97,10 @@ run port serveStaticAsset backend frontend = do
               Identity r -> case r of
                 FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
                 FullRoute_Frontend obeliskRoute :/ a ->
-                  serveDefaultObeliskApp appRouteToUrl (($ allJsUrl) <$> defaultGhcjsWidgets) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
+                  serveDefaultObeliskApp appRouteToUrl (($ assetsUrl) <$> defaultGhcjsWidgets) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
                   where
                     appRouteToUrl (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
+                    assetsUrl = GhcjsWasmAssets allJsUrl Nothing
                     allJsUrl = renderAllJsPath validFullEncoder
 
       let conf = defRunConfig { _runConfig_redirectPort = port }

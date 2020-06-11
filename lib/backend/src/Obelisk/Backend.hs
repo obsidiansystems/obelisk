@@ -20,6 +20,7 @@ module Obelisk.Backend
   , runBackendWith
   -- * Configuration of backend
   , GhcjsWidgets(..)
+  , GhcjsWasmAssets(..)
   , defaultGhcjsWidgets
   -- * all.js script loading functions
   , deferredGhcjsScript
@@ -39,13 +40,16 @@ module Obelisk.Backend
   , getPublicConfigs
   ) where
 
+import Control.Exception (try)
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Fail (MonadFail)
+import Control.Lens (view, _1, _2, _3)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
 import Data.Dependent.Sum
+import Data.Either (isRight)
 import Data.Functor.Identity
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -63,6 +67,7 @@ import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, htt
             , rqPathInfo, rqQueryString, setContentType, writeBS, writeText
             , rqCookies, Cookie(..) , setHeader)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
+import System.FilePath ((</>))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 data Backend backendRoute frontendRoute = Backend
@@ -73,8 +78,9 @@ data Backend backendRoute frontendRoute = Backend
 data BackendConfig frontendRoute = BackendConfig
   { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
   , _backendConfig_staticAssets :: !StaticAssets -- ^ Static assets
-  , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ()))
-    -- ^ Given the URL of all.js, return the widgets which are responsible for
+  , _backendConfig_ghcjsAssets :: !StaticAssets -- ^ Frontend ghcjs (and wasm) assets
+  , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (GhcjsWasmAssets -> FrontendWidgetT (R frontendRoute) ()))
+    -- ^ Given the URL of all.js and wasm files, return the widgets which are responsible for
     -- loading the script.
   } deriving (Generic)
 
@@ -92,10 +98,14 @@ data GhcjsWidgets a = GhcjsWidgets
   -- ^ A script widget, placed in the document body
   } deriving (Functor, Generic)
 
+data GhcjsWasmAssets = GhcjsWasmAssets
+  { _ghcjsWasmAssets_allJs :: Text
+  , _ghcjsWasmAssets_wasmPathRoot :: Maybe Text
+  }
 
 -- | Given the URL of all.js, return the widgets which are responsible for
 -- loading the script. Defaults to 'preloadGhcjs' and 'deferredGhcjsScript'.
-defaultGhcjsWidgets :: GhcjsWidgets (Text -> FrontendWidgetT r ())
+defaultGhcjsWidgets :: GhcjsWidgets (GhcjsWasmAssets -> FrontendWidgetT r ())
 defaultGhcjsWidgets = GhcjsWidgets
   { _ghcjsWidgets_preload = preloadGhcjs
   , _ghcjsWidgets_script = deferredGhcjsScript
@@ -132,6 +142,9 @@ defaultStaticAssets = StaticAssets
   , _staticAssets_unprocessed = "static"
   }
 
+-- This has both ghcjs and wasm assets.
+-- The 'unprocessed' is a fallback path, and in case of wasm is invalid (does not contain wasm files)
+-- For the standard obelisk deployment the unprocessed path would not be used.
 defaultFrontendGhcjsAssets :: StaticAssets
 defaultFrontendGhcjsAssets = StaticAssets
   { _staticAssets_processed = "frontend.jsexe.assets"
@@ -166,6 +179,10 @@ getRouteWith e = do
 renderAllJsPath :: Encoder Identity Identity (R (FullRoute a b)) PageName -> Text
 renderAllJsPath validFullEncoder =
   renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ ["all.js"]
+
+renderWasmPathRoot :: Encoder Identity Identity (R (FullRoute a b)) PageName -> Text
+renderWasmPathRoot validFullEncoder =
+  renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ []
 
 serveObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
@@ -221,7 +238,7 @@ serveGhcjsApp urlEnc ghcjsWidgets app config = \case
 
 -- | Default obelisk backend configuration.
 defaultBackendConfig :: BackendConfig frontendRoute
-defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets
+defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultFrontendGhcjsAssets defaultGhcjsWidgets
 
 -- | Run an obelisk backend with the default configuration.
 runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
@@ -233,21 +250,34 @@ runBackendWith
   -> Backend backendRoute frontendRoute
   -> Frontend (R frontendRoute)
   -> IO ()
-runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackendWith (BackendConfig runSnap staticAssets ghcjsAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
+    enableWasm <- checkWasmFile
     _backend_run backend $ \serveRoute ->
       runSnap $
         getRouteWith validFullEncoder >>= \case
           Identity r -> case r of
             FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
             FullRoute_Frontend obeliskRoute :/ a ->
-              serveDefaultObeliskApp routeToUrl (($ allJsUrl) <$> ghcjsWidgets) (serveStaticAssets staticAssets) frontend publicConfigs $
+              serveObeliskApp routeToUrl widgets (serveStaticAssets staticAssets) frontendApp publicConfigs $
                 obeliskRoute :/ a
               where
                 routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
                 allJsUrl = renderAllJsPath validFullEncoder
+                mWasmUrls = if enableWasm then Just (renderWasmPathRoot validFullEncoder) else Nothing
+                widgets = ($ GhcjsWasmAssets allJsUrl mWasmUrls) <$> ghcjsWidgets
+                frontendApp = GhcjsApp
+                  { _ghcjsApp_compiled = ghcjsAssets
+                  , _ghcjsApp_value = frontend
+                  }
+  where
+    checkWasmFile = do
+      let base = _staticAssets_processed ghcjsAssets
+          p = "frontend.wasm"
+      assetType :: (Either IOError ByteString) <- liftIO $ try $ BSC8.readFile $ base </> p </> "type"
+      pure $ isRight assetType
 
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
@@ -263,29 +293,100 @@ renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
 
 -- | Preload all.js in a link tag.
 -- This is the default preload method.
-preloadGhcjs :: Text -> FrontendWidgetT r ()
-preloadGhcjs allJsUrl = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
+preloadGhcjs :: GhcjsWasmAssets -> FrontendWidgetT r ()
+preloadGhcjs (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
+  Nothing -> elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
+  Just wasmAssets -> scriptTag $ view _1 (wasmScripts allJsUrl wasmAssets)
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
-deferredGhcjsScript :: Text -> FrontendWidgetT r ()
-deferredGhcjsScript allJsUrl = elAttr "script" ("type" =: "text/javascript" <> "src" =: allJsUrl <> "defer" =: "defer") blank
+deferredGhcjsScript :: GhcjsWasmAssets -> FrontendWidgetT r ()
+deferredGhcjsScript (GhcjsWasmAssets allJsUrl mWasm) = case mWasm of
+  Nothing -> elAttr "script" ("type" =: "text/javascript" <> "src" =: allJsUrl <> "defer" =: "defer") blank
+  Just wasmAssets -> scriptTag $ view _2 (wasmScripts allJsUrl wasmAssets)
+
+scriptTag :: DomBuilder t m => Text -> m ()
+scriptTag t = elAttr "script" ("type" =: "text/javascript") $ text t
+
+wasmScripts :: Text -> Text -> (Text, Text, (Int -> Text))
+wasmScripts allJsUrl wasmRoot = (preloadScript, runJsScript, delayedJsScript)
+  where
+    jsaddleJs = wasmRoot <> "/jsaddle_core.js"
+    interfaceJs = wasmRoot <> "/jsaddle_mainthread_interface.js"
+    runnerJs = wasmRoot <> "/mainthread_runner.js"
+    wasmUrl = wasmRoot <> "/frontend.wasm"
+
+    preloadScript =
+      "add_preload_tag = function (docSrc, docType) {          \
+      \  var link_tag = document.createElement('link');        \
+      \  link_tag.rel = 'preload';                             \
+      \  link_tag.as = docType;                                \
+      \  link_tag.href = docSrc;                               \
+      \  document.head.appendChild(link_tag);                  \
+      \};                                                      \
+      \if (typeof(WebAssembly) === 'undefined') {              \
+      \  add_preload_tag('" <> allJsUrl <> "', 'script');      \
+      \} else {                                                \
+      \  add_preload_tag('" <> wasmUrl <> "', 'script');       \
+      \  add_preload_tag('" <> jsaddleJs <> "', 'script');     \
+      \  add_preload_tag('" <> interfaceJs <> "', 'script');   \
+      \  add_preload_tag('" <> runnerJs <> "', 'script');      \
+      \}"
+
+    runJsScript =
+      "add_deferload_tag = function (docSrc) {       \
+      \  var tag = document.createElement('script'); \
+      \  tag.type = 'text/javascript';               \
+      \  tag.src = docSrc;                           \
+      \  tag.setAttribute = ('defer', 'defer');      \
+      \  document.body.appendChild(tag);             \
+      \};                                            \
+      \if (typeof(WebAssembly) === 'undefined') {    \
+      \  add_deferload_tag('" <> allJsUrl <> "');    \
+      \} else {                                      \
+      \  var wasmFile = '" <> wasmUrl <> "';         \
+      \  add_deferload_tag('" <> jsaddleJs <> "');   \
+      \  add_deferload_tag('" <> interfaceJs <> "'); \
+      \  add_deferload_tag('" <> runnerJs <> "');    \
+      \}"
+
+    delayedJsScript n =
+      "var wasmFile = '" <> wasmUrl <> "';            \
+      \setTimeout(function() {                        \
+      \  add_load_tag = function (docSrc) {           \
+      \    var tag = document.createElement('script');\
+      \    tag.type = 'text/javascript';              \
+      \    tag.src = docSrc;                          \
+      \    document.body.appendChild(tag);            \
+      \  };                                           \
+      \  if (typeof(WebAssembly) === 'undefined') {   \
+      \    add_load_tag('" <> allJsUrl <> "');        \
+      \  } else {                                     \
+      \    add_load_tag('" <> jsaddleJs <> "');       \
+      \    add_load_tag('" <> interfaceJs <> "');     \
+      \    add_load_tag('" <> runnerJs <> "');        \
+      \  }                                            \
+      \}, " <> T.pack (show n) <> ");"
 
 -- | An all.js script which is loaded after waiting for some time to pass. This
 -- is useful to ensure any CSS animations on the page can play smoothly before
 -- blocking the UI thread by running all.js.
 delayedGhcjsScript
   :: Int -- ^ The number of milliseconds to delay loading by
-  -> Text -- ^ URL to GHCJS app JavaScript
+  -> GhcjsWasmAssets
   -> FrontendWidgetT r ()
-delayedGhcjsScript n allJsUrl = elAttr "script" ("type" =: "text/javascript") $ text $ T.unlines
-  [ "setTimeout(function() {"
-  , "  var all_js_script = document.createElement('script');"
-  , "  all_js_script.type = 'text/javascript';"
-  , "  all_js_script.src = '" <> allJsUrl <> "';"
-  , "  document.body.appendChild(all_js_script);"
-  , "}, " <> T.pack (show n) <> ");"
-  ]
+delayedGhcjsScript n (GhcjsWasmAssets allJsUrl mWasm) = scriptTag scriptToRun
+  where
+    scriptToRun = case mWasm of
+      Nothing -> T.unlines
+        [ "setTimeout(function() {"
+        , "  var all_js_script = document.createElement('script');"
+        , "  all_js_script.type = 'text/javascript';"
+        , "  all_js_script.src = '" <> allJsUrl <> "';"
+        , "  document.body.appendChild(all_js_script);"
+        , "}, " <> T.pack (show n) <> ");"
+        ]
+      Just wasmAssets -> (view _3 (wasmScripts allJsUrl wasmAssets)) n
 
 instance HasCookies Snap where
   askCookies = map (\c -> (cookieName c, cookieValue c)) <$> getsRequest rqCookies

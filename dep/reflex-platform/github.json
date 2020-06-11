@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "ts-reflex-dom-test-selenium",
+  "branch": "ts-selenium-wasm",
   "private": false,
-  "rev": "d3a3bb4381244ba83f3e662aebb121b0225ce76b",
-  "sha256": "1nhwzl3l20lsyjcsm28mvacbn9dxab8xn8fynnlpwaymm4a37639"
+  "rev": "140410144e40f63ef69be7cb988fc90b088f5493",
+  "sha256": "01czh6cbwmar5hpikh13izf03hhabjds5lhc4wyzwx9vm71bwckq"
 }
