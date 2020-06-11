@@ -2,6 +2,9 @@
 , profiling ? false
 , iosSdkVersion ? "10.2"
 , config ? {}
+, terms ? { # Accepted terms, conditions, and licenses
+    security.acme.acceptTerms = false;
+  }
 , reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
@@ -110,7 +113,7 @@ in rec {
         "${routeHost}".email = adminEmail;
       } else {};
 
-      security.acme.${if enableHttps then "acceptTerms" else null} = true;
+      security.acme.${if enableHttps && (terms.security.acme.acceptTerms or false) then "acceptTerms" else null} = true;
     };
 
     mkObeliskApp =
