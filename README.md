@@ -1,11 +1,11 @@
 # Obelisk
 
 [![Haskell Programming Language](https://img.shields.io/badge/language-Haskell-blue.svg)](http://www.haskell.org)
-[![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)](https://tldrlegal.com/license/bsd-3-clause-license-%28revised%29)
+[![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)](https://github.com/obsidiansystems/obelisk/blob/master/LICENSE)
 
 <p align="center"><img src="docs/obelisk-logo-640.png" width="50%" alt="Obelisk Logo"></p>
 
-Obelisk is an opinionated, batteries-included framework for building production-ready web and mobile applications in [Haskell](https://www.haskell.org/). Its goal is to represent a cohesive, highly-curated set of choices that [Obsidian Systems](https://obsidian.systems/) has made for building these types of applications in a way that is extremely fast but does not compromise on production readiness.
+Functional reactive web and mobile applications, with batteries included. Obelisk's goal is to represent a cohesive, highly-curated set of choices that [Obsidian Systems](https://obsidian.systems/) has made for building these types of applications in a way that is extremely fast but does not compromise on production readiness.
 
 - [Overview](#overview)
   - [Who should consider using it?](#who-should-consider-using-it)
