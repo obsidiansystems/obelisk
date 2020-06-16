@@ -27,4 +27,4 @@ library
                  text,
                  universe
   exposed-modules: Obelisk.Backend
-  ghc-options: -Wall
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O

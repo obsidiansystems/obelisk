@@ -47,7 +47,7 @@ library
     , websockets
   exposed-modules:
       Obelisk.Run
-  ghc-options: -Wall -fwarn-redundant-constraints
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
   if os(linux)
     cpp-options: -DIPROUTE_SUPPORTED
     build-depends: which

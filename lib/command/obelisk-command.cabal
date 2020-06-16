@@ -66,4 +66,4 @@ library
 executable ob
   main-is: src-bin/ob.hs
   build-depends: base, obelisk-command
-  ghc-options: -Wall -O2 -threaded
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -threaded

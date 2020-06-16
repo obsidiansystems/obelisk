@@ -29,4 +29,6 @@ library
       Obelisk.Asset.Serve.Snap
 
   other-extensions: TemplateHaskell
-  ghc-options: -Wall -Werror -fno-warn-unused-do-bind -fwarn-tabs -funbox-strict-fields -O2 -fprof-auto-calls
+  ghc-options:
+    -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O2
+    -fno-warn-unused-do-bind -funbox-strict-fields -fprof-auto-calls
