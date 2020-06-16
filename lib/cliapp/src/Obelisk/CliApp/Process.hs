@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
@@ -102,7 +101,7 @@ instance AsProcessFailure ProcessFailure where
   asProcessFailure = id
 
 readProcessAndLogStderr
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m, MonadMask m)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadMask m)
   => Severity -> ProcessSpec -> m Text
 readProcessAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
@@ -110,7 +109,7 @@ readProcessAndLogStderr sev process = do
   liftIO $ T.decodeUtf8With lenientDecode <$> BS.hGetContents out
 
 readProcessJSONAndLogStderr
-  :: (Aeson.FromJSON a, MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m, MonadMask m)
+  :: (Aeson.FromJSON a, MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadMask m)
   => Severity -> ProcessSpec -> m a
 readProcessJSONAndLogStderr sev process = do
   (out, _err) <- withProcess process $ \_out err -> do
@@ -123,7 +122,7 @@ readProcessJSONAndLogStderr sev process = do
       throwError $ review asProcessFailure $ ProcessFailure (Process.cmdspec $ _processSpec_createProcess process) 0
 
 readCreateProcessWithExitCode
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e)
+  :: (MonadIO m, CliLog m)
   => ProcessSpec -> m (ExitCode, String, String)
 readCreateProcessWithExitCode procSpec = do
   process <- mkCreateProcess procSpec
@@ -159,7 +158,7 @@ readProcessAndLogOutput (sev_out, sev_err) process = do
 -- which case it is advisable to call it with a non-Error severity for stderr, like
 -- `callProcessAndLogOutput (Debug, Debug)`.
 callProcessAndLogOutput
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m, MonadMask m)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadMask m)
   => (Severity, Severity) -> ProcessSpec -> m ()
 callProcessAndLogOutput (sev_out, sev_err) process =
   void $ withProcess process $ \out err -> do
@@ -212,7 +211,7 @@ callCommand cmd = do
   liftIO $ Process.callCommand cmd
 
 withProcess
-  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadFail m, MonadMask m)
+  :: (MonadIO m, CliLog m, CliThrow e m, AsProcessFailure e, MonadMask m)
   => ProcessSpec -> (Handle -> Handle -> m ()) -> m (Handle, Handle)
 withProcess process f =
   bracketOnError
@@ -229,7 +228,7 @@ withProcess process f =
 
 -- | Runs a process to completion failing if it does not exit cleanly.
 runProcess_
-  :: (MonadIO m, CliLog m, CliThrow e m, MonadMask m, AsProcessFailure e, MonadFail m)
+  :: (MonadIO m, CliLog m, CliThrow e m, MonadMask m, AsProcessFailure e)
   => ProcessSpec -> m ()
 runProcess_ process =
   bracketOnError

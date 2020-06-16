@@ -160,7 +160,7 @@ failWith :: (CliThrow e m, AsUnstructuredError e) => Text -> m a
 failWith = throwError . review asUnstructuredError
 
 errorToWarning
-  :: (HasCliConfig e m, CliThrow e m, CliLog m)
+  :: (HasCliConfig e m, CliLog m)
   => e -> m ()
 errorToWarning e = do
   c <- getCliConfig
@@ -177,7 +177,7 @@ withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
   throwM e
 
 -- | Write log to stdout, with colors (unless `noColor`)
-writeLog :: (MonadIO m, MonadMask m) => Bool -> Bool -> WithSeverity Text -> m ()
+writeLog :: (MonadIO m) => Bool -> Bool -> WithSeverity Text -> m ()
 writeLog withNewLine noColor (WithSeverity severity s) = if T.null s then pure () else write
   where
     write

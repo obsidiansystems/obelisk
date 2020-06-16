@@ -14,11 +14,12 @@ library
                , obelisk-route
   exposed-modules:
     Backend
-  ghc-options: -Wall
+  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
 
 executable backend
   main-is: main.hs
   hs-source-dirs: src-bin
+  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
   if impl(ghcjs)
     buildable: False
   build-depends: base

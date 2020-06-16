@@ -26,4 +26,4 @@ library
   exposed-modules:
     Obelisk.Frontend
     Obelisk.Frontend.Cookie
-  ghc-options: -Wall
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
