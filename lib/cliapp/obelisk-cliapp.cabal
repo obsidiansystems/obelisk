@@ -34,4 +34,4 @@ library
     Obelisk.CliApp.TerminalString
     Obelisk.CliApp.Theme
     Obelisk.CliApp.Types
-  ghc-options: -Wall -fobject-code
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
