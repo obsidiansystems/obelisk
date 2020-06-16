@@ -8,7 +8,7 @@ This document serves two purposes, the first one is to guide new users that want
 
 ## a) Get Obelisk (Linux, Mac)
 
-There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of Obelisk in different ways. The approach is to clone Obelisk from it's GitHub repository and start a project that uses that local check out.
+There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of Obelisk in different ways. The approach is to clone Obelisk from its GitHub repository and start a project that uses that local check out.
 
 Open a terminal and run the following:
 
@@ -81,7 +81,7 @@ You should now see a NixOS machine in the dashboard:
 
 ![](assets/virtualbox-dashboard-nixos.png)
 
-If you are on a network with DHCP on your wireless or network card then select right-click on the "NixOS" image and click "Settings". Go to the "Network" section and make "Attached to:" set to "Bridged Adapter".
+If you are on a network with DHCP on your wireless or network card then right-click on the "NixOS" image and click "Settings". Go to the "Network" section and make "Attached to:" set to "Bridged Adapter".
 
 ![](assets/virtualbox-image-settings-network.png)
 
