@@ -12,6 +12,7 @@ library
                , frontend
                , obelisk-backend
                , obelisk-route
+               , which
   exposed-modules:
     Backend
   ghc-options: -Wall
