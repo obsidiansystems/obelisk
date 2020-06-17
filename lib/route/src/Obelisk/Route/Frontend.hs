@@ -84,7 +84,7 @@ import Data.Type.Coercion
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
-import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
+import Language.Javascript.JSaddle (MonadJSM, jsNull, liftJSM) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
 import Reflex.Class
 import Reflex.Dom.Builder.Class
