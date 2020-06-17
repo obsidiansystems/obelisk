@@ -1,24 +1,24 @@
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Obelisk.Route.Frontend
   ( module Obelisk.Route
@@ -256,7 +256,7 @@ dynamicIdentityCoercion = unsafeCoerce (Coercion :: Coercion (Identity ()) ()) -
 factorRouted :: (Reflex t, MonadFix m, MonadHold t m, GEq f) => RoutedT t (DSum f (Dynamic t)) m a -> RoutedT t (DSum f Identity) m a
 factorRouted r = RoutedT $ ReaderT $ \d -> do
   d' <- factorDyn d
-  runRoutedT r $ (coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d')
+  runRoutedT r $ coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d'
 
 maybeRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Maybe (Dynamic t a)) m b -> RoutedT t (Maybe a) m b
 maybeRouted r = RoutedT $ ReaderT $ \d -> do
@@ -464,7 +464,7 @@ runRouteViewT
      , MonadJSM (Performable m)
      , MonadFix m
      )
-  => (Encoder Identity Identity r PageName)
+  => Encoder Identity Identity r PageName
   --TODO: Get rid of the switchover and useHash arguments
   -- useHash can probably be baked into the encoder
   -> Event t () -- ^ Switchover event, nothing is done until this event fires. Used to prevent incorrect DOM expectations at hydration switchover time

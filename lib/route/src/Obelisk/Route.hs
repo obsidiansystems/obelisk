@@ -6,7 +6,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -140,7 +139,6 @@ import Control.Lens
   , view
   , Wrapped (..)
   )
-
 import Control.Monad.Except
 import qualified Control.Monad.State.Strict as State
 import Control.Monad.Trans (lift)
@@ -154,6 +152,7 @@ import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
 import Data.Either.Validation (Validation (..))
 import Data.Foldable
+import Data.Functor (($>))
 import Data.Functor.Sum
 import Data.GADT.Compare
 import Data.GADT.Compare.TH
@@ -304,13 +303,13 @@ decode e x = runIdentity (tryDecode e x)
 -- | Once an 'Encoder' has been checked, so that its check monad has become 'Identity', even if the same is not true of the
 -- parse monad, we may still attempt to decode with it in its parse monad.
 tryDecode :: Encoder Identity parse decoded encoded -> encoded -> parse decoded
-tryDecode (Encoder (Identity impl)) x = _encoderImpl_decode impl x
+tryDecode (Encoder (Identity impl)) = _encoderImpl_decode impl
 
 -- | Similar to 'decode', once an encoder has been checked so that its check monad is Identity, it
 -- can be used to actually encode by using this. Note that while there's no constraint on the parse monad here,
 -- one should usually be applying decode and encode to the same 'Encoder'
 encode :: Encoder Identity parse decoded encoded -> decoded -> encoded
-encode (Encoder (Identity impl)) x = _encoderImpl_encode impl x
+encode (Encoder (Identity impl)) = _encoderImpl_encode impl
 
 -- | This is a primitive used to build encoders which can't fail to check. It should not be used unless one is
 -- reasonably certain that the law given for 'EncoderImpl' above holds.
@@ -555,11 +554,11 @@ pathComponentEncoder f = Encoder $ do
   unEncoder (pathComponentEncoderImpl (enum1Encoder (extractPathSegment . f)) f')
 
 pathComponentEncoderImpl :: forall check parse p. (Monad check, Monad parse)
-  => (Encoder check parse (Some p) (Maybe Text))
+  => Encoder check parse (Some p) (Maybe Text)
   -> (forall a. p a -> Encoder Identity parse a PageName)
   -> Encoder check parse (R p) PageName
-pathComponentEncoderImpl this rest =
-  chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consEncoder) this rest
+pathComponentEncoderImpl =
+  chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consEncoder)
 
 --NOTE: Naming convention in this module is to always talk about things in the *encoding* direction, never in the *decoding* direction
 
@@ -815,7 +814,7 @@ rPrism
   :: forall f f'
   .  (forall a. Prism' (f a) (f' a))
   -> Prism' (R f) (R f')
-rPrism p = dSumPrism p
+rPrism = dSumPrism
 
 dSumPrism'
   :: forall f g a
@@ -827,7 +826,7 @@ dSumGEqPrism
   :: GEq f
   => f a
   -> Prism' (DSum f g) (g a)
-dSumGEqPrism variant = dSumPrism' $ prism' (\Refl -> variant) (\x -> geq variant x)
+dSumGEqPrism variant = dSumPrism' $ prism' (\Refl -> variant) (geq variant)
 
 -- | Given a 'tag :: f a', make a prism for 'R f'. This generalizes the usual
 -- prisms for a sum type (the ones that 'mkPrisms' would make), just as 'R'
@@ -994,9 +993,9 @@ obeliskRouteSegment r appRouteSegment = case r of
 -- be combined with other such segment encoders before 'pathComponentEncoder' turns it into a proper 'Encoder'.
 resourceRouteSegment :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> SegmentResult check parse a
 resourceRouteSegment = \case
-  ResourceRoute_Static -> PathSegment "static" $ pathOnlyEncoderIgnoringQuery
-  ResourceRoute_Ghcjs -> PathSegment "ghcjs" $ pathOnlyEncoder
-  ResourceRoute_JSaddleWarp -> PathSegment "jsaddle" $ jsaddleWarpRouteEncoder
+  ResourceRoute_Static -> PathSegment "static" pathOnlyEncoderIgnoringQuery
+  ResourceRoute_Ghcjs -> PathSegment "ghcjs" pathOnlyEncoder
+  ResourceRoute_JSaddleWarp -> PathSegment "jsaddle" jsaddleWarpRouteEncoder
   ResourceRoute_Version -> PathSegment "version" $ unitEncoder mempty
 
 data JSaddleWarpRoute :: * -> * where
@@ -1008,7 +1007,7 @@ jsaddleWarpRouteEncoder :: (MonadError Text check, MonadError Text parse) => Enc
 jsaddleWarpRouteEncoder = pathComponentEncoder $ \case
   JSaddleWarpRoute_JavaScript -> PathSegment "jsaddle.js" $ unitEncoder mempty
   JSaddleWarpRoute_WebSocket ->  PathEnd $ unitEncoder mempty
-  JSaddleWarpRoute_Sync -> PathSegment "sync" $ pathOnlyEncoder
+  JSaddleWarpRoute_Sync -> PathSegment "sync" pathOnlyEncoder
 
 instance GShow appRoute => GShow (ObeliskRoute appRoute) where
   gshowsPrec prec = \case
@@ -1084,7 +1083,7 @@ readShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) =>
 readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
 
 integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
-integralEncoder = reviewEncoder (Numeric.Lens.integral)
+integralEncoder = reviewEncoder Numeric.Lens.integral
 
 pathSegmentEncoder :: (MonadError Text parse, Applicative check, Cons as as a a) =>
   Encoder check parse (a, (as, b)) (as, b)
@@ -1159,7 +1158,7 @@ pathFieldEncoder fieldEncoder = unsafeEncoder $ do
       fieldEncoderPure f = toEncoder (DMap.findWithDefault (error "bad") f fieldEncoderPureMap)
   pure $ EncoderImpl
     { _encoderImpl_encode = \(x, rest) -> execWriter $ do
-      _ <- traverseWithField (\f x_i -> tell (pure $ encode (fieldEncoderPure f) x_i) *> pure x_i) x
+      _ <- traverseWithField (\f x_i -> tell (pure $ encode (fieldEncoderPure f) x_i) $> x_i) x
       tell rest
     , _encoderImpl_decode = State.runStateT $ tabulateFieldsA $ \f -> State.get >>= \case
       [] -> throwError $ T.pack "not enough path components"
