@@ -8,9 +8,17 @@
   }
 }:
 with obelisk;
-project ./. ({ ... }: {
+project ./. ({ pkgs, hackGet, ... }: {
   android.applicationId = "systems.obsidian.obelisk.examples.minimal";
   android.displayName = "Obelisk Minimal Example";
   ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";
   ios.bundleName = "Obelisk Minimal Example";
+
+  overrides = self: super: with pkgs.haskell.lib; {
+    obelisk-command = overrideCabal (self.callCabal2nix "obelisk-command" (hackGet ../lib/command) {}) (drv: {
+      librarySystemDepends = (drv.librarySystemDepends or []) ++ [
+        pkgs.ghcid
+      ];
+    });
+  };
 })
