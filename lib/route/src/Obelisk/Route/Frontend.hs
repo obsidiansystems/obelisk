@@ -58,8 +58,6 @@ module Obelisk.Route.Frontend
 
 import Prelude hiding ((.), id)
 
-import Obelisk.Route
-
 import Control.Category (Category (..), (.))
 import Control.Category.Cartesian ((&&&))
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
@@ -71,37 +69,37 @@ import Control.Monad.Ref
 import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Compose
+import Data.Functor.Misc
 import Data.GADT.Compare
+import qualified Data.List as L
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Functor.Compose
-import Data.Functor.Misc
-import Reflex.Class
-import Reflex.Host.Class
-import Reflex.PostBuild.Class
-import Reflex.TriggerEvent.Class
-import Reflex.PerformEvent.Class
-import Reflex.EventWriter.Class
-import Reflex.EventWriter.Base
-import Reflex.Dynamic
-import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
-import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
-import Reflex.Dom.Core
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
+import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
-import Data.Maybe (fromMaybe)
-import qualified Data.List as L
-
+import Reflex.Class
+import Reflex.Dom.Builder.Class
+import Reflex.Dom.Core
+import Reflex.Dynamic
+import Reflex.EventWriter.Base
+import Reflex.EventWriter.Class
+import Reflex.Host.Class
+import Reflex.PerformEvent.Class
+import Reflex.PostBuild.Class
+import Reflex.TriggerEvent.Class
 import Unsafe.Coerce
 
 import Obelisk.Configs
+import Obelisk.Route
 
 infixr 5 :~
 pattern (:~) :: Reflex t => f a -> Dynamic t a -> DSum f (Compose (Dynamic t) Identity)

@@ -140,15 +140,18 @@ import Control.Lens
   , view
   , Wrapped (..)
   )
+
 import Control.Monad.Except
-import Control.Monad.Writer (execWriter, tell)
 import qualified Control.Monad.State.Strict as State
 import Control.Monad.Trans (lift)
+import Control.Monad.Writer (execWriter, tell)
+import Data.Aeson (FromJSON, ToJSON)
+import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
-import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum (DSum (..))
 import Data.Either.Validation (Validation (..))
 import Data.Foldable
 import Data.Functor.Sum
@@ -163,19 +166,17 @@ import Data.Monoid ((<>))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Some (Some(Some))
+import Data.Tabulation
 import Data.Text (Text)
-import Data.Text.Lens (IsText, packed, unpacked)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.Text.Lens (IsText, packed, unpacked)
 import Data.Universe
 import Data.Universe.Some
 import Network.HTTP.Types.URI
 import qualified Numeric.Lens
 import Obelisk.Route.TH
 import Text.Read (readMaybe)
-import Data.Tabulation
-import qualified Data.Aeson as Aeson
-import Data.Aeson (FromJSON, ToJSON)
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
