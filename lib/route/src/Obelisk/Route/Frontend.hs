@@ -87,13 +87,7 @@ import Network.URI
 import Reflex.Class
 import Reflex.Dom.Builder.Class
 import Reflex.Dom.Core
-import Reflex.Dynamic
-import Reflex.EventWriter.Base
-import Reflex.EventWriter.Class
 import Reflex.Host.Class
-import Reflex.PerformEvent.Class
-import Reflex.PostBuild.Class
-import Reflex.TriggerEvent.Class
 import Unsafe.Coerce
 
 import Obelisk.Configs
