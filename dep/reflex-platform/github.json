@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "develop",
+  "branch": "dn-todomvc-exp-core-fixes",
   "private": false,
-  "rev": "c21ec7036c8351185cd2feef9ce577b6a61c4f22",
-  "sha256": "0m4sdpz6qvngralpyprrbvsyi2zmfh2l3q5vhihwfp3842blvbfg"
+  "rev": "93e3f48530c6e3f43c303d62e1a3dec441cb1d12",
+  "sha256": "0zgirydz3rvf2sjgvw8yil0f83wi782757l65x26y3bcdaqkyhmp"
 }
