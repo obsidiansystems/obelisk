@@ -41,7 +41,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Time.Clock (getCurrentTime, addUTCTime)
-import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
 import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
 import qualified Network.HTTP.ReverseProxy as RP
@@ -177,9 +176,8 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
         { _frontendMode_hydrate = True
         , _frontendMode_adjustRoute = False
         }
-      entryPoint = do
+      entryPoint =
         runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
-        syncPoint
   jsaddlePath <- URI.mkPathPiece "jsaddle"
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
   Right (jsaddleWarpRouteValidEncoder :: Encoder Identity (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
