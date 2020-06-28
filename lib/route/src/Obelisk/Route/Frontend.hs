@@ -63,6 +63,7 @@ import Control.Category.Cartesian ((&&&))
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
 import Control.Monad ((<=<))
 import Control.Monad.Fix
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
@@ -110,7 +111,23 @@ instance Monad m => Routed t r (RoutedT t r m) where
 instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m)
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadFix
+    , MonadTrans
+    , MFunctor
+    , NotReady t
+    , MonadHold t
+    , MonadSample t
+    , PostBuild t
+    , TriggerEvent t
+    , MonadIO
+    , MonadReflexCreateTrigger t
+    , HasDocument
+    , DomRenderHook t
+    )
 
 instance MonadReader r' m => MonadReader r' (RoutedT t r m) where
   ask = lift ask
