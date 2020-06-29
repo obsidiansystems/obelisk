@@ -201,6 +201,10 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (EventWriterT t w m)
 
 instance (Monad m, SetRoute t r m) => SetRoute t r (EventWriterT t w m)
 
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (DynamicWriterT t w m)
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (DynamicWriterT t w m)
+
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
 
