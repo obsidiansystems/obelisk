@@ -79,10 +79,11 @@ generateHeader origPath packageInfo =
         then mempty
         else pragma $
           TL.fromText "OPTIONS_GHC " <> mconcat (intersperse (TL.fromText " ") (map TL.fromString optList))
-    optList
+    ghcOptList
       = filter (not . isPrefixOf "-O")
       $ fromMaybe []
       $ lookup GHC (_cabalPackageInfo_compilerOptions packageInfo)
+    optList = _cabalPackageInfo_cppOptions packageInfo <> ghcOptList
 
 lineNumberPragma :: FilePath -> TL.Builder
 lineNumberPragma origPath =
