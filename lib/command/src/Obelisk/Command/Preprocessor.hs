@@ -54,42 +54,42 @@ applyPackages origPath inPath outPath packagePaths' = withFile outPath WriteMode
   where
     hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
 
-
- -- I'm pretty sure there's a certain amount of oversimplification in CabalPackageInfo, so I doubt this is fully robust.
-
 generateHeader :: FilePath -> CabalPackageInfo -> TL.Builder
 generateHeader origPath packageInfo =
     hsExtensions <> ghcOptions <> lineNumberPragma origPath
   where
     hsExtensions =
-      if not (null extList)
-      then TL.fromText "{-# LANGUAGE "
-        <> mconcat (intersperse (TL.fromText ", ") extList)
-        <> TL.fromText " #-}\n"
-      else mempty
+      if null extList
+        then mempty
+        else pragma $ TL.fromText "LANGUAGE " <> mconcat (intersperse (TL.fromText ", ") extList)
     extList = addDefaultLanguage $ concatMap showExt $ _cabalPackageInfo_defaultExtensions packageInfo
     addDefaultLanguage =
       case _cabalPackageInfo_defaultLanguage packageInfo of
         Nothing -> id
         Just x -> case x of
-          UnknownLanguage ext -> ( TL.fromString ext :)
-          ext -> ( TL.fromString (show ext) :)
+          UnknownLanguage ext -> (TL.fromString ext :)
+          ext -> (TL.fromString (show ext) :)
     showExt = \case
       EnableExtension ext -> [TL.fromString (show ext)]
       DisableExtension _ -> []
       UnknownExtension ext -> [TL.fromString ext]
 
     ghcOptions =
-      if not (null optList)
-      then TL.fromText "{-# OPTIONS_GHC "
-        <> mconcat (intersperse (TL.fromText " ") optList)
-        <> TL.fromText " #-}\n"
-      else mempty
-    optList = map TL.fromString
-                $ filter (not . isPrefixOf "-O")
-                $ fromMaybe []
-                $ lookup GHC (_cabalPackageInfo_compilerOptions packageInfo)
+      if null optList
+        then mempty
+        else pragma $
+          TL.fromText "OPTIONS_GHC " <> mconcat (intersperse (TL.fromText " ") (map TL.fromString optList))
+    optList
+      = filter (not . isPrefixOf "-O")
+      $ fromMaybe []
+      $ lookup GHC (_cabalPackageInfo_compilerOptions packageInfo)
 
 lineNumberPragma :: FilePath -> TL.Builder
 lineNumberPragma origPath =
-  TL.fromText "{-# LINE 1 \"" <> TL.fromString origPath <> TL.fromText "\" #-}\n"
+ pragma $ TL.fromText "LINE 1 " <> quoted '"' (TL.fromString origPath)
+
+pragma :: TL.Builder -> TL.Builder
+pragma x = TL.fromText "{-# " <> x <> TL.fromText " #-}\n"
+
+quoted :: Char -> TL.Builder -> TL.Builder
+quoted char x = TL.singleton char <> x <> TL.singleton char
