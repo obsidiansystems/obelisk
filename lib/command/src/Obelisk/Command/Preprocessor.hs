@@ -17,40 +17,39 @@ import System.FilePath (hasTrailingPathSeparator, joinPath, splitPath)
 
 import Obelisk.Command.Run (CabalPackageInfo (..), parseCabalPackage')
 
+-- | This code is intended to be executed via ghci's -pgmF preprocessor option.
+-- The command line arguments are passed in via ghc, which dictates the first three options and meanings
+-- In order for this code to execute, origPath must contain either a '.' character or a '/' character.
+-- (This is to avoid the possibility of the command line syntax conflicting with another ob command)
+-- We do have control over the remaining arguments, but they must be the same for all files.
+-- Thus, the fourth command line argument must be "apply-packages",  which has already been handled.
+-- We assume all the remaining arguments passed in are paths to cabal or hpack package specifications.
+-- Thus we must select among the packagePaths for the file we are going to parse.
 applyPackages :: FilePath -> FilePath -> FilePath -> [FilePath] -> IO ()
-applyPackages origPath inPath outPath packagePaths' = withFile outPath WriteMode $ \outFile -> do
-  -- This code is intended to be executed via ghci's -pgmF preprocessor option
-  -- The command line arguments are passed in via ghc, which dictates the first three options and meanings
-  -- In order for this code to execute, origPath must contain either a '.' character or a '/' character.
-  -- (This is to avoid the possibility of the command line syntax conflicting with another ob command)
-  -- We do have control over the remaining arguments, but they must be the same for all files.
-  -- Thus, the fourth command line argument must be "apply-packages",  which has already been handled.
-  -- We assume all the remaining arguments passed in are paths to cabal or hpack package specifications.
-  -- Thus we must select among the packagePaths for the file we are going to parse.
-
+applyPackages origPath inPath outPath packagePaths' = do
   origPathCanonical <- canonicalizePath origPath
   packagePaths <- traverse canonicalizePath packagePaths'
 
-  let takeDirs = takeWhile hasTrailingPathSeparator
-      packageDirs = sortOn (negate . length . takeDirs) $ map splitPath packagePaths
-      origDir = splitPath origPathCanonical
-      matches = [ joinPath d | d <- packageDirs, takeDirs d `isPrefixOf` origDir ]
+  let
+    takeDirs = takeWhile hasTrailingPathSeparator
+    packageDirs = sortOn (negate . length . takeDirs) $ map splitPath packagePaths
+    origDir = splitPath origPathCanonical
+    matches = [ joinPath d | d <- packageDirs, takeDirs d `isPrefixOf` origDir ]
 
-  -- So the first element of matches is going to be the deepest path to a package spec that contains
+  -- The first element of matches is going to be the deepest path to a package spec that contains
   -- our file as a subdirectory.
-
   case matches of
-    [] ->
-      hPutStrLn stderr $ "Error: Unable to find cabal information for " <> origPath <> "; Skipping preprocessor."
-    packagePath:_ -> do
-      parseCabalPackage' packagePath >>= \case
-        Left err ->
-          hPutStrLn stderr $ "Error: Unable to parse cabal package " <> packagePath <> "; Skipping preprocessor on " <> origPath <> ". Error: " <> show err
-        Right (_warnings, packageInfo) ->
-          hPutTextBuilder outFile (generateHeader origPath packageInfo)
+    [] -> hPutStrLn stderr $ "Error: Unable to find cabal information for " <> origPath <> "; Skipping preprocessor."
+    packagePath:_ -> parseCabalPackage' packagePath >>= \case
+      Left err ->
+        hPutStrLn stderr $ "Error: Unable to parse cabal package " <> packagePath <> "; Skipping preprocessor on " <> origPath <> ". Error: " <> show err
+      Right (_warnings, packageInfo) -> do
+        writeOutput packageInfo inPath outPath
 
-  BL.readFile inPath >>= BL.hPut outFile
-
+writeOutput :: CabalPackageInfo -> FilePath -> FilePath -> IO ()
+writeOutput packageInfo origPath outPath = withFile outPath WriteMode $ \hOut -> do
+  hPutTextBuilder hOut (generateHeader origPath packageInfo)
+  BL.readFile origPath >>= BL.hPut hOut
   where
     hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
 
@@ -86,8 +85,7 @@ generateHeader origPath packageInfo =
     optList = _cabalPackageInfo_cppOptions packageInfo <> ghcOptList
 
 lineNumberPragma :: FilePath -> TL.Builder
-lineNumberPragma origPath =
- pragma $ TL.fromText "LINE 1 " <> quoted '"' (TL.fromString origPath)
+lineNumberPragma origPath = pragma $ TL.fromText "LINE 1 " <> quoted '"' (TL.fromString origPath)
 
 pragma :: TL.Builder -> TL.Builder
 pragma x = TL.fromText "{-# " <> x <> TL.fromText " #-}\n"
