@@ -46,7 +46,7 @@ import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
 import qualified Distribution.System as Dist
-import Distribution.Types.BuildInfo (buildable, defaultExtensions, defaultLanguage, hsSourceDirs, options)
+import Distribution.Types.BuildInfo (buildable, cppOptions, defaultExtensions, defaultLanguage, hsSourceDirs, options)
 import Distribution.Types.CondTree (simplifyCondTree)
 import Distribution.Types.GenericPackageDescription (ConfVar (Arch, Impl, OS), condLibrary)
 import Distribution.Types.Library (libBuildInfo)
@@ -94,6 +94,8 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of globally set languages of the library component
   , _cabalPackageInfo_compilerOptions :: [(CompilerFlavor, [String])]
     -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
+  , _cabalPackageInfo_cppOptions :: [String]
+    -- ^ List of CPP (C Preprocessor) options (e.g. the "cpp-options" field of the cabal file)
   }
 
 -- | 'Bool' with a better name for its purpose.
@@ -350,6 +352,7 @@ parseCabalPackage' pkg = runExceptT $ do
         , _cabalPackageInfo_defaultLanguage =
             defaultLanguage $ libBuildInfo lib
         , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
+        , _cabalPackageInfo_cppOptions = cppOptions $ libBuildInfo lib
         }
     Right Nothing -> throwError "Haskell package has no library component"
     Left (_, errors) ->
