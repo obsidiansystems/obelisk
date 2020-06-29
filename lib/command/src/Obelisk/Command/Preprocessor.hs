@@ -5,6 +5,7 @@ module Obelisk.Command.Preprocessor where
 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Builder as BU
+import Data.Foldable (for_)
 import Data.List (intersperse, isPrefixOf, sortOn)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy.Builder as TL
@@ -38,17 +39,21 @@ applyPackages origPath inPath outPath packagePaths' = do
 
   -- The first element of matches is going to be the deepest path to a package spec that contains
   -- our file as a subdirectory.
-  case matches of
-    [] -> hPutStrLn stderr $ "Error: Unable to find cabal information for " <> origPath <> "; Skipping preprocessor."
+  packageInfo' <- case matches of
+    [] -> do
+      hPutStrLn stderr $ "Error: Unable to find cabal information for " <> origPath <> "; Skipping preprocessor."
+      pure Nothing
     packagePath:_ -> parseCabalPackage' packagePath >>= \case
-      Left err ->
+      Left err -> do
         hPutStrLn stderr $ "Error: Unable to parse cabal package " <> packagePath <> "; Skipping preprocessor on " <> origPath <> ". Error: " <> show err
-      Right (_warnings, packageInfo) -> do
-        writeOutput packageInfo inPath outPath
+        pure Nothing
+      Right (_, packageInfo) -> pure $ Just packageInfo
 
-writeOutput :: CabalPackageInfo -> FilePath -> FilePath -> IO ()
-writeOutput packageInfo origPath outPath = withFile outPath WriteMode $ \hOut -> do
-  hPutTextBuilder hOut (generateHeader origPath packageInfo)
+  writeOutput packageInfo' inPath outPath
+
+writeOutput :: Maybe CabalPackageInfo -> FilePath -> FilePath -> IO ()
+writeOutput packageInfo' origPath outPath = withFile outPath WriteMode $ \hOut -> do
+  for_ packageInfo' $ \packageInfo -> hPutTextBuilder hOut (generateHeader origPath packageInfo)
   BL.readFile origPath >>= BL.hPut hOut
   where
     hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
