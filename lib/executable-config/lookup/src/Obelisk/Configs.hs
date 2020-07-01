@@ -29,6 +29,8 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
+import Control.Monad.Trans.State
+import qualified Control.Monad.Trans.State.Strict as Strict
 import Data.ByteString (ByteString)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -63,6 +65,8 @@ instance HasConfigs m => HasConfigs (PostBuildT t m)
 instance HasConfigs m => HasConfigs (QueryT t q m)
 instance HasConfigs m => HasConfigs (ReaderT r m)
 instance HasConfigs m => HasConfigs (RequesterT t request response m)
+instance HasConfigs m => HasConfigs (StateT w m)
+instance HasConfigs m => HasConfigs (Strict.StateT w m)
 instance HasConfigs m => HasConfigs (StaticDomBuilderT t m)
 instance HasConfigs m => HasConfigs (TriggerEventT t m)
 
