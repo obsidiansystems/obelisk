@@ -20,6 +20,7 @@ module Obelisk.Configs
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Catch
 import Control.Monad.Base
 import Control.Monad.Fix
 import Control.Monad.Primitive
@@ -73,6 +74,7 @@ newtype ConfigsT m a = ConfigsT { unConfigsT :: ReaderT (Map Text ByteString) m 
     , MonadPlus
     , Alternative
     , MonadFix
+    , MonadThrow
     , MonadIO
     , MonadBase m'
     , MonadBaseControl m'
