@@ -23,10 +23,10 @@ import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.Base
 import Control.Monad.Fix
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Ref
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Class
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.State
@@ -84,6 +84,7 @@ newtype ConfigsT m a = ConfigsT { unConfigsT :: ReaderT (Map Text ByteString) m 
     , MonadBaseControl m'
     , MonadRef
     , MonadTrans
+    , MFunctor
     , DomBuilder t
     , MonadHold t
     , MonadReflexCreateTrigger t

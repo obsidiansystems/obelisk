@@ -38,6 +38,7 @@ library
     transformers-base,
     ref-tf,
     primitive,
+    mmorph,
     monad-control,
     reflex,
     reflex-dom,
