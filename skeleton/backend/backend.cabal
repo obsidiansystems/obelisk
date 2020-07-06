@@ -19,7 +19,7 @@ library
 executable backend
   main-is: main.hs
   hs-source-dirs: src-bin
-  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -threaded
   if impl(ghcjs)
     buildable: False
   build-depends: base
