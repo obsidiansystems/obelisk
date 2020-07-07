@@ -74,16 +74,20 @@ in rec {
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
-    mkdir $out
-    cd $out
-    # TODO profiling + static shouldn't break and need an ad-hoc workaround like that
-    ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-    ${if optimizationLevel == null then ''
-      ln -s all.unminified.js all.js
-    '' else ''
-      ${pkgs.closurecompiler}/bin/closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
-      echo "//# sourceMappingURL=all.js.map" >> all.js
-    ''}
+    set -euo pipefail
+    cd '${haskellLib.justStaticExecutables frontend}'
+    shopt -s globstar
+    for f in **/all.js; do
+      dir="$out/$(basename "$(dirname "$f")")"
+      mkdir -p "$dir"
+      ln -s "$(realpath "$f")" "$dir/all.unminified.js"
+      ${if optimizationLevel == null then ''
+        ln -s "$dir/all.unminified.js" "$dir/all.js"
+      '' else ''
+        '${pkgs.closurecompiler}/bin/closure-compiler' --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
+      ''}
+    done
   '';
 
   serverModules = {
@@ -171,9 +175,9 @@ in rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
-      ln -s "${mkAssets assets}" $out/static.assets
-      ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
+      ln -s '${mkAssets assets}' $out/static.assets
+      ln -s '${mkAssets (compressedJs frontend optimizationLevel)}'/* $out
       echo ${version} > $out/version
     '';
 
