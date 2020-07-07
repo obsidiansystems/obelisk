@@ -1,6 +1,5 @@
 .attr-cache
 .cabal-sandbox
-.ghc.environment.*
 *.hi
 *.o
 cabal.project.local
