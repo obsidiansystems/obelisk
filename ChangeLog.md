@@ -1,6 +1,33 @@
 # Revision history for obelisk
 
-This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released, and the date should reflect that release.
+This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
+
+## Unreleased
+
+* ([#715](https://github.com/obsidiansystems/obelisk/pull/715)) In `Obelisk.Route` deprecate `isoEncoder` and `prismEncoder` in favor of more precisely named `viewEncoder` and `reviewEncoder` (respectively) and improve documentation regarding contravariance of `reviewEncoder`.
+* ([#739](https://github.com/obsidiansystems/obelisk/pull/739)) Improve `ob shell` by allowing commands to be passed verbatim after a `--` argument. For example, `ob shell 'run command'` can now be written `ob shell -- run command`.
+* ([#735](https://github.com/obsidiansystems/obelisk/pull/735)) Fix regression causing custom `Prelude`s to break `ob run`/`ob watch`/`ob repl`.
+* ([#737](https://github.com/obsidiansystems/obelisk/pull/737)) Fix bug causing custom `Prelude`s to break `ob profile`.
+* ([#752](https://github.com/obsidiansystems/obelisk/pull/752)) Fix the `ob` command-line tool to return non-zero exit code when underlying processes fail.
+* ([#742](https://github.com/obsidiansystems/obelisk/pull/742), [#57](https://github.com/obsidiansystems/obelisk/pull/57), [#406](https://github.com/obsidiansystems/obelisk/pull/406)) Enable `-dedupe` and `-DGHCJS_BROWSER` in GHCJS builds to make JavaScript output considerably smaller leading to faster load/parse times and faster build times.
+  * **Migration:** New Obelisk projects will automatically benefit from this change, but existing projects need to apply a change similar to [this one](https://github.com/obsidiansystems/obelisk/blob/371cb3302085601c5ec73e9574d51c8b95e3e493/skeleton/frontend/frontend.cabal#L32-L34).
+* ([#742](https://github.com/obsidiansystems/obelisk/pull/742)) Update `reflex-platform` which includes:
+    * A new version of GHCJS where `-dedupe` is fixed.
+
+## v0.8.0.0
+
+* ([#674](https://github.com/obsidiansystems/obelisk/pull/674), [#711](https://github.com/obsidiansystems/obelisk/pull/711)) Introduce a new thunk format to support accessing the thunk's source directly when packed. When packed, thunks have an additional file called `thunk.nix` and `default.nix` is now a thin wrapper around that.
+* ([#665](https://github.com/obsidiansystems/obelisk/pull/665)) Add `--interpret` and `--no-interpret` options to `ob run`/`ob watch`/`ob repl`/`ob shell`. These options allow you to pick which paths will be pre-compiled by `nix` when entering the shell/session and which won't. For example `ob run --no-interpret dep` will ensure that any dependencies found in `./dep` will be built by `nix` before loading the rest of the project into the `ghci` session. The same configuration for `ob shell` will ensure that those packages are built and available in the `ghc` package database inside the shell.
+
+  **NOTE:** `ob shell`'s default behavior is now different. By default it now behaves like `ob run`/`ob watch`/`ob repl` in that it does *not* pre-build any packages whose `.cabal` or `package.yaml` files are found in the project. To regain the previous behavior, use `ob shell --no-interpret . --interpret backend --interpret common --interpret frontend` from the project root.
+* ([#695](https://github.com/obsidiansystems/obelisk/pull/695)) `ob deploy init` now requires that your obelisk project be a clean `git` checkout with pushed changes. It has always required that your obelisk project be a `git` repository, but it did not require that your local changes be committed and pushed. This new requirement is added to ensure users don't accidentally create a deployment pointing to an old version of the project.
+* ([#705](https://github.com/obsidiansystems/obelisk/pull/705)) Add `Obelisk.Route.packTextEncoder` and generalize `Obelisk.Route.unpackTextEncoder` over any `Data.Text.Lens.IsText`.
+* ([#712](https://github.com/obsidiansystems/obelisk/pull/712)) Update [`reflex-platform`](https://github.com/reflex-frp/reflex-platform) to version 0.5.3.0.
+* ([#700](https://github.com/obsidiansystems/obelisk/pull/700)) Ensure `ob init` uses the thunk format of the target obelisk rather than the one currently running the init command. If a user had installed a version of obelisk with a new thunk format, a newly initialized skeleton of an older version would not be able to unpack its own `.obelisk/impl`.
+* ([#693](https://github.com/obsidiansystems/obelisk/pull/693)) Fix a bug where some packages in `.attr-cache` directories would be incorrectly picked up and used instead of the correct ones when using `ob run`/`ob watch`/`ob repl`.
+* ([#709](https://github.com/obsidiansystems/obelisk/pull/709)) Fix a bug in obelisk's preprocessor causing it to incorrectly skip files in some circumstances.
+* ([#663](https://github.com/obsidiansystems/obelisk/pull/663)) Add **experimental** support for [`ghcide`](https://github.com/digital-asset/ghcide). See the README for more information.
+* ([#714](https://github.com/obsidiansystems/obelisk/pull/714)) Miscellaneous improvements to CLI help and logging.
 
 ## v0.7.0.1
 
@@ -47,7 +74,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Improve error messaging when a dependency doesn't have the expected `.cabal` or `package.yaml` file. ([#597](https://github.com/obsidiansystems/obelisk/pull/597))
 * Improve the skeleton in small ways. ([#593](https://github.com/obsidiansystems/obelisk/pull/593), [#589](https://github.com/obsidiansystems/obelisk/pull/589))
 * Fix `ob` commands to again support running from any subdirectory of an obelisk project ([#591](https://github.com/obsidiansystems/obelisk/pull/591))
-* Add `reflex-platform-func` argument to Obelisk's `default.nix`. It defaults to it's prior behavior of using the reflex-platform in in `dep`. ([#612](https://github.com/obsidiansystems/obelisk/pull/612))
+* Add `reflex-platform-func` argument to Obelisk's `default.nix`. It defaults to its prior behavior of using the reflex-platform in in `dep`. ([#612](https://github.com/obsidiansystems/obelisk/pull/612))
 
 ## v0.3.0.0 - 2019-12-20
 

@@ -43,7 +43,7 @@ in rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  obeliskEnvs = pkgs.lib.filterAttrs (k: _: pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs;
+  obeliskEnvs = pkgs.lib.filterAttrs (k: _: k == "tabulation" || pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs; #TODO: use thunkSet https://github.com/reflex-frp/reflex-platform/pull/671
   command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ command.commandRuntimeDeps);
 
@@ -109,6 +109,8 @@ in rec {
       security.acme.certs = if enableHttps then {
         "${routeHost}".email = adminEmail;
       } else {};
+
+      security.acme.${if enableHttps then "acceptTerms" else null} = true;
     };
 
     mkObeliskApp =
@@ -187,6 +189,20 @@ in rec {
           (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
           (serverModules.mkDefaultNetworking args)
           (serverModules.mkObeliskApp args)
+          ./acme.nix  # Backport of ACME upgrades from 20.03
+        ];
+
+        # Backport of ACME upgrades from 20.03
+        disabledModules = [
+          (pkgs.path + /nixos/modules/security/acme.nix)
+        ];
+        nixpkgs.overlays = [
+          (self: super: {
+            lego = (import (builtins.fetchTarball {
+                url = https://github.com/NixOS/nixpkgs-channels/archive/70717a337f7ae4e486ba71a500367cad697e5f09.tar.gz;
+                sha256 = "1sbmqn7yc5iilqnvy9nvhsa9bx6spfq1kndvvis9031723iyymd1";
+              }) {}).lego;
+          })
         ];
       };
     };
@@ -207,13 +223,14 @@ in rec {
             , shellToolOverrides ? _: _: {}
             , withHoogle ? false # Setting this to `true` makes shell reloading far slower
             , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
+            , __withGhcide ? false
             }:
             let
               allConfig = nixpkgs.lib.makeExtensible (self: {
                 base = base';
                 inherit args;
                 userSettings = {
-                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel;
+                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel __withGhcide;
                   staticFiles = if staticFiles == null then self.base + /static else staticFiles;
                 };
                 frontendName = "frontend";
@@ -270,9 +287,17 @@ in rec {
                   self.frontendName
                 ];
 
+                shellToolOverrides = lib.composeExtensions
+                  self.userSettings.shellToolOverrides
+                  (if self.userSettings.__withGhcide
+                    then (import ./haskell-overlays/ghcide.nix)
+                    else (_: _: {})
+                  );
+
                 project = reflexPlatformProject ({...}: self.projectConfig);
                 projectConfig = {
-                  inherit (self.userSettings) shellToolOverrides tools withHoogle;
+                  inherit (self) shellToolOverrides;
+                  inherit (self.userSettings) tools withHoogle;
                   overrides = self.totalOverrides;
                   packages = self.combinedPackages;
                   shells = {
@@ -312,29 +337,33 @@ in rec {
       __unstable__.profiledObRun = let
         profiled = projectOut { inherit system; enableLibraryProfiling = true; };
         exeSource = builtins.toFile "ob-run.hs" ''
+          {-# LANGUAGE NoImplicitPrelude #-}
+          {-# LANGUAGE PackageImports #-}
           module Main where
 
-          import Control.Exception
-          import Reflex.Profiled
-          import System.Environment
+          -- Explicitly import Prelude from base lest there be multiple modules called Prelude
+          import "base" Prelude (IO, (++), read)
 
-          import qualified Obelisk.Run
+          import "base" Control.Exception (finally)
+          import "reflex" Reflex.Profiled (writeProfilingData)
+          import "base" System.Environment (getArgs)
+
+          import qualified "obelisk-run" Obelisk.Run
           import qualified Frontend
           import qualified Backend
 
           main :: IO ()
           main = do
-            args <- getArgs
-            let port = read $ args !! 0
-                assets = args !! 1
-                profileFile = (args !! 2) <> ".rprof"
-            Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
+            [portStr, assets, profFileName] <- getArgs
+            Obelisk.Run.run (read portStr) (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend
+              `finally` writeProfilingData (profFileName ++ ".rprof")
         '';
       in nixpkgs.runCommand "ob-run" {
-        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [p.backend p.frontend])) ];
       } ''
-        mkdir -p $out/bin/
-        ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out/bin/ob-run
+        cp ${exeSource} ob-run.hs
+        mkdir -p $out/bin
+        ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
       '';
 
       linuxExeConfigurable = linuxExe;

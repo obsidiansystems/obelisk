@@ -1,5 +1,5 @@
 name: obelisk-command
-version: 0.7.0.1
+version: 0.8.0.0
 cabal-version: >= 1.8
 build-type: Simple
 
@@ -18,6 +18,7 @@ library
     , either
     , errors
     , exceptions
+    , extra
     , filepath
     , git
     , github
@@ -30,6 +31,7 @@ library
     , megaparsec
     , modern-uri
     , monad-loops
+    , monoidal-containers
     , mtl
     , network
     , network-uri
@@ -37,13 +39,15 @@ library
     , optparse-applicative
     , placeholders
     , process
+    , shell-escape
     , temporary
     , terminal-size
     , text
     , time
     , transformers
-    , unix
+    , unix-compat
     , unordered-containers
+    , utf8-string
     , which
     , yaml
   exposed-modules:
@@ -62,4 +66,4 @@ library
 executable ob
   main-is: src-bin/ob.hs
   build-depends: base, obelisk-command
-  ghc-options: -Wall -O2 -threaded
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -threaded

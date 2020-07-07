@@ -20,6 +20,7 @@ in
     librarySystemDepends = [
       pkgs.jre
       pkgs.nix
+      pkgs.nix-prefetch-git
       (haskellLib.justStaticExecutables self.ghcid)
     ];
   };
@@ -34,6 +35,7 @@ in
       pkgs.coreutils
       pkgs.git
       pkgs.nix
+      pkgs.nix-prefetch-git
       pkgs.rsync
     ];
   };

@@ -10,19 +10,20 @@ module Obelisk.Command.Utils where
 import Control.Applicative hiding (many)
 import Control.Monad.Except
 import Data.Bool (bool)
-import qualified Text.Megaparsec.Char.Lexer as ML
 import Data.Bifunctor
 import Data.Char
 import Data.Either
-import Data.Semigroup ((<>))
+import Data.List (isInfixOf)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe (maybeToList)
+import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
 import System.Exit (ExitCode)
 import System.Which (staticWhich)
+import qualified Text.Megaparsec.Char.Lexer as ML
 import Text.Megaparsec as MP
 import Text.Megaparsec.Char as MP
 
@@ -31,6 +32,12 @@ import Obelisk.CliApp
 
 cp :: FilePath
 cp = $(staticWhich "cp")
+
+mvPath :: FilePath
+mvPath = $(staticWhich "mv")
+
+rmPath :: FilePath
+rmPath = $(staticWhich "rm")
 
 ghcidExePath :: FilePath
 ghcidExePath = $(staticWhich "ghcid")
@@ -46,6 +53,20 @@ nixBuildExePath = $(staticWhich "nix-build")
 
 jreKeyToolPath :: FilePath
 jreKeyToolPath = $(staticWhich "keytool")
+
+nixPrefetchGitPath :: FilePath
+nixPrefetchGitPath = $(staticWhich "nix-prefetch-git")
+
+nixPrefetchUrlPath :: FilePath
+nixPrefetchUrlPath = $(staticWhich "nix-prefetch-url")
+
+-- | Nix syntax requires relative paths to be prefixed by @./@ or
+-- @../@. This will make a 'FilePath' that can be embedded in a Nix
+-- expression.
+toNixPath :: FilePath -> FilePath
+toNixPath root | "/" `isInfixOf` root = root
+               | otherwise = "./" <> root
+
 
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> Bool -> m Bool
@@ -93,7 +114,7 @@ isolateGitProc = setEnvOverride (overrides <>)
       , ("GIT_CONFIG_NOSYSTEM", "1")
       , ("GIT_TERMINAL_PROMPT", "0") -- git 2.3+
       , ("GIT_ASKPASS", "echo") -- pre git 2.3 to just use empty password
-      , ("GIT_SSH_COMMAND", "ssh -o PreferredAuthentications password -o PubkeyAuthentication no -o GSSAPIAuthentication no")
+      , ("GIT_SSH_COMMAND", "ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no -o GSSAPIAuthentication=no")
       ]
 
 -- | Recursively copy a directory using `cp -a` -- TODO: Should use -rT instead of -a

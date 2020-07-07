@@ -10,13 +10,12 @@ module Obelisk.Command.Project
   , nixShellRunConfig
   , nixShellRunProc
   , nixShellWithHoogle
-  , nixShellWithPkgs
+  , nixShellWithoutPkgs
   , obeliskDirName
-  , projectShell
   , toImplDir
-  , toNixPath
   , toObeliskDir
   , withProjectRoot
+  , bashEscape
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
@@ -25,23 +24,25 @@ import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State
 import qualified Data.Aeson as Json
+import qualified Data.ByteString.UTF8 as BSU
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
 import Data.Function ((&), on)
-import Data.List (isInfixOf)
 import Data.Map (Map)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Traversable (for)
 import System.Directory
 import System.Environment (lookupEnv)
 import System.FilePath
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
-import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
-import System.Posix.Files
+import System.PosixCompat.Files
+import System.PosixCompat.Types
+import System.PosixCompat.User
+import Text.ShellEscape (bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -50,7 +51,7 @@ import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (nixExePath, nixBuildExePath)
+import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -96,16 +97,22 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
       | otherwise -> failWith "ob init requires an empty directory. Use the flag --force to init anyway, potentially overwriting files."
   skeleton <- withSpinner "Setting up obelisk" $ do
     liftIO $ createDirectory obDir
+    -- Clone the git source and repack it with the init source obelisk
+    -- The purpose of this is to ensure we use the correct thunk spec.
+    let cloneAndRepack src = do
+          putLog Debug $ "Cloning obelisk into " <> T.pack implDir <> " and repacking using itself"
+          commit <- getLatestRev src
+          gitCloneForThunkUnpack (thunkSourceToGitSource src) (_thunkRev_commit commit) implDir
+          callHandoffOb implDir ["thunk", "pack", implDir]
     case source of
-      InitSource_Default -> createThunkWithLatest implDir obeliskSource
-      InitSource_Branch branch -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+      InitSource_Default -> cloneAndRepack obeliskSource
+      InitSource_Branch branch -> cloneAndRepack $ obeliskSourceWithBranch branch
       InitSource_Symlink path -> do
         let symlinkPath = if isAbsolute path
               then path
               else ".." </> path
         liftIO $ createSymbolicLink symlinkPath implDir
     _ <- nixBuildAttrWithCache implDir "command"
-    --TODO: We should probably handoff to the impl here
     skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
 
     callProcessAndLogOutput (Notice, Error) $
@@ -130,6 +137,24 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     let configDir = "config"
     createDirectoryIfMissing False configDir
     mapM_ (createDirectoryIfMissing False . (configDir </>)) ["backend", "common", "frontend"]
+
+callHandoffOb
+  :: MonadObelisk m
+  => FilePath -- ^ Directory of the obelisk we want to handoff to
+  -> [String] -- ^ Arguments to pass to ob
+  -> m ()
+callHandoffOb dir args = do
+  obeliskCommandPkg <- nixCmd $ NixCmd_Build $ def
+    & nixBuildConfig_outLink .~ OutLink_None
+    & nixCmdConfig_target .~ Target
+      { _target_path = Just dir
+      , _target_attr = Just "command"
+      , _target_expr = Nothing
+      }
+  let impl = obeliskCommandPkg </> "bin" </> "ob"
+  -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
+  putLog Debug $ "Running '" <> T.pack (unwords args) <> "' with " <> T.pack impl
+  callProcessAndLogOutput (Debug, Warning) (proc impl ("--no-handoff" : args))
 
 --TODO: Allow the user to ignore our security concerns
 -- | Find the Obelisk implementation for the project at the given path
@@ -249,13 +274,6 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
     fileGroupWritable = fileMode s .&. 0o020 == 0o020
     umaskGroupWritable = umask .&. 0o020 == 0
 
--- | Nix syntax requires relative paths to be prefixed by @./@ or
--- @../@. This will make a 'FilePath' that can be embedded in a Nix
--- expression.
-toNixPath :: FilePath -> FilePath
-toNixPath root | "/" `isInfixOf` root = root
-               | otherwise = "./" <> root
-
 nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
 nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
@@ -264,49 +282,51 @@ nixShellRunConfig root isPure command = do
   pure $ def
     & nixShellConfig_pure .~ isPure
     & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
-    & nixShellConfig_run .~ (command <&> \c -> mconcat
-      [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
-      , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
-      , c
+    & nixShellConfig_run .~ (command <&> \cs -> unwords $ concat
+      [ ["export", BSU.toString . bytes . bash $ "NIX_PATH=nixpkgs=" <> encodeUtf8 nixpkgsPath, ";"]
+      , maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
+      , [cs]
       ])
+
+bashEscape :: String -> String
+bashEscape = BSU.toString . bytes . bash . BSU.fromString
 
 nixShellRunProc :: NixShellConfig -> ProcessSpec
 nixShellRunProc cfg = setDelegateCtlc True $ proc "nix-shell" $ runNixShellConfig cfg
 
-nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Bool -> Map Text FilePath -> Maybe String -> m ()
-nixShellWithPkgs root isPure chdirToRoot packageNamesAndPaths command = do
+nixShellWithoutPkgs
+  :: MonadObelisk m
+  => FilePath -- ^ Path to project root
+  -> Bool -- ^ Should this be a pure shell?
+  -> Bool -- ^ Should we chdir to the package root in the shell?
+  -> Map Text FilePath -- ^ Package names mapped to their paths
+  -> String -- ^ Shell attribute to use (e.g. @"ghc"@, @"ghcjs"@, etc.)
+  -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
+  -> m ()
+nixShellWithoutPkgs root isPure chdirToRoot packageNamesAndPaths shellAttr command = do
   packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
   defShellConfig <- nixShellRunConfig root isPure command
   let setCwd_ = if chdirToRoot then setCwd (Just root) else id
-  (_, _, _, ph) <- createProcess_ "nixShellWithPkgs" $ setCwd_ $ nixShellRunProc $ defShellConfig
+  runProcess_ $ setCwd_ $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
+        "{root, pkgs, shell}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
           \shellPackages = builtins.fromJSON pkgs;\
-        \})).project.shells.ghc"
+        \})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~
         [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
         , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
+        , strArg "shell" shellAttr
         ]
-  void $ waitForProcess ph
 
 nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 nixShellWithHoogle root isPure shell' command = do
   defShellConfig <- nixShellRunConfig root isPure command
-  (_, _, _, ph) <- createProcess_ "nixShellWithHoogle" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
+  runProcess_ $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
         "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
           \userSettings = super.userSettings // { withHoogle = true; };\
         \})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
-  void $ waitForProcess ph
-
-projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
-projectShell root isPure shellName command = do
-  defShellConfig <- nixShellRunConfig root isPure command
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
-    & nixShellConfig_common . nixCmdConfig_target . target_path ?~ "default.nix"
-    & nixShellConfig_common . nixCmdConfig_target . target_attr ?~ ("shells." <> shellName)
-  void $ waitForProcess ph
 
 findProjectAssets :: MonadObelisk m => FilePath -> m Text
 findProjectAssets root = do
