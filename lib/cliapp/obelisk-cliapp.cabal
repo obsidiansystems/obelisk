@@ -19,10 +19,12 @@ library
     , monad-loops
     , mtl
     , process
+    , shell-escape
     , terminal-size
     , text
     , time
     , transformers
+    , utf8-string
   exposed-modules:
     Obelisk.CliApp
   other-modules:
@@ -32,4 +34,4 @@ library
     Obelisk.CliApp.TerminalString
     Obelisk.CliApp.Theme
     Obelisk.CliApp.Types
-  ghc-options: -Wall -fobject-code
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O

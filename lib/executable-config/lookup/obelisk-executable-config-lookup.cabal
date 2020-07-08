@@ -31,15 +31,18 @@ library
     base64-bytestring,
     bytestring,
     containers,
+    exceptions,
     filepath,
-    text,
-    transformers,
-    transformers-base,
-    ref-tf,
-    primitive,
+    jsaddle,
+    mmorph,
     monad-control,
-    reflex,
+    mtl,
+    primitive,
+    ref-tf,
     reflex-dom-core,
-    jsaddle
+    reflex,
+    text,
+    transformers-base,
+    transformers
 
   ghc-options: -Wall

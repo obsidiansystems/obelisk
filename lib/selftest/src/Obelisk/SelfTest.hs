@@ -19,6 +19,7 @@ import Data.Bool (bool)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (for_)
 import Data.Function (fix)
+import Data.List (isInfixOf)
 import qualified Data.Map as Map
 import Data.Semigroup ((<>))
 import qualified Data.Set as Set
@@ -205,6 +206,22 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
     it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir' Nothing httpManager
     it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir' (Just "frontend") httpManager
 
+  describe "ob repl" $ do
+    it "accepts stdin commands" $ inTmpObInit $ \_ -> do
+      setStdin "print 3\n:q"
+      output <- runOb ["repl"]
+      liftIO $ assertBool "" $
+        [ "*Obelisk.Run Obelisk.Run Frontend Backend> 3"
+        , "*Obelisk.Run Obelisk.Run Frontend Backend> Leaving GHCi."
+        ] `isInfixOf` T.lines (T.strip output)
+    it "works with custom Prelude" $ inTmpObInit $ \_ -> do
+      writefile "common/src/Prelude.hs"
+        "{-# LANGUAGE PackageImports #-} module Prelude (module X) where import \"base\" Prelude as X"
+      setStdin ":q"
+      output <- runOb ["repl"]
+      liftIO $ assertBool "" $
+        "*Obelisk.Run Obelisk.Run Frontend Backend> Leaving GHCi." `T.isInfixOf` output
+
   describe "obelisk project" $ parallel $ do
     it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskRepoReadOnly]
     it "can build obelisk skeleton" $ inTmpObInit $ \_ -> nixBuild ["-A", "skeleton", toTextIgnore obeliskRepoReadOnly]
@@ -243,7 +260,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       uu <- update
       assertRevEQ u uu
 
-    it "can run 'ob doc'" $ inTmpObInit $ \_ -> runOb ["doc", "reflex"]
+    it "can run 'ob doc'" $ inTmpObInit $ \_ -> runOb_ ["doc", "reflex"]
 
   describe "ob thunk pack/unpack" $ parallel $ do
     it "has thunk pack and unpack inverses" $ inTmpObInitWithImplCopy $ \_ -> do
@@ -305,6 +322,11 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       startingContents <- checkDir dir
       void $ errExit False $ runOb ["thunk", "update", toTextIgnore dir, "--branch", "dumble-palooza"]
       checkDir dir >>= liftIO . assertEqual "" startingContents
+
+  describe "ob shell" $ parallel $ do
+    it "works with --" $ inTmpObInit $ \_ -> do
+      output <- runOb ["shell", "--", "ghc-pkg", "list"]
+      liftIO $ assertBool "Unexpected output from ob shell" $ ("Cabal-" `T.isInfixOf` output) && ("ghc-" `T.isInfixOf` output)
 
   describe "ob hoogle" $ {- NOT parallel -} do
     it "starts a hoogle server on the given port" $ inTmpObInit $ \_ -> do
