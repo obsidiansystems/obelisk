@@ -18,18 +18,19 @@ module Obelisk.Configs
   , getTextConfig
   ) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.Catch
-import Control.Monad.Base
-import Control.Monad.Fix
-import Control.Monad.Morph
-import Control.Monad.Primitive
-import Control.Monad.Ref
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Control
-import Control.Monad.Trans.Reader
-import Control.Monad.Trans.State
+import Control.Applicative (Alternative)
+import Control.Monad (MonadPlus)
+import Control.Monad.Base (MonadBase)
+import Control.Monad.Catch (MonadThrow)
+import Control.Monad.Fix (MonadFix)
+import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Morph (MFunctor)
+import Control.Monad.Primitive (PrimMonad, PrimState, primitive)
+import Control.Monad.Ref (MonadRef)
+import Control.Monad.Trans (MonadTrans, lift)
+import Control.Monad.Trans.Control (MonadBaseControl)
+import Control.Monad.Trans.Reader (ReaderT (..), ask, mapReaderT)
+import Control.Monad.Trans.State (StateT)
 import qualified Control.Monad.Trans.State.Strict as Strict
 import Data.ByteString (ByteString)
 import Data.Map (Map)
@@ -37,8 +38,17 @@ import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import Reflex
-import Reflex.Host.Class
-import Reflex.Dom
+import Reflex.Host.Class (MonadReflexCreateTrigger)
+import Reflex.Dom.Core
+  ( DomBuilder
+  , DomRenderHook
+  , HasDocument
+  , HasJS
+  , HasJSContext
+  , Prerender (Client)
+  , StaticDomBuilderT
+  , prerender
+  )
 #ifndef ghcjs_HOST_OS
 import Language.Javascript.JSaddle (MonadJSM)
 #endif
