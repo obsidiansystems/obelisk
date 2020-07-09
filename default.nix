@@ -328,40 +328,39 @@ in rec {
               });
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
-      mainProjectOut = projectOut { inherit system; };
+      projectOutHost = projectOut { inherit system; };
       serverOn = projectInst: version: serverExe
         projectInst.ghc.backend
-        mainProjectOut.ghcjs.frontend
+        projectOutHost.ghcjs.frontend
         projectInst.passthru.staticFiles
         projectInst.passthru.__closureCompilerOptimizationLevel
         version;
-      linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
-    in mainProjectOut // {
-      __unstable__.profiledObRun = let
-        profiled = projectOut { inherit system; enableLibraryProfiling = true; };
-        exeSource = builtins.toFile "ob-run.hs" ''
-          {-# LANGUAGE NoImplicitPrelude #-}
-          {-# LANGUAGE PackageImports #-}
-          module Main where
+      profiledObRun =
+        let
+          profiled = projectOut { inherit system; enableLibraryProfiling = true; };
+          exeSource = builtins.toFile "ob-run-profiled.hs" ''
+            {-# LANGUAGE NoImplicitPrelude #-}
+            {-# LANGUAGE PackageImports #-}
+            module Main where
 
-          -- Explicitly import Prelude from base lest there be multiple modules called Prelude
-          import "base" Prelude (IO, (++), read)
+            -- Explicitly import Prelude from base lest there be multiple modules called Prelude
+            import "base" Prelude (IO, (++), read)
 
-          import "base" Control.Exception (finally)
-          import "reflex" Reflex.Profiled (writeProfilingData)
-          import "base" System.Environment (getArgs)
+            import "base" Control.Exception (finally)
+            import "reflex" Reflex.Profiled (writeProfilingData)
+            import "base" System.Environment (getArgs)
 
-          import qualified "obelisk-run" Obelisk.Run
-          import qualified Frontend
-          import qualified Backend
+            import qualified "obelisk-run" Obelisk.Run
+            import qualified Frontend
+            import qualified Backend
 
-          main :: IO ()
-          main = do
-            [portStr, assets, profFileName] <- getArgs
-            Obelisk.Run.run (read portStr) (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend
-              `finally` writeProfilingData (profFileName ++ ".rprof")
-        '';
+            main :: IO ()
+            main = do
+              [portStr, assets, profFileName] <- getArgs
+              Obelisk.Run.run (read portStr) (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend
+                `finally` writeProfilingData (profFileName ++ ".rprof")
+          '';
       in nixpkgs.runCommand "ob-run" {
         buildInputs = [ (profiled.ghc.ghcWithPackages (p: [p.backend p.frontend])) ];
       } ''
@@ -369,14 +368,16 @@ in rec {
         mkdir -p $out/bin
         ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
       '';
-
-      linuxExeConfigurable = linuxExe;
-      linuxExe = linuxExe dummyVersion;
-      exe = serverOn mainProjectOut dummyVersion;
+    in projectOutHost // lib.makeExtensible (self: {
+      __unstable__.profiledObRun = profiledObRun;
+      exeConfigurable = { system, version }: serverOn (projectOut { inherit system; }) version;
+      exe = self.exeConfigurable { inherit system; version = dummyVersion; };
+      linuxExeConfigurable = version: self.exeConfigurable { system = "x86_64-linux"; inherit version; };
+      linuxExe = self.linuxExeConfigurable dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
-        server (args // { exe = linuxExe version; });
+        server (args // { exe = self.linuxExeConfigurable version; });
       obelisk = import (base' + "/.obelisk/impl") {};
-    };
+    });
   haskellPackageSets = {
     inherit (reflex-platform) ghc ghcjs;
   };
