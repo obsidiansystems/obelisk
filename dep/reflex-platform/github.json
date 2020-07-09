@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "develop",
+  "branch": "eac@tweaks-from-wrinkl",
   "private": false,
-  "rev": "f0fd7b3cc5e3a03c421d80902e78081b0f0fad39",
-  "sha256": "08038d2d3wlh1v31yfa2bv069xqn3c2zcm99lhf4a3dyx9dvnwh3"
+  "rev": "139a77e5ee1801058e5bcf92ab4037d37117e794",
+  "sha256": "1zcnx9479xjj7s5ipjvmhpgbh1aicaqqhbdqbl03v37k2dmj3a4x"
 }
