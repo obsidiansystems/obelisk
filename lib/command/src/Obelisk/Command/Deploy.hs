@@ -17,6 +17,7 @@ import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
 import qualified Data.Map as Map
+import Data.Maybe (isJust)
 import qualified Data.Set as Set
 import Data.String.Here.Interpolated (i)
 import qualified Data.Text as T
@@ -125,14 +126,15 @@ deployPush deployPath getNixBuilders = do
   route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
   routeHost <- getHostFromRoute enableHttps route
   let srcPath = deployPath </> "src"
-  thunkPtr <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed _ ptr) -> return ptr
+  thunkPtr' <- readThunk srcPath >>= \case
+    Right (ThunkData_Packed _ ptr) -> return $ Just ptr
     Right ThunkData_Checkout -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
-        False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
+        True -> Just <$> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
+        False -> Nothing <$ putLog Warning "Skipping packing of src thunk; won't be able to automatically commit this deployment"
+          -- failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
-  let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
+  let version' = show . _thunkRev_commit . _thunkPtr_rev <$> thunkPtr'
   builders <- getNixBuilders
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile
@@ -149,7 +151,7 @@ deployPush deployPath getNixBuilders = do
         [ strArg "hostName" host
         , strArg "adminEmail" adminEmail
         , strArg "routeHost" routeHost
-        , strArg "version" version
+        , strArg "version" $ maybe "Deployment was done with a dirty source tree" id version'
         , boolArg "enableHttps" enableHttps
         ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
@@ -179,13 +181,14 @@ deployPush deployPath getNixBuilders = do
             , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
             ]
         ]
-  isClean <- checkGitCleanStatus deployPath True
-  when (not isClean) $ do
-    withSpinner "Committing changes to Git" $ do
-      callProcessAndLogOutput (Debug, Error) $ proc "git"
-        ["-C", deployPath, "add", "."]
-      callProcessAndLogOutput (Debug, Error) $ proc "git"
-        ["-C", deployPath, "commit", "-m", "New deployment"]
+  when (isJust version') $ do
+    isClean <- checkGitCleanStatus deployPath True
+    when (not isClean) $ do
+      withSpinner "Committing changes to Git" $ do
+        callProcessAndLogOutput (Debug, Error) $ proc "git"
+          ["-C", deployPath, "add", "."]
+        callProcessAndLogOutput (Debug, Error) $ proc "git"
+          ["-C", deployPath, "commit", "-m", "New deployment"]
   putLog Notice $ "Deployed => " <> T.pack route
   where
     callProcess' envMap cmd args = do
