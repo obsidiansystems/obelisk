@@ -298,8 +298,7 @@ readThunkWith specTypes dir = do
       Left e -> putLog Debug [i|Thunk specification ${_thunkSpec_name spec} did not match ${dir}: ${e}|] *> loop rest
       x@(Right _) -> x <$ putLog Debug [i|Thunk specification ${_thunkSpec_name spec} matched ${dir}|]
 
--- | Read a thunk and validate that it is exactly a packed thunk.
--- If additional data is present, fail.
+-- | Read a packed or unpacked thunk based on predefined thunk specifications.
 readThunk :: (MonadObelisk m) => FilePath -> m (Either ReadThunkError ThunkData)
 readThunk = readThunkWith thunkSpecTypes
 
