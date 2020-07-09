@@ -26,9 +26,8 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Containers.ListUtils (nubOrd)
 import Data.Default
 import Data.Either.Combinators (fromRight', rightToMaybe)
-import Data.Foldable (toList)
+import Data.Foldable (for_, toList)
 import Data.Function ((&))
-import Data.Functor ((<&>))
 import Data.Git.Ref (Ref)
 import qualified Data.Git.Ref as Ref
 import qualified Data.List as L
@@ -238,35 +237,38 @@ matchThunkSpecToDir
   -> Set FilePath -- ^ Set of file paths relative to the given directory
   -> m ThunkData
 matchThunkSpecToDir thunkSpec dir dirFiles = do
-  case nonEmpty (toList $ dirFiles `Set.difference` expectedPaths) of
-    Just fs -> throwError $ ReadThunkError_UnrecognizedPaths $ (dir </>) <$> fs
-    Nothing -> pure ()
-  case nonEmpty (toList $ requiredPaths `Set.difference` dirFiles) of
-    Just fs -> throwError $ ReadThunkError_MissingPaths $ (dir </>) <$> fs
-    Nothing -> pure ()
-  datas <- fmap toList $ flip Map.traverseMaybeWithKey (_thunkSpec_files thunkSpec) $ \expectedPath -> \case
-    ThunkFileSpec_AttrCache -> Nothing <$ dirMayExist expectedPath
-    ThunkFileSpec_CheckoutIndicator -> liftIO (doesDirectoryExist (dir </> expectedPath)) <&> \case
-      False -> Nothing
-      True -> Just ThunkData_Checkout
-    ThunkFileSpec_FileMatches expectedContents -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
-      actualContents <- liftIO (T.readFile $ dir </> expectedPath)
-      case T.strip expectedContents == T.strip actualContents of
-        True -> pure Nothing
-        False -> throwError $ ReadThunkError_FileDoesNotMatch (dir </> expectedPath) expectedContents
-    ThunkFileSpec_Ptr parser -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
-      let path = dir </> expectedPath
-      liftIO (doesFileExist path) >>= \case
-        False -> pure Nothing
-        True -> do
-          actualContents <- liftIO $ LBS.readFile path
-          case parser actualContents of
-            Right v -> pure $ Just (ThunkData_Packed thunkSpec v)
-            Left e -> throwError $ ReadThunkError_UnparseablePtr (dir </> expectedPath) e
+  isCheckout <- fmap or $ flip Map.traverseWithKey (_thunkSpec_files thunkSpec) $ \expectedPath -> \case
+    ThunkFileSpec_CheckoutIndicator -> liftIO (doesDirectoryExist (dir </> expectedPath))
+    _ -> pure False
+  case isCheckout of
+    True -> pure ThunkData_Checkout
+    False -> do
+      for_ (nonEmpty (toList $ dirFiles `Set.difference` expectedPaths)) $ \fs ->
+        throwError $ ReadThunkError_UnrecognizedPaths $ (dir </>) <$> fs
+      for_ (nonEmpty (toList $ requiredPaths `Set.difference` dirFiles)) $ \fs ->
+        throwError $ ReadThunkError_MissingPaths $ (dir </>) <$> fs
+      datas <- fmap toList $ flip Map.traverseMaybeWithKey (_thunkSpec_files thunkSpec) $ \expectedPath -> \case
+        ThunkFileSpec_AttrCache -> Nothing <$ dirMayExist expectedPath
+        ThunkFileSpec_CheckoutIndicator -> pure Nothing -- Handled above
+        ThunkFileSpec_FileMatches expectedContents -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
+          actualContents <- liftIO (T.readFile $ dir </> expectedPath)
+          case T.strip expectedContents == T.strip actualContents of
+            True -> pure Nothing
+            False -> throwError $ ReadThunkError_FileDoesNotMatch (dir </> expectedPath) expectedContents
+        ThunkFileSpec_Ptr parser -> handle (\(e :: IOError) -> throwError $ ReadThunkError_FileError e) $ do
+          let path = dir </> expectedPath
+          liftIO (doesFileExist path) >>= \case
+            False -> pure Nothing
+            True -> do
+              actualContents <- liftIO $ LBS.readFile path
+              case parser actualContents of
+                Right v -> pure $ Just (thunkSpec, v)
+                Left e -> throwError $ ReadThunkError_UnparseablePtr (dir </> expectedPath) e
 
-  case nonEmpty datas of
-    Nothing -> throwError ReadThunkError_UnrecognizedThunk
-    Just xs -> fold1WithM xs $ \a b -> either throwError pure (mergeThunkData a b)
+      uncurry ThunkData_Packed <$> case nonEmpty datas of
+        Nothing -> throwError ReadThunkError_UnrecognizedThunk
+        Just xs -> fold1WithM xs $ \a@(_, ptrA) (_, ptrB) ->
+          if ptrA == ptrB then pure a else throwError $ ReadThunkError_AmbiguousPackedState ptrA ptrB
   where
     rootPathsOnly = Set.fromList . mapMaybe takeRootDir . Map.keys
     takeRootDir = fmap NonEmpty.head . nonEmpty . splitPath
@@ -282,15 +284,6 @@ matchThunkSpecToDir thunkSpec dir dirFiles = do
       True -> throwError $ ReadThunkError_UnrecognizedPaths $ expectedPath :| []
       False -> pure ()
 
-    -- Combine 'ThunkData' from different files, preferring "Checkout" over "Packed"
-    mergeThunkData ThunkData_Checkout ThunkData_Checkout = Right ThunkData_Checkout
-    mergeThunkData ThunkData_Checkout ThunkData_Packed{} = Left bothPackedAndUnpacked
-    mergeThunkData ThunkData_Packed{} ThunkData_Checkout = Left bothPackedAndUnpacked
-    mergeThunkData a@(ThunkData_Packed _ ptrA) (ThunkData_Packed _ ptrB) =
-      if ptrA == ptrB then Right a else Left $ ReadThunkError_AmbiguousPackedState ptrA ptrB
-
-    bothPackedAndUnpacked = ReadThunkError_UnrecognizedState "Both packed data and checkout present"
-
     fold1WithM (x :| xs) f = foldM f x xs
 
 readThunkWith
@@ -305,8 +298,7 @@ readThunkWith specTypes dir = do
       Left e -> putLog Debug [i|Thunk specification ${_thunkSpec_name spec} did not match ${dir}: ${e}|] *> loop rest
       x@(Right _) -> x <$ putLog Debug [i|Thunk specification ${_thunkSpec_name spec} matched ${dir}|]
 
--- | Read a thunk and validate that it is exactly a packed thunk.
--- If additional data is present, fail.
+-- | Read a packed or unpacked thunk based on predefined thunk specifications.
 readThunk :: (MonadObelisk m) => FilePath -> m (Either ReadThunkError ThunkData)
 readThunk = readThunkWith thunkSpecTypes
 
