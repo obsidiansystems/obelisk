@@ -19,8 +19,12 @@ in
   obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (obeliskCleanSource ../lib/command) {}) {
     librarySystemDepends = [
       pkgs.jre
+      pkgs.git
       pkgs.nix
       pkgs.nix-prefetch-git
+      pkgs.openssh
+      pkgs.rsync
+      pkgs.which
       (haskellLib.justStaticExecutables self.ghcid)
     ];
   };

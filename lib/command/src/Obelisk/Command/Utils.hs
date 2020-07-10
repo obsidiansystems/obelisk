@@ -39,6 +39,9 @@ mvPath = $(staticWhich "mv")
 rmPath :: FilePath
 rmPath = $(staticWhich "rm")
 
+mkdirPath :: FilePath
+mkdirPath = $(staticWhich "mkdir")
+
 ghcidExePath :: FilePath
 ghcidExePath = $(staticWhich "ghcid")
 
@@ -59,6 +62,32 @@ nixPrefetchGitPath = $(staticWhich "nix-prefetch-git")
 
 nixPrefetchUrlPath :: FilePath
 nixPrefetchUrlPath = $(staticWhich "nix-prefetch-url")
+
+nixShellPath :: FilePath
+nixShellPath = $(staticWhich "nix-shell")
+
+rsyncPath :: FilePath
+rsyncPath = $(staticWhich "rsync")
+
+sshPath :: FilePath
+sshPath = $(staticWhich "ssh")
+
+gitPath :: FilePath
+gitPath = $(staticWhich "git")
+
+whichPath :: FilePath
+whichPath = $(staticWhich "which")
+
+sshKeygenPath :: FilePath
+sshKeygenPath = $(staticWhich "ssh-keygen")
+
+-- $(staticWhich "docker") was intentionally omitted, at least for now
+-- One concern is that I don't know how particular docker is about having the
+-- CLI exe match the version of the docker daemon, which is largely outside of
+-- the control of obelisk-command.
+-- TODO: Investigate the tradeoffs associated with this choice
+dockerPath :: FilePath
+dockerPath = "docker"
 
 -- | Nix syntax requires relative paths to be prefixed by @./@ or
 -- @../@. This will make a 'FilePath' that can be embedded in a Nix
@@ -97,7 +126,7 @@ initGit repo = do
   git ["commit", "-m", "Initial commit."]
 
 gitProcNoRepo :: [String] -> ProcessSpec
-gitProcNoRepo args = setEnvOverride (M.singleton "GIT_TERMINAL_PROMPT" "0" <>) $ proc "git" args
+gitProcNoRepo args = setEnvOverride (M.singleton "GIT_TERMINAL_PROMPT" "0" <>) $ proc gitPath args
 
 gitProc :: FilePath -> [String] -> ProcessSpec
 gitProc repo = gitProcNoRepo . runGitInDir
