@@ -26,7 +26,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.Containers.ListUtils (nubOrd)
 import Data.Default
 import Data.Either.Combinators (fromRight', rightToMaybe)
-import Data.Foldable (toList)
+import Data.Foldable (toList, for_)
 import Data.Function ((&))
 import Data.Functor ((<&>))
 import Data.Git.Ref (Ref)
@@ -63,6 +63,18 @@ import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Utils
 
+data ThunkOption = ThunkOption
+  { _thunkOption_thunks :: !(NonEmpty FilePath)
+  , _thunkOption_preserveSymlinks :: !Bool
+  , _thunkOption_command :: !ThunkCommand
+  } deriving Show
+
+data ThunkCommand
+  = ThunkCommand_Update !ThunkUpdateConfig
+  | ThunkCommand_Unpack
+  | ThunkCommand_Pack !ThunkPackConfig
+  deriving Show
+
 --TODO: Support symlinked thunk data
 data ThunkData
    = ThunkData_Packed ThunkSpec ThunkPtr
@@ -93,6 +105,16 @@ data ThunkSource
    -- | A plain repo source
    | ThunkSource_Git GitSource
    deriving (Show, Eq, Ord)
+
+runThunkCommand :: MonadObelisk m => ThunkOption -> m ()
+runThunkCommand to =
+  case _thunkOption_command to of
+    ThunkCommand_Update config -> for_ thunks (updateThunkToLatest preserveSymlinks config)
+    ThunkCommand_Unpack -> for_ thunks (unpackThunk preserveSymlinks)
+    ThunkCommand_Pack config -> for_ thunks (packThunk preserveSymlinks config)
+    where
+      thunks = _thunkOption_thunks to
+      preserveSymlinks = _thunkOption_preserveSymlinks to
 
 thunkSourceToGitSource :: ThunkSource -> GitSource
 thunkSourceToGitSource = \case
@@ -349,16 +371,31 @@ parseGitSource v = do
     , _gitSource_private = fromMaybe False private
     }
 
-overwriteThunk :: MonadObelisk m => FilePath -> ThunkPtr -> m ()
-overwriteThunk target thunk = do
+overwriteThunk :: MonadObelisk m => Bool -> FilePath -> ThunkPtr -> m ()
+overwriteThunk preserveSymlinks target thunk = do
   -- Ensure that this directory is a valid thunk (i.e. so we aren't losing any data)
   readThunk target >>= \case
     Left e -> failWith [i|Invalid thunk at ${target}: ${e}|]
     Right _ -> pure ()
 
+  unsafeOverwriteThunk preserveSymlinks target thunk
+
+unsafeOverwriteThunk :: MonadObelisk m => Bool -> FilePath -> ThunkPtr -> m ()
+unsafeOverwriteThunk preserveSymlinks target thunk = do
   --TODO: Is there a safer way to do this overwriting?
-  liftIO $ removePathForcibly target
+  removeThunkPath preserveSymlinks target
   createThunk target $ Right thunk
+
+removeThunkPath :: MonadIO m => Bool -> FilePath -> m ()
+removeThunkPath preserveSymlinks target = liftIO $ do
+  if preserveSymlinks
+    then do
+      ps <- listDirectory target
+      forM_ ps $ \p -> do
+        removePathForcibly (target </> p)
+    else do
+      putStrLn ("removing " ++ show target)
+      removePathForcibly target
 
 thunkPtrToSpec :: ThunkPtr -> ThunkSpec
 thunkPtrToSpec thunk = case _thunkPtr_source thunk of
@@ -434,8 +471,8 @@ createThunkWithLatest target s = do
     , _thunkPtr_rev = rev
     }
 
-updateThunkToLatest :: MonadObelisk m => ThunkUpdateConfig -> FilePath -> m ()
-updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = spinner $ do
+updateThunkToLatest :: MonadObelisk m => Bool -> ThunkUpdateConfig -> FilePath -> m ()
+updateThunkToLatest preserveSymlinks (ThunkUpdateConfig mBranch thunkConfig) target = spinner $ do
   checkThunkDirectory target
   -- check to see if thunk should be updated to a specific branch or just update it's current branch
   case mBranch of
@@ -447,23 +484,23 @@ updateThunkToLatest (ThunkUpdateConfig mBranch thunkConfig) target = spinner $ d
           ThunkData_Checkout -> failWith "cannot update an unpacked thunk"
       let src = _thunkPtr_source ptr
       rev <- getLatestRev src
-      overwriteThunk overwrite $ modifyThunkPtrByConfig thunkConfig $ ThunkPtr
+      unsafeOverwriteThunk preserveSymlinks overwrite $ modifyThunkPtrByConfig thunkConfig $ ThunkPtr
         { _thunkPtr_source = src
         , _thunkPtr_rev = rev
         }
     Just branch -> readThunk target >>= \case
       Left err -> failWith [i|Thunk update: ${err}|]
       Right c -> case c of
-        ThunkData_Packed _ t -> setThunk thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
+        ThunkData_Packed _ t -> setThunk preserveSymlinks thunkConfig target (thunkSourceToGitSource $ _thunkPtr_source t) branch
         ThunkData_Checkout -> failWith [i|Thunk located at ${target} is unpacked. Use 'ob thunk pack' on the desired directory and then try 'ob thunk update' again.|]
   where
     spinner = withSpinner' ("Updating thunk " <> T.pack target <> " to latest") (pure $ const $ "Thunk " <> T.pack target <> " updated to latest")
 
-setThunk :: MonadObelisk m => ThunkConfig -> FilePath -> GitSource -> String -> m ()
-setThunk thunkConfig target gs branch = do
+setThunk :: MonadObelisk m => Bool -> ThunkConfig -> FilePath -> GitSource -> String -> m ()
+setThunk preserveSymlinks thunkConfig target gs branch = do
   newThunkPtr <- uriThunkPtr (_gitSource_url gs) (_thunkConfig_private thunkConfig) (Just $ T.pack branch) Nothing
-  overwriteThunk target newThunkPtr
-  updateThunkToLatest (ThunkUpdateConfig Nothing thunkConfig) target
+  overwriteThunk preserveSymlinks target newThunkPtr
+  updateThunkToLatest preserveSymlinks (ThunkUpdateConfig Nothing thunkConfig) target
 
 -- | All recognized github standalone loaders, ordered from newest to oldest.
 -- This tool will only ever produce the newest one when it writes a thunk.
@@ -735,10 +772,10 @@ nixBuildAttrWithCache exprPath attr = readThunk exprPath >>= \case
 -- A temporary working space is used to do any update. When the custom
 -- action successfully completes, the resulting (packed) thunk is copied
 -- back to the original location.
-updateThunk :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
-updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
+updateThunk :: MonadObelisk m => Bool -> FilePath -> (FilePath -> m a) -> m a
+updateThunk preserveSymlinks p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
   p' <- copyThunkToTmp tmpDir p
-  unpackThunk' True p'
+  unpackThunk' True preserveSymlinks p'
   result <- f p'
   updateThunkFromTmp p'
   return result
@@ -752,7 +789,7 @@ updateThunk p f = withSystemTempDirectory "obelisk-thunkptr-" $ \tmpDir -> do
         return tmpThunk
       Right _ -> failWith "Thunk is not packed"
     updateThunkFromTmp p' = do
-      _ <- packThunk' True (ThunkPackConfig False (ThunkConfig Nothing)) p'
+      _ <- packThunk' True preserveSymlinks (ThunkPackConfig False (ThunkConfig Nothing)) p'
       callProcessAndLogOutput (Notice, Error) $
         proc cp ["-r", "-T", p', p]
 
@@ -773,11 +810,11 @@ checkThunkDirectory thunkDir = do
       Right _ -> failWith [i|Refusing to perform thunk operation on ${thunkDir} because it is a thunk's unpacked source|]
       Left _ -> pure ()
 
-unpackThunk :: MonadObelisk m => FilePath -> m ()
+unpackThunk :: MonadObelisk m => Bool -> FilePath -> m ()
 unpackThunk = unpackThunk' False
 
-unpackThunk' :: MonadObelisk m => Bool -> FilePath -> m ()
-unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
+unpackThunk' :: MonadObelisk m => Bool -> Bool -> FilePath -> m ()
+unpackThunk' noTrail preserveSymlinks thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
   Left err -> failWith [i|Invalid thunk at ${thunkDir}: ${err}|]
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
@@ -799,8 +836,14 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkD
           createThunk tmpThunk $ Left newSpec
 
         liftIO $ do
-          removePathForcibly thunkDir
-          renameDirectory tmpThunk thunkDir
+          removeThunkPath preserveSymlinks thunkDir
+          if preserveSymlinks
+            then do
+              filenames <- listDirectory tmpThunk
+              forM_ filenames $ \filename -> do
+                renamePath (tmpThunk </> filename) (thunkDir </> filename)
+            else do
+              renameDirectory tmpThunk thunkDir
 
 gitCloneForThunkUnpack
   :: MonadObelisk m
@@ -820,11 +863,11 @@ gitCloneForThunkUnpack gitSrc commit dir = do
     git ["submodule", "update", "--recursive", "--init"]
 
 --TODO: add a rollback mode to pack to the original thunk
-packThunk :: MonadObelisk m => ThunkPackConfig -> FilePath -> m ThunkPtr
+packThunk :: MonadObelisk m => Bool -> ThunkPackConfig -> FilePath -> m ThunkPtr
 packThunk = packThunk' False
 
-packThunk' :: MonadObelisk m => Bool -> ThunkPackConfig -> FilePath -> m ThunkPtr
-packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
+packThunk' :: MonadObelisk m => Bool -> Bool -> ThunkPackConfig -> FilePath -> m ThunkPtr
+packThunk' noTrail preserveSymlinks (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDirectory thunkDir *> readThunk thunkDir >>= \case
   Right ThunkData_Packed{} -> failWith [i|Thunk at ${thunkDir} is is already packed|]
   _ -> withSpinner'
     ("Packing thunk " <> T.pack thunkDir)
@@ -832,7 +875,7 @@ packThunk' noTrail (ThunkPackConfig force thunkConfig) thunkDir = checkThunkDire
     do
       let checkClean = if force then CheckClean_NoCheck else CheckClean_FullCheck
       thunkPtr <- modifyThunkPtrByConfig thunkConfig <$> getThunkPtr checkClean thunkDir (_thunkConfig_private thunkConfig)
-      liftIO $ removePathForcibly thunkDir
+      removeThunkPath preserveSymlinks thunkDir
       createThunk thunkDir $ Right thunkPtr
       pure thunkPtr
 
