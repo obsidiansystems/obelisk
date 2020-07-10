@@ -184,10 +184,10 @@ deployPush deployPath getNixBuilders = do
   isClean <- checkGitCleanStatus deployPath True
   when (not isClean) $ do
     withSpinner "Committing changes to Git" $ do
-      callProcessAndLogOutput (Debug, Error) $ proc gitPath
-        ["-C", deployPath, "add", "."]
-      callProcessAndLogOutput (Debug, Error) $ proc gitPath
-        ["-C", deployPath, "commit", "-m", "New deployment"]
+      callProcessAndLogOutput (Debug, Error) $
+        gitProc deployPath ["add", "."]
+      callProcessAndLogOutput (Debug, Error) $
+        gitProc deployPath ["commit", "-m", "New deployment"]
   putLog Notice $ "Deployed => " <> T.pack route
   where
     callProcess' envMap cmd args = do
