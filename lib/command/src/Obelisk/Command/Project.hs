@@ -146,6 +146,12 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     let configDir = "config"
     createDirectoryIfMissing False configDir
     mapM_ (createDirectoryIfMissing False . (configDir </>)) ["backend", "common", "frontend"]
+  putLog Notice $ T.intercalate "\n"
+    [ "An obelisk project has been successfully initialized. Next steps:"
+    , "  'ob run': Start a development server"
+    , "  'ob watch': Watch for changes without starting a server"
+    , "  'ob repl': Load your project into GHCi"
+    ]
 
 callHandoffOb
   :: MonadObelisk m
