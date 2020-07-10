@@ -6,7 +6,6 @@
 {-# LANGUAGE TupleSections #-}
 module Obelisk.Command where
 
-import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
 import Data.Foldable (for_)
@@ -403,7 +402,7 @@ ob = \case
   ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
   ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
   ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths -> do
-    when (interpretPaths /= PathTree_Node Nothing mempty) $ putLog Notice "Use '--no-interpret path/to/dependency' to force building an unpacked dependency and include it in this shell."
+    putLog Notice "Hint: use '--no-interpret path/to/dependency' to force building an unpacked dependency and include it in this shell."
     nixShellForInterpretPaths False shellAttr root interpretPaths cmd -- N.B. We do NOT bash escape here; we want to run the command as-is
   ObCommand_Doc shellAttr pkgs -> withInterpretPaths [] $ \root interpretPaths ->
     nixShellForInterpretPaths True shellAttr root interpretPaths $ Just $ haddockCommand pkgs
