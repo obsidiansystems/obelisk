@@ -87,11 +87,12 @@ deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminE
   --production data backed up to a dev environment.
   withSpinner "Creating project configuration directories" $ do
     callProcessAndLogOutput (Notice, Error) $
-      proc "mkdir" [ "-p"
-                   , deployDir </> "config" </> "backend"
-                   , deployDir </> "config" </> "common"
-                   , deployDir </> "config" </> "frontend"
-                   ]
+      proc mkdirPath
+        [ "-p"
+        , deployDir </> "config" </> "backend"
+        , deployDir </> "config" </> "common"
+        , deployDir </> "config" </> "frontend"
+        ]
 
   let srcDir = deployDir </> "src"
   withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ do
@@ -162,8 +163,8 @@ deployPush deployPath getNixBuilders = do
       "nix-copy-closure" ["-v", "--to", "--use-substitutes", "root@" <> host, "--gzip", outputPath]
   withSpinner "Uploading config" $ ifor_ buildOutputByHost $ \host _ -> do
     callProcessAndLogOutput (Notice, Warning) $
-      proc "rsync"
-        [ "-e ssh " <> unwords sshOpts
+      proc rsyncPath
+        [ "-e " <> sshPath <> " " <> unwords sshOpts
         , "-qarvz"
         , deployPath </> "config"
         , "root@" <> host <> ":/var/lib/backend"
@@ -171,9 +172,10 @@ deployPush deployPath getNixBuilders = do
   --TODO: Create GC root so we're sure our closure won't go away during this time period
   withSpinner "Switching to new configuration" $ ifor_ buildOutputByHost $ \host outputPath -> do
     callProcessAndLogOutput (Notice, Warning) $
-      proc "ssh" $ sshOpts <>
+      proc sshPath $ sshOpts <>
         [ "root@" <> host
         , unwords
+            -- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
             [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
             , "&&"
             , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
@@ -182,9 +184,9 @@ deployPush deployPath getNixBuilders = do
   isClean <- checkGitCleanStatus deployPath True
   when (not isClean) $ do
     withSpinner "Committing changes to Git" $ do
-      callProcessAndLogOutput (Debug, Error) $ proc "git"
+      callProcessAndLogOutput (Debug, Error) $ proc gitPath
         ["-C", deployPath, "add", "."]
-      callProcessAndLogOutput (Debug, Error) $ proc "git"
+      callProcessAndLogOutput (Debug, Error) $ proc gitPath
         ["-C", deployPath, "commit", "-m", "New deployment"]
   putLog Notice $ "Deployed => " <> T.pack route
   where
@@ -315,7 +317,7 @@ readDeployConfig deployDir fname = liftIO $ do
 
 verifyHostKey :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
 verifyHostKey knownHostsPath keyPath hostName =
-  callProcessAndLogOutput (Notice, Warning) $ proc "ssh" $
+  callProcessAndLogOutput (Notice, Warning) $ proc sshPath $
     sshArgs knownHostsPath keyPath True <>
       [ "root@" <> hostName
       , "-o", "NumberOfPasswordPrompts=0"
