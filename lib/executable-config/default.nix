@@ -5,13 +5,14 @@
 { lib
 , runCommand
 , obeliskCleanSource
+, staticDirName ? ""
 }:
 
 let
   injectConfig = config: assets: runCommand "inject-config" {} (''
     set -x
-    mkdir -p $out
-    cp --no-preserve=mode -Lr "${assets}" $out/static
+    mkdir -p "$out"/'${staticDirName}'
+    cp --no-preserve=mode -Lr "${assets}"/. "$out"/'${staticDirName}'/
     chmod +w "$out"
   '' + lib.optionalString (!(builtins.isNull config)) ''
     if ! mkdir $out/config; then
