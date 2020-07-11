@@ -39,9 +39,6 @@ mvPath = $(staticWhich "mv")
 rmPath :: FilePath
 rmPath = $(staticWhich "rm")
 
-mkdirPath :: FilePath
-mkdirPath = $(staticWhich "mkdir")
-
 ghcidExePath :: FilePath
 ghcidExePath = $(staticWhich "ghcid")
 
