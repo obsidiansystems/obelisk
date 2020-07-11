@@ -85,14 +85,12 @@ deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminE
   --accidentally create a production deployment that uses development
   --credentials to connect to some resources.  This could result in, e.g.,
   --production data backed up to a dev environment.
-  withSpinner "Creating project configuration directories" $ do
-    callProcessAndLogOutput (Notice, Error) $
-      proc mkdirPath
-        [ "-p"
-        , deployDir </> "config" </> "backend"
-        , deployDir </> "config" </> "common"
-        , deployDir </> "config" </> "frontend"
-        ]
+  withSpinner "Creating project configuration directories" $ liftIO $ do
+    mapM_ (createDirectoryIfMissing True)
+      [ deployDir </> "config" </> "backend"
+      , deployDir </> "config" </> "common"
+      , deployDir </> "config" </> "frontend"
+      ]
 
   let srcDir = deployDir </> "src"
   withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ do
