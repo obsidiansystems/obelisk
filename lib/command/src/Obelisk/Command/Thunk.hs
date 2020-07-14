@@ -782,8 +782,8 @@ unpackThunk' noTrail thunkDir = checkThunkDirectory thunkDir *> readThunk thunkD
   --TODO: Overwrite option that rechecks out thunk; force option to do so even if working directory is dirty
   Right ThunkData_Checkout -> failWith [i|Thunk at ${thunkDir} is already unpacked|]
   Right (ThunkData_Packed _ tptr) -> do
-    let (thunkParent, thunkName) = splitFileName thunkDir
-    withTempDirectory thunkParent thunkName $ \tmpThunk -> do
+    let thunkName = takeFileName thunkDir
+    withSystemTempDirectory thunkName $ \tmpThunk -> do
       let
         gitSrc = thunkSourceToGitSource $ _thunkPtr_source tptr
         newSpec = case _thunkPtr_source tptr of
