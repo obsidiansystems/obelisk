@@ -39,6 +39,27 @@ backend **or** the frontend. A POST request makes no sense for the frontend of a
 do not support creating this type of route. As it would be difficult to impossible to enforce if
 the routing system worked differently on the backend vs the frontend.
 
+## Scope
+
+It's worth quickly pointing out the parts of the URL that this package is focused on so that when
+we're discussing terms like 'path' and 'query', we're thinking of the same thing.
+
+From the [Wikipedia page on URIs](https://en.wikipedia.org/wiki/Uniform_Resource_Identifier):
+
+The URI generic syntax consists of a hierarchical sequence of five components:
+
+```
+URI = scheme:[//authority]path[?query][#fragment]
+```
+
+where the `authority` component divides into three subcomponents:
+
+```
+authority = [userinfo@]host[:port]
+```
+
+This package handles the `path` and `query` components of a URI.
+
 ## Obelisk route mental model
 
 The way to approach building routes with `obelisk-route` is to focus on your Route data structure.
