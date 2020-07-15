@@ -504,7 +504,27 @@ topLevelRouteEncoder = _todo
 ```
 
 This similar to earlier `Encoder`s with the main difference being the use of the `R` type to wrap
-our `TopLevel` type. The `Encoder` we will use is `pathComponentEncoder`, which works almost exactly
+our `TopLevel` type.
+
+### Aside: `R`
+
+When referring to route types in type signatures when they are defined as 'GADT's, we need to ensure
+that the route type remains polymorphic. Using the route type `TopLevel a` as an example, each
+constructor may specify a different type in place of that `a`. Consequently we can't expose that `a`
+in the type signature because the type system will demand that `a` have a single concrete type.
+
+To keep the polymorphism that we need, we wrap the route type using [`DSum`](https://hackage.haskell.org/package/dependent-sum/docs/Data-Dependent-Sum.html#t:DSum) from the 'dependent-sum' package. This uses [existential quantification](http://dev.stephendiehl.com/hask/#existential-quantification) to prevent the type variable from our route type appearing in the type signature, preserving polymorphism without any loss of type safety.
+
+Using the full `DSum TopLevel Identity` type everytime we wanted to refer to our route type would be
+tedious and noisy so we use the type alias `R` as shorthand:
+
+```haskell
+type R f = DSum f Identity
+```
+
+---
+
+The `Encoder` we will use is `pathComponentEncoder`, which works almost exactly
 like `enumEncoder` with the ability to leverage the extra type information carried by our GADT.
 
 ```haskell
