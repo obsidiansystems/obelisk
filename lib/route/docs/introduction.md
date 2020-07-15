@@ -30,8 +30,8 @@ or that breadcrumb widget that needs a human-readable description.
 * **Behaviour of routes is identical for Backend and Frontend**
 
 This package doesn't have a distinction between backend or frontend routes, these are only different
-types so their behaviour is identical. This guarantees that rendering completed during backend
-hydration will be indistinguishable from rendering completed on the frontend.
+types so their behaviour is identical. This guarantees that routes generated as part of a backend
+static rendering process will be indistinguishable from routes generated on the frontend.
 
 It may seem odd that `obelisk-route` does not provide a way to specify the HTTP Method for a given
 route. This is due to the requirement that this package may be used when rendering a page on the
@@ -48,10 +48,10 @@ page the user might want to visit.  Only once that is clear, move on to thinking
 logical pages ought to appear in the user's address bar.  For instance, you might want each user's
 profile to show up at `/user/$userid`.
 
-Finally, consider how you want to handle URLs with slight differences; an extra trailing slash
-different capitalization, or URLs whose rendering format has changed. By doing things in this
-order, you design your routes around your application, rather than designing your application
-around your routes.
+Finally, consider how you want to handle URLs with slight differences; an extra trailing slash,
+different capitalization, or URLs whose rendering format has changed. By doing things in this order,
+you design your routes around your application, rather than designing your application around your
+routes.
 
 We then write the definition of the route using `Encoder`s. These may be thought of as small pure
 functions that _compose_ together using `(.)` to build the concrete definition of your routing
@@ -76,7 +76,7 @@ associated with this page, so the value for our route must have only one possibl
 When it comes to how that route will present itself to the user in the address bar, it will be our
 main page and at the root of all things so it must be `/`.
 
-The routes for a Obelisk application often live `Common.Route` and nearby modules. We will follow
+The routes for a Obelisk application often live in `Common.Route` and nearby modules. We will follow
 this convention and create our type there:
 
 ```haskell
@@ -124,7 +124,7 @@ data Encoder check parse a b
 ```
 
 An `Encoder check parse a b` may be thought of as small pure functions of type: `a -> b`. Thinking
-of them like this may provide some intuition. As `Encoder`s may be composed using `(.)` and in some
+of them like this may provide some intuition as `Encoder`s may be composed using `(.)`, and in some
 ways treated as if they were nothing but pure functions. In practice they are more complex than
 this, but it is a good place to start.
 
@@ -142,7 +142,7 @@ forall a. decode (encode a) == pure a
 
 ----
 
-Within the `Obelisk.Route` module are many pre-built `Encoders`, the one we will use is the `enumEncoder`:
+Within the `Obelisk.Route` module are many pre-built `Encoder`s, the one we will use is the `enumEncoder`:
 
 ```haskell
 enumEncoder
@@ -165,6 +165,7 @@ Update `myRouteEncoder` to use this `Encoder` and place a 'typed hole' as the ar
 myRouteEncoder
   :: ( Applicative check
      , MonadError Text parse
+     , MonadError Text check
      )
   => Encoder check parse MyRoute PageName
 myRouteEncoder = enumEncoder _todo
@@ -185,12 +186,15 @@ the type checker, but doesn't necessarily result in a useful or correct program.
 Typed holes don't have to be called `_todo`, you can give them any valid Haskell identifier name, as
 long as they start with `_` and don't clash with anything other names.
 
+**NB:** Typed holes still rely on GHC type checking and inspecting your codebase. So if you've a large
+codebase then resolving the typed hole may be slow.
+
 ----
 
 If you're following along with either `ob run`, [`ghcid`](https://github.com/ndmitchell/ghcid), or
 building as you go, the output will now contain two errors relating to our use of `enumEncoder`.
 
-The first is related to the `Universe` constraint:
+The first is related to the `Universe` constraint from the [`universe` package](https://hackage.haskell.org/package/universe):
 
 ```shell
     • Could not deduce (Universe MyRoute)
@@ -203,8 +207,11 @@ The first is related to the `Universe` constraint:
 The `enumEncoder` uses the `Universe` typeclass to ensure coverage for every possible value for type
 `p`. We need an instance of this typeclass for our `MyRoute` type in order to use `enumEncoder`, we
 don't have to do much as there is a default implementation for any type that has instances for
-`Enum` and `Bounded`, which we have already derived. So all we need to do is declare that we have an
-instance for our type like so:
+`Enum` and `Bounded`, which we have already derived.
+
+You may need to import the `Data.Universe` module if you haven't already.
+
+Then declare an instance for our type like so:
 
 ```haskell
 instance Universe MyRoute
@@ -234,6 +241,7 @@ myRouteEncoder
 myRouteEncoder = enumEncoder $ \myRoute -> case myRoute of
   MyRoute_Main -> _todo
 ```
+
 A slightly nicer way of writing a `case` expression when you're matching on a single input to a
 lambda is to turn on the [`LambdaCase`](http://dev.stephendiehl.com/hask/#lambdacase) [language
 extension](http://dev.stephendiehl.com/hask/#language-extensions). This will work exactly the same
@@ -339,7 +347,7 @@ this often means that you are left on your own when comes to creating links for 
 there is no way to relate the structure of a route to anything. If any of those routes change it can
 be a tedious and error-prone process to find and fix all the constructed links.
 
-Obelisk routes are bidirectional, which means the `Encoder` that you create works as both a 'pattern
+Obelisk routes are bidirectional, which means the `Encoder` that you create also works as a 'pattern
 match' for incoming routes. The route types operate as a type safe mechanism for _creating_ links in
 your application. It is a compile error to try to use route constructors that don't exist, and if
 you change the type of a route the application will not build until you fix that change every where
@@ -347,7 +355,7 @@ it appears.
 
 ----
 
-## Nested Routes {#nestedRoutes}
+## Nested Routes
 
 Applications often have a hierarchy to keep things organised. A request is identified as belonging
 to a particular sub-category and handed off accordingly, the sub-category is then responsible for
@@ -537,7 +545,7 @@ the other terminating, indicating that this path is complete.
 The recursive constructor has the following type:
 
 ```haskell
-PathSegment Text (Encoder check parse a PageName)
+PathSegment :: Text -> Encoder check parse a PageName -> SegmentResult check parse a
 ```
 
 This lets us specify a fixed component of a path, and then we must also provide an `Encoder` to turn
@@ -546,12 +554,12 @@ this value (the one on the left hand side of the case expression) into the remai
 The other constructor:
 
 ```haskell
-PathEnd (Encoder check parse a (Map Text (Maybe Text)))
+PathEnd :: Encoder check parse a (Map Text (Maybe Text)) -> SegmentResult check parse a
 ```
 
 Indicates that the path is complete and requires an `Encoder` to turn this value into query parameters.
 
-Refer to the Haddock documentation for more detail information.
+Refer to the Haddock documentation for more detailed information.
 
 ----
 
@@ -563,7 +571,7 @@ topLevelRouteEncoder
      , MonadError Text parse
      )
   => Encoder check parse (R TopLevel) PageName
-topLevelRouteEncoder = pathComponentEncoder $
+topLevelRouteEncoder = pathComponentEncoder $ \case
   TopLevel_API -> _apiTodo
   TopLevel_APP -> _appTodo
 ```
@@ -599,13 +607,13 @@ using techniques we have already covered.
 The `Encoder` for each of these routes is defined using the `enumEncoder`:
 
 ```haskell
-apiRouteEncoder :: (_) => Encoder check parse ApiRoute Encoder
+apiRouteEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse ApiRoute PageName
 apiRouteEncoder = enumEncoder $ \case
   ApiRoute_Status -> (["status"], mempty)
   ApiRoute_Version -> (["version"], mempty)
   ApiRoute_Uptime -> (["uptime"], mempty)
 
-appRouteEncoder :: _ => Encoder check parse AppRoute Encoder
+appRouteEncoder :: (MonadError Text check, MonadError Text parse) => Encoder check parse AppRoute PageName
 appRouteEncoder = enumEncoder $ \case
   AppRoute_Register -> (["register"], mempty)
   AppRoute_Contact -> (["contact"], mempty)
@@ -778,7 +786,7 @@ Now that we have the two `Encoder`s we need, we compose them together:
 
 ```haskell
   -- New route branch in the case expression
-  AppRoute_UserHome -> PathSegment "user" $ singlePathsegmentEncoder . unwrappedEncoder
+  AppRoute_UserHome -> PathSegment "user" $ singlePathSegmentEncoder . unwrappedEncoder
 ```
 
 ## Multiple Parameters {#multipleParams}
@@ -852,7 +860,7 @@ This function requires two `Encoder`s, one for the initial parameter `item`, and
 is another tuple. Lets extend the `appRouteEncoder` with another branch on the `case` expression:
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathParamEncoder
     _itemEncoder
     _restEncoder
 ```
@@ -887,7 +895,7 @@ documentation for `unsafeTshowEncoder` for more information.
 Replace the `_itemEncoder` with this `Encoder`:
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathParamEncoder
     unsafeTshowEncoder
     _restEncoder
 ```
@@ -905,7 +913,7 @@ the minimum we need, and the `pathParamEncoder` handles the tupling for us:
 
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathParamEncoder
     unsafeTshowEncoder
     $ pathParamEncoder
       _itemEncoder
@@ -926,7 +934,7 @@ is equivalent to the `id` function, which is part of the `Category` typeclass, o
 has an instance. Thus the `Encoder` is `id`:
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathParamEncoder
     unsafeTshowEncoder
     $ pathParamEncoder
       id
@@ -950,7 +958,7 @@ singlePathSegmentEncoder :: _ => Encoder check parse Text PageName
 Making the final `Encoder` for the `(Int :. Text :. Int)` type:
 
 ```haskell
-  AppRoute_CodePrize -> PathSegment "code" $ pathSegmentEncoder
+  AppRoute_CodePrize -> PathSegment "code" $ pathParamEncoder
     unsafeTshowEncoder
     $ pathParamEncoder
       id
