@@ -648,7 +648,7 @@ topLevelRouteEncoder
      , MonadError Text parse
      )
   => Encoder check parse (R TopLevel) PageName
-topLevelRouteEncoder = pathComponentEncoder $
+topLevelRouteEncoder = pathComponentEncoder $ \case
   TopLevel_API -> PathSegment "api" apiRouteEncoder
   TopLevel_APP -> PathSegment "app" appRouteEncoder
 ```
@@ -675,7 +675,7 @@ replace functionality provided by your routes as per their needs without breakin
 If you have repeated functionality in your application you could abstract out the differences and
 package the similarities, routes and all!
 
-## Add parameter to a nested route {#nestedRouteParam}
+## Add parameter to a nested route
 
 Suppose we want to use part of the route input as a value that is available for use at the
 destination. Let's assuming we want to add a homepage for every user. To do so we will need a route
