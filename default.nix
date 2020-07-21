@@ -1,6 +1,6 @@
 { system ? builtins.currentSystem
 , profiling ? false
-, iosSdkVersion ? "10.2"
+, iosSdkVersion ? "13.2"
 , config ? {}
 , reflex-platform-func ? import ./dep/reflex-platform
 }:
