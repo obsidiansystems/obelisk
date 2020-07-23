@@ -138,7 +138,7 @@ in rec {
             proxyPass = "http://127.0.0.1:" + toString internalPort;
             proxyWebsockets = true;
             extraConfig = ''
-              access_log stdout;
+              access_log off;
             '';
           };
         };
