@@ -211,9 +211,7 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
       w appendHead appendBody = do
         rec switchover <- runRouteViewT ve switchover (_frontendMode_adjustRoute mode) $ do
               (switchover'', fire) <- newTriggerEvent
-              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
-                -- The order here is important - baseTag has to be before headWidget!
-                baseTag
+              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $
                 _frontend_head frontend
               mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runConfigsT configs))) $ do
                 _frontend_body frontend
