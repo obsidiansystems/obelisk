@@ -17,7 +17,7 @@ import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
 import qualified Data.Map as Map
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, listToMaybe)
 import qualified Data.Set as Set
 import Data.String.Here.Interpolated (i)
 import qualified Data.Text as T
@@ -125,16 +125,18 @@ deployPush deployPath getNixBuilders = do
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
   route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
   routeHost <- getHostFromRoute enableHttps route
-  let srcPath = deployPath </> "src"
-  thunkPtr' <- readThunk srcPath >>= \case
-    Right (ThunkData_Packed _ ptr) -> return $ Just ptr
-    Right ThunkData_Checkout -> do
-      checkGitCleanStatus srcPath True >>= \case
-        True -> Just <$> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
-        False -> Nothing <$ putLog Warning "Skipping packing of src thunk; won't be able to automatically commit this deployment"
-          -- failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
-    Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
-  let version' = show . _thunkRev_commit . _thunkPtr_rev <$> thunkPtr'
+  let
+    srcPath = deployPath </> "src"
+    handleUnpackedWith f = checkGitCleanStatus srcPath True >>= \case
+        True -> f
+        False -> failWith $ "ob deploy push: ensure " <> T.pack srcPath <> " has no pending changes and latest is pushed upstream."
+
+  version' <- readThunk srcPath >>= \case
+    Right (ThunkData_Packed _ ptr) -> return $ Just $ show $ _thunkRev_commit $ _thunkPtr_rev ptr
+    Right ThunkData_Checkout -> handleUnpackedWith $ Just . show . _thunkRev_commit . _thunkPtr_rev <$> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
+    Left err -> do
+      putLog Warning [i|No valid thunk found at ${srcPath} due to ${err}: Attempting to find commit hash anyway.|]
+      handleUnpackedWith $ fmap show . listToMaybe . T.lines <$> readGitProcess srcPath ["rev-parse", "HEAD"]
   builders <- getNixBuilders
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile
