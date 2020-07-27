@@ -17,7 +17,7 @@ import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default
 import qualified Data.Map as Map
-import Data.Maybe (isJust, listToMaybe)
+import Data.Maybe (listToMaybe)
 import qualified Data.Set as Set
 import Data.String.Here.Interpolated (i)
 import qualified Data.Text as T
@@ -137,6 +137,9 @@ deployPush deployPath getNixBuilders = do
     Left err -> do
       putLog Warning [i|No valid thunk found at ${srcPath} due to ${err}: Attempting to find commit hash anyway.|]
       handleUnpackedWith $ fmap show . listToMaybe . T.lines <$> readGitProcess srcPath ["rev-parse", "HEAD"]
+  version <- case version' of
+    Nothing -> failWith [i|Could not determine commit hash of ${srcPath}|]
+    Just v -> v <$ putLog Notice [i|Deploying commit ${v}|]
   builders <- getNixBuilders
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile
@@ -153,7 +156,7 @@ deployPush deployPath getNixBuilders = do
         [ strArg "hostName" host
         , strArg "adminEmail" adminEmail
         , strArg "routeHost" routeHost
-        , strArg "version" $ maybe "Deployment was done with a dirty source tree" id version'
+        , strArg "version" version
         , boolArg "enableHttps" enableHttps
         ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
@@ -183,14 +186,13 @@ deployPush deployPath getNixBuilders = do
             , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
             ]
         ]
-  when (isJust version') $ do
-    isClean <- checkGitCleanStatus deployPath True
-    when (not isClean) $ do
-      withSpinner "Committing changes to Git" $ do
-        callProcessAndLogOutput (Debug, Error) $ proc "git"
-          ["-C", deployPath, "add", "."]
-        callProcessAndLogOutput (Debug, Error) $ proc "git"
-          ["-C", deployPath, "commit", "-m", "New deployment"]
+  isClean <- checkGitCleanStatus deployPath True
+  when (not isClean) $ do
+    withSpinner "Committing changes to Git" $ do
+      callProcessAndLogOutput (Debug, Error) $ proc "git"
+        ["-C", deployPath, "add", "."]
+      callProcessAndLogOutput (Debug, Error) $ proc "git"
+        ["-C", deployPath, "commit", "-m", "New deployment"]
   putLog Notice $ "Deployed => " <> T.pack route
   where
     callProcess' envMap cmd args = do
