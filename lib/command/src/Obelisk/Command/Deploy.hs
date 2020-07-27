@@ -49,6 +49,8 @@ data DeployInitOpts = DeployInitOpts
   , _deployInitOpts_enableHttps :: Bool
   } deriving Show
 
+data DoActivateDeployment = DoActivateDeployment deriving (Eq, Ord, Show)
+
 deployInit :: MonadObelisk m => DeployInitOpts -> FilePath -> m ()
 deployInit deployOpts root = do
   let deployDir = _deployInitOpts_outputDir deployOpts
@@ -118,8 +120,8 @@ setupObeliskImpl deployDir = liftIO $ do
   createDirectoryIfMissing True implDir
   writeFile (implDir </> "default.nix") $ "(import " <> toNixPath (goBackUp </> "src") <> " {}).obelisk"
 
-deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
-deployPush deployPath getNixBuilders = do
+deployPush :: MonadObelisk m => FilePath -> Maybe DoActivateDeployment -> m [String] -> m ()
+deployPush deployPath doActivateDeployment getNixBuilders = do
   hosts <- Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "backend_hosts"
   adminEmail <- readDeployConfig deployPath "admin_email"
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
@@ -167,25 +169,28 @@ deployPush deployPath getNixBuilders = do
     callProcess'
       (Map.fromList [("NIX_SSHOPTS", unwords sshOpts)])
       "nix-copy-closure" ["-v", "--to", "--use-substitutes", "root@" <> host, "--gzip", outputPath]
-  withSpinner "Uploading config" $ ifor_ buildOutputByHost $ \host _ -> do
-    callProcessAndLogOutput (Notice, Warning) $
-      proc "rsync"
-        [ "-e ssh " <> unwords sshOpts
-        , "-qarvz"
-        , deployPath </> "config"
-        , "root@" <> host <> ":/var/lib/backend"
-        ]
-  --TODO: Create GC root so we're sure our closure won't go away during this time period
-  withSpinner "Switching to new configuration" $ ifor_ buildOutputByHost $ \host outputPath -> do
-    callProcessAndLogOutput (Notice, Warning) $
-      proc "ssh" $ sshOpts <>
-        [ "root@" <> host
-        , unwords
-            [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
-            , "&&"
-            , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+  case doActivateDeployment of
+    Nothing -> putLog Warning "Skipping activation of deployment; server is unchanged"
+    Just _ -> do
+      withSpinner "Uploading config" $ ifor_ buildOutputByHost $ \host _ -> do
+        callProcessAndLogOutput (Notice, Warning) $
+          proc "rsync"
+            [ "-e ssh " <> unwords sshOpts
+            , "-qarvz"
+            , deployPath </> "config"
+            , "root@" <> host <> ":/var/lib/backend"
             ]
-        ]
+      --TODO: Create GC root so we're sure our closure won't go away during this time period
+      withSpinner "Switching to new configuration" $ ifor_ buildOutputByHost $ \host outputPath -> do
+        callProcessAndLogOutput (Notice, Warning) $
+          proc "ssh" $ sshOpts <>
+            [ "root@" <> host
+            , unwords
+                [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
+                , "&&"
+                , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+                ]
+            ]
   isClean <- checkGitCleanStatus deployPath True
   when (not isClean) $ do
     withSpinner "Committing changes to Git" $ do

@@ -138,7 +138,7 @@ packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
 deployCommand :: ArgsConfig -> Parser DeployCommand
 deployCommand cfg = hsubparser $ mconcat
   [ command "init" $ info (DeployCommand_Init <$> deployInitOpts) $ progDesc "Initialize a deployment configuration directory"
-  , command "push" $ info (DeployCommand_Push <$> remoteBuilderParser) mempty
+  , command "push" $ info (DeployCommand_Push <$> switchConfigParser <*> remoteBuilderParser) mempty
   , command "test" $ info (DeployCommand_Test <$> platformP) $ progDesc "Test your obelisk project from a mobile platform."
   , command "update" $ info (pure DeployCommand_Update) $ progDesc "Update the deployment's src thunk to latest"
   ]
@@ -147,6 +147,8 @@ deployCommand cfg = hsubparser $ mconcat
       [ command "android" $ info (pure (Android, [])) mempty
       , command "ios" $ info ((,) <$> pure IOS <*> fmap pure (strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal"))) mempty
       ]
+
+    switchConfigParser = flag (Just DoActivateDeployment) Nothing (long "upload-only" <> help "Only upload the new configuration but do not activate it")
 
     remoteBuilderParser :: Parser (Maybe RemoteBuilder)
     remoteBuilderParser =
@@ -180,7 +182,7 @@ data RemoteBuilder = RemoteBuilder_ObeliskVM
 
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
-  | DeployCommand_Push (Maybe RemoteBuilder)
+  | DeployCommand_Push (Maybe DoActivateDeployment) (Maybe RemoteBuilder)
   | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
   deriving Show
@@ -384,9 +386,9 @@ ob = \case
   ObCommand_Init source force -> initProject source force
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
-    DeployCommand_Push remoteBuilder -> do
+    DeployCommand_Push doActivate remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
-      deployPush deployPath $ case remoteBuilder of
+      deployPush deployPath doActivate $ case remoteBuilder of
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
