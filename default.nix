@@ -257,16 +257,22 @@ in rec {
                   ${self.backendName} = haskellLib.addBuildDepend super'.${self.backendName} self'.obelisk-run;
                 };
                 totalOverrides = lib.composeExtensions self.projectOverrides self.userSettings.overrides;
-                privateConfigDirs = ["config/backend"];
-                injectableConfig = builtins.filterSource (path: _:
-                  !(lib.lists.any (x: hasPrefix (toString self.base + "/" + toString x) (toString path)) self.privateConfigDirs)
+
+
+                allowedConfigDirs = ["config/backend" "config/common" "config/frontend"];
+                nonPrivateConfigDirs = ["config/common" "config/frontend"];
+                injectableConfig = base: builtins.filterSource (path: _:
+                  let pathIsInAny = lib.lists.any (x: hasPrefix (toString base + "/" + toString x) (toString path));
+                  in if !pathIsInAny self.allowedConfigDirs
+                    then throw "Path is not in a valid config directory ${path}. Valid config directories are: ${lib.concatStringsSep ", " self.allowedConfigDirs}"
+                    else pathIsInAny self.nonPrivateConfigDirs
                 );
                 __androidWithConfig = configPath: {
                   ${if self.userSettings.android == null then null else self.frontendName} = {
                     executableName = "frontend";
                     ${if builtins.pathExists self.userSettings.staticFiles then "assets" else null} =
                       nixpkgs.obeliskExecutableConfig.platforms.android.inject
-                        (self.injectableConfig configPath)
+                        (self.injectableConfig (builtins.dirOf configPath) configPath)
                         self.processedStatic.symlinked;
                   } // self.userSettings.android;
                 };
@@ -275,7 +281,7 @@ in rec {
                     executableName = "frontend";
                     ${if builtins.pathExists self.userSettings.staticFiles then "staticSrc" else null} =
                       nixpkgs.obeliskExecutableConfig.platforms.ios.inject
-                        (self.injectableConfig configPath)
+                        (self.injectableConfig (builtins.dirOf configPath) configPath)
                         self.processedStatic.symlinked;
                   } // self.userSettings.ios;
                 };
