@@ -1,7 +1,7 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "eac@revert-jsaddle-reflex-dom-bump",
+  "branch": "eac@tweaks-from-wrinkl",
   "private": false,
   "rev": "30d8013c493cb1b17ca6d5110f8b7d8b591c6266",
   "sha256": "1l35l5m184iyrv6mp6jijgvdwlp2q3pvb3vjqc0m66a65i04jl7m"
