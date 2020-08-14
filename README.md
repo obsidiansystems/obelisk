@@ -66,7 +66,10 @@ Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Refl
           sudo launchctl stop org.nixos.nix-daemon
           sudo launchctl start org.nixos.nix-daemon
           ```
-1. Install obelisk: `nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command`
+1. Install obelisk: 
+   ```bash
+   nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command
+   ```
 
 ### Accessing private repositories
 
