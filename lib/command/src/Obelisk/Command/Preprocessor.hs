@@ -47,7 +47,8 @@ applyPackages origPath inPath outPath packagePaths' = do
       Left err -> do
         hPutStrLn stderr $ "Error: Unable to parse cabal package " <> packagePath <> "; Skipping preprocessor on " <> origPath <> ". Error: " <> show err
         pure Nothing
-      Right (_, packageInfo) -> pure $ Just packageInfo
+      Right (Just (_, packageInfo)) -> pure $ Just packageInfo
+      Right Nothing -> pure Nothing
 
   writeOutput packageInfo' inPath outPath
 
