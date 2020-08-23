@@ -1038,8 +1038,8 @@ someSumEncoder = Encoder $ pure $ EncoderImpl
 
 data Void1 :: * -> * where {}
 
-instance Universe (Some Void1) where
-  universe = []
+instance UniverseSome Void1 where
+  universeSome = []
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder = Encoder $ pure $ EncoderImpl
