@@ -28,9 +28,12 @@ executable frontend
                , reflex-dom
                , obelisk-generated-static
                , frontend
-  ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates
+  ghc-options: -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates
   if impl(ghcjs)
     ghc-options: -dedupe
     cpp-options: -DGHCJS_BROWSER
+  --TODO: Make these ghc-options optional
+  if !arch(wasm32)
+     ghc-options: -threaded
   if os(darwin)
     ghc-options: -dynamic
