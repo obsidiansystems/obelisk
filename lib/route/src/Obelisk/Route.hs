@@ -123,6 +123,7 @@ module Obelisk.Route
   , domainFromConfig
   , uriToDomain
   , domainToString
+  , AppRoute(..)
   ) where
 
 import Prelude hiding ((.), id)
@@ -624,7 +625,7 @@ decodeDomainConfig rawConfig = first (T.unlines . (:exampleFormat)) $ do
       [ ""
       , "  Example common/route config for an app with a single domain:"
       , ""
-      , "AppRoute https://mydomain-a.com"
+      , "() https://mydomain-a.com"
       , ""
       , "  Or for apps with multiple custom domains:"
       , ""
