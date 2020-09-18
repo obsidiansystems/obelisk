@@ -109,7 +109,7 @@ in rec {
     mkdir $out
     cd $out
     ${if frontendJs != null then ''
-      ln -s ${compressedJs frontendJs optimizationLevel}/* .
+      ln -s ${compressedJs frontendJs optimizationLevel}/frontend.jsexe/* .
     '' else '' ''}
     ${if frontendWasm != null then ''
       ln -s ${stripWasm frontendWasm}/* .
