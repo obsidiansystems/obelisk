@@ -14,6 +14,7 @@ library
                  jsaddle,
                  lens,
                  mtl,
+                 network-uri,
                  obelisk-executable-config-inject,
                  obelisk-executable-config-lookup,
                  obelisk-route,
@@ -22,7 +23,8 @@ library
                  reflex,
                  reflex-dom-core,
                  text,
-                 transformers
+                 transformers,
+                 universe
   exposed-modules:
     Obelisk.Frontend
     Obelisk.Frontend.Cookie
