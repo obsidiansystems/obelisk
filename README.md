@@ -242,7 +242,7 @@ First create a new EC2 instance:
 1. Launch a NixOS 19.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-00a8eeaf232a74f84))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
-1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and 443.
+1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and HTTPS port 443.
 
 At this stage your instance should be booting and become accessible shortly. Note down the hostname of your EC2 instance.
 
