@@ -662,16 +662,14 @@ domainPathComponentEncoder toDomainResult = Encoder $ do
 
   let encDomain :: Encoder check parse (Some p) (Domain, Maybe Text)
       encDomain = enum1Encoder $ extractDomainPath . toDomainResult
-
-  let x :: ((Domain, Maybe Text), PageName) -> DomainPageName
-      x ((domain, maybePath), (path, query)) = (domain, (maybe id (:) maybePath $ path, query))
-      y :: DomainPageName -> ((Domain, Maybe Text), PageName)
-      y (domain, ([], query)) = ((domain, Nothing), ([], query))
-      y (domain, ((path:paths), query)) = ((domain, Just path), (paths, query))
-  let smash :: Encoder check parse ((Domain, Maybe Text), PageName) DomainPageName
-      smash = isoEncoder $ iso x y
-
-  unEncoder $ chainEncoder smash encDomain checkedToDomainResult
+      toFull :: ((Domain, Maybe Text), PageName) -> DomainPageName
+      toFull ((domain, maybePath), (path, query)) = (domain, (maybe id (:) maybePath $ path, query))
+      fromFull :: DomainPageName -> ((Domain, Maybe Text), PageName)
+      fromFull (domain, ([], query)) = ((domain, Nothing), ([], query))
+      fromFull (domain, ((path:paths), query)) = ((domain, Just path), (paths, query))
+      joinParts :: Encoder check parse ((Domain, Maybe Text), PageName) DomainPageName
+      joinParts = isoEncoder $ iso toFull fromFull
+  unEncoder $ chainEncoder joinParts encDomain checkedToDomainResult
 
 
 -- | This type is used by pathComponentEncoder to allow the user to indicate how to treat various cases when encoding a dependent sum of type `(R p)`.
