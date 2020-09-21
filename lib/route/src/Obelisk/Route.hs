@@ -123,7 +123,6 @@ module Obelisk.Route
   , domainFromConfig
   , uriToDomain
   , domainToString
-  , AppRoute(..)
   ) where
 
 import Prelude hiding ((.), id)
@@ -1072,7 +1071,7 @@ data FullDomainRoute :: * -> (* -> *) -> (* -> *) -> * -> * where
   FullRoute_Frontend :: ObeliskRoute d fr a -> FullDomainRoute d br fr a
 
 -- | For apps which only require one domain
-type FullRoute br fr = FullDomainRoute () (AppRoute br) (AppRoute fr)
+type FullRoute br fr = FullDomainRoute () br fr
 
 instance (Show d, GShow br, GShow fr) => GShow (FullDomainRoute d br fr) where
   gshowsPrec p = \case
@@ -1094,50 +1093,18 @@ instance (Universe d, UniverseSome br, UniverseSome fr) => UniverseSome (FullDom
   universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome]
               ++ [Some (FullRoute_Frontend x) | Some x <- universeSome]
 
--- TODO rename this
-newtype AppRoute r a where
-  AppRoute :: r a -> AppRoute r a
-
-getAppRoute :: AppRoute r a -> r a
-getAppRoute (AppRoute r) = r
-
-instance GShow r => GShow (AppRoute r) where
-  gshowsPrec p = \case
-    AppRoute x -> showParen (p > 10) (showString "AppRoute " . gshowsPrec 11 x)
-
-instance GEq r => GEq (AppRoute r) where
-  geq (AppRoute x) (AppRoute y) = geq x y
-
-instance GCompare r => GCompare (AppRoute r) where
-  gcompare (AppRoute x) (AppRoute y) = gcompare x y
-
-instance UniverseSome r => UniverseSome (AppRoute r) where
-  universeSome = concat
-    [ (\(Some r) -> Some $ AppRoute r) <$> universeSome
-    ]
-
---instance ArgDict c r => ArgDict c (AppRoute r) where
---  type ConstraintsFor (AppRoute r) c = ConstraintsFor r c
---  argDict = \case
---    AppRoute x -> has @c x Dict
-
 -- | Build the typical top level application route encoder from a route for handling 404's,
 -- and segment encoders for backend and frontend routes.
 mkFullRouteEncoder
   :: (GCompare br, GCompare fr, GShow br, GShow fr, UniverseSome br, UniverseSome fr)
   => DomainConfig ()
-  -> (R (FullDomainRoute () br fr)) -- ^ 404 handler
+  -> (R (FullRoute br fr)) -- ^ 404 handler
   -> (forall a. br a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single backend route segment
   -> (forall a. fr a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single frontend route segment
-  -> Encoder (Either Text) Identity (R (FullDomainRoute () (AppRoute br) (AppRoute fr))) DomainPageName
-mkFullRouteEncoder domains missing backendSegment frontendSegment = mkFullDomainRouteEncoder domains (\() -> mapAppRoute missing)
-  (DomainResult (domainFromConfig () domains) . backendSegment . getAppRoute)
-  (DomainResult (domainFromConfig () domains) . frontendSegment . getAppRoute)
-  where
-    mapAppRoute (FullRoute_Backend r :/ a) = FullRoute_Backend (AppRoute r) :/ a
-    mapAppRoute (FullRoute_Frontend obeliskRoute :/ a) = case obeliskRoute of
-      ObeliskRoute_App r -> FullRoute_Frontend (ObeliskRoute_App $ AppRoute r) :/ a
-      ObeliskRoute_Resource d r -> FullRoute_Frontend (ObeliskRoute_Resource d r) :/ a
+  -> Encoder (Either Text) Identity (R (FullRoute br fr)) DomainPageName
+mkFullRouteEncoder domains missing backendSegment frontendSegment = mkFullDomainRouteEncoder domains (\() -> missing)
+  (DomainResult (domainFromConfig () domains) . backendSegment)
+  (DomainResult (domainFromConfig () domains) . frontendSegment)
 
 mkFullDomainRouteEncoder
   :: (GCompare br, GCompare fr, GShow br, GShow fr, UniverseSome br, UniverseSome fr, Universe d, Ord d, Show d)
