@@ -668,7 +668,7 @@ domainPathComponentEncoder toDomainResult = Encoder $ do
       fromFull (domain, ([], query)) = ((domain, Nothing), ([], query))
       fromFull (domain, ((path:paths), query)) = ((domain, Just path), (paths, query))
       joinParts :: Encoder check parse ((Domain, Maybe Text), PageName) DomainPageName
-      joinParts = isoEncoder $ iso toFull fromFull
+      joinParts = viewEncoder $ iso toFull fromFull
   unEncoder $ chainEncoder joinParts encDomain checkedToDomainResult
 
 
