@@ -81,12 +81,10 @@ module Obelisk.Route
   , pageNameEncoder
   , domainPageNameEncoder
   , handleEncoder
-  , FullDomainRoute (..)
-  , FullRoute
+  , FullRoute (..)
   , _FullRoute_Frontend
   , _FullRoute_Backend
   , mkFullRouteEncoder
-  , mkFullDomainRouteEncoder
   , ObeliskRoute (..)
   , _ObeliskRoute_App
   , _ObeliskRoute_Resource
@@ -558,11 +556,17 @@ data DomainResult check parse a = DomainResult ConcreteDomain (SegmentResult che
 
 -- | Protocol relative origin, e.g. //localhost:8000, or //host.com
 -- Use 'domainFromConfig' to get hold of this.
-data ConcreteDomain = ConcreteDomain { unConcreteDomain :: Text } deriving (Eq, Ord, Show)
+data ConcreteDomain
+  = ConcreteDomain Text
+  | ConcreteDomain_Any
+  deriving (Eq, Ord, Show)
 
 -- | This forms the encoded side of domain routes. It should be a protocol
 -- relative origin, like 'ConcreteDomain'.
-data Domain = Domain { unDomain :: Text } deriving (Eq, Ord, Show)
+data Domain
+  = Domain Text
+  | Domain_Any
+  deriving (Eq, Ord, Show)
 -- While this and ConcreteDomain are identical, they are kept separate so users
 -- can't conjure up ConcreteDomains without getting them from their route config
 
@@ -574,7 +578,8 @@ uriToDomain uri = case URI.uriAuthority uri of
   Just auth -> Just $ Domain $ T.pack $ "//" <> URI.uriRegName auth <> URI.uriPort auth
 
 domainToString :: Domain -> String
-domainToString = T.unpack . unDomain
+domainToString (Domain t) = T.unpack t
+domainToString Domain_Any = "/"
 
 type DomainPageName = (Domain, PageName)
 
@@ -617,6 +622,7 @@ decodeDomainConfig rawConfig = first (T.unlines . (:exampleFormat)) $ do
     { _domainConfig_toConcrete = \domain -> case Map.lookup domain domainToURI of
       Nothing -> error $ "decodeDomainConfig: Domain " <> show domain <> " was missing from the map. This should be impossible!"
       Just (_, Domain d) -> ConcreteDomain d
+      Just (_, Domain_Any) -> ConcreteDomain_Any
     , _domainConfig_uris = fmap fst $ Map.elems domainToURI
     }
   where
@@ -646,21 +652,24 @@ domainPathComponentEncoder
      , MonadError Text check, MonadError Text parse
      )
   => (forall a. p a -> DomainResult check parse a)
+  -- ^ How to turn the route into a domain segment result
   -> Encoder check parse (R p) DomainPageName
 domainPathComponentEncoder toDomainResult = Encoder $ do
   let extractSegment (DomainResult _ e) = e
-  let extractPathSegment = \case
+      extractPathSegment = \case
         PathEnd _ -> Nothing
         PathSegment t _ -> Just t
       extractDomainPath (DomainResult (ConcreteDomain d) s) = (Domain d, extractPathSegment s)
-  let extractEncoder = \case
+      extractDomainPath (DomainResult ConcreteDomain_Any s) = (Domain_Any, extractPathSegment s)
+      extractEncoder = \case
         PathEnd e -> first (unitEncoder []) . coidl . e
         PathSegment _ e -> e
 
-  EncoderFunc checkedToDomainResult <- checkEnum1EncoderFunc $ extractEncoder . extractSegment . toDomainResult
+  EncoderFunc (encodePageName :: forall a. p a -> Encoder Identity parse a PageName) <-
+    checkEnum1EncoderFunc $ extractEncoder . extractSegment . toDomainResult
 
   let encDomain :: Encoder check parse (Some p) (Domain, Maybe Text)
-      encDomain = enum1Encoder $ extractDomainPath . toDomainResult
+      encDomain = domainEnum1Encoder $ extractDomainPath . toDomainResult
       toFull :: ((Domain, Maybe Text), PageName) -> DomainPageName
       toFull ((domain, maybePath), (path, query)) = (domain, (maybe id (:) maybePath $ path, query))
       fromFull :: DomainPageName -> ((Domain, Maybe Text), PageName)
@@ -668,7 +677,51 @@ domainPathComponentEncoder toDomainResult = Encoder $ do
       fromFull (domain, ((path:paths), query)) = ((domain, Just path), (paths, query))
       joinParts :: Encoder check parse ((Domain, Maybe Text), PageName) DomainPageName
       joinParts = viewEncoder $ iso toFull fromFull
-  unEncoder $ chainEncoder joinParts encDomain checkedToDomainResult
+  unEncoder $ chainEncoder joinParts encDomain encodePageName
+
+-- | enum1Encoder, but special cased for Domain_Any
+domainEnum1Encoder
+  :: forall parse check p r. (Universe (Some p), MonadError Text parse, MonadError Text check, Ord r, GCompare p, Show r, GShow p)
+  => (forall a. p a -> (Domain, r))
+  -> Encoder check parse (Some p) (Domain, r)
+domainEnum1Encoder f = Encoder $ do
+  let reversed :: Map r (Map Domain (Set (Some p)))
+      reversed = Map.fromListWith (Map.unionWith (<>))
+        [ let (d, r) = f p in (r, Map.singleton d (Set.singleton $ Some p)) | Some p <- universe ]
+      checkSingletonOuter
+        :: r
+        -> Map Domain (Set (Some p))
+        -> Validation (Map (Domain, r) (Set (Some p))) (Map Domain (Some p))
+      checkSingletonOuter r m
+        -- If we can decode this to 'Any' _and_ some domain, it's ambiguous
+        | Map.member Domain_Any m && Map.size m > 1 = Failure $ Map.mapKeys (\d -> (d, r)) m
+        | otherwise = itraverse (checkSingletonInner r) m
+      checkSingletonInner
+        :: r
+        -> Domain
+        -> Set (Some p)
+        -> Validation (Map (Domain, r) (Set (Some p))) (Some p)
+      checkSingletonInner r k vs = case Set.toList vs of
+        [] -> error "enumEncoder: empty reverse mapping; should be impossible"
+        [e] -> Success e
+        _ -> Failure $ Map.mapKeys (\d -> (d, r)) $ Map.singleton k vs
+      showRedundant :: (Domain, r) -> Set (Some p) -> [Text]
+      showRedundant k vs = ("  " <> tshow k <> " can decode to any of:")
+        : fmap (("    "<>) . tshow) (Set.toList vs)
+  case itraverse checkSingletonOuter reversed
+          :: Validation (Map (Domain, r) (Set (Some p))) (Map r (Map Domain (Some p))) of
+    Failure ambiguousEntries -> throwError $ T.unlines $
+      "enumEncoder: ambiguous encodings detected:" : concat (Map.elems $ imap showRedundant ambiguousEntries)
+    Success m -> pure $ EncoderImpl
+      { _encoderImpl_decode = \(d, r) -> case Map.lookup r m of
+          Just m' -> case Map.lookup d m' of
+            Just a -> pure a
+            Nothing -> case Map.lookup Domain_Any m' of
+              Just a -> pure a
+              Nothing -> throwError $ "domainEnum1Encoder: domain not recognized: " <> tshow (d, r) --TODO: Report this as a better type
+          Nothing -> throwError $ "domainEnum1Encoder: route not recognized: " <> tshow (d, r) --TODO: Report this as a better type
+      , _encoderImpl_encode = \(Some p) -> f p
+      }
 
 
 -- | This type is used by pathComponentEncoder to allow the user to indicate how to treat various cases when encoding a dependent sum of type `(R p)`.
@@ -696,7 +749,7 @@ pathComponentEncoder f = Encoder $ do
         PathEnd _ -> Nothing
         PathSegment t _ -> Just t
   EncoderFunc f' <- checkEnum1EncoderFunc (extractEncoder . f)
-  unEncoder (pathComponentEncoderImpl (enum1Encoder (extractPathSegment . f)) f')
+  unEncoder (pathComponentEncoderImpl (enum1Encoder "pathComponentEncoder" (extractPathSegment . f)) f')
 
 pathComponentEncoderImpl :: forall check parse p. (Monad check, Monad parse)
   => Encoder check parse (Some p) (Maybe Text)
@@ -793,13 +846,13 @@ enum1Encoder
      , Ord r
      , Show r
      )
-  => (forall a. p a -> r) -> Encoder check parse (Some p) r
-enum1Encoder f = enumEncoder $ \(Some p) -> f p
+  => Text -> (forall a. p a -> r) -> Encoder check parse (Some p) r
+enum1Encoder x f = enumEncoder x $ \(Some p) -> f p
 
 -- | Encode an enumerable, bounded type.  WARNING: Don't use this on types that
 -- have a large number of values - it will use a lot of memory.
-enumEncoder :: forall parse check p r. (Universe p, Show p, Ord p, Ord r, MonadError Text parse, MonadError Text check, Show r) => (p -> r) -> Encoder check parse p r
-enumEncoder f = Encoder $ do
+enumEncoder :: forall parse check p r. (Universe p, Show p, Ord p, Ord r, MonadError Text parse, MonadError Text check, Show r) => Text -> (p -> r) -> Encoder check parse p r
+enumEncoder x f = Encoder $ do
   let reversed = Map.fromListWith (<>) [ (f p, Set.singleton p) | p <- universe ]
       checkSingleton k vs = case Set.toList vs of
         [] -> error "enumEncoder: empty reverse mapping; should be impossible"
@@ -814,7 +867,7 @@ enumEncoder f = Encoder $ do
     Success m -> pure $ EncoderImpl
       { _encoderImpl_decode = \r -> case Map.lookup r m of
           Just a -> pure a
-          Nothing -> throwError $ "enumEncoder: not recognized: " <> tshow r --TODO: Report this as a better type
+          Nothing -> throwError $ "enumEncoder: " <> x <> " not recognized: " <> tshow r --TODO: Report this as a better type
       , _encoderImpl_encode = f
       }
 
@@ -1022,6 +1075,8 @@ domainPageNameEncoder :: (Applicative check, MonadError Text parse) => Encoder c
 domainPageNameEncoder = bimap (unpackTextEncoder . isoEncoder (iso domainToText stringToDomain)) pageNameEncoder
   where
     domainToText (Domain uri) = uri
+    domainToText Domain_Any = "/"
+    stringToDomain "/" = Domain_Any
     stringToDomain x = Domain x
 
 -- | Handle an error in parsing, for example, in order to redirect to a 404 page.
@@ -1038,26 +1093,6 @@ handleEncoder recover e = Encoder $ do
       Left err -> recover err
     }
 
--- | Handle an error in parsing, for example, in order to redirect to a 404 page.
-handleFullRouteEncoder
-  :: (Functor check, Universe domain)
-  => DomainConfig domain
-  -> (domain -> e -> R (FullDomainRoute domain b f))
-  -> Encoder check (Either e) (R (FullDomainRoute domain b f)) DomainPageName
-  -> Encoder check Identity (R (FullDomainRoute domain b f)) DomainPageName
-handleFullRouteEncoder domains recover e = Encoder $ do
-  i <- unEncoder e
-  return $ i
-    { _encoderImpl_decode = \a@(d, _) -> pure $ case _encoderImpl_decode i a of
-      Right r -> r
-      Left err -> recover (decodeDomain d) err
-    }
-  where
-    domainMap = Map.fromList $ flip fmap universe $ \d -> (domainFromConfig d domains, d)
-    decodeDomain (Domain d) = case Map.lookup (ConcreteDomain d) domainMap of
-      Nothing -> error "handleFullRouteEncoder: received an unknown domain, this should be impossible!"
-      Just d' -> d'
-
 --------------------------------------------------------------------------------
 -- Actual obelisk route info
 --------------------------------------------------------------------------------
@@ -1065,30 +1100,27 @@ handleFullRouteEncoder domains recover e = Encoder $ do
 -- | The typical full route type comprising all of an Obelisk application's routes.
 -- Parameterised by the possible domains and top level GADTs that define backend
 -- and frontend routes, respectively.
-data FullDomainRoute :: * -> (* -> *) -> (* -> *) -> * -> * where
-  FullRoute_Backend :: br a -> FullDomainRoute d br fr a
-  FullRoute_Frontend :: ObeliskRoute d fr a -> FullDomainRoute d br fr a
+data FullRoute :: (* -> *) -> (* -> *) -> * -> * where
+  FullRoute_Backend :: br a -> FullRoute br fr a
+  FullRoute_Frontend :: ObeliskRoute fr a -> FullRoute br fr a
 
--- | For apps which only require one domain
-type FullRoute br fr = FullDomainRoute () br fr
-
-instance (Show d, GShow br, GShow fr) => GShow (FullDomainRoute d br fr) where
+instance (GShow br, GShow fr) => GShow (FullRoute br fr) where
   gshowsPrec p = \case
     FullRoute_Backend x -> showParen (p > 10) (showString "FullRoute_Backend " . gshowsPrec 11 x)
     FullRoute_Frontend x -> showParen (p > 10) (showString "FullRoute_Frontend " . gshowsPrec 11 x)
 
-instance (Eq d, GEq br, GEq fr) => GEq (FullDomainRoute d br fr) where
+instance (GEq br, GEq fr) => GEq (FullRoute br fr) where
   geq (FullRoute_Backend x) (FullRoute_Backend y) = geq x y
   geq (FullRoute_Frontend x) (FullRoute_Frontend y) = geq x y
   geq _ _ = Nothing
 
-instance (Ord d, GCompare br, GCompare fr) => GCompare (FullDomainRoute d br fr) where
+instance (GCompare br, GCompare fr) => GCompare (FullRoute br fr) where
   gcompare (FullRoute_Backend _) (FullRoute_Frontend _) = GLT
   gcompare (FullRoute_Frontend _) (FullRoute_Backend _) = GGT
   gcompare (FullRoute_Backend x) (FullRoute_Backend y) = gcompare x y
   gcompare (FullRoute_Frontend x) (FullRoute_Frontend y) = gcompare x y
 
-instance (Universe d, UniverseSome br, UniverseSome fr) => UniverseSome (FullDomainRoute d br fr) where
+instance (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) where
   universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome]
               ++ [Some (FullRoute_Frontend x) | Some x <- universeSome]
 
@@ -1096,55 +1128,40 @@ instance (Universe d, UniverseSome br, UniverseSome fr) => UniverseSome (FullDom
 -- and segment encoders for backend and frontend routes.
 mkFullRouteEncoder
   :: (GCompare br, GCompare fr, GShow br, GShow fr, UniverseSome br, UniverseSome fr)
-  => DomainConfig ()
-  -> (R (FullRoute br fr)) -- ^ 404 handler
-  -> (forall a. br a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single backend route segment
-  -> (forall a. fr a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single frontend route segment
-  -> Encoder (Either Text) Identity (R (FullRoute br fr)) DomainPageName
-mkFullRouteEncoder domains missing backendSegment frontendSegment = mkFullDomainRouteEncoder domains (\() -> missing)
-  (DomainResult (domainFromConfig () domains) . backendSegment)
-  (DomainResult (domainFromConfig () domains) . frontendSegment)
-
-mkFullDomainRouteEncoder
-  :: (GCompare br, GCompare fr, GShow br, GShow fr, UniverseSome br, UniverseSome fr, Universe d, Ord d, Show d)
-  => DomainConfig d
-  -> (d -> R (FullDomainRoute d br fr)) -- ^ 404 handler
+  => (R (FullRoute br fr)) -- ^ 404 handler
   -> (forall a. br a -> DomainResult (Either Text) (Either Text) a) -- ^ How to encode a single backend route segment
   -> (forall a. fr a -> DomainResult (Either Text) (Either Text) a) -- ^ How to encode a single frontend route segment
-  -> Encoder (Either Text) Identity (R (FullDomainRoute d br fr)) DomainPageName
-mkFullDomainRouteEncoder domains missing backendSegment frontendSegment = handleFullRouteEncoder domains (\d _ -> missing d) $
+  -> Encoder (Either Text) Identity (R (FullRoute br fr)) DomainPageName
+mkFullRouteEncoder missing backendSegment frontendSegment = handleEncoder (\_ -> missing) $
   domainPathComponentEncoder $ \case
     FullRoute_Backend backendRoute -> backendSegment backendRoute
-    FullRoute_Frontend obeliskRoute -> obeliskRouteSegment domains obeliskRoute frontendSegment
+    FullRoute_Frontend obeliskRoute -> obeliskRouteSegment obeliskRoute frontendSegment
 
 -- | A type which can represent Obelisk-specific resource routes, in addition to application specific routes which serve your
 -- frontend.
-data ObeliskRoute :: * -> (* -> *) -> * -> * where
+data ObeliskRoute :: (* -> *) -> * -> * where
   -- We need to have the `f a` as an argument here, because otherwise we have no way to specifically check for overlap between us and the given encoder
-  ObeliskRoute_App :: f a -> ObeliskRoute d f a
+  ObeliskRoute_App :: f a -> ObeliskRoute f a
   -- This domain type is deliberately not concrete so we can use `universe` and
   -- generate internal routes for every domain
-  ObeliskRoute_Resource :: d -> ResourceRoute a -> ObeliskRoute d f a
+  ObeliskRoute_Resource :: ResourceRoute a -> ObeliskRoute f a
 
-instance (Universe d, UniverseSome f) => UniverseSome (ObeliskRoute d f) where
+instance UniverseSome f => UniverseSome (ObeliskRoute f) where
   universeSome = concat
     [ (\(Some x) -> Some (ObeliskRoute_App x)) <$> universe
-    , (\d (Some x) -> Some (ObeliskRoute_Resource d x)) <$> universe <*> universe
+    , (\(Some x) -> Some (ObeliskRoute_Resource x)) <$> universe
     ]
 
-instance (Eq d, GEq f) => GEq (ObeliskRoute d f) where
+instance GEq f => GEq (ObeliskRoute f) where
   geq (ObeliskRoute_App x) (ObeliskRoute_App y) = geq x y
-  geq (ObeliskRoute_Resource dx x) (ObeliskRoute_Resource dy y) | dx == dy = geq x y
+  geq (ObeliskRoute_Resource x) (ObeliskRoute_Resource y) = geq x y
   geq _ _ = Nothing
 
-instance (Ord d, GCompare f) => GCompare (ObeliskRoute d f) where
+instance GCompare f => GCompare (ObeliskRoute f) where
   gcompare (ObeliskRoute_App x) (ObeliskRoute_App y) = gcompare x y
-  gcompare (ObeliskRoute_Resource dx x) (ObeliskRoute_Resource dy y) = case compare dx dy of
-    LT -> GLT
-    GT -> GGT
-    EQ -> gcompare x y
-  gcompare (ObeliskRoute_App _) (ObeliskRoute_Resource _ _) = GLT
-  gcompare (ObeliskRoute_Resource _ _) (ObeliskRoute_App _) = GGT
+  gcompare (ObeliskRoute_Resource x) (ObeliskRoute_Resource y) = gcompare x y
+  gcompare (ObeliskRoute_App _) (ObeliskRoute_Resource _) = GLT
+  gcompare (ObeliskRoute_Resource _) (ObeliskRoute_App _) = GGT
 
 -- | A type representing the various resource routes served by Obelisk. These can in principle map to any physical routes you want,
 -- but sane defaults are provided by 'resourceRouteSegment'
@@ -1158,32 +1175,29 @@ data ResourceRoute :: * -> * where
 -- this constructs a suitable 'Encoder' to use for encoding routes to 'PageName's. If you do have additional backend routes,
 -- you'll want to use 'pathComponentEncoder' yourself, applied to a function that will likely use obeliskRouteSegment in order to
 -- handle the ObeliskRoute case (i.e. Obelisk resource routes and app frontend routes).
-obeliskRouteEncoder :: forall check parse appRoute d.
-     ( Universe (Some (ObeliskRoute d appRoute))
-     , GCompare (ObeliskRoute d appRoute)
+obeliskRouteEncoder :: forall check parse appRoute.
+     ( Universe (Some (ObeliskRoute appRoute))
+     , GCompare (ObeliskRoute appRoute)
      , GShow appRoute
      , MonadError Text check
      , check ~ parse --TODO: Get rid of this
-     , Show d
      )
-  => DomainConfig d
-  -> (forall a. appRoute a -> DomainResult check parse a)
-  -> Encoder check parse (R (ObeliskRoute d appRoute)) DomainPageName
-obeliskRouteEncoder domains appRouteSegment = domainPathComponentEncoder $ \r ->
-  obeliskRouteSegment domains r appRouteSegment
+  => (forall a. appRoute a -> DomainResult check parse a)
+  -> Encoder check parse (R (ObeliskRoute appRoute)) DomainPageName
+obeliskRouteEncoder appRouteSegment = domainPathComponentEncoder $ \r ->
+  obeliskRouteSegment r appRouteSegment
 
 -- | From a function which explains how app-specific frontend routes translate into segments, produce a function which does the
 -- same for ObeliskRoute. This uses the given function for the 'ObeliskRoute_App' case, and 'resourceRouteSegment' for the
 -- 'ObeliskRoute_Resource' case.
-obeliskRouteSegment :: forall check parse appRoute d a.
+obeliskRouteSegment :: forall check parse appRoute a.
      (MonadError Text check, MonadError Text parse)
-  => DomainConfig d
-  -> ObeliskRoute d appRoute a
+  => ObeliskRoute appRoute a
   -> (forall b. appRoute b -> DomainResult check parse b)
   -> DomainResult check parse a
-obeliskRouteSegment domains r appRouteSegment = case r of
+obeliskRouteSegment r appRouteSegment = case r of
   ObeliskRoute_App appRoute -> appRouteSegment appRoute
-  ObeliskRoute_Resource domain resourceRoute -> DomainResult (domainFromConfig domain domains) $ resourceRouteSegment resourceRoute
+  ObeliskRoute_Resource resourceRoute -> DomainResult ConcreteDomain_Any $ resourceRouteSegment resourceRoute
 
 -- | A function which gives a sane default for how to encode Obelisk resource routes. It's given in this form, because it will
 -- be combined with other such segment encoders before 'pathComponentEncoder' turns it into a proper 'Encoder'.
@@ -1205,12 +1219,12 @@ jsaddleWarpRouteEncoder = pathComponentEncoder $ \case
   JSaddleWarpRoute_WebSocket ->  PathEnd $ unitEncoder mempty
   JSaddleWarpRoute_Sync -> PathSegment "sync" pathOnlyEncoder
 
-instance (Show d, GShow appRoute) => GShow (ObeliskRoute d appRoute) where
+instance GShow appRoute => GShow (ObeliskRoute appRoute) where
   gshowsPrec prec = \case
     ObeliskRoute_App appRoute -> showParen (prec > 10) $
       showString "ObeliskRoute_App " . gshowsPrec 11 appRoute
-    ObeliskRoute_Resource d appRoute -> showParen (prec > 10) $
-      showString "ObeliskRoute_Resource " . showsPrec 11 d . showString " " . gshowsPrec 11 appRoute
+    ObeliskRoute_Resource appRoute -> showParen (prec > 10) $
+      showString "ObeliskRoute_Resource " . gshowsPrec 11 appRoute
 
 data IndexOnlyRoute :: * -> * where
   IndexOnlyRoute :: IndexOnlyRoute ()
@@ -1250,28 +1264,28 @@ instance GShow Void1 where
 -- | Given a backend route and a checked route encoder, render the route (path
 -- and query string). See 'checkEncoder' for how to produce a checked encoder.
 renderBackendRoute
-  :: forall d br a.
-     Encoder Identity Identity (R (FullDomainRoute d br a)) DomainPageName
+  :: forall br a.
+     Encoder Identity Identity (R (FullRoute br a)) DomainPageName
   -> R br
   -> Text
 renderBackendRoute enc = renderObeliskRoute enc . hoistR FullRoute_Backend
 
 -- | Renders a frontend route with the supplied checked encoder
 renderFrontendRoute
-  :: forall d a fr.
-     Encoder Identity Identity (R (FullDomainRoute d a fr)) DomainPageName
+  :: forall a fr.
+     Encoder Identity Identity (R (FullRoute a fr)) DomainPageName
   -> R fr
   -> Text
 renderFrontendRoute enc = renderObeliskRoute enc . hoistR (FullRoute_Frontend . ObeliskRoute_App)
 
 -- | Renders a route of the form typically found in an Obelisk project
 renderObeliskRoute
-  :: forall d a b.
-     Encoder Identity Identity (R (FullDomainRoute d a b)) DomainPageName
-  -> R (FullDomainRoute d a b)
+  :: forall a b.
+     Encoder Identity Identity (R (FullRoute a b)) DomainPageName
+  -> R (FullRoute a b)
   -> Text
 renderObeliskRoute e r =
-  let enc :: Encoder Identity (Either Text) (R (FullDomainRoute d a b)) DomainPathQuery
+  let enc :: Encoder Identity (Either Text) (R (FullRoute a b)) DomainPathQuery
       enc = (domainPageNameEncoder . hoistParse (pure . runIdentity) e)
       (d, (p, q)) = encode enc r
   in T.pack d <> T.pack p <> T.pack q
@@ -1419,6 +1433,6 @@ concat <$> mapM deriveRouteComponent
   ]
 
 makePrisms ''ObeliskRoute
-makePrisms ''FullDomainRoute
+makePrisms ''FullRoute
 deriveGEq ''Void1
 deriveGCompare ''Void1

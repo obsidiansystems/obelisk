@@ -150,8 +150,8 @@ data FrontendMode = FrontendMode
 -- route exists ambiently in the context (e.g. anything but web).
 -- Selects FrontendMode based on platform; this doesn't work for jsaddle-warp
 runFrontend
-  :: forall d backendRoute route
-  .  Encoder Identity Identity (R (FullDomainRoute d backendRoute route)) DomainPageName
+  :: forall backendRoute route
+  .  Encoder Identity Identity (R (FullRoute backendRoute route)) DomainPageName
   -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
@@ -184,10 +184,10 @@ getCheckedDomainConfig configs = case Map.lookup "common/route" configs of
   Just r -> either (error . T.unpack) id $ decodeDomainConfig r
 
 runFrontendWithConfigsAndCurrentRoute
-  :: forall d backendRoute frontendRoute
+  :: forall backendRoute frontendRoute
   .  FrontendMode
   -> Map Text ByteString
-  -> Encoder Identity Identity (R (FullDomainRoute d backendRoute frontendRoute)) DomainPageName
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) DomainPageName
   -> Frontend (R frontendRoute)
   -> JSM ()
 runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = do

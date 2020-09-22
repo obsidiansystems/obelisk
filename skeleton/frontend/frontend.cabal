@@ -28,6 +28,7 @@ executable frontend
                , reflex-dom
                , obelisk-generated-static
                , frontend
+               , obelisk-executable-config-lookup
   ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates
   if impl(ghcjs)
     ghc-options: -dedupe
