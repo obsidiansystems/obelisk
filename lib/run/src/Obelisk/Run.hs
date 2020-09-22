@@ -130,7 +130,7 @@ runWidget
   -> Map Text ByteString
   -> DomainConfig domains
   -> Frontend (R frontendRoute)
-  -> Encoder Identity Identity (R (FullDomainRoute domains backendRoute frontendRoute)) DomainPageName
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) DomainPageName
   -> IO ()
 runWidget conf configs domainConfig frontend validFullEncoder = do
   threads <- for (domainConfigURIs domainConfig) $ \networkURI -> async $ do
@@ -178,11 +178,11 @@ requestDomainWai req = Domain $ "//" <> hostName
   where hostName = maybe "" T.decodeUtf8 $ W.requestHeaderHost req
 
 obeliskApp
-  :: forall domains frontendRoute backendRoute
+  :: forall frontendRoute backendRoute
   .  Map Text ByteString
   -> ConnectionOptions
   -> Frontend (R frontendRoute)
-  -> Encoder Identity Identity (R (FullDomainRoute domains backendRoute frontendRoute)) DomainPageName
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) DomainPageName
   -> URI
   -> Application
   -> IO Application
@@ -200,7 +200,7 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
   jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
   return $ \req sendResponse -> case tryDecode validFullEncoder $ (requestDomainWai req, byteStringsToPageName (BS.dropWhile (== (fromIntegral $ fromEnum '/')) $ W.rawPathInfo req) (BS.drop 1 $ W.rawQueryString req)) of
     Identity r -> case r of
-      FullRoute_Frontend (ObeliskRoute_Resource _d ResourceRoute_JSaddleWarp) :/ jsaddleRoute -> case jsaddleRoute of
+      FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :/ jsaddleRoute -> case jsaddleRoute of
         JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just jsaddleUri) False
         _ -> flip jsaddle sendResponse $ req
           { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder jsaddleRoute

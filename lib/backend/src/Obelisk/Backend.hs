@@ -71,7 +71,7 @@ import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 data Backend domains backendRoute frontendRoute = Backend
-  { _backend_routeEncoder :: DomainConfig domains -> Encoder (Either Text) Identity (R (FullDomainRoute domains backendRoute frontendRoute)) DomainPageName
+  { _backend_routeEncoder :: DomainConfig domains -> Encoder (Either Text) Identity (R (FullRoute backendRoute frontendRoute)) DomainPageName
   , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
   } deriving (Generic)
 
@@ -115,7 +115,7 @@ serveDefaultObeliskApp
   -> ([Text] -> m ())
   -> Frontend (R appRoute)
   -> Map Text ByteString
-  -> R (ObeliskRoute d appRoute)
+  -> R (ObeliskRoute appRoute)
   -> m ()
 serveDefaultObeliskApp urlEnc ghcjsWidgets serveStaticAsset frontend =
   serveObeliskApp urlEnc ghcjsWidgets serveStaticAsset frontendApp
@@ -182,7 +182,7 @@ getRouteWith e = do
   d <- getDomainPageName
   return $ tryDecode e d
 
-renderAllJsPath :: Encoder Identity Identity (R (FullDomainRoute d a b)) DomainPageName -> Text
+renderAllJsPath :: Encoder Identity Identity (R (FullRoute a b)) DomainPageName -> Text
 renderAllJsPath _validFullEncoder =
   -- TODO come back to this
   --renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ ["all.js"]
@@ -195,11 +195,11 @@ serveObeliskApp
   -> ([Text] -> m ())
   -> GhcjsApp (R appRoute)
   -> Map Text ByteString
-  -> R (ObeliskRoute d appRoute)
+  -> R (ObeliskRoute appRoute)
   -> m ()
 serveObeliskApp urlEnc ghcjsWidgets serveStaticAsset frontendApp config = \case
   ObeliskRoute_App appRouteComponent :=> Identity appRouteRest -> serveGhcjsApp urlEnc ghcjsWidgets frontendApp config $ GhcjsAppRoute_App appRouteComponent :/ appRouteRest
-  ObeliskRoute_Resource _d resComponent :=> Identity resRest -> case resComponent :=> Identity resRest of
+  ObeliskRoute_Resource resComponent :=> Identity resRest -> case resComponent :=> Identity resRest of
     ResourceRoute_Static :=> Identity pathSegments -> serveStaticAsset pathSegments
     ResourceRoute_Ghcjs :=> Identity pathSegments -> serveGhcjsApp urlEnc ghcjsWidgets frontendApp config $ GhcjsAppRoute_Resource :/ pathSegments
     ResourceRoute_JSaddleWarp :=> Identity _ -> do
