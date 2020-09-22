@@ -34,12 +34,12 @@ data FrontendRoute :: * -> * where
 
 fullRouteEncoder
   :: DomainConfig () -> Encoder (Either Text) Identity (R (FullRoute BackendRoute FrontendRoute)) DomainPageName
-fullRouteEncoder domainConfig = mkFullRouteEncoder domainConfig
+fullRouteEncoder domainConfig = mkFullRouteEncoder
   (FullRoute_Backend BackendRoute_Missing :/ ())
   (\case
-      BackendRoute_Missing -> PathSegment "missing" $ unitEncoder mempty)
+      BackendRoute_Missing -> DomainResult (domainFromConfig () domainConfig) $ PathSegment "missing" $ unitEncoder mempty)
   (\case
-      FrontendRoute_Main -> PathEnd $ unitEncoder mempty)
+      FrontendRoute_Main -> DomainResult (domainFromConfig () domainConfig) $ PathEnd $ unitEncoder mempty)
 
 concat <$> mapM deriveRouteComponent
   [ ''BackendRoute
