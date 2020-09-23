@@ -579,8 +579,15 @@ uriToDomain uri = case URI.uriAuthority uri of
   Just auth -> Just $ Domain $ T.pack $ "//" <> URI.uriRegName auth <> URI.uriPort auth
 
 domainToString :: Domain -> String
-domainToString (Domain t) = T.unpack t
-domainToString Domain_Any = "/"
+domainToString = T.unpack . domainToText
+
+domainToText :: Domain -> Text
+domainToText = \case
+  Domain uri -> uri
+  Domain_Any -> "/"
+
+textToDomain :: Text -> Domain
+textToDomain = Domain
 
 type DomainPageName = (Domain, PageName)
 
@@ -1073,12 +1080,7 @@ pageNameEncoder = bimap
   (unpackTextEncoder . prefixNonemptyTextEncoder "?" . queryParametersTextEncoder . toListMapEncoder)
 
 domainPageNameEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse DomainPageName DomainPathQuery
-domainPageNameEncoder = bimap (unpackTextEncoder . isoEncoder (iso domainToText stringToDomain)) pageNameEncoder
-  where
-    domainToText (Domain uri) = uri
-    domainToText Domain_Any = "/"
-    stringToDomain "/" = Domain_Any
-    stringToDomain x = Domain x
+domainPageNameEncoder = bimap (unpackTextEncoder . isoEncoder (iso domainToText textToDomain)) pageNameEncoder
 
 -- | Handle an error in parsing, for example, in order to redirect to a 404 page.
 handleEncoder
