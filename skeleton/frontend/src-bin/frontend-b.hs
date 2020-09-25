@@ -8,6 +8,5 @@ import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 main :: IO ()
 main = do
   configs <- Lookup.getConfigs
-  let domains = getCheckedRouteConfig configs
-  let Right validFullEncoder = checkEncoder $ fullRouteEncoder domains
-  run $ runFrontend validFullEncoder frontend
+  let Right validFullEncoder = checkEncoder domainBFullRouteEncoder
+  run $ runFrontend validFullEncoder frontendB

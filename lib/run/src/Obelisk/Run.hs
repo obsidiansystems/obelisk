@@ -19,6 +19,7 @@ module Obelisk.Run where
 
 import Prelude hiding ((.), id)
 
+import Control.Monad.IO.Class
 import Control.Category
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -76,41 +77,101 @@ import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
 import Web.Cookie
+import Data.GADT.Compare
 
 #if defined(IPROUTE_SUPPORTED)
 import qualified System.Which
 #endif
 
 run
-  :: (Universe domains, Ord domains, Show domains)
+  :: forall route. (Universe (SomeDomain route), GCompare route)
   => Int -- ^ Port to run the backend
   -> ([Text] -> Snap ()) -- ^ Static asset handler
-  -> Backend domains backendRoute frontendRoute -- ^ Backend
-  -> Frontend (R frontendRoute) -- ^ Frontend
+  -> Backend route -- ^ Backend
   -> IO ()
-run port serveStaticAsset backend frontend = do
+run port serveStaticAsset backend = do
   prettifyOutput
   publicConfigs <- getPublicConfigs
-  let domains = getCheckedDomainConfig publicConfigs
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
-  case checkEncoder $ _backend_routeEncoder backend domains of
+  case checkAllEncoders $ _backend_routeEncoder backend of
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
-    Right validFullEncoder -> do
+    Right (CheckedEncoders mkValidEncoder) -> do
+      let routeConfig = getCheckedRouteConfig publicConfigs
+          backwardsURI :: Map (Maybe Domain) (SomeDomain route)
+          backwardsURI = Map.fromList $ (\(SomeDomain route) -> (uriToDomain $ _backend_obRunBaseRoute backend routeConfig route, SomeDomain route)) <$> universe
+          parseDomain :: Domain -> SomeDomain route
+          parseDomain d = case Map.lookup (Just d) backwardsURI of
+              Nothing -> error $ "parseDomain: couln't find URI: " <> show d
+              Just someDomain -> someDomain
       backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $
-        _backend_run backend $ \serveRoute ->
+        _backend_run backend $ \(serveRoute :: forall b f. route (R (FullRoute b f)) -> R b -> Snap ()) ->
           runSnapWithCommandLineArgs $
-            getRouteWith validFullEncoder >>= \case
-              Identity r -> case r of
-                FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
+            getRouteWith parseDomain mkValidEncoder $ \domainPart -> \case
+              Identity (r :: R (FullRoute b f)) -> case r of
+                FullRoute_Backend backendRoute :/ a -> do
+                  liftIO $ putStrLn $ "backendRoute"
+                  serveRoute domainPart $ backendRoute :/ a
                 FullRoute_Frontend obeliskRoute :/ a ->
-                  serveDefaultObeliskApp appRouteToUrl (($ allJsUrl) <$> defaultGhcjsWidgets) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
+                  serveDefaultObeliskApp
+                    appRouteToUrl
+                    (($ allJsUrl) <$> defaultGhcjsWidgets)
+                    serveStaticAsset
+                    (_backend_frontend backend domainPart)
+                    (_backend_frontendName backend domainPart) -- Not actually used in this case
+                    publicConfigs
+                    (obeliskRoute :/ a)
                   where
-                    appRouteToUrl (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
-                    allJsUrl = renderAllJsPath validFullEncoder
+                    appRouteToUrl (k :/ v) = renderObeliskRoute (mkValidEncoder domainPart) (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
+                    allJsUrl = renderAllJsPath (mkValidEncoder domainPart)
 
       let conf = defRunConfig { _runConfig_redirectPort = port }
-      runWidget conf publicConfigs domains frontend validFullEncoder `finally` killThread backendTid
+      runWidget conf publicConfigs backend mkValidEncoder `finally` killThread backendTid
+
+--run
+--  :: forall route. (Has C route, GEq route, Universe (SomeDomain route))
+--  => Int -- ^ Port to run the backend
+--  -> ([Text] -> Snap ()) -- ^ Static asset handler
+--  -> Backend route -- ^ Backend
+--  -> IO ()
+--run port serveStaticAsset backend = do
+--  prettifyOutput
+--  publicConfigs <- getPublicConfigs
+--  let routeConfig = getCheckedRouteConfig publicConfigs
+--  let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
+--  --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
+--  case checkEncoder $ _backend_routeEncoder backend routeConfig of
+--    Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
+--    Right (validFullEncoder :: Encoder Identity Identity (R route) DomainPageName) -> do
+--      --let backwardsURI :: Map (Maybe Domain) (SomeDomain route)
+--      --    backwardsURI = Map.fromList $ (\(SomeDomain route) -> (uriToDomain $ _backend_baseRoute backend routeConfig route, SomeDomain route)) <$> universe
+--      --    parseDomain :: Domain -> SomeDomain route
+--      --    parseDomain d = case Map.lookup (Just d) backwardsURI of
+--      --        Nothing -> error $ "parseDomain: couln't find URI: " <> show d
+--      --        Just someDomain -> someDomain
+--      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $
+--        _backend_run backend $ \(serveRoute :: forall b f. route (R (FullRoute b f)) -> R b -> Snap ()) ->
+--          runSnapWithCommandLineArgs $
+--            getRouteWith validFullEncoder $ \outerRoute -> \case
+--              (innerRoute :: R (FullRoute b f)) -> case innerRoute of
+--                FullRoute_Backend backendRoute :/ a -> do
+--                  liftIO $ putStrLn $ "backendRoute"
+--                  serveRoute outerRoute $ backendRoute :/ a
+--                FullRoute_Frontend obeliskRoute :/ a ->
+--                  serveDefaultObeliskApp
+--                    appRouteToUrl
+--                    (($ allJsUrl) <$> defaultGhcjsWidgets)
+--                    serveStaticAsset
+--                    (_backend_frontend backend outerRoute)
+--                    publicConfigs
+--                    (obeliskRoute :/ a)
+--                  where
+--                    appRouteToUrl (k :/ v) = renderFullObeliskRoute validFullEncoder $ outerRoute :/ (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
+--                    allJsUrl = renderAllJsPath validFullEncoder outerRoute
+
+--      let conf = defRunConfig { _runConfig_redirectPort = port }
+--      runWidget conf publicConfigs backend validFullEncoder `finally` killThread backendTid
+
 
 -- Convenience wrapper to handle path segments for 'Snap.serveAsset'
 runServeAsset :: FilePath -> [Text] -> Snap ()
@@ -126,15 +187,20 @@ getConfigRoute configs = case Map.lookup "common/route" configs of
     Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
 
 runWidget
-  :: RunConfig
+  :: forall route. (Universe (SomeDomain route))
+  => RunConfig
   -> Map Text ByteString
-  -> DomainConfig domains
-  -> Frontend (R frontendRoute)
-  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) DomainPageName
+  -> Backend route
+  -- -> Encoder Identity Identity (R route) DomainPageName
+  -> (forall b f. route (R (FullRoute b f)) -> Encoder Identity Identity (R (FullRoute b f)) PageName)
   -> IO ()
-runWidget conf configs domainConfig frontend validFullEncoder = do
-  threads <- for (domainConfigURIs domainConfig) $ \networkURI -> async $ do
-    uri <- either (fail . show) pure $ URI.mkURI $ T.pack $ NetworkURI.uriToString id networkURI ""
+runWidget conf configs backend mkValidFullEncoder = do
+  let routeConfig = getCheckedRouteConfig configs
+  threads <- for universe $ \(SomeDomain baseRoute :: SomeDomain route) -> async $ do
+    --let thisEncoder = reverseEncoder validFullEncoder baseRoute
+    let thisEncoder = mkValidFullEncoder baseRoute
+    let uri' = _backend_obRunBaseRoute backend routeConfig baseRoute
+    uri <- either (fail . show) pure $ URI.mkURI $ T.pack $ NetworkURI.uriToString id uri' ""
     let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
         redirectHost = _runConfig_redirectHost conf
         redirectPort = _runConfig_redirectPort conf
@@ -169,7 +235,7 @@ runWidget conf configs domainConfig frontend validFullEncoder = do
       close
       (\skt -> do
           man <- newManager defaultManagerSettings
-          app <- obeliskApp configs defaultConnectionOptions frontend validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
+          app <- obeliskApp configs defaultConnectionOptions (_backend_frontend backend baseRoute) thisEncoder uri $ fallbackProxy redirectHost redirectPort man
           runner settings skt app)
   traverse_ wait threads `finally` traverse_ cancel threads
 
@@ -182,7 +248,7 @@ obeliskApp
   .  Map Text ByteString
   -> ConnectionOptions
   -> Frontend (R frontendRoute)
-  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) DomainPageName
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> URI
   -> Application
   -> IO Application
@@ -198,7 +264,7 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
   Right (jsaddleWarpRouteValidEncoder :: Encoder Identity (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
   jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
-  return $ \req sendResponse -> case tryDecode validFullEncoder $ (requestDomainWai req, byteStringsToPageName (BS.dropWhile (== (fromIntegral $ fromEnum '/')) $ W.rawPathInfo req) (BS.drop 1 $ W.rawQueryString req)) of
+  return $ \req sendResponse -> case tryDecode validFullEncoder $ byteStringsToPageName (BS.dropWhile (== (fromIntegral $ fromEnum '/')) $ W.rawPathInfo req) (BS.drop 1 $ W.rawQueryString req) of
     Identity r -> case r of
       FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :/ jsaddleRoute -> case jsaddleRoute of
         JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just jsaddleUri) False

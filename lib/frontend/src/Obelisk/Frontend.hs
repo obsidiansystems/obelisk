@@ -21,8 +21,9 @@ module Obelisk.Frontend
   , removeHTMLConfigs
   , FrontendMode (..)
   , FrontendWidgetT
+  , FrontendWidgetTInner
   , module Obelisk.Frontend.Cookie
-  , getCheckedDomainConfig
+  , getCheckedRouteConfig
   ) where
 
 import Prelude hiding ((.))
@@ -43,8 +44,6 @@ import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
 import Data.Text (Text)
-import qualified Data.Text as T
-import Data.Universe
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.History as DOM
@@ -155,7 +154,7 @@ data FrontendMode = FrontendMode
 -- Selects FrontendMode based on platform; this doesn't work for jsaddle-warp
 runFrontend
   :: forall backendRoute route
-  .  Encoder Identity Identity (R (FullRoute backendRoute route)) DomainPageName
+  .  Encoder Identity Identity (R (FullRoute backendRoute route)) PageName
   -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
@@ -182,16 +181,21 @@ runFrontend validFullEncoder frontend = do
     setInitialRoute $ _frontendMode_adjustRoute mode
   runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
 
-getCheckedDomainConfig :: forall domains. (Universe domains, Ord domains, Show domains) => Map Text ByteString -> DomainConfig domains
-getCheckedDomainConfig configs = case Map.lookup "common/route" configs of
+getCheckedRouteConfig :: Map Text ByteString -> RouteConfig
+getCheckedRouteConfig configs = case Map.lookup "common/route" configs of
   Nothing -> error $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> show (Map.keys configs)
-  Just r -> either (error . T.unpack) id $ decodeDomainConfig r
+  Just r -> RouteConfig r
+
+--getCheckedDomainConfig :: (GCompare route, GShow route, Universe (Some route)) => Map Text ByteString -> RouteConfig route
+--getCheckedDomainConfig configs = case Map.lookup "common/route" configs of
+--  Nothing -> error $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> show (Map.keys configs)
+--  Just r -> either (error . T.unpack) id $ decodeRouteConfig r
 
 runFrontendWithConfigsAndCurrentRoute
   :: forall backendRoute frontendRoute
   .  FrontendMode
   -> Map Text ByteString
-  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) DomainPageName
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> Frontend (R frontendRoute)
   -> JSM ()
 runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = do
@@ -240,7 +244,8 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
     then runHydrationWidgetWithHeadAndBody (pure ()) w
     else runImmediateWidgetWithHeadAndBody w
 
-type FrontendWidgetT r = RoutedT DomTimeline r (SetRouteT DomTimeline r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost))))))))
+type FrontendWidgetT r = RoutedT DomTimeline r (SetRouteT DomTimeline r (RouteToUrlT r FrontendWidgetTInner))
+type FrontendWidgetTInner = ConfigsT (CookiesT (HydratableT (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost)))))
 
 renderFrontendHtml
   :: MonadIO m
