@@ -78,7 +78,7 @@ in rec {
     cd '${haskellLib.justStaticExecutables frontend}'
     shopt -s globstar
     for f in **/all.js; do
-      dir="$out/$(basename "$(dirname "$f")")"
+      dir="$out/$(basename "$(dirname "$f")").assets"
       mkdir -p "$dir"
       ln -s "$(realpath "$f")" "$dir/all.unminified.js"
       ${if optimizationLevel == null then ''
