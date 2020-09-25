@@ -173,7 +173,6 @@ run root interpretPaths = do
       , show freePort
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
       , "Backend.backend"
-      , "Frontend.frontend"
       ]
 
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
