@@ -75,7 +75,7 @@ generateHeader origPath packageInfo =
           ext -> (TL.fromString (show ext) :)
     showExt = \case
       EnableExtension ext -> [TL.fromString (show ext)]
-      DisableExtension _ -> []
+      DisableExtension ext -> ["No" <> TL.fromString (show ext)]
       UnknownExtension ext -> [TL.fromString ext]
 
     ghcOptions =
