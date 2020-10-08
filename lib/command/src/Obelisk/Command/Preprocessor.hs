@@ -84,8 +84,8 @@ generateHeader origPath packageInfo =
         else pragma $
           TL.fromText "OPTIONS_GHC " <> mconcat (intersperse (TL.fromText " ") (map TL.fromString optList))
     ghcOptList
-      = ([ "Wno-implicit-prelude" ] ++)
-      $ filter (not . (== "Wimplicit-prelude"))
+      = ([ "-Wno-implicit-prelude" ] ++)
+      $ filter (not . (== "-Wimplicit-prelude"))
       $ filter (not . isPrefixOf "-O")
       $ fromMaybe []
       $ lookup GHC (_cabalPackageInfo_compilerOptions packageInfo)
