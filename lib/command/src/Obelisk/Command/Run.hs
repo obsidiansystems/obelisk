@@ -409,7 +409,6 @@ withGhciScriptArgs packageInfos f = withGhciScript loadPreludeManually packageIn
     loadPreludeManually =
       [ ":add Prelude" -- @:add@ is used because it's less noisy when there is no custom Prelude
       , ":set -XImplicitPrelude" -- Turn the default setting on
-      , ":set -Wno-implicit-prelude" -- Silence any warnings caused by setting ImplicitPrelude 
       ]
 
 -- | Create ghci configuration to load the given packages
