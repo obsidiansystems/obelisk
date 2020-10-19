@@ -15,4 +15,4 @@ library
     text
 
   exposed-modules: Obelisk.ExecutableConfig.Inject
-  ghc-options: -Wall
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O

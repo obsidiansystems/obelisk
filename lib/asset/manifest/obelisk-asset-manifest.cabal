@@ -24,7 +24,7 @@ library
     , template-haskell
     , text
     , transformers
-    , unix
+    , unix-compat
     , vector
   exposed-modules:
     Obelisk.Asset.Gather
@@ -33,7 +33,9 @@ library
     Obelisk.Asset.TH
 
   other-extensions: TemplateHaskell
-  ghc-options: -Wall -Werror -fno-warn-unused-do-bind -fwarn-tabs -funbox-strict-fields -O2 -fprof-auto-calls
+  ghc-options:
+    -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O2
+   -fno-warn-unused-do-bind -funbox-strict-fields -fprof-auto-calls
 
 executable obelisk-asset-manifest-generate
   hs-source-dirs: src-bin

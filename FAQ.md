@@ -1,14 +1,70 @@
 # Frequently Asked Questions
 
-1. [How do I fix invalid entitlements?  ](#how-do-i-fix-invalid-entitlements)
+1. [How do I declare a new Haskell dependency?](#how-do-i-declare-a-new-haskell-dependency)
+1. [How do I add or override Haskell dependencies in the package set?](#how-do-i-add-or-override-haskell-dependencies-in-the-package-set)
+1. [How do I extend my Obelisk application with more local packages?](#how-do-i-extend-my-obelisk-application-with-more-local-packages)
+1. [How do I use `ob run` over HTTPS?](#how-do-i-use-ob-run-over-https)
+1. [How do I fix invalid entitlements?](#how-do-i-fix-invalid-entitlements)
 1. [`ob thunk update` or `ob deploy update` fails](#ob-thunk-update-or-ob-deploy-update-fails)
 1. [How do I fix `Ambiguous module name` errors?](#how-do-i-fix-ambiguous-module-name-errors)
-1. [What does `ob run` actually do?](#what-does-ob-run-actually-do)
+
+### How do I declare a new Haskell dependency?
+
+Every component of your Obelisk application is a standard [cabal](https://www.haskell.org/cabal/) package. That means declaring new Haskell dependencies simply involves updating the `build-depends` field in the appropriate cabal file (`backend.cabal` for example). By default, Obelisk will use its curated package set to choose which version of each package you get. It's possible that the package you need is not already in the curated set or the curated version isn't the one you want. See [How do I add or override Haskell dependencies in the package set?](#how-do-i-add-or-override-haskell-dependencies-in-the-package-set) for a solution to this.
+
+### How do I add or override Haskell dependencies in the package set?
+
+To add a Haskell package that doesn't exist in Obelisk's package set or to override the version of a package, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package fetched from GitHub and a specific version of the `waargonaut` package fetched from Hackage, your `default.nix` will look like:
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  overrides = self: super: let
+    aesonSrc = pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "aeson-gadt-th";
+      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
+      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
+    };
+  in
+  {
+    aeson = self.callCabal2nix "aeson" aesonSrc {};
+    waargonaut = self.callHackageDirect {
+      pkg = "waargonaut";
+      ver = "0.8.0.1";
+      sha256 = "1zv28np3k3hg378vqm89v802xr0g8cwk7gy3mr77xrzy5jbgpa39";
+    } {};
+  };
+# ...
+```
+
+For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs "Contributors Guide".
+
+### How do I extend my Obelisk application with more local packages?
+
+If the standard packages (`frontend`, `backend`, and `common`) are not enough, you may add more local packages by defining them with the `packages` attribute in your `default.nix`. The sources of these packages will be automatically loaded by `ob run`/`ob repl`/etc.
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  packages = {
+    another = ./dep/another;
+  };
+# ...
+```
+
+### How do I use `ob run` over HTTPS?
+
+To run your app locally over HTTPS, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+
+Obelisk generates a self-signed certificate for running HTTPS so the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
+
 
 ### How do I fix invalid entitlements?
 
-You probably did not set `ios.bundleIdentifier` correctly in `default.nix`.
-When this happens you'll see an error something like this:
+You probably did not set `ios.bundleIdentifier` correctly in `default.nix`. When this happens you'll see an error something like this:
 
 ```
 2018-11-25 09:34:22.438 ios-deploy[58106:8521046] [ !! ] Error 0xe8008016: The executable was signed with invalid entitlements. AMDeviceSecureInstallApplication(0, device, url, options, install_callback, 0)
@@ -19,7 +75,7 @@ Fixing the value of `ios.bundleIdentifier` should fix the error.
 ### `ob thunk update` or `ob deploy update` fails
 Whenever an `ob` command fails, try re-running it with `-v`.
 
-If you're using a private repo, and you get a failure in nix-prefetch-url, you may need to unpack and repack the thunk.  Here's some example output that shows this issue:
+If you're using a private repo, and you get a failure in `nix-prefetch-url`, you may need to unpack and repack the thunk.  Here's some example output that shows this issue:
 
 ```
 Starting Obelisk </nix/store/j8wls8a89xr6s1a47lg6g83gnbdrfd0l-obelisk-command-0.1/bin/.ob-wrapped> args=["deploy","update","-v"] logging-level=Debug
@@ -39,7 +95,7 @@ nix-prefetch-url: Failed to determine sha256 hash of URL https://github.com/obsi
 
 And here's how you can fix it:
 
-```
+```bash
 ob thunk unpack $SOME_THUNK
 ob thunk pack $SOME_THUNK
 ```
@@ -59,64 +115,3 @@ error:
 ```
 then specify the package you want in the import, e.g:
 `import "cryptonite" Crypto.Hash`
-
-
-### What does `ob run` actually do?
-
-
-#### Short version:
-
-`ob run` starts a [`ghcid`](https://github.com/ndmitchell/ghcid) process which
-tries to build your project within a carefully crafted `nix-shell` with all the
-project's dependencies and,
-
-* either displays compilation errors/warnings,
-* or starts the Obelisk server, which serves:
-     * your backend's route handlers,
-     * the static assets,
-     * the [JSaddle](https://github.com/ghcjs/jsaddle) frontend code (while opening its websocket).
-
-#### Longer version:
-
-Assuming we are in a project created with `ob init`, `ob run` calls (see
-`lib/command/src/Obelisk/Command.hs`):
-
-    nix-shell -A shells.ghc --run 'ob --no-handoff internal run-static-io <real-run-function>'
-
-where
-
-* `shells.ghc` is defined in `./default.nix` by importing `./.obelisk/impl/default.nix` which
-   is `default.nix` in the present (Obelisk) repository,
-* `run-static-io` is a logging-enabled command wrapper
-   (cf. `runObelisk` in `lib/command/src/Obelisk/App.hs`).
-
-In this case, it runs the function `Obelisk.Command.Command.run` (defined in
-`lib/command/src/Obelisk/Command/Run.hs`).
-
-* It creates a GHCi config from a Nix expression which:
-    * loads three packages: `backend`, `common`, `frontend`,
-    * obtains a free port number.
-* Then runs `ghcid`
-    * with a command that reruns `Obelisk.Run.run` at each restart (option
-      `--test`).
-
-It is defined in `lib/run/src/Obelisk/Run.hs`:
-
-* It creates a thread which starts the main backend.
-  This runs `runSnapWithCommandLineArgs` and passes routes:
-    * to the backend (result of the `_backend_run` field of your
-      implementation of the `Backend fullRoute frontendRoute` record),
-    * or to `serveDefaultObeliskApp` (`lib/backend/src/Obelisk/Backend.hs`) to
-      serve static assets.
-* Starts `runWidget`
-  which itself runs 
-  [runSettingsSocket](https://hackage.haskell.org/package/warp-3.2.26/docs/Network-Wai-Handler-Warp.html#v:runSettingsSocket)
-  (the *“TCP listen loop”*):
-    * it binds to TCP socket, and
-    * creates the HTTP connection manager
-      ( [`newManager`](https://hackage.haskell.org/package/http-client-0.6.3/docs/Network-HTTP-Client.html#v:newManager))
-    * calls `obeliskApp` which
-        * has a route to serve the [JSaddle](https://github.com/ghcjs/jsaddle) frontend,
-        * runs the frontend (*on* the server), to produce pre-rendered pages,
-        * starts the JSaddle web-socket,
-        * “falls back” to proxying the backend (`fallbackProxy`).

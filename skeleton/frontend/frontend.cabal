@@ -9,13 +9,14 @@ library
                , common
                , obelisk-frontend
                , obelisk-route
+               , jsaddle
                , reflex-dom
                , obelisk-executable-config-lookup
                , obelisk-generated-static
                , text
   exposed-modules:
     Frontend
-  ghc-options: -Wall
+  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
 
 executable frontend
   main-is: main.hs
@@ -27,7 +28,9 @@ executable frontend
                , reflex-dom
                , obelisk-generated-static
                , frontend
-  --TODO: Make these ghc-options optional
-  ghc-options: -threaded
+  ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates
+  if impl(ghcjs)
+    ghc-options: -dedupe
+    cpp-options: -DGHCJS_BROWSER
   if os(darwin)
-     ghc-options: -dynamic
+    ghc-options: -dynamic
