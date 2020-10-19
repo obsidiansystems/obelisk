@@ -1,96 +1,75 @@
 # Obelisk
 
 [![Haskell Programming Language](https://img.shields.io/badge/language-Haskell-blue.svg)](http://www.haskell.org)
-[![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)](https://tldrlegal.com/license/bsd-3-clause-license-%28revised%29)
+[![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)](https://github.com/obsidiansystems/obelisk/blob/master/LICENSE)
 
+<p align="center"><img src="docs/obelisk-logo-640.png" width="50%" alt="Obelisk Logo"></p>
 
-Obelisk provides an easy way to develop and deploy your [Reflex](https://github.com/reflex-frp/reflex) project as web apps and as mobile apps.
+Functional reactive web and mobile applications, with batteries included. Obelisk's goal is to represent a cohesive, highly-curated set of choices that [Obsidian Systems](https://obsidian.systems/) has made for building these types of applications in a way that is extremely fast but does not compromise on production readiness.
 
+- [Overview](#overview)
+  - [Who should consider using it?](#who-should-consider-using-it)
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
-  - [Adding Packages](#adding-packages)
-  - [Adding Package Overrides](#adding-package-overrides)
-  - [Running over HTTPS](#running-over-https)
   - [IDE Support](#ide-support)
-    - [Terminal-based feedback](#terminal-based-feedback)
-    - [Experimental `ghcide` support](#experimental-ghcide-support)
 - [Deploying](#deploying)
-  - [Locally](#locally)
   - [Default EC2 Deployment](#default-ec2-deployment)
   - [Custom Non-EC2 Deployment](#custom-non-ec2-deployment)
     - [VirtualBox Deployment](#virtualbox-deployment)
+  - [Locally](#locally)
   - [From macOS](#from-macos)
   - [Deploying an updated version](#deploying-an-updated-version)
 - [Mobile](#mobile)
   - [iOS](#ios)
   - [Android](#android)
+- [Frequently Asked Questions (FAQ)](#frequently-asked-questions-faq)
+- [Contributing](#contributing)
+
+## Overview
+
+Obelisk allows you to build high-quality web and mobile applications very quickly using [Reflex](https://reflex-frp.org/). In minutes you can go from an empty directory to an interactive application that works on web, iOS, and Android, all sharing the same Haskell codebase! Obelisk's development environment also enables extremely rapid development and feedback. You can take advantage of Haskell's type system across the frontend and backend boundary. This means changes to your backend that would break your frontend are immediately detected during development and vice versa. Obelisk uses Haskell's compiler to give you a complete "TODO list" of what needs to be updated.
+
+Obelisk is targeted primarily at Haskell developers who want to build high-quality web and/or mobile applications in Haskell, without the distractions of manually choosing and integrating technology for every piece of the system.
+
+### Who should consider using it?
+
+Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Reflex/Reflex-DOM](https://reflex-frp.org/), web technologies like [HTML](https://developer.mozilla.org/en-US/docs/Web/HTML) and [CSS](https://developer.mozilla.org/en-US/docs/Web/CSS), and a terminal shell like [Bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)). Knowledge of [Nix](https://nixos.org/) helps but is not strictly necessary.
+
 
 ## Installing Obelisk
+
 1. [Install Nix](https://nixos.org/nix/).
     If you already have Nix installed, make sure you have version 2.0 or higher.  To check your current version, run `nix-env --version`.
 1. Set up nix caches
     1. If you are running NixOS, add this to `/etc/nixos/configuration.nix`:
-        ```
+        ```nix
         nix.binaryCaches = [ "https://nixcache.reflex-frp.org" ];
         nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
         and rebuild your NixOS configuration (e.g. `sudo nixos-rebuild switch`).
-    1. If you are using another operating system or linux distribution, ensure that these lines are present in your Nix configuration file (`/etc/nix/nix.conf` on most systems; [see full list](https://nixos.org/nix/manual/#sec-conf-file)):
+    1. If you are using another operating system or Linux distribution, ensure that these lines are present in your Nix configuration file (`/etc/nix/nix.conf` on most systems; [see full list](https://nixos.org/nix/manual/#sec-conf-file)):
+        ```nix
+        binary-caches = https://cache.nixos.org https://nixcache.reflex-frp.org
+        binary-cache-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
+        binary-caches-parallel-connections = 40
         ```
-       binary-caches = https://cache.nixos.org https://nixcache.reflex-frp.org
-       binary-cache-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
-       binary-caches-parallel-connections = 40
-        ```
-        * other Linux: enable sandboxing (see these [issue172](https://github.com/obsidiansystems/obelisk/issues/172#issuecomment-411507818) or [issue6](https://github.com/obsidiansystems/obelisk/issues/6) if you run into build problems)
-          ```
+        * If you're on a Linux distribution other than NixOS, enable sandboxing (see these [issue 172](https://github.com/obsidiansystems/obelisk/issues/172#issuecomment-411507818) or [issue 6](https://github.com/obsidiansystems/obelisk/issues/6) if you run into build problems) by adding the following:
+          ```nix
           sandbox = true
           ```
-        * MacOS: disable sandboxing (there are still some impure dependencies for now)
-          ```
+        * If you're on MacOS, disable sandboxing (there are still some impure dependencies for now) by adding the following:
+          ```nix
           sandbox = false
           ```
           then restart the nix daemon
-          ```
+          ```bash
           sudo launchctl stop org.nixos.nix-daemon
           sudo launchctl start org.nixos.nix-daemon
           ```
-1. Install obelisk: `nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command`
-
-### Contributing to Obelisk
-
-When developing on obelisk itself you may launch `ghcid` for the corresponding project as follows. For example to launch ghcid for `lib/backend` project:
-
-```bash
-nix-shell -A obeliskEnvs.obelisk-backend --run "cd lib/backend && ghcid -c 'cabal new-repl'"
-```
-
-Or to launch ghcid for `lib/command` project:
-
-```bash
-nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
-```
-
-To re-install `ob` from source do
-```bash
-nix-env -f /path/to/obelisk -iA command
-```
-
-Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
-
-```bash
-ob thunk unpack ./.obelisk/impl
-cd ./.obelisk/impl
-# apply your changes
-```
-
-If you want to commit your changes, first push them to your fork of obelisk and then
-
-```bash
-cd /your/project/root
-ob thunk pack .obelisk/impl
-git add .obelisk/impl
-git commit -m "Bump obelisk"
-```
+1. Install obelisk: 
+   ```bash
+   nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command
+   ```
 
 ### Accessing private repositories
 
@@ -120,118 +99,11 @@ Firefox will not be able to properly run the development website due to [issue 4
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
 
-### Adding packages
-
-In order to add package dependencies, declare them under the build-depends field in the appropriate cabal files (backend, common, and frontend each have their own). The corresponding Nix packages will automatically be selected when building.
-
-### Adding package overrides
-
-To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package fetched from GitHub and a specific version of the `waargonaut` package fetched from Hackage, your `default.nix` will look like:
-
-```nix
-# ...
-project ./. ({ pkgs, ... }: {
-# ...
-  overrides = self: super: let
-    aesonSrc = pkgs.fetchFromGitHub {
-      owner = "obsidiansystems";
-      repo = "aeson-gadt-th";
-      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
-      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
-    };
-  in
-  {
-    aeson = self.callCabal2nix "aeson" aesonSrc {};
-    waargonaut = self.callHackageDirect {
-      pkg = "waargonaut";
-      ver = "0.8.0.1";
-      sha256 = "1zv28np3k3hg378vqm89v802xr0g8cwk7gy3mr77xrzy5jbgpa39";
-    } {};
-  };
-# ...
-```
-
-For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
-
-### Adding extra local packages
-
-If the standard packages (`frontend`, `backend`, and `common`) are not
-enough, to add more local Haskell packages, define them with the
-`packages` parameter. The sources of these packages will be
-automatically reloaded by `ob run`.
-
-```nix
-# ...
-project ./. ({ pkgs, ... }: {
-# ...
-  packages = {
-    another = ./another;
-  };
-# ...
-```
-
-### Running over HTTPS
-
-To run your app locally over HTTPS, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
-
-Since Obelisk generates a self-signed certificate for running HTTPS, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
-
 ### IDE Support
-
-#### Terminal-based feedback
 
 Obelisk officially supports terminal-based feedback (akin to [`ghcid`](https://github.com/ndmitchell/ghcid)) in `ob run` and `ob watch`.
 
-#### **Experimental** `ghcide` support
-
-> **NOTE:** `ghcide` support is strictly **experimental** and **not officially supported**. There is no guarantee that it will work for you or that this support will be maintained over time.
-
-To try out the **experimental** [`ghcide`](https://github.com/digital-asset/ghcide) support:
-
-  * Install a `ghcide` plugin for your editor.
-  * Add `__withGhcide = true;` to your Obelisk project's `default.nix` (inside the call to `project`). With this setting, `ob shell` will provide `ghcide` as well.
-  * Add `hie-bios.sh` to the root of your project:
-      ```shell
-      cat > hie-bios.sh <<'EOF'
-      #!/usr/bin/env bash
-      source "$HOME/.bash_profile"; # NOTE: Some editors need help finding 'ob' and this assumes that `ob` is made available on your `$PATH` in `.bash_profile`
-      ob internal export-ghci-configuration > "$HIE_BIOS_OUTPUT"
-      EOF
-      chmod +x hie-bios.sh
-      ```
-      * **Note:** In some projects you need to use `ob internal export-ghci-configuration --use-relative-paths` in this script instead. This is known to happen when your project contains symlinks to other packages.
-  * Add `hie.yaml` to the root of your project:
-      ```shell
-      echo 'cradle: { bios: { program: hie-bios.sh } }' > hie.yaml
-      ```
-  * Test the configuration with `ob shell ghcide`. Assuming your project compiles and works with `ghcide` otherwise, this should succeed.
-  * Start your editor in a way that it can access the appropriate `ghcide`:
-      * This can sometimes be achieved with `ob shell 'start my editor'`.
-      * If you can't easily start your editor in a way that it inherits your shell, you may need to customize how your `ghcide` plugin finds `ghcide` or create a custom `ghcide` replacement script that you install globally. For example, for Visual Studio Code on macOS adding a script called `ghcide` to your `PATH` like the one below will cause `ghcide` from each project's `ob shell` to be used:
-          ```shell
-          #!/usr/bin/env bash
-          source "$HOME/.bash_profile"  # NOTE: This assumes that `ob` is made available on your `$PATH` in `.bash_profile`
-          ob shell "ghcide $@"
-          ```
-
 ## Deploying
-
-### Locally
-
-Build everything:
-
-```bash
-nix-build -A exe --no-out-link
-```
-
-Copy the result to a new directory, add configuration, and run!
-
-```bash
-mkdir test-app
-ln -s $(nix-build -A exe --no-out-link)/* test-app/
-cp -r config test-app
-(cd test-app && ./backend)
-```
 
 ### Default EC2 Deployment
 
@@ -249,7 +121,7 @@ At this stage your instance should be booting and become accessible shortly. Not
 Now go to your Obelisk project directory (`~/code/myapp`), and initialize a deployment config (`~/code/myapp-deploy`):
 Your project directory must be "thunkable", i.e. something on which `ob thunk pack` can be called. Usually it will be a git repository whose current revision has been pushed upstream.
 
-```
+```bash
 cd ~/code/myapp
 SERVER=ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
 ROUTE=https://myapp.com   # Publicly accessible route to your app
@@ -268,7 +140,7 @@ This step will also require that you manually verify the authenticity of the hos
 
 Next, go to the deployment directory that you just initialized and deploy!
 
-```
+```bash
 cd ~/code/myapp-deploy
 ob deploy push
 ```
@@ -296,6 +168,25 @@ Here's a `module.nix` that is configured for deployment to a VirtualBox VM (runn
 ```
 
 The `{...}:` and following is the [NixOS module](https://nixos.org/nixos/manual/index.html#sec-writing-modules) definition.
+
+### Locally
+
+If you want deploy your application locally or test a production-oriented build you can build and deploy the app as described below.
+
+Build the application:
+
+```bash
+nix-build -A exe --no-out-link
+```
+
+Copy the result to a new directory, add configuration, and run!
+
+```bash
+mkdir test-app
+ln -s $(nix-build -A exe --no-out-link)/* test-app/
+cp -r config test-app
+(cd test-app && ./backend)
+```
 
 ### From macOS
 
@@ -423,3 +314,13 @@ This should copy over and install the application on your device (if you see a  
 ##### Build a release version
 
 After having configured signing for your app, you may proceed to build a release version of the app. This is no different to how you build the non-release version, so consult the section [Android](#android) further above for exact instructions on building and deploying to your device.
+
+
+## Frequently Asked Questions (FAQ)
+
+Refer to [FAQ](FAQ.md).
+
+
+## Contributing
+
+Contributions and issue reports are encouraged and appreciated! Refer to the [Contributing](CONTRIBUTING.md) guide for information about getting started.

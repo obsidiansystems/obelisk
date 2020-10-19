@@ -46,7 +46,7 @@ in rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  obeliskEnvs = pkgs.lib.filterAttrs (k: _: pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs;
+  obeliskEnvs = pkgs.lib.filterAttrs (k: _: k == "tabulation" || pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs; #TODO: use thunkSet https://github.com/reflex-frp/reflex-platform/pull/671
   command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ command.commandRuntimeDeps);
 
@@ -77,16 +77,20 @@ in rec {
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
-    mkdir $out
-    cd $out
-    # TODO profiling + static shouldn't break and need an ad-hoc workaround like that
-    ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-    ${if optimizationLevel == null then ''
-      ln -s all.unminified.js all.js
-    '' else ''
-      ${pkgs.closurecompiler}/bin/closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
-      echo "//# sourceMappingURL=all.js.map" >> all.js
-    ''}
+    set -euo pipefail
+    cd '${haskellLib.justStaticExecutables frontend}'
+    shopt -s globstar
+    for f in **/all.js; do
+      dir="$out/$(basename "$(dirname "$f")")"
+      mkdir -p "$dir"
+      ln -s "$(realpath "$f")" "$dir/all.unminified.js"
+      ${if optimizationLevel == null then ''
+        ln -s "$dir/all.unminified.js" "$dir/all.js"
+      '' else ''
+        '${pkgs.closurecompiler}/bin/closure-compiler' --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
+      ''}
+    done
   '';
 
   serverModules = {
@@ -130,12 +134,16 @@ in rec {
       }: {...}: {
       services.nginx = {
         enable = true;
+        recommendedProxySettings = true;
         virtualHosts."${routeHost}" = {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
             proxyPass = "http://127.0.0.1:" + toString internalPort;
             proxyWebsockets = true;
+            extraConfig = ''
+              access_log off;
+            '';
           };
         };
       };
@@ -176,9 +184,9 @@ in rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
-      ln -s "${mkAssets assets}" $out/static.assets
-      ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
+      ln -s '${mkAssets assets}' $out/static.assets
+      ln -s '${mkAssets (compressedJs frontend optimizationLevel)}'/* $out
       echo ${version} > $out/version
     '';
 
@@ -340,29 +348,33 @@ in rec {
       __unstable__.profiledObRun = let
         profiled = projectOut { inherit system; enableLibraryProfiling = true; };
         exeSource = builtins.toFile "ob-run.hs" ''
+          {-# LANGUAGE NoImplicitPrelude #-}
+          {-# LANGUAGE PackageImports #-}
           module Main where
 
-          import Control.Exception
-          import Reflex.Profiled
-          import System.Environment
+          -- Explicitly import Prelude from base lest there be multiple modules called Prelude
+          import "base" Prelude (IO, (++), read)
 
-          import qualified Obelisk.Run
+          import "base" Control.Exception (finally)
+          import "reflex" Reflex.Profiled (writeProfilingData)
+          import "base" System.Environment (getArgs)
+
+          import qualified "obelisk-run" Obelisk.Run
           import qualified Frontend
           import qualified Backend
 
           main :: IO ()
           main = do
-            args <- getArgs
-            let port = read $ args !! 0
-                assets = args !! 1
-                profileFile = (args !! 2) <> ".rprof"
-            Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
+            [portStr, assets, profFileName] <- getArgs
+            Obelisk.Run.run (read portStr) (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend
+              `finally` writeProfilingData (profFileName ++ ".rprof")
         '';
       in nixpkgs.runCommand "ob-run" {
-        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [p.backend p.frontend])) ];
       } ''
-        mkdir -p $out/bin/
-        ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out/bin/ob-run
+        cp ${exeSource} ob-run.hs
+        mkdir -p $out/bin
+        ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
       '';
 
       linuxExeConfigurable = linuxExe;
