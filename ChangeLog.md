@@ -6,6 +6,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 * **(Breaking change)** Backport nixpkgs upgrades to ACME/Let's Encrypt handling so that HTTPS deployments continue to work flawlessly. If your deployment is having trouble renewing [Let's Encrypt](https://letsencrypt.org/) certificates, upgrade to this version.
   * **IMPORTANT:** In order to use [Let's Encrypt](https://letsencrypt.org/) you must now accept their [terms of service](https://letsencrypt.org/repository/). To do that, add `terms.security.acme.acceptTerms = true;` to the `import ./.obelisk/impl {` section in your `default.nix`. The new skeleton application may serve as an [example](https://github.com/obsidiansystems/obelisk/blob/4759342ab3570888c027d4c58cb5694cb832d624/skeleton/default.nix#L13).
+* Update reflex-platform dependency to v0.6.0.0
 
 ## v0.8.0.0
 
