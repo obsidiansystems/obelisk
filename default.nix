@@ -81,7 +81,7 @@ in rec {
     cd '${haskellLib.justStaticExecutables frontend}'
     shopt -s globstar
     for f in **/all.js; do
-      dir="$out/$(basename "$(dirname "$f")").assets"
+      dir="$out/$(basename "$(dirname "$f")")"
       mkdir -p "$dir"
       ln -s "$(realpath "$f")" "$dir/all.unminified.js"
       ${if optimizationLevel == null then ''
@@ -186,7 +186,9 @@ in rec {
       set -eux
       ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
       ln -s '${mkAssets assets}' $out/static.assets
-      ln -s '${mkAssets (compressedJs frontend optimizationLevel)}'/* $out
+      for d in '${mkAssets (compressedJs frontend optimizationLevel)}'/*/; do
+        ln -s "$d" "$out"/"$(basename "$d").assets"
+      done
       echo ${version} > $out/version
     '';
 
