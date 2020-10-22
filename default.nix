@@ -186,7 +186,9 @@ in rec {
       set -eux
       ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
       ln -s '${mkAssets assets}' $out/static.assets
-      ln -s '${mkAssets (compressedJs frontend optimizationLevel)}'/* $out
+      for d in '${mkAssets (compressedJs frontend optimizationLevel)}'/*/; do
+        ln -s "$d" "$out"/"$(basename "$d").assets"
+      done
       echo ${version} > $out/version
     '';
 
