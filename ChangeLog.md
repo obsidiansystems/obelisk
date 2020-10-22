@@ -2,6 +2,10 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## v0.9.0.1
+
+* ([#810](https://github.com/obsidiansystems/obelisk/pull/810)) Fix loading of `all.js` in fully compiled web apps.
+
 ## v0.9.0.0
 
 * **(Breaking change)** Backport nixpkgs upgrades to ACME/Let's Encrypt handling so that HTTPS deployments continue to work flawlessly. If your deployment is having trouble renewing [Let's Encrypt](https://letsencrypt.org/) certificates, upgrade to this version.
