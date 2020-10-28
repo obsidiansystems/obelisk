@@ -1,0 +1,8 @@
+cradle:
+  cabal:
+    - path: "./frontend"
+      component: "lib:frontend"
+    - path: "./common"
+      component: "lib:common"
+    - path: "./backend"
+      component: "lib:backend"
