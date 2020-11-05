@@ -22,6 +22,7 @@ import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Morph (MFunctor)
@@ -87,6 +88,7 @@ newtype ConfigsT m a = ConfigsT { unConfigsT :: ReaderT (Map Text ByteString) m 
     , Monad
     , MonadPlus
     , Alternative
+    , MonadFail
     , MonadFix
     , MonadThrow
     , MonadIO
