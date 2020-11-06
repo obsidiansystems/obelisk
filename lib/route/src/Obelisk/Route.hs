@@ -102,6 +102,7 @@ module Obelisk.Route
   , integralEncoder
   , pathSegmentEncoder
   , queryOnlyEncoder
+  , catMaybesEncoder
   , Decoder(..)
   , dmapEncoder
   , fieldMapEncoder
@@ -160,7 +161,7 @@ import Data.GADT.Show
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe
+import Data.Maybe hiding (catMaybes)
 import Data.Monoid ((<>))
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -172,6 +173,7 @@ import qualified Data.Text.Encoding as T
 import Data.Text.Lens (IsText, packed, unpacked)
 import Data.Universe
 import Data.Universe.Some
+import Data.Witherable
 import Network.HTTP.Types.URI
 import qualified Numeric.Lens
 import Obelisk.Route.TH
@@ -1088,6 +1090,15 @@ integralEncoder = reviewEncoder Numeric.Lens.integral
 pathSegmentEncoder :: (MonadError Text parse, Applicative check, Cons as as a a) =>
   Encoder check parse (a, (as, b)) (as, b)
 pathSegmentEncoder = first (reviewEncoder _Cons) . disassociate
+
+-- | Encodes to only 'Just' elements, and decodes by canonicalizing to 'Just' elements.
+catMaybesEncoder
+  :: (Applicative check, Applicative parse, Filterable f)
+  => Encoder check parse (f (Maybe a)) (f a)
+catMaybesEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = catMaybes
+  , _encoderImpl_decode = pure . fmap Just
+  }
 
 newtype Decoder check parse b a = Decoder { toEncoder :: Encoder check parse a b }
 
