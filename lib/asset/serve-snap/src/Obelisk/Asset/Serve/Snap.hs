@@ -12,12 +12,13 @@ import Obelisk.Asset.Accept (Encoding (..), acceptEncodingBody, chooseEncoding, 
 import Obelisk.Snap.Extras
 
 import Snap
-  (MonadSnap, getHeader, getsRequest, modifyResponse, pass, redirect, sendFile, setContentLength, setContentType, setHeader, setResponseCode)
+  (MonadSnap, getHeader, getRequest, getsRequest, modifyResponse, pass, redirect, sendFile, setContentLength, setContentType, setHeader, setResponseCode)
 import Snap.Util.FileServe (defaultMimeTypes, fileType, getSafePath, serveFile)
+import Snap.Internal.Util.FileServe (checkRangeReq)
 
 import Control.Applicative ((<|>))
 import Control.Exception (handleJust, try, throwIO)
-import Control.Monad (forM, liftM)
+import Control.Monad (forM, liftM, unless)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Fail (MonadFail)
 import Data.Attoparsec.ByteString (parseOnly, endOfInput)
@@ -30,7 +31,7 @@ import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import System.Directory (getDirectoryContents)
 import System.FilePath ((</>), splitFileName, takeDirectory)
 import System.IO.Error (isDoesNotExistError)
-import System.Posix (getFileStatus, fileSize)
+import System.PosixCompat.Files (getFileStatus, fileSize)
 
 -- | Serve static assets from an asset directory generated via @assets.nix@ or, failing that, from a regular directory.
 --
@@ -94,8 +95,17 @@ serveAsset' doRedirect base fallback p = do
           let finalFilename = base </> p </> "encodings" </> T.unpack (decodeUtf8 e)
           stat <- liftIO $ getFileStatus finalFilename
           modifyResponse $ setHeader "Last-Modified" "Thu, 1 Jan 1970 00:00:00 GMT"
-          modifyResponse $ setResponseCode 200 . setContentLength (fromIntegral $ fileSize stat) . setContentType (fileType defaultMimeTypes p)
-          sendFile finalFilename
+            . setHeader "Accept-Ranges" "bytes"
+            . setContentType (fileType defaultMimeTypes p)
+          let size = fromIntegral $ fileSize stat
+          req <- getRequest
+          -- Despite the name, this function actually does all of the work for
+          -- responding to range requests. We only need to handle *none* range
+          -- requests ourselves.
+          wasRange <- checkRangeReq req finalFilename size
+          unless wasRange $ do
+            modifyResponse $ setResponseCode 200 . setContentLength size
+            sendFile finalFilename
         Just _ -> cachePermanently >> modifyResponse (setResponseCode 304)
     Right "redirect" -> do
       mtarget <- liftIO $ getAssetTarget $ base </> p

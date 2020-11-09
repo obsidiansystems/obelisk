@@ -1,5 +1,5 @@
 name: obelisk-command
-version: 0.3
+version: 0.9.0.1
 cabal-version: >= 1.8
 build-type: Simple
 
@@ -7,45 +7,47 @@ library
   hs-source-dirs: src
   build-depends:
       aeson
-    , ansi-terminal
-    , Cabal
     , aeson-pretty
+    , ansi-terminal
     , base
-    , base16-bytestring
-    , binary
     , bytestring
-    , obelisk-cliapp
+    , Cabal
     , containers
     , data-default
     , directory
     , either
     , errors
+    , exceptions
+    , extra
     , filepath
+    , git
     , github
     , here
-    , git
     , hnix
     , hpack
     , io-streams
-    , exceptions
-    , logging-effect
     , lens
+    , logging-effect
+    , megaparsec
     , modern-uri
     , monad-loops
+    , monoidal-containers
     , mtl
-    , megaparsec
     , network
     , network-uri
+    , obelisk-cliapp
     , optparse-applicative
     , placeholders
     , process
+    , shell-escape
     , temporary
     , terminal-size
     , text
     , time
     , transformers
-    , unix
+    , unix-compat
     , unordered-containers
+    , utf8-string
     , which
     , yaml
   exposed-modules:
@@ -58,10 +60,10 @@ library
     Obelisk.Command.Thunk
     Obelisk.Command.Utils
     Obelisk.Command.VmBuilder
-  -- -fobject-code is so that the StaticPointers extension can work in ghci
-  ghc-options: -Wall -fobject-code
+    Obelisk.Command.Preprocessor
+  ghc-options: -Wall
 
 executable ob
   main-is: src-bin/ob.hs
   build-depends: base, obelisk-command
-  ghc-options: -Wall -O2 -threaded
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -threaded
