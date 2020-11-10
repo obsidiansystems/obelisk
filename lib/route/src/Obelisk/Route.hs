@@ -170,6 +170,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Text.Lens (IsText, packed, unpacked)
+import Data.Type.Equality
 import Data.Universe
 import Data.Universe.Some
 import Network.HTTP.Types.URI
