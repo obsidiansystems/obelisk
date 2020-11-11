@@ -47,7 +47,8 @@ applyPackages origPath inPath outPath packagePaths' = do
       Left err -> do
         hPutStrLn stderr $ "Error: Unable to parse cabal package " <> packagePath <> "; Skipping preprocessor on " <> origPath <> ". Error: " <> show err
         pure Nothing
-      Right (_, packageInfo) -> pure $ Just packageInfo
+      Right (Just (_, packageInfo)) -> pure $ Just packageInfo
+      Right Nothing -> pure Nothing
 
   writeOutput packageInfo' inPath outPath
 
@@ -75,7 +76,7 @@ generateHeader origPath packageInfo =
           ext -> (TL.fromString (show ext) :)
     showExt = \case
       EnableExtension ext -> [TL.fromString (show ext)]
-      DisableExtension _ -> []
+      DisableExtension ext -> ["No" <> TL.fromString (show ext)]
       UnknownExtension ext -> [TL.fromString ext]
 
     ghcOptions =
