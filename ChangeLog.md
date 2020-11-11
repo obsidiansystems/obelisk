@@ -4,6 +4,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* [#812](https://github.com/obsidiansystems/pull/812): Add support for `NoImplicitPrelude` and other extensions disabled via `No`
 * Pinned version bumps:
   * reflex-platform [0.6.1.0](https://github.com/reflex-frp/reflex-platform/releases/tag/v0.6.1.0)
   * hnix 0.8.0
