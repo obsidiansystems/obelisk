@@ -19,3 +19,13 @@ class HasFields a where
   indexField :: a -> Field a x -> x
   indexField a f = a ^. fieldLens f
   {-# MINIMAL fieldLens, tabulateFieldsA #-}
+
+-- | Represents a record as a function from each of its fields.
+-- This is like @DMap ('Field' a) f@, but guaranteed to be total.
+newtype Fields a f = Fields { lookupField :: forall x. Field a x -> f x }
+
+fromFields :: HasFields a => Fields a Identity -> a
+fromFields (Fields ff) = tabulateFields $ runIdentity . ff
+
+toFields :: HasFields a => a -> Fields a Identity
+toFields r = Fields $ \f -> Identity $ indexField r f

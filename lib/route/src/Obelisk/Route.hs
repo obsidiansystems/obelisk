@@ -104,6 +104,9 @@ module Obelisk.Route
   , queryOnlyEncoder
   , Decoder(..)
   , dmapEncoder
+  , fieldsEncoder
+  , hoistFieldsEncoder
+  , maybeFieldsDMapEncoder
   , fieldMapEncoder
   , pathFieldEncoder
   , jsonEncoder
@@ -1123,6 +1126,64 @@ dmapEncoder keyEncoder' valueEncoderFor = unsafeEncoder $ do
                 v' <- tryDecode e v
                 return (k' :=> Identity v')
     }
+
+fieldsEncoder
+  :: forall check parse r. (Applicative check, Applicative parse, HasFields r)
+  => Encoder check parse r (Fields r Identity)
+fieldsEncoder = unsafeEncoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = toFields
+  , _encoderImpl_decode = pure . fromFields
+  }
+
+newtype HoistEncoder check parse f g a = HoistEncoder (Encoder check parse (f a) (g a))
+
+hoistFieldsEncoder
+  :: forall check parse r f g
+  .  ( Monad check
+     , Applicative parse
+     , GCompare (Field r)
+     , UniverseSome (Field r)
+     )
+  => (forall v. Field r v -> Encoder check parse (f v) (g v))
+  -> Encoder check parse (Fields r f) (Fields r g)
+hoistFieldsEncoder mapKeyEncoder = unsafeEncoder $ do
+  checkedHoistEncoders :: DMap (Field r) (HoistEncoder Identity parse f g) <-
+    fmap DMap.fromList $ forM universe $ \(Some f) ->
+      (f :=>) . HoistEncoder <$> checkEncoder (mapKeyEncoder f)
+  let keyError = error "hoistFieldsEncoder: some Field was missing from Universe instance from its type."
+  pure $ EncoderImpl
+    { _encoderImpl_encode = \(Fields ff) -> Fields $ \f ->
+        case DMap.lookup f checkedHoistEncoders of
+          Just (HoistEncoder e) -> encode e $ ff f
+          Nothing -> keyError
+    , _encoderImpl_decode = \(Fields ff) -> do
+        let decodeField
+              :: forall v. Field r v
+              -> HoistEncoder Identity parse f g v
+              -> parse (f v)
+            decodeField f (HoistEncoder e) = tryDecode e $ ff f
+        decodedMap <- DMap.traverseWithKey decodeField checkedHoistEncoders
+        pure $ Fields $ \f -> case DMap.lookup f decodedMap of
+          Just v -> v
+          Nothing -> keyError
+    }
+
+-- | Encodes a record in 'Fields' representation to a 'DMap', where keys are
+-- omitted when their values are 'Nothing'.
+maybeFieldsDMapEncoder
+  :: forall check parse r
+  .  ( Applicative check
+     , Applicative parse
+     , GCompare (Field r)
+     , UniverseSome (Field r)
+     )
+  => Encoder check parse (Fields r Maybe) (DMap (Field r) Identity)
+maybeFieldsDMapEncoder = unsafeEncoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = \(Fields ff) -> DMap.fromList $ catMaybes $
+      flip fmap universe $ \(Some f) -> (f :=>) . Identity <$> ff f
+  , _encoderImpl_decode = \dm -> pure $ Fields $ \f ->
+      runIdentity <$> DMap.lookup f dm
+  }
 
 fieldMapEncoder :: forall check parse r.
    ( Applicative check
