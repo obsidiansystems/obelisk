@@ -42,6 +42,7 @@ module Obelisk.Route
   , SegmentResult (..)
   , pathComponentEncoder
   , enumEncoder
+  , enumCanonicalizingEncoder
   , enum1Encoder
   , checkEnum1EncoderFunc
   , unitEncoder
@@ -658,10 +659,30 @@ enum1Encoder f = enumEncoder $ \(Some p) -> f p
 -- | Encode an enumerable, bounded type.  WARNING: Don't use this on types that
 -- have a large number of values - it will use a lot of memory.
 enumEncoder :: forall parse check p r. (Universe p, Show p, Ord p, Ord r, MonadError Text parse, MonadError Text check, Show r) => (p -> r) -> Encoder check parse p r
-enumEncoder f = Encoder $ do
-  let reversed = Map.fromListWith (<>) [ (f p, Set.singleton p) | p <- universe ]
+enumEncoder f = enumCanonicalizingEncoder $ \p -> (f p, [])
+
+-- | Encode an enumerable, bounded type, with optional non-canonical values.
+-- WARNING: Don't use this on types that have a large number of values - it will
+-- use a lot of memory.
+enumCanonicalizingEncoder
+  :: forall parse check p r
+  .  ( Universe p
+     , Show p
+     , Ord p
+     , Ord r
+     , MonadError Text parse
+     , MonadError Text check
+     , Show r
+     )
+  => (p -> (r, [r]))
+  -> Encoder check parse p r
+enumCanonicalizingEncoder f = Encoder $ do
+  let reversed = Map.fromListWith (<>) $ do
+        p <- universe
+        r <- fst (f p) : snd (f p)
+        return $ (r, Set.singleton p)
       checkSingleton k vs = case Set.toList vs of
-        [] -> error "enumEncoder: empty reverse mapping; should be impossible"
+        [] -> error "enumCanonicalizingEncoder: empty reverse mapping; should be impossible"
         [e] -> Success e
         _ -> Failure $ Map.singleton k vs
       showRedundant :: r -> Set p -> [Text]
@@ -673,8 +694,8 @@ enumEncoder f = Encoder $ do
     Success m -> pure $ EncoderImpl
       { _encoderImpl_decode = \r -> case Map.lookup r m of
           Just a -> pure a
-          Nothing -> throwError $ "enumEncoder: not recognized: " <> tshow r --TODO: Report this as a better type
-      , _encoderImpl_encode = f
+          Nothing -> throwError $ "enumCanonicalizingEncoder: not recognized: " <> tshow r --TODO: Report this as a better type
+      , _encoderImpl_encode = fst . f
       }
 
 unitEncoder :: (Applicative check, MonadError Text parse, Show r, Eq r) => r -> Encoder check parse () r
