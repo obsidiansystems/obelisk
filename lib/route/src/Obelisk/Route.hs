@@ -170,6 +170,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Text.Lens (IsText, packed, unpacked)
+import Data.Type.Equality
 import Data.Universe
 import Data.Universe.Some
 import Network.HTTP.Types.URI
@@ -1038,8 +1039,8 @@ someSumEncoder = Encoder $ pure $ EncoderImpl
 
 data Void1 :: * -> * where {}
 
-instance Universe (Some Void1) where
-  universe = []
+instance UniverseSome Void1 where
+  universeSome = []
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder = Encoder $ pure $ EncoderImpl

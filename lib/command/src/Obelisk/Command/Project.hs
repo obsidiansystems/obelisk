@@ -51,7 +51,7 @@ import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath)
+import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -116,7 +116,7 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
 
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp"
+      proc cp
         [ "-r"
         , "--preserve=links"
         , obDir
@@ -126,7 +126,7 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
 
   withSpinner "Copying project skeleton" $ do
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp"
+      proc cp
         [ "-r"
         , "--no-preserve=mode"
         , "-T"
@@ -137,6 +137,12 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     let configDir = "config"
     createDirectoryIfMissing False configDir
     mapM_ (createDirectoryIfMissing False . (configDir </>)) ["backend", "common", "frontend"]
+  putLog Notice $ T.intercalate "\n"
+    [ "An obelisk project has been successfully initialized. Next steps:"
+    , "  'ob run': Start a development server"
+    , "  'ob watch': Watch for changes without starting a server"
+    , "  'ob repl': Load your project into GHCi"
+    ]
 
 callHandoffOb
   :: MonadObelisk m
@@ -292,7 +298,7 @@ bashEscape :: String -> String
 bashEscape = BSU.toString . bytes . bash . BSU.fromString
 
 nixShellRunProc :: NixShellConfig -> ProcessSpec
-nixShellRunProc cfg = setDelegateCtlc True $ proc "nix-shell" $ runNixShellConfig cfg
+nixShellRunProc cfg = setDelegateCtlc True $ proc nixShellPath $ runNixShellConfig cfg
 
 nixShellWithoutPkgs
   :: MonadObelisk m
