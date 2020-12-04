@@ -17,7 +17,7 @@ import System.Directory
 -- | Set response header for "permanent" caching
 cachePermanently :: MonadSnap m => m ()
 cachePermanently = do
-  modifyResponse $ setHeader "Cache-Control" "public, max-age=315360000"
+  modifyResponse $ setHeader "Cache-Control" "public, max-age=315360000, immutable"
   modifyResponse $ setHeader "Expires" "Tue, 01 Feb 2050 00:00:00 GMT" --TODO: This should be set to "approximately one year from the time the response is sent"
 
 -- | Set response header to not cache
