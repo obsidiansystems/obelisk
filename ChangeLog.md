@@ -12,7 +12,6 @@ This project's release branch is `master`. This log is written from the perspect
 * [#787](https://github.com/obsidiansystems/obelisk/pull/787): Set `immutable` cache control directive when serving content-addressed static assets
 * Use iOS SDK 13.2
 
-
 ## v0.9.0.1
 
 * ([#810](https://github.com/obsidiansystems/obelisk/pull/810)) Fix loading of `all.js` in fully compiled web apps.
