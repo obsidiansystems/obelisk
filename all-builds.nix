@@ -1,6 +1,6 @@
 { self-args ? {
     config.android_sdk.accept_license = true;
-    iosSdkVersion = "10.2";
+    iosSdkVersion = "13.2";
   }
 , local-self ? import ./. self-args
 , supportedSystems ? [ builtins.currentSystem ]
