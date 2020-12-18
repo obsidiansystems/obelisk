@@ -358,6 +358,7 @@ findProjectAssets root = do
 getHaskellManifestProjectPath :: MonadObelisk m => FilePath -> m Text
 getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
   proc nixBuildExePath
-    [ "-E"
+    [ "--no-out-link"
+    , "-E"
     , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
     ]
