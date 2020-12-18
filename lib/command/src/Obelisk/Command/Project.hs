@@ -23,6 +23,7 @@ module Obelisk.Command.Project
   , toObeliskDir
   , withProjectRoot
   , bashEscape
+  , getHaskellManifestProjectPath
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
@@ -362,49 +363,10 @@ findProjectAssets root = do
         ]
     else readProcessAndLogStderr Debug $ setCwd (Just root) $
       proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
-  when (not $ isWritableOnlyBy implThunkStat myUid) $ modify (implThunk:)
 
---TODO: Is there a better way to ask if anyone else can write things?
---E.g. what about ACLs?
--- | Check to see if directory is only writable by a user whose User ID matches the second argument provided
-isWritableOnlyBy :: FileStatus -> UserID -> Bool
-isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
-
-inProjectProc :: MonadObelisk m => String -> [Bash] -> m ()
-inProjectProc shellName command = withProjectRoot "." $ \root ->
-  projectProc root True shellName (Just command)
-
--- | Run a command in the given shell for the current project
-inProjectShell :: MonadObelisk m => String -> String -> m ()
-inProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root True shellName (Just command)
-
-inImpureProjectShell :: MonadObelisk m => String -> String -> m ()
-inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root False shellName (Just command)
-
-projectProc :: MonadObelisk m => FilePath -> Bool -> String -> Maybe [Bash] -> m ()
-projectProc root isPure shellName command =
-  projectShell root isPure shellName $ commandToString <$> command
-    where
-      commandToString = unwords . fmap (BSU.toString . bytes)
-
-projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
-projectShell root isPure shellName command = do
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
-     [ "default.nix"] <>
-     -- Keep $NIX_PATH in the env for --pure shells so '<nixpkgs>' works in sub-commands
-     -- TODO: Don't use <nixpkgs> for anything!
-     (if isPure then [ "--pure", "--keep", "NIX_PATH" ] else []) <>
-     [ "-A"
-     , "shells." <> shellName
-     ] <> case command of
-       Nothing -> []
-       Just c -> ["--run",  c]
-  void $ liftIO $ waitForProcess ph
-
-setCtlc :: CreateProcess -> CreateProcess
-setCtlc cfg = cfg { delegate_ctlc = True }
-
-setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
-setCwd fp cfg = cfg { cwd = fp }
+getHaskellManifestProjectPath :: MonadObelisk m => FilePath -> m Text
+getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+  proc nixBuildExePath
+    [ "-E"
+    , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
+    ]

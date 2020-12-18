@@ -73,7 +73,7 @@ in rec {
     set -euo pipefail
     touch "$out"
     mkdir -p "$symlinked"
-    obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
+    obelisk-asset-th-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
