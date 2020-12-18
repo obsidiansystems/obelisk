@@ -8,6 +8,7 @@ This project's release branch is `master`. This log is written from the perspect
   * Migration: All uses of `static @"some/path"` become `$(static "some/path")`. Instead of requiring `TypeApplications` and `DataKinds`, modules calling `static` must now enable `TemplateHaskell`.
   * Deprecation: Deprecate static asset modules generated via 'obelisk-asset-manifest-generate' in favor of modules generated via 'obelisk-asset-th-generate'. The new executable takes the same arguments as the old and should be a drop-in replacement. To preserve the old behavior, set `__deprecated.useObeliskAssetManifestGenerate = true;` in your obelisk project configuration.
   * Feature: Files added to the static directory while `ob run` is active no longer require `ob run` to be restarted
+* When `staticFiles` is a derivation, as opposed to a regular directory, produce a symlink to the result of that derivation at `static.out` and have `ob run` serve static assets from that symlink. This makes is possible for the static asset derivation to be rebuilt and the new results served without restarting `ob run`.
 
 ## v0.9.1.0
 
