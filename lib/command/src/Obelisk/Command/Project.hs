@@ -347,11 +347,13 @@ findProjectAssets root = do
       ]
   -- Check whether the impure static files are a derivation (and so must be built)
   if isDerivation == "1"
-    then fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ -- Strip whitespace here because nix-build has no --raw option
-      proc nixBuildExePath
-        [ "--no-out-link"
-        , "-E", "(import ./. {}).passthru.staticFilesImpure"
-        ]
+    then do
+      _ <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+        proc nixBuildExePath
+          [ "-o", "static.out"
+          , "-E", "(import ./. {}).passthru.staticFilesImpure"
+          ]
+      pure $ T.pack $ root </> "static.out"
     else readProcessAndLogStderr Debug $ setCwd (Just root) $
       proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
 
