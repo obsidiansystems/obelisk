@@ -67,7 +67,7 @@ import Text.ShellEscape (bash, bytes)
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
-import Obelisk.App (MonadObelisk)
+import Obelisk.App (MonadObelisk, runObelisk, getObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
@@ -381,9 +381,7 @@ findProjectAssets root = do
   -- Check whether the impure static files are a derivation (and so must be built)
   if isDerivation == "1"
     then do
-      _ <- readProcessAndLogStderr Debug $ setCwd (Just root) $
-        proc nixBuildExePath staticFilesDrvSymlinkArgs
-
+      _ <- buildStaticFilesDerivationAndSymlink root
       pure (AssetSource_Derivation, T.pack $ root </> "static.out")
     else fmap (AssetSource_Files,) $ readProcessAndLogStderr Debug $ setCwd (Just root) $
       proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
@@ -397,42 +395,47 @@ getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debu
     , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
     ]
 
-staticFilesDrvSymlinkArgs :: [String]
-staticFilesDrvSymlinkArgs =
-  [ "-o", "static.out"
-  , "-E", "(import ./. {}).passthru.staticFilesImpure"
-  ]
-
 -- | Watch the project directory for file changes and check whether those file changes
 -- cause changes in the static files nix derivation. If so, rebuild it.
 watchStaticFilesDerivation
-  :: MonadObelisk m
+  :: (MonadIO m, MonadObelisk m)
   => FilePath
   -> m ()
 watchStaticFilesDerivation root = do
-  cfg <- getCliConfig
-  drv0 <- liftIO runShowDrv
+  ob <- getObelisk
+  drv0 <- showDerivation
   liftIO $ runHeadlessApp $ do
     pb <- getPostBuild
     checkForChanges <- watchDirectoryTree defaultConfig (root <$ pb) (const True)
-    drv <- performEvent $ liftIO runShowDrv <$ checkForChanges
+    drv <- performEvent $ ffor checkForChanges $ \_ ->
+      liftIO $ runObelisk ob showDerivation
     drvs <- foldDyn (\new (_, old, _) -> (old, new, old /= new)) (drv0, drv0, False) drv
     out <- throttleBatchWithLag
-      (\e -> performEvent $ ffor e $ \_ -> liftIO $ void runDrvBuild)
+      (\e -> performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $
+        buildStaticFilesDerivationAndSymlink root >> pure ())
       (void $ ffilter (^._3) $ updated drvs)
-    performEvent_ $ ffor out $ \_ ->
-      runCli cfg $
-        putLog Informational "Static assets rebuilt and symlinked to static.out"
+    performEvent_ $ ffor out $ \_ -> runObelisk ob $
+      putLog Notice "Static assets rebuilt and symlinked to static.out"
     pure never
   where
-    showDrv :: Proc.CreateProcess
-    showDrv = (Proc.proc nixExePath
-      [ "show-derivation"
-      , "-f", "."
-      , "passthru.staticFilesImpure"
-      ]) { Proc.cwd = Just root }
-    runShowDrv :: IO String
-    runShowDrv = Proc.readCreateProcess showDrv ""
-    runDrvBuild :: IO String
-    runDrvBuild = Proc.readCreateProcess
-      ((Proc.proc nixBuildExePath staticFilesDrvSymlinkArgs) { Proc.cwd = Just root }) ""
+    showDerivation :: MonadObelisk m => m Text
+    showDerivation = readProcessAndLogStderr Debug $
+      setCwd (Just root) $ ProcessSpec
+        { _processSpec_createProcess = Proc.proc nixExePath
+          [ "show-derivation"
+          , "-f", "."
+          , "passthru.staticFilesImpure"
+          ]
+        , _processSpec_overrideEnv = Nothing
+        }
+
+buildStaticFilesDerivationAndSymlink :: MonadObelisk m => FilePath -> m Text
+buildStaticFilesDerivationAndSymlink root = readProcessAndLogStderr Debug $
+  setCwd (Just root) $ ProcessSpec
+    { _processSpec_createProcess = Proc.proc
+        nixBuildExePath
+        [ "-o", "static.out"
+        , "-E", "(import ./. {}).passthru.staticFilesImpure"
+        ]
+    , _processSpec_overrideEnv = Nothing
+    }
