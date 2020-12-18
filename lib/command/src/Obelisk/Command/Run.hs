@@ -14,7 +14,8 @@ module Obelisk.Command.Run where
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
 import Control.Lens (ifor, (.~), (&))
-import Control.Monad (filterM)
+import Control.Concurrent (forkIO)
+import Control.Monad (filterM, void)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -65,13 +66,16 @@ import System.Environment (getExecutablePath)
 import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
+import Obelisk.App (MonadObelisk, getObelisk, runObelisk)
 import Obelisk.CliApp (
     Severity (..),
     failWith,
+    getCliConfig,
     proc,
     putLog,
     readCreateProcessWithExitCode,
     readProcessAndLogStderr,
+    runCli,
     runProcess_,
     setCwd,
     setDelegateCtlc,
@@ -81,13 +85,11 @@ import Obelisk.CliApp (
     runCli
     )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets, bashEscape, getHaskellManifestProjectPath)
+import Obelisk.Command.Project
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 import System.Which (staticWhich)
 import Text.ShellEscape (bash, bytes)
-
-import Obelisk.App (MonadObelisk, ObeliskT)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -152,8 +154,8 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
           , _target_attr = Just "__unstable__.profiledObRun"
           , _target_expr = Nothing
           }
-  assets <- findProjectAssets root
-  putLog Debug $ "Assets impurely loaded from: " <> assets
+  (assetType, assets) <- findProjectAssets root
+  putLog Debug $ describeImpureAssetSource assetType assets
   time <- liftIO getCurrentTime
   let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
   liftIO $ createDirectoryIfMissing True $ takeDirectory $ root </> profileBaseName
@@ -171,9 +173,16 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
 run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 run root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  assets <- findProjectAssets root
+  (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
-  putLog Debug $ "Assets impurely loaded from: " <> assets
+  putLog Debug $ describeImpureAssetSource assetType assets
+  case assetType of
+    AssetSource_Derivation -> do
+      cliConfig <- getCliConfig
+      ob <- getObelisk
+      putLog Debug "Starting static file derivation watcher..."
+      void $ liftIO $ forkIO $ runCli cliConfig $ runObelisk ob $ watchStaticFilesDerivation root
+    _ -> pure ()
   ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root True
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
