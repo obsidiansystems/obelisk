@@ -4,6 +4,8 @@ Description:
 -}
 module Obelisk.Asset.TH
   ( assetPath
+  , staticAssetRaw
+  , staticAssetHashed
   ) where
 
 import Obelisk.Asset.Gather
@@ -12,8 +14,23 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import System.FilePath.Posix
 
+-- | Produces the hashed path of a file
+hashedAssetFilePath :: FilePath -> FilePath -> Q FilePath
+hashedAssetFilePath root relativePath = do
+  qAddDependentFile $ root </> relativePath
+  runIO (toHashedPath root relativePath)
+
 -- | Produces a string literal with the hashed path of the file
 assetPath :: FilePath -> FilePath -> Q Exp
-assetPath root relativePath = do
-  qAddDependentFile $ root </> relativePath
-  LitE . StringL <$> runIO (toHashedPath root relativePath)
+assetPath root relativePath =
+  LitE . StringL <$> hashedAssetFilePath root relativePath
+
+staticPrefix :: FilePath
+staticPrefix = "/static"
+
+staticAssetRaw :: FilePath -> Q Exp
+staticAssetRaw fp = returnQ $ LitE $ StringL $ staticPrefix </> fp
+
+staticAssetHashed :: FilePath -> FilePath -> Q Exp
+staticAssetHashed root fp = do
+  LitE . StringL . (staticPrefix </>) <$> hashedAssetFilePath root fp
