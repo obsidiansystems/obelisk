@@ -16,6 +16,7 @@ module Obelisk.Command.Project
   , toObeliskDir
   , withProjectRoot
   , bashEscape
+  , getHaskellManifestProjectPath
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
@@ -353,3 +354,10 @@ findProjectAssets root = do
         ]
     else readProcessAndLogStderr Debug $ setCwd (Just root) $
       proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
+
+getHaskellManifestProjectPath :: MonadObelisk m => FilePath -> m Text
+getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+  proc nixBuildExePath
+    [ "-E"
+    , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
+    ]

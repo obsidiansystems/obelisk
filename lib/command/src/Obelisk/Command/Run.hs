@@ -77,7 +77,7 @@ import Obelisk.CliApp (
     withSpinner,
   )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets, bashEscape)
+import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets, bashEscape, getHaskellManifestProjectPath)
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
@@ -164,8 +164,9 @@ run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 run root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   assets <- findProjectAssets root
+  manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
   putLog Debug $ "Assets impurely loaded from: " <> assets
-  ghciArgs <- getGhciSessionSettings pkgs root True
+  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root True
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
@@ -400,7 +401,8 @@ withGhciScriptArgs
   => f CabalPackageInfo -- ^ List of packages to load into ghci
   -> ([String] -> m ()) -- ^ Action to run with the extra ghci arguments
   -> m ()
-withGhciScriptArgs packageInfos f = withGhciScript loadPreludeManually packageInfos $ \fp -> f ["-XNoImplicitPrelude", "-ghci-script", fp]
+withGhciScriptArgs packageInfos f = withGhciScript loadPreludeManually packageInfos $ \fp ->
+  f ["-XNoImplicitPrelude", "-ghci-script", fp]
   where
     -- These lines must be first and allow the session to support a custom Prelude when @-XNoImplicitPrelude@
     -- is passed to the ghci session.
@@ -458,6 +460,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
 
   pure
     $  baseGhciOptions
+    <> ["-DPASSTHRU"] -- For passthrough static assets
     <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
     <> concatMap (\p -> ["-optF", p]) pkgFiles
     <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]

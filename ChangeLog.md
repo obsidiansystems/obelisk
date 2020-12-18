@@ -2,6 +2,13 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## Unreleased
+
+* Use TemplateHaskell to determine asset file paths
+  * Migration: All uses of `static @"some/path"` become `$(static "some/path")`. Instead of requiring `TypeApplications` and `DataKinds`, modules calling `static` must now enable `TemplateHaskell`.
+  * Deprecation: Deprecate static asset modules generated via 'obelisk-asset-manifest-generate' in favor of modules generated via 'obelisk-asset-th-generate'. The new executable takes the same arguments as the old and should be a drop-in replacement.
+  * Feature: Files added to the static directory while `ob run` is active no longer require `ob run` to be restarted
+
 ## v0.9.1.0
 
 * [#801](https://github.com/obsidiansystems/obelisk/pull/801): Remove errors and warning for local packages without a library component

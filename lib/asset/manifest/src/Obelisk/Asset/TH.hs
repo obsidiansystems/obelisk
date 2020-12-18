@@ -1,9 +1,14 @@
+{-|
+Description:
+  Template Haskell for generating asset paths.
+-}
 module Obelisk.Asset.TH
   ( assetPath
   ) where
 
 import Obelisk.Asset.Gather
 
+import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import System.FilePath.Posix
 
