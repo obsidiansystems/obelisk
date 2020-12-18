@@ -468,7 +468,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
 
   pure
     $  baseGhciOptions
-    <> ["-DPASSTHRU"] -- For passthrough static assets
+    <> ["-DOBELISK_ASSET_PASSTHRU"] -- For passthrough static assets
     <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
     <> concatMap (\p -> ["-optF", p]) pkgFiles
     <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]

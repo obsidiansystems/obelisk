@@ -15,14 +15,11 @@ main = do
     , _simplePkg_moduleName = T.pack moduleName
     , _simplePkg_dependencies = map T.pack
       [ "base"
-      , "filepath"
       , "obelisk-asset-manifest"
       , "template-haskell"
       ]
     , _simplePkg_moduleContents = T.pack $ unlines
-      [ "{-# Language BangPatterns #-}"
-      , "{-# Language CPP #-}"
-      , "{-# Language OverloadedStrings #-}"
+      [ "{-# Language CPP #-}"
       , "{-|"
       , "  Description:"
       , "    Automatically generated module that provides the 'static' TH function"
@@ -30,29 +27,14 @@ main = do
       , "-}"
       , "module " <> moduleName <> " ( static ) where"
       , ""
-      , "import Obelisk.Asset.Gather"
+      , "import Obelisk.Asset.TH"
       , "import Language.Haskell.TH"
-      , "import Language.Haskell.TH.Syntax"
-      , "import System.FilePath"
-      , ""
-      , "-- | Produces a string literal with the hashed path of the file"
-      , "assetPath :: FilePath -> FilePath -> Q Exp"
-      , "assetPath root relativePath = do"
-      , "  qAddDependentFile $ root </> relativePath"
-      , "  LitE . StringL . (prefix</>) <$> runIO (toHashedPath root relativePath)"
-      , ""
-      , "-- | Produces a string literal with the raw (i.e., unhashed) path of the file"
-      , "assetPathRaw :: FilePath -> Q Exp"
-      , "assetPathRaw fp = returnQ $ LitE $ StringL $ prefix </> fp"
-      , ""
-      , "prefix :: FilePath"
-      , "prefix = \"/static\""
       , ""
       , "static :: FilePath -> Q Exp"
-      , "#ifdef PASSTHRU"
-      , "static = assetPathRaw"
+      , "#ifdef OBELISK_ASSET_PASSTHRU"
+      , "static = staticAssetRaw"
       , "#else"
-      , "static = assetPath " <> show root
+      , "static = staticAssetHashed " <> show root
       , "#endif"
       ]
     }
