@@ -14,7 +14,8 @@ module Obelisk.Command.Run where
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
 import Control.Lens (ifor, (.~), (&))
-import Control.Monad (filterM)
+import Control.Concurrent (forkIO)
+import Control.Monad (filterM, void)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -63,21 +64,23 @@ import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
 
-import Obelisk.App (MonadObelisk)
+import Obelisk.App (MonadObelisk, getObelisk, runObelisk)
 import Obelisk.CliApp (
     Severity (..),
     failWith,
+    getCliConfig,
     proc,
     putLog,
     readCreateProcessWithExitCode,
     readProcessAndLogStderr,
+    runCli,
     runProcess_,
     setCwd,
     setDelegateCtlc,
     withSpinner,
   )
 import Obelisk.Command.Nix
-import Obelisk.Command.Project (nixShellWithoutPkgs, withProjectRoot, findProjectAssets, bashEscape)
+import Obelisk.Command.Project
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 
@@ -144,8 +147,8 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
           , _target_attr = Just "__unstable__.profiledObRun"
           , _target_expr = Nothing
           }
-  assets <- findProjectAssets root
-  putLog Debug $ "Assets impurely loaded from: " <> assets
+  (assetType, assets) <- findProjectAssets root
+  putLog Debug $ describeImpureAssetSource assetType assets
   time <- liftIO getCurrentTime
   let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
   liftIO $ createDirectoryIfMissing True $ takeDirectory $ root </> profileBaseName
@@ -163,9 +166,17 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
 run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 run root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  assets <- findProjectAssets root
-  putLog Debug $ "Assets impurely loaded from: " <> assets
-  ghciArgs <- getGhciSessionSettings pkgs root True
+  (assetType, assets) <- findProjectAssets root
+  manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
+  putLog Debug $ describeImpureAssetSource assetType assets
+  case assetType of
+    AssetSource_Derivation -> do
+      cliConfig <- getCliConfig
+      ob <- getObelisk
+      putLog Debug "Starting static file derivation watcher..."
+      void $ liftIO $ forkIO $ runCli cliConfig $ runObelisk ob $ watchStaticFilesDerivation root
+    _ -> pure ()
+  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root True
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
@@ -222,7 +233,12 @@ getLocalPkgs root interpretPaths = do
   let rootsAndExclusions = calcIntepretFinds "" interpretPaths
 
   fmap fold $ for (MMap.toAscList rootsAndExclusions) $ \(interpretPathRoot, exclusions) ->
-    let allExclusions = obeliskPackageExclusions <> exclusions <> Set.singleton ("*" </> attrCacheFileName)
+    let allExclusions = obeliskPackageExclusions
+          <> exclusions
+          <> Set.singleton ("*" </> attrCacheFileName)
+          <> Set.singleton ("*" </> "lib/asset/manifest") -- NB: obelisk-asset-manifest is excluded because it generates
+                                                          -- a module that in turn imports it. This will cause ob run to
+                                                          -- fail in its current implementation.
     in fmap (Set.fromList . map normalise) $ runFind $
       ["-L", interpretPathRoot, "(", "-name", "*.cabal", "-o", "-name", Hpack.packageConfig, ")", "-a", "-type", "f"]
       <> concat [["-not", "-path", p </> "*"] | p <- toList allExclusions]
@@ -400,7 +416,8 @@ withGhciScriptArgs
   => f CabalPackageInfo -- ^ List of packages to load into ghci
   -> ([String] -> m ()) -- ^ Action to run with the extra ghci arguments
   -> m ()
-withGhciScriptArgs packageInfos f = withGhciScript loadPreludeManually packageInfos $ \fp -> f ["-XNoImplicitPrelude", "-ghci-script", fp]
+withGhciScriptArgs packageInfos f = withGhciScript loadPreludeManually packageInfos $ \fp ->
+  f ["-XNoImplicitPrelude", "-ghci-script", fp]
   where
     -- These lines must be first and allow the session to support a custom Prelude when @-XNoImplicitPrelude@
     -- is passed to the ghci session.
@@ -458,6 +475,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
 
   pure
     $  baseGhciOptions
+    <> ["-DOBELISK_ASSET_PASSTHRU"] -- For passthrough static assets
     <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
     <> concatMap (\p -> ["-optF", p]) pkgFiles
     <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]

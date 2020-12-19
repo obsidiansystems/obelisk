@@ -1,6 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
+
 module Obelisk.Command.Project
   ( InitSource (..)
   , findProjectObeliskCommand
@@ -16,12 +19,17 @@ module Obelisk.Command.Project
   , toObeliskDir
   , withProjectRoot
   , bashEscape
+  , getHaskellManifestProjectPath
+  , AssetSource(..)
+  , describeImpureAssetSource
+  , watchStaticFilesDerivation
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
-import Control.Lens ((.~), (?~), (<&>))
+import Control.Lens ((.~), (?~), (<&>), (^.), _3)
 import Control.Monad
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Log
 import Control.Monad.State
 import qualified Data.Aeson as Json
 import qualified Data.ByteString.UTF8 as BSU
@@ -34,20 +42,25 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Traversable (for)
+import Reflex
+import Reflex.FSNotify
+import Reflex.Host.Headless
 import System.Directory
 import System.Environment (lookupEnv)
 import System.FilePath
+import System.FSNotify (defaultConfig)
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.PosixCompat.Files
 import System.PosixCompat.Types
 import System.PosixCompat.User
+import qualified System.Process as Proc
 import Text.ShellEscape (bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
-import Obelisk.App (MonadObelisk)
+import Obelisk.App (MonadObelisk, runObelisk, getObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
@@ -334,7 +347,21 @@ nixShellWithHoogle root isPure shell' command = do
         \})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
 
-findProjectAssets :: MonadObelisk m => FilePath -> m Text
+-- | Describes the provenance of static assets (i.e., are they the result of a derivation
+-- that was built, or just a folder full of files.
+data AssetSource = AssetSource_Derivation
+                 | AssetSource_Files
+  deriving (Eq)
+
+-- | Some log messages to make it easier to tell where static files are coming from
+describeImpureAssetSource :: AssetSource -> Text -> Text
+describeImpureAssetSource src path = case src of
+  AssetSource_Files -> "Assets impurely loaded from: " <> path
+  AssetSource_Derivation -> "Assets derivation built and impurely loaded from: " <> path
+
+-- | Determine where the static files of a project are and whether they're plain files or a derivation.
+-- If they are a derivation, that derivation will be built.
+findProjectAssets :: MonadObelisk m => FilePath -> m (AssetSource, Text)
 findProjectAssets root = do
   isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath
@@ -346,10 +373,62 @@ findProjectAssets root = do
       ]
   -- Check whether the impure static files are a derivation (and so must be built)
   if isDerivation == "1"
-    then fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $ -- Strip whitespace here because nix-build has no --raw option
-      proc nixBuildExePath
-        [ "--no-out-link"
+    then do
+      _ <- buildStaticFilesDerivationAndSymlink root
+      pure (AssetSource_Derivation, T.pack $ root </> "static.out")
+    else fmap (AssetSource_Files,) $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+      proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
+
+-- | Get the nix store path to the generated static asset manifest module (e.g., "obelisk-generated-static")
+getHaskellManifestProjectPath :: MonadObelisk m => FilePath -> m Text
+getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+  proc nixBuildExePath
+    [ "--no-out-link"
+    , "-E"
+    , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
+    ]
+
+-- | Watch the project directory for file changes and check whether those file changes
+-- cause changes in the static files nix derivation. If so, rebuild it.
+watchStaticFilesDerivation
+  :: (MonadIO m, MonadObelisk m)
+  => FilePath
+  -> m ()
+watchStaticFilesDerivation root = do
+  ob <- getObelisk
+  drv0 <- showDerivation
+  liftIO $ runHeadlessApp $ do
+    pb <- getPostBuild
+    checkForChanges <- watchDirectoryTree defaultConfig (root <$ pb) (const True)
+    drv <- performEvent $ ffor checkForChanges $ \_ ->
+      liftIO $ runObelisk ob showDerivation
+    drvs <- foldDyn (\new (_, old, _) -> (old, new, old /= new)) (drv0, drv0, False) drv
+    out <- throttleBatchWithLag
+      (\e -> performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $
+        buildStaticFilesDerivationAndSymlink root >> pure ())
+      (void $ ffilter (^._3) $ updated drvs)
+    performEvent_ $ ffor out $ \_ -> runObelisk ob $
+      putLog Notice "Static assets rebuilt and symlinked to static.out"
+    pure never
+  where
+    showDerivation :: MonadObelisk m => m Text
+    showDerivation = readProcessAndLogStderr Debug $
+      setCwd (Just root) $ ProcessSpec
+        { _processSpec_createProcess = Proc.proc nixExePath
+          [ "show-derivation"
+          , "-f", "."
+          , "passthru.staticFilesImpure"
+          ]
+        , _processSpec_overrideEnv = Nothing
+        }
+
+buildStaticFilesDerivationAndSymlink :: MonadObelisk m => FilePath -> m Text
+buildStaticFilesDerivationAndSymlink root = readProcessAndLogStderr Debug $
+  setCwd (Just root) $ ProcessSpec
+    { _processSpec_createProcess = Proc.proc
+        nixBuildExePath
+        [ "-o", "static.out"
         , "-E", "(import ./. {}).passthru.staticFilesImpure"
         ]
-    else readProcessAndLogStderr Debug $ setCwd (Just root) $
-      proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
+    , _processSpec_overrideEnv = Nothing
+    }
