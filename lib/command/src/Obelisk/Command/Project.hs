@@ -39,6 +39,7 @@ import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
 import Data.Function ((&), on)
 import Data.Map (Map)
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
@@ -410,12 +411,14 @@ watchStaticFilesDerivation root = do
     drv <- performEvent $ ffor checkForChanges $ \_ ->
       liftIO $ runObelisk ob showDerivation
     drvs <- foldDyn (\new (_, old, _) -> (old, new, old /= new)) (drv0, drv0, False) drv
-    out <- throttleBatchWithLag
-      (\e -> performEvent $ ffor e $ \_ ->
-        liftIO $ runObelisk ob $ buildStaticCatchErrors >> pure ())
-      (void $ fmapMaybe (^._2) $ ffilter (^._3) $ updated drvs)
-    performEvent_ $ ffor out $ \_ -> runObelisk ob $
-      putLog Notice "Static assets rebuilt and symlinked to static.out"
+    void $ throttleBatchWithLag
+      (\e -> performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $ do
+        putLog Notice "Static assets being built..."
+        buildStaticCatchErrors >>= \case
+          Nothing -> pure ()
+          Just _ -> putLog Notice "Static assets built and symlinked to static.out"
+      )
+      ((() <$) . ffilter (\x -> isJust (x ^._2) && x ^._3) $ updated drvs)
     pure never
   where
     handleBuildFailure
@@ -426,7 +429,8 @@ watchStaticFilesDerivation root = do
       ExitSuccess -> pure $ Just $ T.pack out
       _ -> do
         putLog Error $
-          "Static assets build failed: " <> T.pack err
+          ("Static assets build failed: " <>) $
+            T.unlines $ reverse $ take 10 $ reverse $ T.lines $ T.pack err
         pure Nothing
     showDerivation :: MonadObelisk m => m (Maybe Text)
     showDerivation =
