@@ -70,12 +70,10 @@ import Obelisk.App (MonadObelisk, getObelisk, runObelisk)
 import Obelisk.CliApp (
     Severity (..),
     failWith,
-    getCliConfig,
     proc,
     putLog,
     readCreateProcessWithExitCode,
     readProcessAndLogStderr,
-    runCli,
     runProcess_,
     setCwd,
     setDelegateCtlc,
@@ -178,10 +176,9 @@ run root interpretPaths = do
   putLog Debug $ describeImpureAssetSource assetType assets
   case assetType of
     AssetSource_Derivation -> do
-      cliConfig <- getCliConfig
       ob <- getObelisk
       putLog Debug "Starting static file derivation watcher..."
-      void $ liftIO $ forkIO $ runCli cliConfig $ runObelisk ob $ watchStaticFilesDerivation root
+      void $ liftIO $ forkIO $ runObelisk ob $ watchStaticFilesDerivation root
     _ -> pure ()
   ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root True
   freePort <- getFreePort
