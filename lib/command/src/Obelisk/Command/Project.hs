@@ -26,8 +26,9 @@ module Obelisk.Command.Project
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
-import Control.Lens ((.~), (?~), (<&>), (^.), _3)
+import Control.Lens ((.~), (?~), (<&>), (^.), _2, _3)
 import Control.Monad
+import Control.Monad.Except
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Log
 import Control.Monad.State
@@ -47,8 +48,9 @@ import Reflex.FSNotify
 import Reflex.Host.Headless
 import System.Directory
 import System.Environment (lookupEnv)
+import System.Exit (ExitCode(..))
 import System.FilePath
-import System.FSNotify (defaultConfig)
+import System.FSNotify (defaultConfig, eventPath)
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.PosixCompat.Files
@@ -374,7 +376,9 @@ findProjectAssets root = do
   -- Check whether the impure static files are a derivation (and so must be built)
   if isDerivation == "1"
     then do
-      _ <- buildStaticFilesDerivationAndSymlink root
+      _ <- buildStaticFilesDerivationAndSymlink
+        (readProcessAndLogStderr Debug)
+        root
       pure (AssetSource_Derivation, T.pack $ root </> "static.out")
     else fmap (AssetSource_Files,) $ readProcessAndLogStderr Debug $ setCwd (Just root) $
       proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
@@ -399,31 +403,54 @@ watchStaticFilesDerivation root = do
   drv0 <- showDerivation
   liftIO $ runHeadlessApp $ do
     pb <- getPostBuild
-    checkForChanges <- watchDirectoryTree defaultConfig (root <$ pb) (const True)
+    checkForChanges <- batchOccurrences 0.25 =<< watchDirectoryTree
+      defaultConfig
+      (root <$ pb)
+      ((/="static.out") . takeFileName . eventPath)
     drv <- performEvent $ ffor checkForChanges $ \_ ->
       liftIO $ runObelisk ob showDerivation
     drvs <- foldDyn (\new (_, old, _) -> (old, new, old /= new)) (drv0, drv0, False) drv
     out <- throttleBatchWithLag
-      (\e -> performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $
-        buildStaticFilesDerivationAndSymlink root >> pure ())
-      (void $ ffilter (^._3) $ updated drvs)
+      (\e -> performEvent $ ffor e $ \_ ->
+        liftIO $ runObelisk ob $ buildStaticCatchErrors >> pure ())
+      (void $ fmapMaybe (^._2) $ ffilter (^._3) $ updated drvs)
     performEvent_ $ ffor out $ \_ -> runObelisk ob $
       putLog Notice "Static assets rebuilt and symlinked to static.out"
     pure never
   where
-    showDerivation :: MonadObelisk m => m Text
-    showDerivation = readProcessAndLogStderr Debug $
-      setCwd (Just root) $ ProcessSpec
-        { _processSpec_createProcess = Proc.proc nixExePath
-          [ "show-derivation"
-          , "-f", "."
-          , "passthru.staticFilesImpure"
-          ]
-        , _processSpec_overrideEnv = Nothing
-        }
+    handleBuildFailure
+      :: MonadObelisk m
+      => (ExitCode, String, String)
+      -> m (Maybe Text)
+    handleBuildFailure (ex, out, err) = case ex of
+      ExitSuccess -> pure $ Just $ T.pack out
+      _ -> do
+        putLog Error $
+          "Static assets build failed: " <> T.pack err
+        pure Nothing
+    showDerivation :: MonadObelisk m => m (Maybe Text)
+    showDerivation =
+      handleBuildFailure <=< readCreateProcessWithExitCode $
+          setCwd (Just root) $ ProcessSpec
+            { _processSpec_createProcess = Proc.proc nixExePath
+              [ "show-derivation"
+              , "-f", "."
+              , "passthru.staticFilesImpure"
+              ]
+            , _processSpec_overrideEnv = Nothing
+            }
+    buildStaticCatchErrors :: MonadObelisk m => m (Maybe Text)
+    buildStaticCatchErrors = handleBuildFailure =<<
+      buildStaticFilesDerivationAndSymlink
+        readCreateProcessWithExitCode
+        root
 
-buildStaticFilesDerivationAndSymlink :: MonadObelisk m => FilePath -> m Text
-buildStaticFilesDerivationAndSymlink root = readProcessAndLogStderr Debug $
+buildStaticFilesDerivationAndSymlink
+  :: MonadObelisk m
+  => (ProcessSpec -> m a)
+  -> FilePath
+  -> m a
+buildStaticFilesDerivationAndSymlink f root = f $
   setCwd (Just root) $ ProcessSpec
     { _processSpec_createProcess = Proc.proc
         nixBuildExePath
