@@ -58,7 +58,8 @@ import System.Directory
 import System.Environment (lookupEnv)
 import System.Exit (ExitCode(..))
 import System.FilePath
-import System.FSNotify (defaultConfig, eventPath)
+import System.FSNotify (defaultConfig, eventPath, WatchConfig(..))
+import qualified System.Info as SysInfo
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.PosixCompat.Files
@@ -416,7 +417,8 @@ watchStaticFilesDerivation root = do
   liftIO $ runHeadlessApp $ do
     pb <- getPostBuild
     checkForChanges <- batchOccurrences 0.25 =<< watchDirectoryTree
-      defaultConfig
+      -- On macOS, use the polling backend due to https://github.com/luite/hfsevents/issues/13
+      (defaultConfig { confUsePolling = SysInfo.os == "darwin", confPollInterval = 250000 })
       (root <$ pb)
       ((/="static.out") . takeFileName . eventPath)
     drv <- performEvent $ ffor checkForChanges $ \_ ->
