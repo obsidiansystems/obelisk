@@ -67,7 +67,7 @@ import Obelisk.App (MonadObelisk, runObelisk, getObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath)
+import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -381,8 +381,12 @@ findProjectAssets root = do
         (readProcessAndLogStderr Debug)
         root
       pure (AssetSource_Derivation, T.pack $ root </> "static.out")
-    else fmap (AssetSource_Files,) $ readProcessAndLogStderr Debug $ setCwd (Just root) $
-      proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
+    else fmap (AssetSource_Files,) $ do
+      path <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+        proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
+      _ <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+        proc lnPath ["-s", "-f", T.unpack path, "static.out"]
+      pure path
 
 -- | Get the nix store path to the generated static asset manifest module (e.g., "obelisk-generated-static")
 getHaskellManifestProjectPath :: MonadObelisk m => FilePath -> m Text
