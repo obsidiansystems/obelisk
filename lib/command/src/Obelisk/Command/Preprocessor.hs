@@ -59,6 +59,7 @@ writeOutput packageInfo' origPath outPath = withFile outPath WriteMode $ \hOut -
   where
     hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
 
+--NOTE: We cannot restrict the package set by adding '-package' flags to OPTIONS_GHC, because GHC rejects them there.  It seems that we won't be able to properly handle that situation until GHC itself supports loading multiple packages officially in GHCi
 generateHeader :: FilePath -> CabalPackageInfo -> TL.Builder
 generateHeader origPath packageInfo =
     hsExtensions <> ghcOptions <> lineNumberPragma origPath
