@@ -4,6 +4,7 @@ Description:
 -}
 module Obelisk.Asset.TH
   ( assetPath
+  , assetPathRaw
   , staticAssetRaw
   , staticAssetHashed
   ) where
@@ -34,3 +35,6 @@ staticAssetRaw fp = returnQ $ LitE $ StringL $ staticPrefix </> fp
 staticAssetHashed :: FilePath -> FilePath -> Q Exp
 staticAssetHashed root fp = do
   LitE . StringL . (staticPrefix </>) <$> hashedAssetFilePath root fp
+
+assetPathRaw :: FilePath -> FilePath -> Q Exp
+assetPathRaw root fp = returnQ $ LitE $ StringL $ root </> fp

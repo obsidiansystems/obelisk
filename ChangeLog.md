@@ -10,6 +10,7 @@ This project's release branch is `master`. This log is written from the perspect
   * Feature: Files added to the static directory while `ob run` is active no longer require `ob run` to be restarted
 * Feature: When `staticFiles` is a derivation, as opposed to a regular directory, produce a symlink to the result of that derivation at `static.out` and have `ob run` serve static assets from that symlink. This makes is possible for the static asset derivation to be rebuilt and the new results served without restarting `ob run`.
 * Feature: Rebuild static asset derivations while `ob run` is active as long as the change to the derivation is within the project folder. `ob run` now displays a message ("Static assets rebuilt and symlinked to static.out") whenever static assets have been rebuilt and the new static assets are being served.
+* Feature: Add `staticFilePath` to `Obelisk.Generated.Static`. Like `static`, this uses TH to generate a reference to a file. Unlike `static`, this `staticFilePath` generates a path on the filesystem instead of URL path.
 
 ## v0.9.1.0
 
