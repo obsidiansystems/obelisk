@@ -26,7 +26,7 @@ module Obelisk.Command.Project
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
-import Control.Lens ((.~), (?~), (<&>), (^.), _2, _3)
+import Control.Lens ((.~), (?~), (<&>))
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.IO.Class (liftIO)
@@ -37,9 +37,11 @@ import qualified Data.ByteString.UTF8 as BSU
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
+import qualified Data.Foldable as F (toList)
 import Data.Function ((&), on)
+import Data.List (isPrefixOf)
 import Data.Map (Map)
-import Data.Maybe (isJust)
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
@@ -402,25 +404,64 @@ watchStaticFilesDerivation
   -> m ()
 watchStaticFilesDerivation root = do
   ob <- getObelisk
-  drv0 <- showDerivation
   liftIO $ runHeadlessApp $ do
     pb <- getPostBuild
+    let filterEvents x =
+          let fn = takeFileName x
+              dirs = Set.fromList $ splitDirectories x
+              ignoredFilenames = Set.fromList
+                [ "ghcid-output.txt"
+                , ".cabal-sandbox"
+                , "cabal.sandbox.config"
+                , ".attr-cache"
+                , "result"
+                , "ctags"
+                , "tags"
+                , "TAGS"
+                , "cabal.project.local"
+                , "4913" -- Vim temporary file
+                ]
+              ignoredDirectories = Set.fromList
+                [ ".git"
+                , "dist"
+                , "dist-newstyle"
+                , "profile"
+                ]
+              ignoredExtensions = Set.fromList
+                [ ".hi"
+                , ".o"
+                , ".swo"
+                , ".swp"
+                ]
+          in not $
+              "static.out" `isPrefixOf` fn ||
+              "result-" `isPrefixOf` fn ||
+              fn `Set.member` ignoredFilenames ||
+              takeExtension fn `Set.member` ignoredExtensions ||
+              not (Set.null  $ Set.intersection ignoredDirectories dirs)
+
     checkForChanges <- batchOccurrences 0.25 =<< watchDirectoryTree
       -- On macOS, use the polling backend due to https://github.com/luite/hfsevents/issues/13
       (defaultConfig { confUsePolling = SysInfo.os == "darwin", confPollInterval = 250000 })
       (root <$ pb)
-      ((/="static.out") . takeFileName . eventPath)
-    drv <- performEvent $ ffor checkForChanges $ \_ ->
-      liftIO $ runObelisk ob showDerivation
-    drvs <- foldDyn (\new (_, old, _) -> (old, new, old /= new)) (drv0, drv0, False) drv
-    void $ throttleBatchWithLag
-      (\e -> performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $ do
+      (filterEvents . eventPath)
+    performEvent_
+      $ liftIO
+      . runObelisk ob
+      . putLog Debug
+      . ("Regenerating static.out due to file changes: "<>)
+      . T.intercalate ", "
+      . fmap (T.pack . eventPath)
+      . F.toList
+      <$> checkForChanges
+    void $ flip throttleBatchWithLag checkForChanges $ \e ->
+      performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $ do
         putLog Notice "Static assets being built..."
         buildStaticCatchErrors >>= \case
           Nothing -> pure ()
-          Just _ -> putLog Notice "Static assets built and symlinked to static.out"
-      )
-      ((() <$) . ffilter (\x -> isJust (x ^._2) && x ^._3) $ updated drvs)
+          Just n -> do
+            putLog Notice $ "Static assets built and symlinked to static.out"
+            putLog Debug $ "Generated static asset nix path: " <> n
     pure never
   where
     handleBuildFailure
@@ -428,23 +469,14 @@ watchStaticFilesDerivation root = do
       => (ExitCode, String, String)
       -> m (Maybe Text)
     handleBuildFailure (ex, out, err) = case ex of
-      ExitSuccess -> pure $ Just $ T.pack out
+      ExitSuccess ->
+        let out' = T.strip $ T.pack out
+        in pure $ if T.null out' then Nothing else Just out'
       _ -> do
         putLog Error $
           ("Static assets build failed: " <>) $
-            T.unlines $ reverse $ take 10 $ reverse $ T.lines $ T.pack err
+            T.unlines $ reverse $ take 20 $ reverse $ T.lines $ T.pack err
         pure Nothing
-    showDerivation :: MonadObelisk m => m (Maybe Text)
-    showDerivation =
-      handleBuildFailure <=< readCreateProcessWithExitCode $
-          setCwd (Just root) $ ProcessSpec
-            { _processSpec_createProcess = Proc.proc nixExePath
-              [ "show-derivation"
-              , "-f", "."
-              , "passthru.staticFilesImpure"
-              ]
-            , _processSpec_overrideEnv = Nothing
-            }
     buildStaticCatchErrors :: MonadObelisk m => m (Maybe Text)
     buildStaticCatchErrors = handleBuildFailure =<<
       buildStaticFilesDerivationAndSymlink
