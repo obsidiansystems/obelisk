@@ -33,10 +33,10 @@ main = do
       , "static, staticFilePath :: FilePath -> Q Exp"
       , "#ifdef OBELISK_ASSET_PASSTHRU"
       , "static = staticAssetRaw"
-      , "staticFilePath =  assetPathRaw \"static.out\""
+      , "staticFilePath =  staticAssetFilePathRaw \"static.out\""
       , "#else"
       , "static = staticAssetHashed " <> show root
-      , "staticFilePath = assetPath " <> show root
+      , "staticFilePath = staticAssetFilePath " <> show root
       , "#endif"
       ]
     }
