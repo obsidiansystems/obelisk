@@ -4,9 +4,10 @@ Description:
 -}
 module Obelisk.Asset.TH
   ( assetPath
-  , assetPathRaw
   , staticAssetRaw
   , staticAssetHashed
+  , staticAssetFilePath
+  , staticAssetFilePathRaw
   ) where
 
 import Obelisk.Asset.Gather
@@ -36,5 +37,9 @@ staticAssetHashed :: FilePath -> FilePath -> Q Exp
 staticAssetHashed root fp = do
   LitE . StringL . (staticPrefix </>) <$> hashedAssetFilePath root fp
 
-assetPathRaw :: FilePath -> FilePath -> Q Exp
-assetPathRaw root fp = returnQ $ LitE $ StringL $ root </> fp
+staticAssetFilePathRaw :: FilePath -> FilePath -> Q Exp
+staticAssetFilePathRaw root fp = returnQ $ LitE $ StringL $ root </> fp
+
+staticAssetFilePath :: FilePath -> FilePath -> Q Exp
+staticAssetFilePath root fp = do
+  LitE . StringL . (root </>) <$> hashedAssetFilePath root fp
