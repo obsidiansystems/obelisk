@@ -6,6 +6,8 @@ module Obelisk.Asset.TH
   ( assetPath
   , staticAssetRaw
   , staticAssetHashed
+  , staticAssetFilePath
+  , staticAssetFilePathRaw
   ) where
 
 import Obelisk.Asset.Gather
@@ -34,3 +36,10 @@ staticAssetRaw fp = returnQ $ LitE $ StringL $ staticPrefix </> fp
 staticAssetHashed :: FilePath -> FilePath -> Q Exp
 staticAssetHashed root fp = do
   LitE . StringL . (staticPrefix </>) <$> hashedAssetFilePath root fp
+
+staticAssetFilePathRaw :: FilePath -> FilePath -> Q Exp
+staticAssetFilePathRaw root fp = returnQ $ LitE $ StringL $ root </> fp
+
+staticAssetFilePath :: FilePath -> FilePath -> Q Exp
+staticAssetFilePath root fp = do
+  LitE . StringL . (root </>) <$> hashedAssetFilePath root fp
