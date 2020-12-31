@@ -410,6 +410,8 @@ watchStaticFilesDerivation root = do
   ob <- getObelisk
   liftIO $ runHeadlessApp $ do
     pb <- getPostBuild
+    -- TODO: Instead of filtering like this, we should figure out what the derivation
+    -- actually relies on, or at least use the gitignore
     let filterEvents x =
           let fn = takeFileName x
               dirs = Set.fromList $ splitDirectories x
@@ -430,6 +432,7 @@ watchStaticFilesDerivation root = do
                 , "dist"
                 , "dist-newstyle"
                 , "profile"
+                , "db"
                 ]
               ignoredExtensions = Set.fromList
                 [ ".hi"
@@ -443,7 +446,6 @@ watchStaticFilesDerivation root = do
               fn `Set.member` ignoredFilenames ||
               takeExtension fn `Set.member` ignoredExtensions ||
               not (Set.null  $ Set.intersection ignoredDirectories dirs)
-
     checkForChanges <- batchOccurrences 0.25 =<< watchDirectoryTree
       -- On macOS, use the polling backend due to https://github.com/luite/hfsevents/issues/13
       (defaultConfig { confUsePolling = SysInfo.os == "darwin", confPollInterval = 250000 })
