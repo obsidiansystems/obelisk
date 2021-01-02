@@ -386,7 +386,7 @@ findProjectAssets root = do
       path <- readProcessAndLogStderr Debug $ setCwd (Just root) $
         proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
       _ <- readProcessAndLogStderr Debug $ setCwd (Just root) $
-        proc lnPath ["-s", "-f", T.unpack path, "static.out"]
+        proc lnPath ["-sf", T.unpack path, "./static.out"]
       pure path
 
 -- | Get the nix store path to the generated static asset manifest module (e.g., "obelisk-generated-static")
