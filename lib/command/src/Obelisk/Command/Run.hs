@@ -46,13 +46,23 @@ import Debug.Trace (trace)
 import Distribution.Compiler (CompilerFlavor(..))
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 import Distribution.Parsec.ParseResult (runParseResult)
+import Distribution.Pretty (prettyShow)
+import Distribution.Simple.Compiler (PackageDB (GlobalPackageDB))
+import Distribution.Simple.Configure (configCompilerEx, getInstalledPackages)
+import Distribution.Simple.PackageIndex (InstalledPackageIndex, lookupDependency)
+import Distribution.Simple.Program.Db (defaultProgramDb)
 import qualified Distribution.System as Dist
-import Distribution.Types.BuildInfo (buildable, cppOptions, defaultExtensions, defaultLanguage, hsSourceDirs, options)
+import Distribution.Types.BuildInfo (buildable, cppOptions, defaultExtensions, defaultLanguage, hsSourceDirs, options, targetBuildDepends)
 import Distribution.Types.CondTree (simplifyCondTree)
+import Distribution.Types.Dependency (Dependency (..), depPkgName)
 import Distribution.Types.GenericPackageDescription (ConfVar (Arch, Impl, OS), condLibrary)
+import Distribution.Types.InstalledPackageInfo (compatPackageKey)
 import Distribution.Types.Library (libBuildInfo)
+import Distribution.Types.PackageName (mkPackageName)
+import Distribution.Types.VersionRange (anyVersion)
 import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
 import qualified Distribution.Parsec.Common as Dist
+import qualified Distribution.Verbosity as Verbosity (silent)
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
 import qualified Hpack.Yaml as Hpack
@@ -62,12 +72,16 @@ import System.Directory
 import System.Environment (getExecutablePath)
 import System.FilePath
 import qualified System.Info
+import System.IO (hClose, hGetLine)
 import System.IO.Temp (withSystemTempDirectory)
+import System.Process (CreateProcess (..), StdStream (..))
 
 import Obelisk.App (MonadObelisk, getObelisk, runObelisk)
 import Obelisk.CliApp (
     Severity (..),
+    createProcess_,
     failWith,
+    overCreateProcess,
     proc,
     putLog,
     readCreateProcessWithExitCode,
@@ -97,6 +111,8 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
   , _cabalPackageInfo_cppOptions :: [String]
     -- ^ List of CPP (C Preprocessor) options (e.g. the "cpp-options" field of the cabal file)
+  , _cabalPackageInfo_buildDepends :: [Dependency]
+    -- ^ List of build dependencies listed in the cabal file
   }
 
 -- | 'Bool' with a better name for its purpose.
@@ -367,6 +383,7 @@ parseCabalPackage' pkg = runExceptT $ do
             defaultLanguage $ libBuildInfo lib
         , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
         , _cabalPackageInfo_cppOptions = cppOptions $ libBuildInfo lib
+        , _cabalPackageInfo_buildDepends = targetBuildDepends $ libBuildInfo lib
         }
     Right Nothing -> pure Nothing
     Left (_, errors) ->
@@ -464,6 +481,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
   -- all paths to 'pathBase'.
   selfExe <- liftIO $ canonicalizePath =<< getExecutablePath
   canonicalPathBase <- liftIO $ canonicalizePath pathBase
+  installedPackageIndex <- loadPackageIndex pathBase
 
   (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
     canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
@@ -476,13 +494,48 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
     <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
     <> concatMap (\p -> ["-optF", p]) pkgFiles
     <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]
+    <> concatMap (\packageId -> ["-package-id", packageId ])
+                 (packageIds installedPackageIndex)
   where
     relativeTo' = if useRelativePaths then relativeTo else const
+    -- Package names we're building and not needed from the package DB
+    packageNames =
+      map (mkPackageName . T.unpack . _cabalPackageInfo_packageName)
+          packageInfos
+    packageIds installedPackageIndex =
+      map (dependencyPackageId installedPackageIndex) $
+          filter ((`notElem` packageNames) . depPkgName) $
+          concatMap _cabalPackageInfo_buildDepends packageInfos <>
+            [Dependency (mkPackageName "obelisk-run") anyVersion]
+    dependencyPackageId installedPackageIndex dep =
+      case lookupDependency installedPackageIndex dep of
+        ((_version,installedPackageInfo:_) :_) ->
+          compatPackageKey installedPackageInfo
+        _ -> error $ "Couldn't resolve dependency for " <> prettyShow dep
+
+-- Load the package index used by the GHC in this path's nix project
+loadPackageIndex :: (MonadObelisk m) => FilePath -> m InstalledPackageIndex
+loadPackageIndex root = do
+  ghcPath <- getPathInNixEnvironment "bash -c 'type -p ghc'"
+  ghcPkgPath <- getPathInNixEnvironment "bash -c 'type -p ghc-pkg'"
+  (compiler, _platform, programDb) <- liftIO
+    $ configCompilerEx (Just GHC) (Just ghcPath) (Just ghcPkgPath) defaultProgramDb Verbosity.silent
+  liftIO $ getInstalledPackages Verbosity.silent compiler [GlobalPackageDB] programDb
+  where
+    getPathInNixEnvironment cmd = do
+      procSpec <- runProc <$> nixShellRunConfig root True (Just cmd)
+      (_,Just h,_,_) <- createProcess_ "loadPackageIndex" procSpec
+      path <- liftIO $ hGetLine h >>= canonicalizePath
+      liftIO $ hClose h
+      pure path
+    runProc =
+      overCreateProcess (\cs -> cs { std_out = CreatePipe }) . nixShellRunProc
 
 baseGhciOptions :: [String]
 baseGhciOptions =
   [ "-ignore-dot-ghci"
   , "-no-user-package-db"
+  , "-hide-all-packages"
   , "-package-env", "-"
   ]
 
