@@ -21,7 +21,7 @@ import qualified System.Info
 
 import Obelisk.App (MonadObelisk, getObeliskUserStateDir)
 import Obelisk.CliApp
-import Obelisk.Command.Utils (rmPath)
+import Obelisk.Command.Utils (rmPath, whichPath, sshKeygenPath, nixBuildExePath, dockerPath)
 
 -- | Generate the `--builders` argument string to enable the VM builder after ensuring it is available.
 getNixBuildersArg :: MonadObelisk m => m String
@@ -35,7 +35,7 @@ getNixBuildersArg = do
 
 checkForNixDarwin :: MonadObelisk m => String -> m ()
 checkForNixDarwin sshIdFile = do
-  (exitCode, _, _) <- readCreateProcessWithExitCode $ proc "which" ["darwin-rebuild"]
+  (exitCode, _, _) <- readCreateProcessWithExitCode $ proc whichPath ["darwin-rebuild"]
   unless (exitCode == ExitSuccess) $ failWith $ T.intercalate "\n"
     [ "Deployments from macOS require nix-darwin to be installed."
     , "Follow the installation instructions here: https://github.com/LnL7/nix-darwin"
@@ -67,7 +67,7 @@ containerExists :: MonadObelisk m => FilePath -> m Bool
 containerExists stateDir = handle (\(_ :: IOError) -> failWith needDockerMsg) $ do
   containerNames <- fmap (map T.strip . T.lines) $
     readProcessAndLogStderr Error $
-      proc "docker" ["container", "list", "--all", "--format", "{{.Names}}"]
+      proc dockerPath ["container", "list", "--all", "--format", "{{.Names}}"]
   let exists = containerName `elem` containerNames
   when exists $ testLinuxBuild stateDir
   pure exists
@@ -85,7 +85,7 @@ containerSshPort = 2222
 startContainer :: MonadObelisk m => m ()
 startContainer = withSpinner "Starting VM builder" $
   callProcessAndLogOutput (Debug, Debug) $
-    proc "docker" ["start", containerName]
+    proc dockerPath ["start", containerName]
 
 -- | Creates the Docker container; assumes it does not exist.
 setupNixDocker :: MonadObelisk m => FilePath -> m ()
@@ -98,12 +98,12 @@ setupNixDocker stateDir = withSpinner ("Creating Docker container named " <> con
   callProcessAndLogOutput (Debug, Error) $
     proc rmPath ["-f", stateDir </> sshKeyFileName, stateDir </> sshKeyFileName <.> "pub"]
   callProcessAndLogOutput (Debug, Error) $
-    proc "ssh-keygen" ["-t", "ed25519", "-f", stateDir </> sshKeyFileName, "-P", ""]
+    proc sshKeygenPath ["-t", "ed25519", "-f", stateDir </> sshKeyFileName, "-P", ""]
 
   -- Build the docker container (which uses the SSH keys in the 'ssh' folder)
   containerId <- fmap T.strip $ readProcessAndLogStderr Error $
-    proc "docker" ["build", stateDir, "--quiet"]
-  callProcessAndLogOutput (Debug, Error) $ proc "docker"
+    proc dockerPath ["build", stateDir, "--quiet"]
+  callProcessAndLogOutput (Debug, Error) $ proc dockerPath
     [ "run"
     , "--restart", "always"
     , "--detach"
@@ -155,7 +155,7 @@ testLinuxBuild :: MonadObelisk m => FilePath -> m ()
 testLinuxBuild stateDir
   | System.Info.os == "linux" = failWith "Using the docker builder is not necessary on linux."
   | otherwise = do
-    (exitCode, _stdout, stderr) <- readCreateProcessWithExitCode $ proc "nix-build"
+    (exitCode, _stdout, stderr) <- readCreateProcessWithExitCode $ proc nixBuildExePath
       [ "--no-out-link"
       , "-E", "(import <nixpkgs> { system = \"x86_64-linux\"; }).writeText \"test\" builtins.currentTime"
       , "--builders", nixBuildersArgString stateDir

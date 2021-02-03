@@ -1,7 +1,10 @@
 { system ? builtins.currentSystem
 , profiling ? false
-, iosSdkVersion ? "10.2"
+, iosSdkVersion ? "13.2"
 , config ? {}
+, terms ? { # Accepted terms, conditions, and licenses
+    security.acme.acceptTerms = false;
+  }
 , reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
@@ -62,7 +65,7 @@ in rec {
   '';
   nullIfAbsent = p: if lib.pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
-  processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static" }: pkgs.runCommand "asset-manifest" {
+  processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static", exe ? "obelisk-asset-th-generate" }: pkgs.runCommand "asset-manifest" {
     inherit src;
     outputs = [ "out" "haskellManifest" "symlinked" ];
     nativeBuildInputs = [ ghcObelisk.obelisk-asset-manifest ];
@@ -70,7 +73,7 @@ in rec {
     set -euo pipefail
     touch "$out"
     mkdir -p "$symlinked"
-    obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
+    ${exe} "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
@@ -114,7 +117,7 @@ in rec {
         "${routeHost}".email = adminEmail;
       } else {};
 
-      security.acme.${if enableHttps then "acceptTerms" else null} = true;
+      security.acme.${if enableHttps && (terms.security.acme.acceptTerms or false) then "acceptTerms" else null} = true;
     };
 
     mkObeliskApp =
@@ -131,12 +134,16 @@ in rec {
       }: {...}: {
       services.nginx = {
         enable = true;
+        recommendedProxySettings = true;
         virtualHosts."${routeHost}" = {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
             proxyPass = "http://127.0.0.1:" + toString internalPort;
             proxyWebsockets = true;
+            extraConfig = ''
+              access_log off;
+            '';
           };
         };
       };
@@ -179,7 +186,9 @@ in rec {
       set -eux
       ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
       ln -s '${mkAssets assets}' $out/static.assets
-      ln -s '${mkAssets (compressedJs frontend optimizationLevel)}'/* $out
+      for d in '${mkAssets (compressedJs frontend optimizationLevel)}'/*/; do
+        ln -s "$d" "$out"/"$(basename "$d").assets"
+      done
       echo ${version} > $out/version
     '';
 
@@ -228,13 +237,14 @@ in rec {
             , withHoogle ? false # Setting this to `true` makes shell reloading far slower
             , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
             , __withGhcide ? false
+            , __deprecated ? {}
             }:
             let
               allConfig = nixpkgs.lib.makeExtensible (self: {
                 base = base';
                 inherit args;
                 userSettings = {
-                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel __withGhcide;
+                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel __withGhcide __deprecated;
                   staticFiles = if staticFiles == null then self.base + /static else staticFiles;
                 };
                 frontendName = "frontend";
@@ -242,7 +252,12 @@ in rec {
                 commonName = "common";
                 staticName = "obelisk-generated-static";
                 staticFilesImpure = let fs = self.userSettings.staticFiles; in if lib.isDerivation fs then fs else toString fs;
-                processedStatic = processAssets { src = self.userSettings.staticFiles; };
+                processedStatic = processAssets {
+                  src = self.userSettings.staticFiles;
+                  exe = if lib.attrByPath ["userSettings" "__deprecated" "useObeliskAssetManifestGenerate"] false self
+                    then builtins.trace "obelisk-asset-manifest-generate is deprecated. Use obelisk-asset-th-generate instead." "obelisk-asset-manifest-generate"
+                    else "obelisk-asset-th-generate";
+                };
                 # The packages whose names and roles are defined by this package
                 predefinedPackages = lib.filterAttrs (_: x: x != null) {
                   ${self.frontendName} = nullIfAbsent (self.base + "/frontend");

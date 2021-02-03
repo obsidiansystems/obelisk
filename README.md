@@ -66,7 +66,10 @@ Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Refl
           sudo launchctl stop org.nixos.nix-daemon
           sudo launchctl start org.nixos.nix-daemon
           ```
-1. Install obelisk: `nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command`
+1. Install obelisk: 
+   ```bash
+   nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command
+   ```
 
 ### Accessing private repositories
 
@@ -111,7 +114,7 @@ First create a new EC2 instance:
 1. Launch a NixOS 19.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-00a8eeaf232a74f84))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
-1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and 443.
+1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and HTTPS port 443.
 
 At this stage your instance should be booting and become accessible shortly. Note down the hostname of your EC2 instance.
 
@@ -218,7 +221,7 @@ Your account must also belong to an Apple Developer Team, if you want to access 
 1. Click accept to authorize on both the computer and the iPhone.
 
 ##### Xcode
-Install Xcode 8.2 (contains iOS SDK 10.2) and open it so that it runs its post install tool setup.
+Install Xcode 11.2 (contains iOS SDK 13.2) and open it so that it runs its post install tool setup.
 
 These versions will work out of the box but iOS SDKs prior to 11.3 should also work. You can choose another installed version in `default.nix`
 

@@ -47,7 +47,8 @@ applyPackages origPath inPath outPath packagePaths' = do
       Left err -> do
         hPutStrLn stderr $ "Error: Unable to parse cabal package " <> packagePath <> "; Skipping preprocessor on " <> origPath <> ". Error: " <> show err
         pure Nothing
-      Right (_, packageInfo) -> pure $ Just packageInfo
+      Right (Just (_, packageInfo)) -> pure $ Just packageInfo
+      Right Nothing -> pure Nothing
 
   writeOutput packageInfo' inPath outPath
 
@@ -58,6 +59,7 @@ writeOutput packageInfo' origPath outPath = withFile outPath WriteMode $ \hOut -
   where
     hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
 
+--NOTE: We cannot restrict the package set by adding '-package' flags to OPTIONS_GHC, because GHC rejects them there.  It seems that we won't be able to properly handle that situation until GHC itself supports loading multiple packages officially in GHCi
 generateHeader :: FilePath -> CabalPackageInfo -> TL.Builder
 generateHeader origPath packageInfo =
     hsExtensions <> ghcOptions <> lineNumberPragma origPath
@@ -75,7 +77,7 @@ generateHeader origPath packageInfo =
           ext -> (TL.fromString (show ext) :)
     showExt = \case
       EnableExtension ext -> [TL.fromString (show ext)]
-      DisableExtension _ -> []
+      DisableExtension ext -> ["No" <> TL.fromString (show ext)]
       UnknownExtension ext -> [TL.fromString ext]
 
     ghcOptions =
