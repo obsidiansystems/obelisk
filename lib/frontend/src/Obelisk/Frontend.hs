@@ -97,8 +97,8 @@ type PrebuildAgnostic t route m =
   )
 
 data Frontend route = Frontend
-  { _frontend_head :: !(forall js t m a b. ObeliskWidget js t route m => Dynamic t a -> RoutedT t route m (Dynamic t b))
-  , _frontend_body :: !(forall js t m a b. ObeliskWidget js t route m => Dynamic t b -> RoutedT t route m (Dynamic t a))
+  { _frontend_head :: !(forall js t m a b. ObeliskWidget js t route m => a -> RoutedT t route m b)
+  , _frontend_body :: !(forall js t m a b. ObeliskWidget js t route m => b -> RoutedT t route m a)
   }
 
 baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
