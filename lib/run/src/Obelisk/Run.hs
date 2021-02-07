@@ -80,7 +80,7 @@ run
   :: Int -- ^ Port to run the backend
   -> ([Text] -> Snap ()) -- ^ Static asset handler
   -> Backend backendRoute frontendRoute -- ^ Backend
-  -> Frontend (R frontendRoute) a -- ^ Frontend
+  -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
 run port serveStaticAsset backend frontend = do
   prettifyOutput
@@ -121,7 +121,7 @@ getConfigRoute configs = case Map.lookup "common/route" configs of
 runWidget
   :: RunConfig
   -> Map Text ByteString
-  -> Frontend (R frontendRoute) a
+  -> Frontend (R frontendRoute)
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> IO ()
 runWidget conf configs frontend validFullEncoder = do
@@ -164,10 +164,10 @@ runWidget conf configs frontend validFullEncoder = do
         runner settings skt app)
 
 obeliskApp
-  :: forall frontendRoute backendRoute a
+  :: forall frontendRoute backendRoute
   .  Map Text ByteString
   -> ConnectionOptions
-  -> Frontend (R frontendRoute) a
+  -> Frontend (R frontendRoute)
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> URI
   -> Application
@@ -203,7 +203,7 @@ renderJsaddleFrontend
   -> Cookies
   -> (route -> Text)
   -> route
-  -> Frontend route a
+  -> Frontend route
   -> IO ByteString
 renderJsaddleFrontend configs cookies urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank

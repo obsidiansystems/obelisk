@@ -79,9 +79,9 @@ data BackendConfig frontendRoute = BackendConfig
   } deriving (Generic)
 
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
-data GhcjsApp route a = GhcjsApp
+data GhcjsApp route = GhcjsApp
   { _ghcjsApp_compiled :: !StaticAssets
-  , _ghcjsApp_value :: !(Frontend route a)
+  , _ghcjsApp_value :: !(Frontend route)
   } deriving (Generic)
 
 -- | Widgets used to load all.js on the frontend
@@ -108,7 +108,7 @@ serveDefaultObeliskApp
   => (R appRoute -> Text)
   -> GhcjsWidgets (FrontendWidgetT (R appRoute) ())
   -> ([Text] -> m ())
-  -> Frontend (R appRoute) a
+  -> Frontend (R appRoute)
   -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
@@ -172,7 +172,7 @@ serveObeliskApp
   => (R appRoute -> Text)
   -> GhcjsWidgets (FrontendWidgetT (R appRoute) ())
   -> ([Text] -> m ())
-  -> GhcjsApp (R appRoute) a
+  -> GhcjsApp (R appRoute)
   -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
@@ -208,7 +208,7 @@ serveGhcjsApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRouteComponent -> Text)
   -> GhcjsWidgets (FrontendWidgetT (R appRouteComponent) ())
-  -> GhcjsApp (R appRouteComponent) a
+  -> GhcjsApp (R appRouteComponent)
   -> Map Text ByteString
   -> R (GhcjsAppRoute appRouteComponent)
   -> m ()
@@ -224,14 +224,14 @@ defaultBackendConfig :: BackendConfig frontendRoute
 defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets
 
 -- | Run an obelisk backend with the default configuration.
-runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) a -> IO ()
+runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
 runBackend = runBackendWith defaultBackendConfig
 
 -- | Run an obelisk backend with the given configuration.
 runBackendWith
   :: BackendConfig frontendRoute
   -> Backend backendRoute frontendRoute
-  -> Frontend (R frontendRoute) a
+  -> Frontend (R frontendRoute)
   -> IO ()
 runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
@@ -255,7 +255,7 @@ renderGhcjsFrontend
   -> GhcjsWidgets (FrontendWidgetT route ())
   -> route
   -> Map Text ByteString
-  -> Frontend route a
+  -> Frontend route
   -> m ByteString
 renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
   cookies <- askCookies

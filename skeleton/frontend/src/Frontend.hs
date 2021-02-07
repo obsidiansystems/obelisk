@@ -24,10 +24,10 @@ import Common.Route
 -- `prerender` functions.
 frontend :: Frontend (R FrontendRoute)
 frontend = Frontend
-  { _frontend_head = do
+  { _frontend_head = \_ -> do
       el "title" $ text "Obelisk Minimal Example"
       elAttr "link" ("href" =: $(static "main.css") <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
-  , _frontend_body = do
+  , _frontend_body = \_ -> do
       el "h1" $ text "Welcome to Obelisk!"
       el "p" $ text $ T.pack commonStuff
       

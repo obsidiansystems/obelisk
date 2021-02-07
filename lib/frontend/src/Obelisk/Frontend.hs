@@ -96,9 +96,9 @@ type PrebuildAgnostic t route m =
   , HasConfigs (Performable m)
   )
 
-data Frontend route a = Frontend
-  { _frontend_head :: !(forall js t m. ObeliskWidget js t route m => Dynamic t a -> RoutedT t route m ())
-  , _frontend_body :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m (Dynamic t a))
+data Frontend route = Frontend
+  { _frontend_head :: !(forall js t m a b. ObeliskWidget js t route m => Dynamic t a -> RoutedT t route m (Dynamic t b))
+  , _frontend_body :: !(forall js t m a b. ObeliskWidget js t route m => Dynamic t b -> RoutedT t route m (Dynamic t a))
   }
 
 baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
@@ -146,9 +146,9 @@ data FrontendMode = FrontendMode
 -- route exists ambiently in the context (e.g. anything but web).
 -- Selects FrontendMode based on platform; this doesn't work for jsaddle-warp
 runFrontend
-  :: forall backendRoute route a
+  :: forall backendRoute route
   .  Encoder Identity Identity (R (FullRoute backendRoute route)) PageName
-  -> Frontend (R route) a
+  -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
   let mode = FrontendMode
@@ -175,11 +175,11 @@ runFrontend validFullEncoder frontend = do
   runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
 
 runFrontendWithConfigsAndCurrentRoute
-  :: forall backendRoute frontendRoute a
+  :: forall backendRoute frontendRoute
   .  FrontendMode
   -> Map Text ByteString
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
-  -> Frontend (R frontendRoute) a
+  -> Frontend (R frontendRoute)
   -> JSM ()
 runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = do
   let ve = validFullEncoder . hoistParse errorLeft (reviewEncoder (rPrism $ _FullRoute_Frontend . _ObeliskRoute_App))
@@ -211,12 +211,12 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
       w appendHead appendBody = do
         rec switchover <- runRouteViewT ve switchover (_frontendMode_adjustRoute mode) $ do
               (switchover'', fire) <- newTriggerEvent
-              rec mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
+              rec headVal <- mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
                     -- The order here is important - baseTag has to be before headWidget!
                     baseTag
                     _frontend_head frontend bodyVal
                   bodyVal <- mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runConfigsT configs))) $ do
-                    x <- _frontend_body frontend
+                    x <- _frontend_body frontend headVal
                     switchover' <- case _frontendMode_hydrate mode of
                       True -> lift $ lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
                       False -> getPostBuild
@@ -236,7 +236,7 @@ renderFrontendHtml
   -> Cookies
   -> (r -> Text)
   -> r
-  -> Frontend r a
+  -> Frontend r
   -> FrontendWidgetT r ()
   -> FrontendWidgetT r ()
   -> m ByteString
@@ -244,13 +244,13 @@ renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = d
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
   html <- fmap snd $ liftIO $ renderStatic $ runHydratableT $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
-      rec el "head" $ do
+      rec headVal <- el "head" $ do
             baseTag
             injectExecutableConfigs configs
             _frontend_head frontend bodyVal
-            headExtra
+              <* headExtra
           bodyVal <- el "body" $ do
-            _frontend_body frontend
+            _frontend_body frontend headVal
               <* bodyExtra
       pure ()
   return $ "<!DOCTYPE html>" <> html
