@@ -35,6 +35,7 @@ library
                  th-extras,
                  transformers,
                  universe,
+                 universe-some,
                  universe-dependent-sum
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
