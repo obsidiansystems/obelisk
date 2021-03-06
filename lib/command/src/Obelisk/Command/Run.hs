@@ -529,13 +529,12 @@ loadPackageIndex root = do
   liftIO $ getInstalledPackages Verbosity.silent compiler [GlobalPackageDB] programDb
   where
     getPathInNixEnvironment cmd = do
-      procSpec <- runProc <$> nixShellRunConfig root True (Just cmd)
-      (_,Just h,_,_) <- createProcess_ "loadPackageIndex" procSpec
+      (_,Just h,_,_) <- createProcess_ "loadPackageIndex" $ procSpec cmd
       path <- liftIO $ hGetLine h >>= canonicalizePath
       liftIO $ hClose h
       pure path
-    runProc =
-      overCreateProcess (\cs -> cs { std_out = CreatePipe }) . nixShellRunProc
+    procSpec =
+      overCreateProcess (\cs -> cs { std_out = CreatePipe }) . obShellRunProc root
 
 baseGhciOptions :: [String]
 baseGhciOptions =

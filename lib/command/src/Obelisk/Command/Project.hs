@@ -12,6 +12,7 @@ module Obelisk.Command.Project
   , initProject
   , nixShellRunConfig
   , nixShellRunProc
+  , obShellRunProc
   , nixShellWithHoogle
   , nixShellWithoutPkgs
   , obeliskDirName
@@ -323,6 +324,9 @@ bashEscape = BSU.toString . bytes . bash . BSU.fromString
 
 nixShellRunProc :: NixShellConfig -> ProcessSpec
 nixShellRunProc cfg = setDelegateCtlc True $ proc nixShellPath $ runNixShellConfig cfg
+
+obShellRunProc :: FilePath -> Text -> ProcessSpec
+obShellRunProc root cmd = setDelegateCtlc True $ setCwd (Just root) $ proc "ob" ["shell", T.unpack cmd]
 
 nixShellWithoutPkgs
   :: MonadObelisk m
