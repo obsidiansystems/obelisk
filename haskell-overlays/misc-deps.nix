@@ -14,6 +14,7 @@ in
   regex-tdfa = self.callHackage "regex-tdfa" "1.3.1.0" {};
   test-framework = haskellLib.dontCheck (self.callHackage "test-framework" "0.8.2.0" {});
   hnix = haskellLib.dontCheck super.hnix;
+  hnix-store-core = haskellLib.dontCheck super.hnix-store-core;
   hnix-store = haskellLib.dontCheck super.hnix-store;
 
   aeson-gadt-th = self.callHackage "aeson-gadt-th" "0.2.4" {};
