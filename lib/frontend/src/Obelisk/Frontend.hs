@@ -58,6 +58,7 @@ import Reflex.Host.Class
 import Obelisk.Configs
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
+import System.Info (os)
 import Web.Cookie
 
 import Debug.Trace
@@ -102,7 +103,10 @@ data Frontend route = Frontend
   }
 
 baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
-baseTag = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+baseTag =
+  if os == "ios"
+    then blank
+    else elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
 
 removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
@@ -211,7 +215,7 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
       w appendHead appendBody = do
         rec switchover <- runRouteViewT ve switchover (_frontendMode_adjustRoute mode) $ do
               (switchover'', fire) <- newTriggerEvent
-              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
+              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $
                 -- The order here is important - baseTag has to be before headWidget!
                 baseTag
                 _frontend_head frontend
