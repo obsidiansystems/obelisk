@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "aa/reflex-0.8.1.0",
+  "branch": "release/0.7.1.0",
   "private": false,
-  "rev": "0cf69c9352b5528942dcc19b0b9f88a49ae47930",
-  "sha256": "1a0hdgcwnjp04rzzqigjwbz20ss7n1lqzdg0mm8kpc74ynh86vrp"
+  "rev": "95ab759c0f12b10d0d012e5a7762321c80e721e4",
+  "sha256": "1k99nadp3m4xjzl52pm39ijkd6nw634dhy8m0rvn49cv20431gpi"
 }
