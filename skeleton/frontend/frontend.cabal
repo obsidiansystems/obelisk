@@ -10,13 +10,13 @@ library
                , obelisk-frontend
                , obelisk-route
                , jsaddle
-               , reflex-dom
+               , reflex-dom-core
                , obelisk-executable-config-lookup
                , obelisk-generated-static
                , text
   exposed-modules:
     Frontend
-  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -fno-show-valid-hole-fits
 
 executable frontend
   main-is: main.hs
@@ -28,7 +28,7 @@ executable frontend
                , reflex-dom
                , obelisk-generated-static
                , frontend
-  ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates
+  ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -fno-show-valid-hole-fits
   if impl(ghcjs)
     ghc-options: -dedupe
     cpp-options: -DGHCJS_BROWSER
