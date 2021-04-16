@@ -44,7 +44,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.IO.Encoding.Types
-import System.Console.ANSI (Color (Red, Yellow), ColorIntensity (Vivid),
+import System.Console.ANSI (Color (..), ColorIntensity (Vivid),
                             ConsoleIntensity (FaintIntensity), ConsoleLayer (Foreground),
                             SGR (SetColor, SetConsoleIntensity), clearLine)
 import System.Exit (ExitCode (..))
@@ -160,7 +160,7 @@ failWith :: (CliThrow e m, AsUnstructuredError e) => Text -> m a
 failWith = throwError . review asUnstructuredError
 
 errorToWarning
-  :: (HasCliConfig e m, CliThrow e m, CliLog m)
+  :: (HasCliConfig e m, CliLog m)
   => e -> m ()
 errorToWarning e = do
   c <- getCliConfig
@@ -177,13 +177,15 @@ withExitFailMessage msg f = f `catch` \(e :: ExitCode) -> do
   throwM e
 
 -- | Write log to stdout, with colors (unless `noColor`)
-writeLog :: (MonadIO m, MonadMask m) => Bool -> Bool -> WithSeverity Text -> m ()
+writeLog :: (MonadIO m) => Bool -> Bool -> WithSeverity Text -> m ()
 writeLog withNewLine noColor (WithSeverity severity s) = if T.null s then pure () else write
   where
     write
       | noColor && severity <= Warning = liftIO $ putFn $ T.pack (show severity) <> ": " <> s
       | not noColor && severity <= Error = TS.putStrWithSGR errorColors h withNewLine s
       | not noColor && severity <= Warning = TS.putStrWithSGR warningColors h withNewLine s
+      | not noColor && severity == Notice = TS.putStrWithSGR noticeColors h withNewLine s
+      | not noColor && severity == Informational = TS.putStrWithSGR infoColors h withNewLine s
       | not noColor && severity >= Debug = TS.putStrWithSGR debugColors h withNewLine s
       | otherwise = liftIO $ putFn s
 
@@ -191,6 +193,8 @@ writeLog withNewLine noColor (WithSeverity severity s) = if T.null s then pure (
     h = if severity <= Error then stderr else stdout
     errorColors = [SetColor Foreground Vivid Red]
     warningColors = [SetColor Foreground Vivid Yellow]
+    infoColors = [SetColor Foreground Vivid Green]
+    noticeColors = [SetColor Foreground Vivid Blue]
     debugColors = [SetConsoleIntensity FaintIntensity]
 
 -- | Allow the user to immediately switch to verbose logging upon pressing a particular key.

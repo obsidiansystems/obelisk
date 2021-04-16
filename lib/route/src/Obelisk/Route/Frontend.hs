@@ -1,24 +1,24 @@
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Obelisk.Route.Frontend
   ( module Obelisk.Route
@@ -57,49 +57,42 @@ module Obelisk.Route.Frontend
 
 import Prelude hiding ((.), id)
 
-import Obelisk.Route
-
 import Control.Category (Category (..), (.))
 import Control.Category.Cartesian ((&&&))
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
 import Control.Monad ((<=<))
 import Control.Monad.Fix
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Compose
+import Data.Functor.Misc
 import Data.GADT.Compare
+import qualified Data.List as L
 import Data.Map (Map)
+import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Functor.Compose
-import Data.Functor.Misc
-import Reflex.Class
-import Reflex.Host.Class
-import Reflex.PostBuild.Class
-import Reflex.TriggerEvent.Class
-import Reflex.PerformEvent.Class
-import Reflex.EventWriter.Class
-import Reflex.EventWriter.Base
-import Reflex.Dynamic
-import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
-import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
-import Reflex.Dom.Core
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
+import Language.Javascript.JSaddle (MonadJSM, jsNull, liftJSM) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
-import Data.Maybe (fromMaybe)
-import qualified Data.List as L
-
+import Reflex.Class
+import Reflex.Dom.Builder.Class
+import Reflex.Dom.Core
+import Reflex.Host.Class
 import Unsafe.Coerce
 
 import Obelisk.Configs
+import Obelisk.Route
 
 infixr 5 :~
 pattern (:~) :: Reflex t => f a -> Dynamic t a -> DSum f (Compose (Dynamic t) Identity)
@@ -116,7 +109,23 @@ instance Monad m => Routed t r (RoutedT t r m) where
 instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m)
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadFix
+    , MonadTrans
+    , MFunctor
+    , NotReady t
+    , MonadHold t
+    , MonadSample t
+    , PostBuild t
+    , TriggerEvent t
+    , MonadIO
+    , MonadReflexCreateTrigger t
+    , HasDocument
+    , DomRenderHook t
+    )
 
 instance MonadReader r' m => MonadReader r' (RoutedT t r m) where
   ask = lift ask
@@ -192,6 +201,10 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (EventWriterT t w m)
 
 instance (Monad m, SetRoute t r m) => SetRoute t r (EventWriterT t w m)
 
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (DynamicWriterT t w m)
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (DynamicWriterT t w m)
+
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
 
@@ -256,7 +269,7 @@ dynamicIdentityCoercion = unsafeCoerce (Coercion :: Coercion (Identity ()) ()) -
 factorRouted :: (Reflex t, MonadFix m, MonadHold t m, GEq f) => RoutedT t (DSum f (Dynamic t)) m a -> RoutedT t (DSum f Identity) m a
 factorRouted r = RoutedT $ ReaderT $ \d -> do
   d' <- factorDyn d
-  runRoutedT r $ (coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d')
+  runRoutedT r $ coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d'
 
 maybeRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Maybe (Dynamic t a)) m b -> RoutedT t (Maybe a) m b
 maybeRouted r = RoutedT $ ReaderT $ \d -> do
@@ -464,7 +477,7 @@ runRouteViewT
      , MonadJSM (Performable m)
      , MonadFix m
      )
-  => (Encoder Identity Identity r PageName)
+  => Encoder Identity Identity r PageName
   --TODO: Get rid of the switchover and useHash arguments
   -- useHash can probably be baked into the encoder
   -> Event t () -- ^ Switchover event, nothing is done until this event fires. Used to prevent incorrect DOM expectations at hydration switchover time

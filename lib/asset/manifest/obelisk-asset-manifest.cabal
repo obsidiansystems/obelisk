@@ -24,16 +24,19 @@ library
     , template-haskell
     , text
     , transformers
-    , unix
+    , unix-compat
     , vector
   exposed-modules:
+    Obelisk.Asset.Cabal
     Obelisk.Asset.Gather
     Obelisk.Asset.Promoted
     Obelisk.Asset.Symlink
     Obelisk.Asset.TH
 
   other-extensions: TemplateHaskell
-  ghc-options: -Wall -Werror -fno-warn-unused-do-bind -fwarn-tabs -funbox-strict-fields -O2 -fprof-auto-calls
+  ghc-options:
+    -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O2
+    -fno-warn-unused-do-bind -funbox-strict-fields -fprof-auto-calls
 
 executable obelisk-asset-manifest-generate
   hs-source-dirs: src-bin
@@ -41,4 +44,13 @@ executable obelisk-asset-manifest-generate
   build-depends:
       base
     , obelisk-asset-manifest
+    , text
+
+executable obelisk-asset-th-generate
+  hs-source-dirs: src-bin
+  main-is: static-th.hs
+  build-depends:
+      base
+    , obelisk-asset-manifest
+    , filepath
     , text

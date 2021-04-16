@@ -10,7 +10,6 @@ module Obelisk.Asset.Promoted
 import Obelisk.Asset.Gather
 
 import Data.Foldable
-import qualified Data.List as L
 import Language.Haskell.TH (runQ, pprint)
 import Language.Haskell.TH.Syntax hiding (lift)
 import GHC.TypeLits
@@ -18,12 +17,11 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Control.Monad.Trans.Writer
 import System.FilePath
-import System.Directory
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Obelisk.Asset.Cabal (writeCabalProject, SimplePkg(..))
 
 data StaticConfig = StaticConfig
   { _staticConfig_packageName :: Text --TODO: Better type
@@ -32,31 +30,14 @@ data StaticConfig = StaticConfig
 
 writeStaticProject :: Map FilePath FilePath -> FilePath -> StaticConfig -> IO ()
 writeStaticProject paths target cfg = do
-  createDirectoryIfMissing True target
-  T.writeFile (target </> T.unpack (_staticConfig_packageName cfg) <.> "cabal") $ staticCabalFile cfg
   let modName = _staticConfig_moduleName cfg
-      (modName', moduleDirPath) = case L.uncons (reverse $ T.splitOn "." modName) of
-        Nothing -> error $ "writeStaticProject: invalid module name " <> T.unpack modName
-        Just (name, parents) -> (name, target </> "src" </> T.unpack (T.intercalate "/" $ reverse parents))
-  createDirectoryIfMissing True moduleDirPath
   modContents <- staticModuleFile modName paths
-  T.writeFile (moduleDirPath </> T.unpack modName' <.> "hs") modContents
-
-staticCabalFile :: StaticConfig -> Text
-staticCabalFile cfg = T.unlines
-  [ "name: " <> _staticConfig_packageName cfg
-  , "version: 0"
-  , "cabal-version: >= 1.2"
-  , "build-type: Simple"
-  , ""
-  , "library"
-  , "  hs-source-dirs: src"
-  , "  build-depends:"
-  , "    base,"
-  , "    ghc-prim,"
-  , "    text"
-  , "  exposed-modules: " <> _staticConfig_moduleName cfg
-  ]
+  writeCabalProject target $ SimplePkg
+    { _simplePkg_name = _staticConfig_packageName cfg
+    , _simplePkg_moduleName = _staticConfig_moduleName cfg
+    , _simplePkg_moduleContents = modContents
+    , _simplePkg_dependencies = ["base", "ghc-prim", "text"]
+    }
 
 staticModuleFile :: Text -> Map FilePath FilePath -> IO Text
 staticModuleFile moduleName paths = do
@@ -69,7 +50,7 @@ staticModuleFile moduleName paths = do
     , "{-# LANGUAGE OverloadedStrings #-}"
     , "{-# LANGUAGE ScopedTypeVariables #-}"
     , "{-# LANGUAGE TypeApplications #-}"
-    , "module " <> moduleName <> " where"
+    , "module " <> moduleName <> " {-# DEPRECATED \"Generate this module with the 'obelisk-asset-th-generate' executable instead.\" #-} where"
     , ""
     , "import qualified GHC.Types"
     , "import Data.Text (Text)"

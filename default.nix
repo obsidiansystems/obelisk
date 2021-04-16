@@ -1,7 +1,10 @@
 { system ? builtins.currentSystem
 , profiling ? false
-, iosSdkVersion ? "10.2"
+, iosSdkVersion ? "13.2"
 , config ? {}
+, terms ? { # Accepted terms, conditions, and licenses
+    security.acme.acceptTerms = false;
+  }
 , reflex-platform-func ? import ./dep/reflex-platform
 }:
 let
@@ -43,7 +46,7 @@ in rec {
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
   path = reflex-platform.filterGit ./.;
   obelisk = ghcObelisk;
-  obeliskEnvs = pkgs.lib.filterAttrs (k: _: pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs;
+  obeliskEnvs = pkgs.lib.filterAttrs (k: _: k == "tabulation" || pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs; #TODO: use thunkSet https://github.com/reflex-frp/reflex-platform/pull/671
   command = ghcObelisk.obelisk-command;
   shell = pinBuildInputs "obelisk-shell" ([command] ++ command.commandRuntimeDeps);
 
@@ -62,7 +65,7 @@ in rec {
   '';
   nullIfAbsent = p: if lib.pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
-  processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static" }: pkgs.runCommand "asset-manifest" {
+  processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static", exe ? "obelisk-asset-th-generate" }: pkgs.runCommand "asset-manifest" {
     inherit src;
     outputs = [ "out" "haskellManifest" "symlinked" ];
     nativeBuildInputs = [ ghcObelisk.obelisk-asset-manifest ];
@@ -70,20 +73,24 @@ in rec {
     set -euo pipefail
     touch "$out"
     mkdir -p "$symlinked"
-    obelisk-asset-manifest-generate "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
+    ${exe} "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
   compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
-    mkdir $out
-    cd $out
-    # TODO profiling + static shouldn't break and need an ad-hoc workaround like that
-    ln -s "${haskellLib.justStaticExecutables frontend}/bin/frontend.jsexe/all.js" all.unminified.js
-    ${if optimizationLevel == null then ''
-      ln -s all.unminified.js all.js
-    '' else ''
-      ${pkgs.closurecompiler}/bin/closure-compiler --externs "${reflex-platform.ghcjsExternsJs}" -O ${optimizationLevel} --jscomp_warning=checkVars --create_source_map="all.js.map" --source_map_format=V3 --js_output_file="all.js" all.unminified.js
-      echo "//# sourceMappingURL=all.js.map" >> all.js
-    ''}
+    set -euo pipefail
+    cd '${haskellLib.justStaticExecutables frontend}'
+    shopt -s globstar
+    for f in **/all.js; do
+      dir="$out/$(basename "$(dirname "$f")")"
+      mkdir -p "$dir"
+      ln -s "$(realpath "$f")" "$dir/all.unminified.js"
+      ${if optimizationLevel == null then ''
+        ln -s "$dir/all.unminified.js" "$dir/all.js"
+      '' else ''
+        '${pkgs.closurecompiler}/bin/closure-compiler' --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
+      ''}
+    done
   '';
 
   serverModules = {
@@ -109,6 +116,8 @@ in rec {
       security.acme.certs = if enableHttps then {
         "${routeHost}".email = adminEmail;
       } else {};
+
+      security.acme.${if enableHttps && (terms.security.acme.acceptTerms or false) then "acceptTerms" else null} = true;
     };
 
     mkObeliskApp =
@@ -125,12 +134,16 @@ in rec {
       }: {...}: {
       services.nginx = {
         enable = true;
+        recommendedProxySettings = true;
         virtualHosts."${routeHost}" = {
           enableACME = enableHttps;
           forceSSL = enableHttps;
           locations.${baseUrl} = {
             proxyPass = "http://127.0.0.1:" + toString internalPort;
             proxyWebsockets = true;
+            extraConfig = ''
+              access_log off;
+            '';
           };
         };
       };
@@ -171,9 +184,11 @@ in rec {
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s "${if profiling then backend else haskellLib.justStaticExecutables backend}"/bin/* $out/
-      ln -s "${mkAssets assets}" $out/static.assets
-      ln -s ${mkAssets (compressedJs frontend optimizationLevel)} $out/frontend.jsexe.assets
+      ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
+      ln -s '${mkAssets assets}' $out/static.assets
+      for d in '${mkAssets (compressedJs frontend optimizationLevel)}'/*/; do
+        ln -s "$d" "$out"/"$(basename "$d").assets"
+      done
       echo ${version} > $out/version
     '';
 
@@ -187,6 +202,20 @@ in rec {
           (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
           (serverModules.mkDefaultNetworking args)
           (serverModules.mkObeliskApp args)
+          ./acme.nix  # Backport of ACME upgrades from 20.03
+        ];
+
+        # Backport of ACME upgrades from 20.03
+        disabledModules = [
+          (pkgs.path + /nixos/modules/security/acme.nix)
+        ];
+        nixpkgs.overlays = [
+          (self: super: {
+            lego = (import (builtins.fetchTarball {
+                url = https://github.com/NixOS/nixpkgs-channels/archive/70717a337f7ae4e486ba71a500367cad697e5f09.tar.gz;
+                sha256 = "1sbmqn7yc5iilqnvy9nvhsa9bx6spfq1kndvvis9031723iyymd1";
+              }) {}).lego;
+          })
         ];
       };
     };
@@ -208,13 +237,14 @@ in rec {
             , withHoogle ? false # Setting this to `true` makes shell reloading far slower
             , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
             , __withGhcide ? false
+            , __deprecated ? {}
             }:
             let
               allConfig = nixpkgs.lib.makeExtensible (self: {
                 base = base';
                 inherit args;
                 userSettings = {
-                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel __withGhcide;
+                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel __withGhcide __deprecated;
                   staticFiles = if staticFiles == null then self.base + /static else staticFiles;
                 };
                 frontendName = "frontend";
@@ -222,7 +252,12 @@ in rec {
                 commonName = "common";
                 staticName = "obelisk-generated-static";
                 staticFilesImpure = let fs = self.userSettings.staticFiles; in if lib.isDerivation fs then fs else toString fs;
-                processedStatic = processAssets { src = self.userSettings.staticFiles; };
+                processedStatic = processAssets {
+                  src = self.userSettings.staticFiles;
+                  exe = if lib.attrByPath ["userSettings" "__deprecated" "useObeliskAssetManifestGenerate"] false self
+                    then builtins.trace "obelisk-asset-manifest-generate is deprecated. Use obelisk-asset-th-generate instead." "obelisk-asset-manifest-generate"
+                    else "obelisk-asset-th-generate";
+                };
                 # The packages whose names and roles are defined by this package
                 predefinedPackages = lib.filterAttrs (_: x: x != null) {
                   ${self.frontendName} = nullIfAbsent (self.base + "/frontend");
@@ -321,29 +356,33 @@ in rec {
       __unstable__.profiledObRun = let
         profiled = projectOut { inherit system; enableLibraryProfiling = true; };
         exeSource = builtins.toFile "ob-run.hs" ''
+          {-# LANGUAGE NoImplicitPrelude #-}
+          {-# LANGUAGE PackageImports #-}
           module Main where
 
-          import Control.Exception
-          import Reflex.Profiled
-          import System.Environment
+          -- Explicitly import Prelude from base lest there be multiple modules called Prelude
+          import "base" Prelude (IO, (++), read)
 
-          import qualified Obelisk.Run
+          import "base" Control.Exception (finally)
+          import "reflex" Reflex.Profiled (writeProfilingData)
+          import "base" System.Environment (getArgs)
+
+          import qualified "obelisk-run" Obelisk.Run
           import qualified Frontend
           import qualified Backend
 
           main :: IO ()
           main = do
-            args <- getArgs
-            let port = read $ args !! 0
-                assets = args !! 1
-                profileFile = (args !! 2) <> ".rprof"
-            Obelisk.Run.run port (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend `finally` writeProfilingData profileFile
+            [portStr, assets, profFileName] <- getArgs
+            Obelisk.Run.run (read portStr) (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend
+              `finally` writeProfilingData (profFileName ++ ".rprof")
         '';
       in nixpkgs.runCommand "ob-run" {
-        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [ p.backend p.frontend])) ];
+        buildInputs = [ (profiled.ghc.ghcWithPackages (p: [p.backend p.frontend])) ];
       } ''
-        mkdir -p $out/bin/
-        ghc -x hs -prof -fno-prof-auto -threaded ${exeSource} -o $out/bin/ob-run
+        cp ${exeSource} ob-run.hs
+        mkdir -p $out/bin
+        ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
       '';
 
       linuxExeConfigurable = linuxExe;

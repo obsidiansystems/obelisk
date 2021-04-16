@@ -1,13 +1,14 @@
 # Obelisk Application Deployment Guide
+
 This document serves two purposes, the first one is to guide new users that want to deploy Obelisk/Reflex apps and the second one to provide a walk-through for test driving Obelisk releases.
 
-> **Note:** To complete this *entire* guide you need access to a macOS machine running the latest OSX release, a Linux machine (can be a VM on that mac) with Nix installed, an iPhone or iPad, and a recent Android device. It also assumes that you have Nix correctly set up and that your system is set up to fetch from binary caches instead of building everything on your machine. If you notice any of the commands below takes more than 5 minutes, then caches are not likely enabled.
+> **Note:** This guide can be completed on a Linux host with Nix installed or a macOS host with Nix installed. Each section is labeled regarding which operating system hosts it supports. When going through the guide, start at the beginning and go through all sections that are supported on your host and merely skip sections that are not supported. The sections for iOS deployments require an iPhone or iPad device and the sections for Android deployments require an Android device. This guide assumes that you have Nix correctly set up and that your system is configured to fetch from binary caches instead of building everything on your machine. If you notice any of the commands below takes more than 5 minutes, then caches are not likely enabled.
 >
 > Refer to the [Obelisk Installation Documentation](https://github.com/obsidiansystems/obelisk#installing-obelisk) for instructions on configuring the binary caches for any Nix-compatible setup.
 
-## a) Get Obelisk
+## a) Get Obelisk (Linux, Mac)
 
-There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of Obelisk in different ways. The approach is to clone Obelisk from it's GitHub repository and start a project that uses that local check out.
+There are several ways to install Obelisk, but the one we are going to use here allows us to test a single version of Obelisk in different ways. The approach is to clone Obelisk from its GitHub repository and start a project that uses that local check out.
 
 Open a terminal and run the following:
 
@@ -39,7 +40,7 @@ ob init --branch "$OBELISK_BRANCH"
 
 > **Note:** If the `--branch` parameter is not used, then Obelisk sets your project up to look at the `master` branch from GitHub. This is quite handy for real life projects but distracting for our test drive since we want to make sure any changes we do to the Obelisk codebase (like testing a pull request) are immediately picked up.
 
-## b) Run the Obelisk app on localhost
+## b) Run the Obelisk app on localhost (Linux, Mac)
 
 Let's test that we can run a server on localhost. This is quite easy:
 
@@ -52,9 +53,10 @@ Now open a browser and point it to http://localhost:8000 (or just click on this 
 
 ![](assets/app-deploy.png)
 
-## c) Deploy the web app on a remote machine
+## c) Prepare a VirtualBox deploy target (Linux, Mac)
 
 ### Import the NixOS VirtualBox appliance
+
 Install [VirtualBox](https://www.virtualbox.org/) on your machine.
 
 On NixOS, do this by adding the following line to your `/etc/nixos/configuration.nix` before the last line containing `}`:
@@ -79,7 +81,7 @@ You should now see a NixOS machine in the dashboard:
 
 ![](assets/virtualbox-dashboard-nixos.png)
 
-If you are on a network with DHCP on your wireless or network card then select right-click on the "NixOS" image and click "Settings". Go to the "Network" section and make "Attached to:" set to "Bridged Adapter".
+If you are on a network with DHCP on your wireless or network card then right-click on the "NixOS" image and click "Settings". Go to the "Network" section and make "Attached to:" set to "Bridged Adapter".
 
 ![](assets/virtualbox-image-settings-network.png)
 
@@ -201,7 +203,7 @@ git remote add origin "$WORKDIR/myapp-git-remote"
 git push -u origin master
 ```
 
-### Deploy
+### Initialize deployment directory
 
 With that, we can come back to the Obelisk app and initialize the deployment:
 
@@ -216,7 +218,11 @@ Then configure the deployment for VirtualBox:
 echo '{nixosPkgs, ...}: {...}: { imports = [ (nixosPkgs.path + /nixos/modules/virtualisation/virtualbox-image.nix) ]; }' > "$WORKDIR/myappdeploy/module.nix"
 ```
 
-And deploy:
+## d) Deploy to VirtualBox target (Linux only)
+
+> Deploying requires a Linux host in order to build the Linux binaries.
+
+Now we can deploy to the VirtualBox VM.
 
 ```bash
 cd "$WORKDIR/myappdeploy"
@@ -243,7 +249,7 @@ It should look like this:
 
 Congratulations! You have deployed an Obelisk application to a remote server via SSH.
 
-## d) Deploy an Android app (Linux host only)
+## e) Deploy an Android app (Linux only)
 
 > **Note:** This section requires that you be running a Linux *host*.
 
@@ -286,7 +292,7 @@ When the deployment is complete opening the app should look something like
 
 Congratulations! You have deployed an Obelisk Android app via USB.
 
-## e) Deploy an iOS app (macOS host only)
+## f) Deploy an iOS app (Mac only)
 
 > **Note:** This section requires that you be running a macOS *host*.
 

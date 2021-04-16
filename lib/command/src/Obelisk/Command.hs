@@ -22,7 +22,7 @@ import System.Environment
 import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
-import System.Posix.Process (executeFile)
+import System.Process (rawSystem)
 
 import Obelisk.App
 import Obelisk.CliApp
@@ -114,7 +114,7 @@ obCommand cfg = hsubparser
     , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (ObCommand_Repl <$> interpretOpts) $ progDesc "Open an interactive interpreter"
     , command "watch" $ info (ObCommand_Watch <$> interpretOpts) $ progDesc "Watch current project for errors and warnings"
-    , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies"
+    , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies or run a command in such a shell. E.g. ob shell -- ghc-pkg list"
     , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
         progDesc "List paths to haddock documentation for specified packages"
         <> footerDoc (Just $
@@ -285,7 +285,10 @@ shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
   <$> shellFlags
   <*> interpretOpts
-  <*> optional (strArgument (metavar "COMMAND"))
+  -- This funny construction is used to support optparse-applicative's @--@ parsing.
+  -- All arguments after @--@ are left unparsed and instead provided to the last positional parser
+  -- which must therefore be 'many' in order to consume the rest of the input.
+  <*> ((\xs -> if null xs then Nothing else Just $ unwords xs) <$> many (strArgument (metavar "COMMAND")))
 
 portOpt :: Int -> Parser Int
 portOpt dfault = option auto (long "port" <> short 'p' <> help "Port number for server" <> showDefault <> value dfault <> metavar "INT")
@@ -363,7 +366,8 @@ main' argsCfg = do
         Just impl -> do
           -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
           putLog Debug $ "Handing off to " <> T.pack impl
-          liftIO $ executeFile impl False ("--no-handoff" : myArgs) Nothing
+          _ <- liftIO $ rawSystem impl ("--no-handoff" : myArgs)
+          return ()
   case myArgs of
     "--no-handoff" : as -> go as -- If we've been told not to hand off, don't hand off
     origPath:inPath:outPath:preprocessorName:packagePaths
@@ -398,11 +402,11 @@ ob = \case
   ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
   ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
   ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths ->
-    nixShellForInterpretPaths False shellAttr root interpretPaths cmd
-  ObCommand_Doc shellAttr pkgs -> withProjectRoot "." $ \root ->
-    nixShellForInterpretPaths True shellAttr root emptyPathTree $ Just $ haddockCommand pkgs
+    nixShellForInterpretPaths False shellAttr root interpretPaths cmd -- N.B. We do NOT bash escape here; we want to run the command as-is
+  ObCommand_Doc shellAttr pkgs -> withInterpretPaths [] $ \root interpretPaths ->
+    nixShellForInterpretPaths True shellAttr root interpretPaths $ Just $ haddockCommand pkgs
   ObCommand_Hoogle shell' port -> withProjectRoot "." $ \root -> do
-    nixShellWithHoogle root True shell' $ Just $ "hoogle server -p " <> show port <> " --local"
+    nixShellWithHoogle root True shell' $ Just $ "hoogle server -p" <> show port <> " --local"
   ObCommand_Internal icmd -> case icmd of
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
