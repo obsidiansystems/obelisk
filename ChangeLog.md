@@ -4,12 +4,23 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* Use TemplateHaskell to determine asset file paths
+  * Migration: All uses of `static @"some/path"` become `$(static "some/path")`. Instead of requiring `TypeApplications` and `DataKinds`, modules calling `static` must now enable `TemplateHaskell`.
+  * Deprecation: Deprecate static asset modules generated via 'obelisk-asset-manifest-generate' in favor of modules generated via 'obelisk-asset-th-generate'. The new executable takes the same arguments as the old and should be a drop-in replacement. To preserve the old behavior, set `__deprecated.useObeliskAssetManifestGenerate = true;` in your obelisk project configuration.
+  * Feature: Files added to the static directory while `ob run` is active no longer require `ob run` to be restarted
+* Feature: When `staticFiles` is a derivation, as opposed to a regular directory, produce a symlink to the result of that derivation at `static.out` and have `ob run` serve static assets from that symlink. This makes it possible for the static asset derivation to be rebuilt and the new results served without restarting `ob run`.
+* Feature: Rebuild static asset derivations while `ob run` is active as long as the change to the derivation is within the project folder. `ob run` now displays a message ("Static assets rebuilt and symlinked to static.out") whenever static assets have been rebuilt and the new static assets are being served.
+* Feature: Add `staticFilePath` to `Obelisk.Generated.Static`. Like `static`, this uses TH to generate a reference to a file. Unlike `static`, this `staticFilePath` generates a path on the filesystem instead of URL path.
+
+## v0.9.1.0
+
 * [#801](https://github.com/obsidiansystems/obelisk/pull/801): Remove errors and warning for local packages without a library component
 * [#812](https://github.com/obsidiansystems/obelisk/pull/812): Add support for `NoImplicitPrelude` and other extensions disabled via `No`
 * Pinned version bumps:
-  * reflex-platform [0.6.2.0](https://github.com/reflex-frp/reflex-platform/releases/tag/v0.6.2.0)
+  * reflex-platform [0.7.0.0](https://github.com/reflex-frp/reflex-platform/releases/tag/v0.7.0.0)
   * hnix 0.8.0
 * [#787](https://github.com/obsidiansystems/obelisk/pull/787): Set `immutable` cache control directive when serving content-addressed static assets
+* Use iOS SDK 13.2
 
 
 ## v0.9.0.1
