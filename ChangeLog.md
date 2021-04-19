@@ -4,6 +4,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* Update reflex-platform to v0.7.1.0
 * Fix bug [#790](https://github.com/obsidiansystems/obelisk/issues/790) which prevented CSS file loading on ios
 * Use TemplateHaskell to determine asset file paths
   * Migration: All uses of `static @"some/path"` become `$(static "some/path")`. Instead of requiring `TypeApplications` and `DataKinds`, modules calling `static` must now enable `TemplateHaskell`.
