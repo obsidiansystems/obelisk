@@ -99,6 +99,13 @@ in rec {
         (nixosPkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
       ];
       ec2.hvm = true;
+
+      security.pam.loginLimits = [{
+        domain = "*";
+        type = "soft";
+        item = "nofile";
+        value = "4096";
+      }];
     };
 
     mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, ... }: {...}: {
