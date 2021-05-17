@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "release/0.7.0.0",
+  "branch": "nginx-accept-encoding",
   "private": false,
-  "rev": "27a7851a780ff21472d85f9a02fb84635ef9027a",
-  "sha256": "1m4zlw91dpjlbdchjyxhvhv3k7lilm0qa17dhhww868xxc27sann"
+  "rev": "2b2344fd0874b082bf755827e3349ad2fd9354d4",
+  "sha256": "0pbwaqjbq7grwi9cyqmdlqlzywd53vh9dasqnz0ic9p0qpy738iw"
 }
