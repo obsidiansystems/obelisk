@@ -134,7 +134,6 @@ in rec {
       }: {...}: {
       services.nginx = {
         enable = true;
-        recommendedGzipSettings = true;
         recommendedProxySettings = true;
         virtualHosts."${routeHost}" = {
           enableACME = enableHttps;
