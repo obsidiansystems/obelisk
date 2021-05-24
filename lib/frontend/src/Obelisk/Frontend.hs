@@ -65,7 +65,7 @@ import Debug.Trace
 
 makePrisms ''Sum
 
-type ObeliskWidget js t route m =
+type ObeliskWidget js t backendRoute frontendRoute  m =
   ( DomBuilder t m
   , MonadFix m
   , MonadHold t m
@@ -82,27 +82,27 @@ type ObeliskWidget js t route m =
   , MonadFix (Performable m)
   , PrimMonad m
   , Prerender js t m
-  , PrebuildAgnostic t route m
-  , PrebuildAgnostic t route (Client m)
+  , PrebuildAgnostic t backendRoute frontendRoute m
+  , PrebuildAgnostic t backendRoute frontendRoute (Client m)
   , HasConfigs m
   , HasCookies m
   , MonadIO (Performable m)
   )
 
-type PrebuildAgnostic t route m =
-  ( SetRoute t route m
-  , RouteToUrl route m
+type PrebuildAgnostic t backendRoute frontendRoute m =
+  ( SetRoute t (R frontendRoute) m
+  , RouteToUrl (R (FullRoute backendRoute frontendRoute)) m
   , MonadFix m
   , HasConfigs m
   , HasConfigs (Performable m)
   )
 
-data Frontend route = Frontend
-  { _frontend_head :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
-  , _frontend_body :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
+data Frontend backendRoute frontendRoute = Frontend
+  { _frontend_head :: !(forall js t m. ObeliskWidget js t backendRoute frontendRoute m => RoutedT t (R frontendRoute) m ())
+  , _frontend_body :: !(forall js t m. ObeliskWidget js t backendRoute frontendRoute m => RoutedT t (R frontendRoute) m ())
   }
 
-baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
+baseTag :: forall backendRoute frontendRoute js t m. ObeliskWidget js t backendRoute frontendRoute m => RoutedT t (R frontendRoute) m ()
 baseTag =
   if os == "ios"
     then blank
@@ -150,9 +150,9 @@ data FrontendMode = FrontendMode
 -- route exists ambiently in the context (e.g. anything but web).
 -- Selects FrontendMode based on platform; this doesn't work for jsaddle-warp
 runFrontend
-  :: forall backendRoute route
-  .  Encoder Identity Identity (R (FullRoute backendRoute route)) PageName
-  -> Frontend (R route)
+  :: forall backendRoute frontendRoute
+  .  Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
+  -> Frontend backendRoute frontendRoute
   -> JSM ()
 runFrontend validFullEncoder frontend = do
   let mode = FrontendMode
@@ -183,14 +183,10 @@ runFrontendWithConfigsAndCurrentRoute
   .  FrontendMode
   -> Map Text ByteString
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
-  -> Frontend (R frontendRoute)
+  -> Frontend backendRoute frontendRoute
   -> JSM ()
 runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = do
-  let ve = validFullEncoder . hoistParse errorLeft (reviewEncoder (rPrism $ _FullRoute_Frontend . _ObeliskRoute_App))
-      errorLeft = \case
-        Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
-        Right x -> Identity x
-      w :: ( RawDocument (DomBuilderSpace (HydrationDomBuilderT s DomTimeline m)) ~ DOM.Document
+  let w :: ( RawDocument (DomBuilderSpace (HydrationDomBuilderT s DomTimeline m)) ~ DOM.Document
            , Ref (Performable m) ~ Ref IO
            , Ref m ~ Ref IO
            , DomBuilder DomTimeline (HydrationDomBuilderT s DomTimeline m)
@@ -213,7 +209,7 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
         -> (forall c. HydrationDomBuilderT s DomTimeline m c -> FloatingWidget () c)
         -> FloatingWidget () ()
       w appendHead appendBody = do
-        rec switchover <- runRouteViewT ve switchover (_frontendMode_adjustRoute mode) $ do
+        rec switchover <- runRouteViewT validFullEncoder switchover (_frontendMode_adjustRoute mode) $ do
               (switchover'', fire) <- newTriggerEvent
               mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
                 -- The order here is important - baseTag has to be before headWidget!
@@ -231,17 +227,17 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
     then runHydrationWidgetWithHeadAndBody (pure ()) w
     else runImmediateWidgetWithHeadAndBody w
 
-type FrontendWidgetT r = RoutedT DomTimeline r (SetRouteT DomTimeline r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost))))))))
+type FrontendWidgetT br fr = RoutedT DomTimeline (R fr) (SetRouteT DomTimeline (R fr) (RouteToUrlT (R (FullRoute br fr)) (ConfigsT (CookiesT (HydratableT (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost))))))))
 
 renderFrontendHtml
   :: MonadIO m
   => Map Text ByteString
   -> Cookies
-  -> (r -> Text)
-  -> r
-  -> Frontend r
-  -> FrontendWidgetT r ()
-  -> FrontendWidgetT r ()
+  -> (R (FullRoute backendRoute frontendRoute) -> Text)
+  -> R frontendRoute
+  -> Frontend backendRoute frontendRoute
+  -> FrontendWidgetT backendRoute frontendRoute ()
+  -> FrontendWidgetT backendRoute frontendRoute ()
   -> m ByteString
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline

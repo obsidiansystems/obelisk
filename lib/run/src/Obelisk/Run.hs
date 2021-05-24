@@ -80,7 +80,7 @@ run
   :: Int -- ^ Port to run the backend
   -> ([Text] -> Snap ()) -- ^ Static asset handler
   -> Backend backendRoute frontendRoute -- ^ Backend
-  -> Frontend (R frontendRoute) -- ^ Frontend
+  -> Frontend backendRoute frontendRoute -- ^ Frontend
   -> IO ()
 run port serveStaticAsset backend frontend = do
   prettifyOutput
@@ -99,7 +99,7 @@ run port serveStaticAsset backend frontend = do
                 FullRoute_Frontend obeliskRoute :/ a ->
                   serveDefaultObeliskApp appRouteToUrl (($ allJsUrl) <$> defaultGhcjsWidgets) serveStaticAsset frontend publicConfigs $ obeliskRoute :/ a
                   where
-                    appRouteToUrl (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
+                    appRouteToUrl = renderObeliskRoute validFullEncoder
                     allJsUrl = renderAllJsPath validFullEncoder
 
       let conf = defRunConfig { _runConfig_redirectPort = port }
@@ -121,7 +121,7 @@ getConfigRoute configs = case Map.lookup "common/route" configs of
 runWidget
   :: RunConfig
   -> Map Text ByteString
-  -> Frontend (R frontendRoute)
+  -> Frontend backendRoute frontendRoute
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> IO ()
 runWidget conf configs frontend validFullEncoder = do
@@ -167,7 +167,7 @@ obeliskApp
   :: forall frontendRoute backendRoute
   .  Map Text ByteString
   -> ConnectionOptions
-  -> Frontend (R frontendRoute)
+  -> Frontend backendRoute frontendRoute
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> URI
   -> Application
@@ -193,7 +193,7 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
           }
       FullRoute_Frontend (ObeliskRoute_App appRouteComponent) :/ appRouteRest -> do
         let cookies = maybe [] parseCookies $ lookup (fromString "Cookie") (W.requestHeaders req)
-            routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
+            routeToUrl = renderObeliskRoute validFullEncoder
         html <- renderJsaddleFrontend configs cookies routeToUrl (appRouteComponent :/ appRouteRest) frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
       _ -> backend req sendResponse
@@ -201,9 +201,9 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
 renderJsaddleFrontend
   :: Map Text ByteString
   -> Cookies
-  -> (route -> Text)
-  -> route
-  -> Frontend route
+  -> (R (FullRoute backendRoute frontendRoute) -> Text)
+  -> R frontendRoute
+  -> Frontend backendRoute frontendRoute
   -> IO ByteString
 renderJsaddleFrontend configs cookies urlEnc r f =
   let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
