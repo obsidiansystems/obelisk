@@ -469,7 +469,7 @@ instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RouteToUrlT r m) where
 instance HasConfigs m => HasConfigs (RouteToUrlT t m)
 
 runRouteViewT
-  :: forall t m r a.
+  :: forall t m br fr a.
      ( TriggerEvent t m
      , PerformEvent t m
      , MonadHold t m
@@ -477,28 +477,29 @@ runRouteViewT
      , MonadJSM (Performable m)
      , MonadFix m
      )
-  => Encoder Identity Identity r PageName
+  => Encoder Identity Identity (R (FullRoute br fr)) PageName
   --TODO: Get rid of the switchover and useHash arguments
   -- useHash can probably be baked into the encoder
   -> Event t () -- ^ Switchover event, nothing is done until this event fires. Used to prevent incorrect DOM expectations at hydration switchover time
   -> Bool
-  -> RoutedT t r (SetRouteT t r (RouteToUrlT r m)) a
+  -> RoutedT t (R fr) (SetRouteT t (R fr) (RouteToUrlT (R (FullRoute br fr)) m)) a
   -> m a
 runRouteViewT routeEncoder switchover useHash a = do
   rec historyState <- manageHistory' switchover $ HistoryCommand_PushState <$> setState
-      let theEncoder = pageNameEncoder . hoistParse (pure . runIdentity) routeEncoder
+      let fullEncoder = pageNameEncoder . hoistParse (pure . runIdentity) routeEncoder
+          frontendEncoder = fullEncoder . reviewEncoder (rPrism $ _FullRoute_Frontend . _ObeliskRoute_App)
           -- NB: The can only fail if the uriPath doesn't begin with a '/' or if the uriQuery
           -- is nonempty, but begins with a character that isn't '?'. Since we don't expect
           -- this ever to happen, we'll just handle it by failing completely with 'error'.
-          route :: Dynamic t r
-          route = fmap (errorLeft . tryDecode theEncoder . (adaptedUriPath useHash &&& uriQuery) . _historyItem_uri) historyState
+          route :: Dynamic t (R fr)
+          route = fmap (errorLeft . tryDecode frontendEncoder . (adaptedUriPath useHash &&& uriQuery) . _historyItem_uri) historyState
             where
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
-      (result, changeState) <- runRouteToUrlT (runSetRouteT $ runRoutedT a route) $ (\(p, q) -> T.pack $ p <> q) . encode theEncoder
+      (result, changeState) <- runRouteToUrlT (runSetRouteT $ runRoutedT a route) $ (\(p, q) -> T.pack $ p <> q) . encode fullEncoder
       let f (currentHistoryState, oldRoute) change =
             let newRoute = appEndo change oldRoute
-                (newPath, newQuery) = encode theEncoder newRoute
+                (newPath, newQuery) = encode frontendEncoder newRoute
             in HistoryStateUpdate
                { _historyStateUpdate_state = DOM.SerializedScriptValue jsNull
                  -- We always provide "" as the title.  On Firefox, Chrome, and
