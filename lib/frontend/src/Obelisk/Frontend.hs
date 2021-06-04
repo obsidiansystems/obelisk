@@ -98,8 +98,8 @@ type PrebuildAgnostic t route m =
   )
 
 data Frontend route = Frontend
-  { _frontend_head :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
-  , _frontend_body :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
+  { _frontend_head :: !(forall js t m a b. ObeliskWidget js t route m => a -> RoutedT t route m b)
+  , _frontend_body :: !(forall js t m a b. ObeliskWidget js t route m => b -> RoutedT t route m a)
   }
 
 baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
@@ -215,16 +215,17 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
       w appendHead appendBody = do
         rec switchover <- runRouteViewT ve switchover (_frontendMode_adjustRoute mode) $ do
               (switchover'', fire) <- newTriggerEvent
-              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
-                -- The order here is important - baseTag has to be before headWidget!
-                baseTag
-                _frontend_head frontend
-              mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runConfigsT configs))) $ do
-                _frontend_body frontend
-                switchover' <- case _frontendMode_hydrate mode of
-                  True -> lift $ lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
-                  False -> getPostBuild
-                performEvent_ $ liftIO (fire ()) <$ switchover'
+              rec headVal <- mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendHead . runConfigsT configs))) $ do
+                    -- The order here is important - baseTag has to be before headWidget!
+                    baseTag
+                    _frontend_head frontend bodyVal
+                  bodyVal <- mapRoutedT (mapSetRouteT (mapRouteToUrlT (appendBody . runConfigsT configs))) $ do
+                    x <- _frontend_body frontend headVal
+                    switchover' <- case _frontendMode_hydrate mode of
+                      True -> lift $ lift $ lift $ lift $ HydrationDomBuilderT $ asks _hydrationDomBuilderEnv_switchover
+                      False -> getPostBuild
+                    performEvent_ $ liftIO (fire ()) <$ switchover'
+                    pure x
               pure switchover''
         pure ()
   if _frontendMode_hydrate mode
@@ -247,12 +248,13 @@ renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = d
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
   html <- fmap snd $ liftIO $ renderStatic $ runHydratableT $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
-      el "head" $ do
-        baseTag
-        injectExecutableConfigs configs
-        _frontend_head frontend
-        headExtra
-      el "body" $ do
-        _frontend_body frontend
-        bodyExtra
+      rec headVal <- el "head" $ do
+            baseTag
+            injectExecutableConfigs configs
+            _frontend_head frontend bodyVal
+              <* headExtra
+          bodyVal <- el "body" $ do
+            _frontend_body frontend headVal
+              <* bodyExtra
+      pure ()
   return $ "<!DOCTYPE html>" <> html
