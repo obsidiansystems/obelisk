@@ -142,9 +142,7 @@ in rec {
       services.nginx = {
         enable = true;
         eventsConfig = ''
-          events {
-            worker_connections 32768;
-          }
+          worker_connections 32768;
         '';
         recommendedProxySettings = true;
         virtualHosts."${routeHost}" = {
