@@ -141,6 +141,11 @@ in rec {
       }: {...}: {
       services.nginx = {
         enable = true;
+        appendConfig = ''
+          events {
+            worker_connections 32768;
+          }
+        '';
         recommendedProxySettings = true;
         virtualHosts."${routeHost}" = {
           enableACME = enableHttps;
