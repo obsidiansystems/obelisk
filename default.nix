@@ -143,7 +143,7 @@ in rec {
         enable = true;
 
         # https://aws.amazon.com/pt/blogs/compute/optimizing-nginx-load-balancing-on-amazon-ec2-a1-instances/
-        config = ''
+        appendConfig = ''
           worker_rlimit_nofile 65536;
         '';
         eventsConfig = ''
