@@ -158,6 +158,8 @@ in rec {
             proxyWebsockets = true;
             extraConfig = ''
               access_log off;
+              fastcgi_pass unix:/does/not/exist;
+              error_page 500 502 503 504 = /static/nginx-5xx.html;
             '';
           };
         };
