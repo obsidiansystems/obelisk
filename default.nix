@@ -99,13 +99,6 @@ in rec {
         (nixosPkgs.path + /nixos/modules/virtualisation/amazon-image.nix)
       ];
       ec2.hvm = true;
-
-      security.pam.loginLimits = [{
-        domain = "*";
-        type = "soft";
-        item = "nofile";
-        value = "65536";
-      }];
     };
 
     mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, ... }: {...}: {
@@ -141,14 +134,6 @@ in rec {
       }: {...}: {
       services.nginx = {
         enable = true;
-
-        # https://aws.amazon.com/pt/blogs/compute/optimizing-nginx-load-balancing-on-amazon-ec2-a1-instances/
-        appendConfig = ''
-          worker_rlimit_nofile 65536;
-        '';
-        eventsConfig = ''
-          worker_connections 32768;
-        '';
         recommendedProxySettings = true;
         virtualHosts."${routeHost}" = {
           enableACME = enableHttps;
@@ -158,8 +143,6 @@ in rec {
             proxyWebsockets = true;
             extraConfig = ''
               access_log off;
-              fastcgi_pass unix:/does/not/exist;
-              error_page 500 502 503 504 = /static/nginx-5xx.html;
             '';
           };
         };
