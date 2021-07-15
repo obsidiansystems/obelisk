@@ -116,8 +116,8 @@ setupObeliskImpl deployDir = liftIO $ do
   createDirectoryIfMissing True implDir
   writeFile (implDir </> "default.nix") $ "(import " <> toNixPath (goBackUp </> "src") <> " {}).obelisk"
 
-deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
-deployPush deployPath getNixBuilders = do
+deployBuild :: MonadObelisk m => FilePath -> m [String] -> m (String, Map.Map String String)
+deployBuild deployPath getNixBuilders = do
   hosts <- Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "backend_hosts"
   adminEmail <- readDeployConfig deployPath "admin_email"
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
@@ -153,6 +153,11 @@ deployPush deployPath getNixBuilders = do
         ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
     pure result
+  return (route, buildOutputByHost)
+
+deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
+deployPush deployPath getNixBuilders = do
+  (route, buildOutputByHost) <- deployBuild deployPath getNixBuilders
   let knownHostsPath = deployPath </> "backend_known_hosts"
       sshOpts = sshArgs knownHostsPath (deployPath </> "ssh_key") False
   withSpinner "Uploading closures" $ ifor_ buildOutputByHost $ \host outputPath -> do

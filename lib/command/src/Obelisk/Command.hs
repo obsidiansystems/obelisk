@@ -6,6 +6,7 @@
 {-# LANGUAGE TupleSections #-}
 module Obelisk.Command where
 
+import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
 import Data.Foldable (for_)
@@ -138,6 +139,7 @@ packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
 deployCommand :: ArgsConfig -> Parser DeployCommand
 deployCommand cfg = hsubparser $ mconcat
   [ command "init" $ info (DeployCommand_Init <$> deployInitOpts) $ progDesc "Initialize a deployment configuration directory"
+  , command "build" $ info (DeployCommand_Build <$> remoteBuilderParser) mempty
   , command "push" $ info (DeployCommand_Push <$> remoteBuilderParser) mempty
   , command "test" $ info (DeployCommand_Test <$> platformP) $ progDesc "Test your obelisk project from a mobile platform."
   , command "update" $ info (pure DeployCommand_Update) $ progDesc "Update the deployment's src thunk to latest"
@@ -180,6 +182,7 @@ data RemoteBuilder = RemoteBuilder_ObeliskVM
 
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
+  | DeployCommand_Build (Maybe RemoteBuilder)
   | DeployCommand_Push (Maybe RemoteBuilder)
   | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
@@ -384,6 +387,11 @@ ob = \case
   ObCommand_Init source force -> initProject source force
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
+    DeployCommand_Build remoteBuilder -> do
+      deployPath <- liftIO $ canonicalizePath "."
+      void $ deployBuild deployPath $ case remoteBuilder of
+        Nothing -> pure []
+        Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployPush deployPath $ case remoteBuilder of
