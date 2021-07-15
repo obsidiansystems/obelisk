@@ -6,7 +6,6 @@
 {-# LANGUAGE TupleSections #-}
 module Obelisk.Command where
 
-import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
 import Data.Foldable (for_)
@@ -389,9 +388,12 @@ ob = \case
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
     DeployCommand_Build remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
-      void $ deployBuild deployPath $ case remoteBuilder of
+      (_, outputByHost) <- deployBuild deployPath $ case remoteBuilder of
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
+      for_ (Map.toList outputByHost) $ \(host, path) -> do
+        liftIO $ putStrLn host
+        liftIO $ putStr "  └ " >> putStrLn path
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployPush deployPath $ case remoteBuilder of
