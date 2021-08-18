@@ -127,11 +127,13 @@ runWidget
 runWidget conf configs frontend validFullEncoder = do
   uri <- either (fail . T.unpack) pure $ getConfigRoute configs
   let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
+      hostIp4Preferred = fromString "*4" -- HostIPv4: any IPv4 or IPv6 hostname, IPv4 preferred
+      host = maybe hostIp4Preferred (fromString . T.unpack) $ uri ^? uriAuthority . _Right . authHost . unRText
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
       beforeMainLoop = do
         putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
-      settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
+      settings = setBeforeMainLoop beforeMainLoop (setHost host $ setPort port (setTimeout 3600 defaultSettings))
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
       prepareRunner = case uri ^? uriScheme . _Just . unRText of
         Just "https" -> do
