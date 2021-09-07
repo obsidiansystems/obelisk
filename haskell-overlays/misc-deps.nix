@@ -20,7 +20,11 @@ in
   universe-instances-extended = haskellLib.doJailbreak super.universe-instances-extended;
   stylish-haskell = null; # FIXME
 
-  aeson-gadt-th = haskellLib.doJailbreak super.aeson-gadt-th; # FIXME BROKEN
+  # https://github.com/haskell/hackage-security/issues/247
+  hackage-security = haskellLib.dontCheck super.hackage-security; # only tests use aeson and are not compat with 1.5;
+  heist = haskellLib.doJailbreak super.heist; # aeson 1.5 bump
+  aeson = super.aeson_1_5_2_0; # TODO: bump reflex-platform aeson to 1.5
+  aeson-gadt-th = haskellLib.doJailbreak super.aeson-gadt-th; # requires aeson 1.5 for ghc8.10 support?
 
   snap = haskellLib.doJailbreak super.snap;
   # Exports more internals
