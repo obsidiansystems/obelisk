@@ -16,6 +16,7 @@
 }:
 with obelisk;
 project ./. ({ ... }: {
+  tools = hsPkgs: with hsPkgs; [cabal-install];
   android.applicationId = "systems.obsidian.obelisk.examples.minimal";
   android.displayName = "Obelisk Minimal Example";
   ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";

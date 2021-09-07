@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -13,7 +14,7 @@ module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
-import Control.Lens (ifor, (.~), (&))
+import Control.Lens (ifor, (.~), (&), view)
 import Control.Concurrent (forkIO)
 import Control.Monad (filterM, void)
 import Control.Monad.Except (runExceptT, throwError)
@@ -43,9 +44,17 @@ import Data.Time.Clock (getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
+#if MIN_VERSION_Cabal(3,2,1)
+import Distribution.Compiler (CompilerFlavor(..), perCompilerFlavorToList)
+#else
 import Distribution.Compiler (CompilerFlavor(..))
+#endif
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
+#if MIN_VERSION_Cabal(3,2,1)
+import Distribution.Fields.ParseResult (runParseResult)
+#else
 import Distribution.Parsec.ParseResult (runParseResult)
+#endif
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple.Compiler (PackageDB (GlobalPackageDB))
 import Distribution.Simple.Configure (configCompilerEx, getInstalledPackages)
@@ -55,13 +64,21 @@ import qualified Distribution.System as Dist
 import Distribution.Types.BuildInfo (buildable, cppOptions, defaultExtensions, defaultLanguage, hsSourceDirs, options, targetBuildDepends)
 import Distribution.Types.CondTree (simplifyCondTree)
 import Distribution.Types.Dependency (Dependency (..), depPkgName)
+#if MIN_VERSION_Cabal(3,2,1)
+import Distribution.Types.GenericPackageDescription.Lens (ConfVar (Arch, Impl, OS), condLibrary)
+#else
 import Distribution.Types.GenericPackageDescription (ConfVar (Arch, Impl, OS), condLibrary)
+#endif
 import Distribution.Types.InstalledPackageInfo (compatPackageKey)
 import Distribution.Types.Library (libBuildInfo)
 import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Types.VersionRange (anyVersion)
 import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
+#if MIN_VERSION_Cabal(3,2,1)
+import qualified Distribution.Parsec.Warning as Dist
+#else
 import qualified Distribution.Parsec.Common as Dist
+#endif
 import qualified Distribution.Verbosity as Verbosity (silent)
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
@@ -363,7 +380,11 @@ parseCabalPackage' pkg = runExceptT $ do
       Arch archVar -> Just archVar == archConfVar
       Impl GHC _ -> True -- TODO: Actually check version range
       _ -> False
+#if MIN_VERSION_Cabal(3,2,1)
+  case (view condLibrary) <$> result of
+#else
   case condLibrary <$> result of
+#endif
     Right (Just condLib) -> do
       let (_, lib) = simplifyCondTree evalConfVar condLib
       pure $ Just $ (warnings,) $ CabalPackageInfo
@@ -377,13 +398,19 @@ parseCabalPackage' pkg = runExceptT $ do
             defaultExtensions $ libBuildInfo lib
         , _cabalPackageInfo_defaultLanguage =
             defaultLanguage $ libBuildInfo lib
-        , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
+        , _cabalPackageInfo_compilerOptions =
+#if MIN_VERSION_Cabal(3,2,1)
+            perCompilerFlavorToList $ options $ libBuildInfo lib
+#else
+            options $ libBuildInfo lib
+#endif
         , _cabalPackageInfo_cppOptions = cppOptions $ libBuildInfo lib
+
         , _cabalPackageInfo_buildDepends = targetBuildDepends $ libBuildInfo lib
         }
     Right Nothing -> pure Nothing
     Left (_, errors) ->
-      throwError $ T.pack $ "Failed to parse " <> packageFile <> ":\n" <> unlines (map show errors)
+      throwError $ T.pack $ "Failed to parse " <> packageFile <> ":\n" <> unlines (toList $ fmap show errors)
 
 parsePackagesOrFail :: (MonadObelisk m, Foldable f) => f FilePath -> m (NE.NonEmpty CabalPackageInfo)
 parsePackagesOrFail dirs' = do
@@ -498,13 +525,24 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
     packageNames =
       map (mkPackageName . T.unpack . _cabalPackageInfo_packageName)
           packageInfos
+    packageIds :: InstalledPackageIndex -> [String]
     packageIds installedPackageIndex =
       map (dependencyPackageId installedPackageIndex) $
+#if MIN_VERSION_Cabal(3,2,1)
+          filter (`notElem` packageNames) $
+          concatMap (map depPkgName . _cabalPackageInfo_buildDepends) packageInfos <>
+            [(mkPackageName "obelisk-run")]
+#else
           filter ((`notElem` packageNames) . depPkgName) $
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
             [Dependency (mkPackageName "obelisk-run") anyVersion]
+#endif
     dependencyPackageId installedPackageIndex dep =
+#if MIN_VERSION_Cabal(3,2,1)
+      case lookupDependency installedPackageIndex dep anyVersion of
+#else
       case lookupDependency installedPackageIndex dep of
+#endif
         ((_version,installedPackageInfo:_) :_) ->
           compatPackageKey installedPackageInfo
         _ -> error $ "Couldn't resolve dependency for " <> prettyShow dep

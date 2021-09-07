@@ -9,23 +9,25 @@ let
 in
 
 {
-  regex-base = self.callHackage "regex-base" "0.94.0.0" {};
-  regex-posix = self.callHackage "regex-posix" "0.96.0.0" {};
-  regex-tdfa = self.callHackage "regex-tdfa" "1.3.1.0" {};
-  test-framework = haskellLib.dontCheck (self.callHackage "test-framework" "0.8.2.0" {});
-  hnix = haskellLib.dontCheck super.hnix;
-  hnix-store-core = haskellLib.dontCheck super.hnix-store-core;
-  hnix-store = haskellLib.dontCheck super.hnix-store;
+  git = self.callCabal2nix "git" (hackGet ../dep/hs-git) {};
+  # hdevtools = haskellLib.markUnbroken super.hdevtools;
+  # reflex-ghci = haskellLib.markUnbroken super.reflex-ghci;
+  # reflex-process = haskellLib.markUnbroken super.reflex-process;
+  # reflex-vty = haskellLib.markUnbroken super.reflex-vty;
+  # reflex-fsnotify = haskellLib.markUnbroken super.reflex-fsnotify;
+  universe-base = haskellLib.doJailbreak super.universe-base;
+  universe-reverse-instances = haskellLib.doJailbreak super.universe-reverse-instances;
+  universe-instances-extended = haskellLib.doJailbreak super.universe-instances-extended;
+  stylish-haskell = null; # FIXME
 
-  aeson-gadt-th = self.callHackage "aeson-gadt-th" "0.2.4" {};
+  aeson-gadt-th = haskellLib.doJailbreak super.aeson-gadt-th; # FIXME BROKEN
 
-  ghcid = self.callCabal2nix "ghcid" (hackGet ../dep/ghcid) {};
+  snap = haskellLib.doJailbreak super.snap;
   # Exports more internals
   snap-core = haskellLib.dontCheck (self.callCabal2nix "snap-core" (hackGet ../dep/snap-core) {});
 
-  logging-effect = self.callCabal2nix "logging-effect" (hackGet ../dep/logging-effect) {};
-  resourcet = self.callHackage "resourcet" "1.2.4.2" {};
-  unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
-  shelly = self.callHackage "shelly" "1.9.0" {};
-  monad-logger = self.callHackage "monad-logger" "0.3.36" {};
+  logging-effect = haskellLib.doJailbreak (self.callHackage "logging-effect" "1.3.10" {});
+  # unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
+  # shelly = self.callHackage "shelly" "1.9.0" {};
+  # monad-logger = self.callHackage "monad-logger" "0.3.36" {};
 }
