@@ -189,23 +189,9 @@ requestPageName r = byteStringsToPageName p q
 requestDomain :: Request -> Domain
 requestDomain req = Domain $ "//" <> T.decodeUtf8 (rqHostName req)
 
---getRouteWith
---  :: Has C route
---  => MonadSnap m
---  => Encoder Identity Identity (R route) DomainPageName
---  -> (forall b f. route (R (FullRoute b f)) -> R (FullRoute b f) -> m x)
---  -> m x
---getRouteWith fullEncoder handler = do
---  req <- getRequest
---  let domain = requestDomain req
---      pageName = requestPageName req
---  case decode fullEncoder (domain, pageName) of
---    p :/ r -> has @C p $ handler p r
-
 getRouteWith
   :: MonadSnap m
   => (Domain -> SomeDomain p)
-  -- -> (forall b f. p (R (FullRoute b f)) -> DomainResult Identity parse (R (FullRoute b f)))
   -> (forall b f. p (R (FullRoute b f)) -> Encoder Identity parse (R (FullRoute b f)) PageName)
   -> (forall b f. p (R (FullRoute b f)) -> parse (R (FullRoute b f)) -> m x)
   -> m x
@@ -213,10 +199,6 @@ getRouteWith parseDomain mkEncoder handler = do
   (domain, pageName) <- getDomainPageName
   case parseDomain domain of
     SomeDomain p -> handler p $ tryDecode (mkEncoder p) pageName
-
---renderAllJsPath :: Encoder Identity Identity (R route) DomainPageName -> route (R (FullRoute a b)) -> Text
---renderAllJsPath validFullEncoder r =
---  renderFullObeliskRoute validFullEncoder $ r :/ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ ["all.js"]
 
 renderAllJsPath :: Encoder Identity Identity (R (FullRoute a b)) PageName -> Text
 renderAllJsPath validFullEncoder =
@@ -284,11 +266,11 @@ runBackend = runBackendWith defaultBackendConfig
 
 -- | Run an obelisk backend with the given configuration.
 -- Full encoder implementation. Falls down proving route a ~ route (R (FullRoute b f)), I couldn't figure out how to make it work with ArgDict.
---runBackendWith
+-- runBackendWith'
 --  :: BackendConfig
 --  -> Backend route
 --  -> IO ()
---runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend = do
+-- runBackendWith' (BackendConfig runSnap staticAssets ghcjsWidgets) backend = do
 --  publicConfigs <- getPublicConfigs
 --  let routeConfig = getCheckedRouteConfig publicConfigs
 --  case checkEncoder $ _backend_routeEncoder backend routeConfig of
