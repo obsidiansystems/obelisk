@@ -13,6 +13,7 @@ library
                , reflex-dom-core
                , obelisk-executable-config-lookup
                , obelisk-generated-static
+               , lens
                , text
   exposed-modules:
     Frontend
