@@ -72,16 +72,12 @@ import System.Directory
 import System.Environment (getExecutablePath)
 import System.FilePath
 import qualified System.Info
-import System.IO (hClose, hGetLine)
 import System.IO.Temp (withSystemTempDirectory)
-import System.Process (CreateProcess (..), StdStream (..))
 
 import Obelisk.App (MonadObelisk, getObelisk, runObelisk)
 import Obelisk.CliApp (
     Severity (..),
-    createProcess_,
     failWith,
-    overCreateProcess,
     proc,
     putLog,
     readCreateProcessWithExitCode,
@@ -481,7 +477,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
   -- all paths to 'pathBase'.
   selfExe <- liftIO $ canonicalizePath =<< getExecutablePath
   canonicalPathBase <- liftIO $ canonicalizePath pathBase
-  installedPackageIndex <- loadPackageIndex pathBase
+  installedPackageIndex <- loadPackageIndex packageInfos pathBase
 
   (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
     canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
@@ -514,8 +510,8 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
         _ -> error $ "Couldn't resolve dependency for " <> prettyShow dep
 
 -- Load the package index used by the GHC in this path's nix project
-loadPackageIndex :: (MonadObelisk m) => FilePath -> m InstalledPackageIndex
-loadPackageIndex root = do
+loadPackageIndex :: MonadObelisk m => [CabalPackageInfo] -> FilePath -> m InstalledPackageIndex
+loadPackageIndex packageInfos root = do
   ghcPath <- getPathInNixEnvironment "bash -c 'type -p ghc'"
   ghcPkgPath <- getPathInNixEnvironment "bash -c 'type -p ghc-pkg'"
   (compiler, _platform, programDb) <- liftIO
@@ -523,13 +519,8 @@ loadPackageIndex root = do
   liftIO $ getInstalledPackages Verbosity.silent compiler [GlobalPackageDB] programDb
   where
     getPathInNixEnvironment cmd = do
-      procSpec <- runProc <$> nixShellRunConfig root True (Just cmd)
-      (_,Just h,_,_) <- createProcess_ "loadPackageIndex" procSpec
-      path <- liftIO $ hGetLine h >>= canonicalizePath
-      liftIO $ hClose h
-      pure path
-    runProc =
-      overCreateProcess (\cs -> cs { std_out = CreatePipe }) . nixShellRunProc
+      path <- readProcessAndLogStderr Debug =<< mkObNixShellProc root False True (packageInfoToNamePathMap packageInfos) "ghc" (Just cmd)
+      liftIO $ canonicalizePath $ T.unpack $ T.strip path
 
 baseGhciOptions :: [String]
 baseGhciOptions =

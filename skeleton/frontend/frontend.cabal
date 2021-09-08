@@ -10,7 +10,7 @@ library
                , obelisk-frontend
                , obelisk-route
                , jsaddle
-               , reflex-dom
+               , reflex-dom-core
                , obelisk-executable-config-lookup
                , obelisk-generated-static
                , lens
