@@ -24,7 +24,7 @@ import Control.Category
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
-import Control.Lens ((%~), (^?), _Just, _Right)
+import Control.Lens ((%~), (^?), _Just, _Right, itraverse)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -36,6 +36,8 @@ import Data.Functor.Identity
 import Data.List (uncons)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import Data.Maybe
 import Data.Semigroup ((<>))
 import Data.Streaming.Network (bindPortTCP)
@@ -128,76 +130,31 @@ run port serveStaticAsset backend = do
       let conf = defRunConfig { _runConfig_redirectPort = port }
       runWidget conf publicConfigs backend mkValidEncoder `finally` killThread backendTid
 
---run
---  :: forall route. (Has C route, GEq route, Universe (SomeDomain route))
---  => Int -- ^ Port to run the backend
---  -> ([Text] -> Snap ()) -- ^ Static asset handler
---  -> Backend route -- ^ Backend
---  -> IO ()
---run port serveStaticAsset backend = do
---  prettifyOutput
---  publicConfigs <- getPublicConfigs
---  let routeConfig = getCheckedRouteConfig publicConfigs
---  let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
---  --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
---  case checkEncoder $ _backend_routeEncoder backend routeConfig of
---    Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
---    Right (validFullEncoder :: Encoder Identity Identity (R route) DomainPageName) -> do
---      --let backwardsURI :: Map (Maybe Domain) (SomeDomain route)
---      --    backwardsURI = Map.fromList $ (\(SomeDomain route) -> (uriToDomain $ _backend_baseRoute backend routeConfig route, SomeDomain route)) <$> universe
---      --    parseDomain :: Domain -> SomeDomain route
---      --    parseDomain d = case Map.lookup (Just d) backwardsURI of
---      --        Nothing -> error $ "parseDomain: couln't find URI: " <> show d
---      --        Just someDomain -> someDomain
---      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $
---        _backend_run backend $ \(serveRoute :: forall b f. route (R (FullRoute b f)) -> R b -> Snap ()) ->
---          runSnapWithCommandLineArgs $
---            getRouteWith validFullEncoder $ \outerRoute -> \case
---              (innerRoute :: R (FullRoute b f)) -> case innerRoute of
---                FullRoute_Backend backendRoute :/ a -> do
---                  liftIO $ putStrLn $ "backendRoute"
---                  serveRoute outerRoute $ backendRoute :/ a
---                FullRoute_Frontend obeliskRoute :/ a ->
---                  serveDefaultObeliskApp
---                    appRouteToUrl
---                    (($ allJsUrl) <$> defaultGhcjsWidgets)
---                    serveStaticAsset
---                    (_backend_frontend backend outerRoute)
---                    publicConfigs
---                    (obeliskRoute :/ a)
---                  where
---                    appRouteToUrl (k :/ v) = renderFullObeliskRoute validFullEncoder $ outerRoute :/ (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
---                    allJsUrl = renderAllJsPath validFullEncoder outerRoute
-
---      let conf = defRunConfig { _runConfig_redirectPort = port }
---      runWidget conf publicConfigs backend validFullEncoder `finally` killThread backendTid
-
-
 -- Convenience wrapper to handle path segments for 'Snap.serveAsset'
 runServeAsset :: FilePath -> [Text] -> Snap ()
 runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
 
-getConfigRoute :: Map Text ByteString -> Either Text URI
+getConfigRoute :: Map Text ByteString -> Either Text (IntMap URI)
 getConfigRoute configs = case Map.lookup "common/route" configs of
-    Just r ->
-      let stripped = T.strip (T.decodeUtf8 r)
-      in case URI.mkURI stripped of
-          Just route -> Right route
-          Nothing -> Left $ "Couldn't parse route as URI; value read was: " <> T.pack (show stripped)
-    Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
+  Just rawConf ->
+    let
+      lns = T.lines $ T.strip $ T.decodeUtf8 rawConf
+      toUri i t = maybe (Left $ "Couldn't parse route as URI; value read was: " <> t) (\u -> Right (i,u)) $ URI.mkURI t
+    in
+      IntMap.fromList <$> itraverse toUri lns
+  Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI"
+    <> T.pack (show $ Map.keys configs)
 
 runWidget
   :: forall route. (Universe (SomeDomain route))
   => RunConfig
   -> Map Text ByteString
   -> Backend route
-  -- -> Encoder Identity Identity (R route) DomainPageName
   -> (forall b f. route (R (FullRoute b f)) -> Encoder Identity Identity (R (FullRoute b f)) PageName)
   -> IO ()
 runWidget conf configs backend mkValidFullEncoder = do
   let routeConfig = getCheckedRouteConfig configs
   threads <- for universe $ \(SomeDomain baseRoute :: SomeDomain route) -> async $ do
-    --let thisEncoder = reverseEncoder validFullEncoder baseRoute
     let thisEncoder = mkValidFullEncoder baseRoute
     let uri' = _backend_obRunBaseRoute backend routeConfig baseRoute
     uri <- either (fail . show) pure $ URI.mkURI $ T.pack $ NetworkURI.uriToString id uri' ""
@@ -219,9 +176,9 @@ runWidget conf configs backend mkValidFullEncoder = do
 
             cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
             _ <- X509.setPublicKey cert privateKey
-            now <- getCurrentTime
-            _ <- X509.setNotBefore cert $ addUTCTime (-1) now
-            _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) now
+            timenow <- getCurrentTime
+            _ <- X509.setNotBefore cert $ addUTCTime (-1) timenow
+            _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) timenow
             _ <- X509.signX509 cert privateKey Nothing
 
             certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
