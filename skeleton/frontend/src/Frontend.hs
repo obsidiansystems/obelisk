@@ -39,7 +39,7 @@ frontend = Frontend
       -- print "Hello, World!" on the client.
       prerender_ blank $ liftJSM $ void
         $ jsg ("window" :: T.Text)
-        ^. js ("skeleton-lib" :: T.Text)
+        ^. js ("skeleton_lib" :: T.Text)
         ^. js1 ("log" :: T.Text) ("Hello, World!" :: T.Text)
 
       elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
