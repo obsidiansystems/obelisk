@@ -76,7 +76,7 @@ in rec {
     ${exe} "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
-  compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
+  compressedJs = frontend: optimizationLevel: externs: pkgs.runCommand "compressedJs" {} ''
     set -euo pipefail
     cd '${haskellLib.justStaticExecutables frontend}'
     shopt -s globstar
@@ -87,7 +87,7 @@ in rec {
       ${if optimizationLevel == null then ''
         ln -s "$dir/all.unminified.js" "$dir/all.js"
       '' else ''
-        '${pkgs.closurecompiler}/bin/closure-compiler' --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        '${pkgs.closurecompiler}/bin/closure-compiler' --externs '${externs}' --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
         echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
       ''}
     done
@@ -186,7 +186,7 @@ in rec {
       set -eux
       ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
       ln -s '${mkAssets assets}' $out/static.assets
-      for d in '${mkAssets (compressedJs frontend optimizationLevel)}'/*/; do
+      for d in '${mkAssets (compressedJs frontend optimizationLevel (assets + "/externs.js"))}'/*/; do
         ln -s "$d" "$out"/"$(basename "$d").assets"
       done
       echo ${version} > $out/version
