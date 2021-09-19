@@ -44,8 +44,8 @@ import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
 import Distribution.Compiler (CompilerFlavor(..))
-import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
-import Distribution.Parsec.ParseResult (runParseResult)
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescription, runParseResult)
+import Distribution.Parsec.Warning (PWarning)
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple.Compiler (PackageDB (GlobalPackageDB))
 import Distribution.Simple.Configure (configCompilerEx, getInstalledPackages)
@@ -54,14 +54,14 @@ import Distribution.Simple.Program.Db (defaultProgramDb)
 import qualified Distribution.System as Dist
 import Distribution.Types.BuildInfo (buildable, cppOptions, defaultExtensions, defaultLanguage, hsSourceDirs, options, targetBuildDepends)
 import Distribution.Types.CondTree (simplifyCondTree)
+import Distribution.Types.ConfVar (ConfVar (Arch, Impl, OS))
 import Distribution.Types.Dependency (Dependency (..), depPkgName)
-import Distribution.Types.GenericPackageDescription (ConfVar (Arch, Impl, OS), condLibrary)
+import Distribution.Types.GenericPackageDescription (condLibrary)
 import Distribution.Types.InstalledPackageInfo (compatPackageKey)
 import Distribution.Types.Library (libBuildInfo)
 import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Types.VersionRange (anyVersion)
 import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
-import qualified Distribution.Parsec.Common as Dist
 import qualified Distribution.Verbosity as Verbosity (silent)
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
@@ -338,7 +338,7 @@ parseCabalPackage dir = parseCabalPackage' dir >>= \case
 parseCabalPackage'
   :: (MonadIO m)
   => FilePath -- ^ Package directory
-  -> m (Either T.Text (Maybe ([Dist.PWarning], CabalPackageInfo)))
+  -> m (Either T.Text (Maybe ([PWarning], CabalPackageInfo)))
 parseCabalPackage' pkg = runExceptT $ do
   (cabalContents, packageFile, packageName) <- guessCabalPackageFile pkg >>= \case
     Left GuessPackageFileError_NotFound -> throwError $ "No .cabal or package.yaml file found in " <> T.pack pkg
