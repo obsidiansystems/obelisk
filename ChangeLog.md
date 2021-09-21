@@ -9,6 +9,10 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* Update reflex-platform to v0.9.0.0
+
+## Unreleased
+
 * Update reflex-platform to v0.8.0.3
 
 ## Unreleased
