@@ -130,21 +130,33 @@ in rec {
       , baseUrl ? "/"
       , internalPort ? 8000
       , backendArgs ? "--port=${toString internalPort}"
+      , redirectHosts ? [] # Domains to redirect to routeHost; importantly, these domains will be added to the SSL certificate
       , ...
-      }: {...}: {
+      }: {...}:
+      assert lib.assertMsg (!(builtins.elem routeHost redirectHosts)) "routeHost may not be a member of redirectHosts";
+      {
       services.nginx = {
         enable = true;
         recommendedProxySettings = true;
-        virtualHosts."${routeHost}" = {
-          enableACME = enableHttps;
-          forceSSL = enableHttps;
-          locations.${baseUrl} = {
-            proxyPass = "http://127.0.0.1:" + toString internalPort;
-            proxyWebsockets = true;
-            extraConfig = ''
-              access_log off;
-            '';
-          };
+        virtualHosts = {
+          "${routeHost}" = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
+            locations.${baseUrl} = {
+              proxyPass = "http://127.0.0.1:" + toString internalPort;
+              proxyWebsockets = true;
+              extraConfig = ''
+                access_log off;
+              '';
+            };
+          } // builtins.listToAttrs (map (redirectSourceDomain: {
+            name = redirectSourceDomain;
+            value = {
+              enableACME = enableHttps;
+              forceSSL = enableHttps;
+              globalRedirect = routeHost;
+            };
+          }) redirectHosts);
         };
       };
       systemd.services.${name} = {

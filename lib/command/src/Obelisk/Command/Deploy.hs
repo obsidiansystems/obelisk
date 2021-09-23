@@ -29,6 +29,10 @@ import System.PosixCompat.Files
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens
+import Nix.Pretty (prettyNix)
+import qualified Nix.Expr.Shorthands as Nix
+import Prettyprinter (layoutCompact)
+import Prettyprinter.Render.String (renderString)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (
@@ -123,6 +127,9 @@ deployPush deployPath getNixBuilders = do
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
   route <- readDeployConfig deployPath $ "config" </> "common" </> "route"
   routeHost <- getHostFromRoute enableHttps route
+  redirectHosts <- liftIO (doesFileExist "redirect_hosts") >>= \case
+    True -> Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "redirect_hosts"
+    False -> pure mempty
   let srcPath = deployPath </> "src"
   thunkPtr <- readThunk srcPath >>= \case
     Right (ThunkData_Packed _ ptr) -> return ptr
@@ -148,6 +155,7 @@ deployPush deployPath getNixBuilders = do
         [ strArg "hostName" host
         , strArg "adminEmail" adminEmail
         , strArg "routeHost" routeHost
+        , rawArg "redirectHosts" $ renderString $ layoutCompact $ prettyNix $ Nix.mkList $ Nix.mkStr . T.pack <$> Set.toList redirectHosts
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
         ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
