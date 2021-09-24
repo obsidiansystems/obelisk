@@ -101,7 +101,7 @@ in rec {
       ec2.hvm = true;
     };
 
-    mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, ... }: {...}: {
+    mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, redirectHosts, ... }: {...}: {
       networking = {
         inherit hostName;
         firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
@@ -113,8 +113,15 @@ in rec {
       services.openssh.enable = true;
       services.openssh.permitRootLogin = "prohibit-password";
 
-      security.acme.${if enableHttps then "email" else null} = adminEmail;
-      security.acme.${if enableHttps && (terms.security.acme.acceptTerms or false) then "acceptTerms" else null} = true;
+      security.acme = if enableHttps then {
+        acceptTerms = terms.security.acme.acceptTerms;
+        email = adminEmail;
+        certs = {
+          "${routeHost}" = {
+            extraDomains = builtins.listToAttrs (map (h: { name = h; value = null; }) redirectHosts);
+          };
+        };
+      } else {};
     };
 
     mkObeliskApp =
