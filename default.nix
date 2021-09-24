@@ -113,10 +113,7 @@ in rec {
       services.openssh.enable = true;
       services.openssh.permitRootLogin = "prohibit-password";
 
-      security.acme.certs = if enableHttps then {
-        "${routeHost}".email = adminEmail;
-      } else {};
-
+      security.acme.${if enableHttps then "email" else null} = adminEmail;
       security.acme.${if enableHttps && (terms.security.acme.acceptTerms or false) then "acceptTerms" else null} = true;
     };
 
@@ -149,15 +146,15 @@ in rec {
                 access_log off;
               '';
             };
-          } // builtins.listToAttrs (map (redirectSourceDomain: {
-            name = redirectSourceDomain;
-            value = {
-              enableACME = enableHttps;
-              forceSSL = enableHttps;
-              globalRedirect = routeHost;
-            };
-          }) redirectHosts);
-        };
+          };
+        } // builtins.listToAttrs (map (redirectSourceDomain: {
+          name = redirectSourceDomain;
+          value = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
+            globalRedirect = routeHost;
+          };
+        }) redirectHosts);
       };
       systemd.services.${name} = {
         wantedBy = [ "multi-user.target" ];
@@ -204,7 +201,7 @@ in rec {
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [] }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -400,7 +397,7 @@ in rec {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [] }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
     };
