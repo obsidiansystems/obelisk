@@ -206,7 +206,7 @@ renderJsaddleFrontend
   -> Frontend route
   -> IO ByteString
 renderJsaddleFrontend configs cookies urlEnc r f =
-  let jsaddleScript = elAttr "script" ("src" =: "/jsaddle/jsaddle.js") blank
+  let jsaddleScript = elAttr "script" ("type" =: "module" <> src" =: "/jsaddle/jsaddle.js") blank
       jsaddlePreload = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: "/jsaddle/jsaddle.js") blank
   in renderFrontendHtml configs cookies urlEnc r f jsaddlePreload jsaddleScript
 
