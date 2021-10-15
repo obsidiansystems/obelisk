@@ -135,6 +135,18 @@ in rec {
       services.nginx = {
         enable = true;
         recommendedProxySettings = true;
+        # Configure some performant defaults for Nginx
+        # https://www.nginx.com/blog/tuning-nginx
+        appendConfig = ''
+          worker_rlimit_nofile 65536;
+        '';
+        # Newer versions have a higher default: https://nginx.org/en/docs/http/ngx_http_core_module.html#keepalive_requests
+        appendHttpConfig = ''
+          keepalive_requests 1000;
+        '';
+        eventsConfig = ''
+          worker_connections 32768;
+        '';
         virtualHosts."${routeHost}" = {
           enableACME = enableHttps;
           forceSSL = enableHttps;
@@ -197,6 +209,13 @@ in rec {
       nixos = import (pkgs.path + /nixos);
     in nixos {
       system = "x86_64-linux";
+      # Increase the number of open files the server can have (ulimit)
+      security.pam.loginLimits = [{
+        domain = "*";
+        type = "soft";
+        item = "nofile";
+        value = "65536";
+      }];
       configuration = {
         imports = [
           (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
