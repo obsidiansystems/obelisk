@@ -21,6 +21,9 @@ let
   getReflexPlatform = { system, enableLibraryProfiling ? profiling }: forceGhc810 (reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
 
+    # disabled until packages are updated to support it
+    useTextJSString = false;
+
     nixpkgsOverlays = [
       (import ./nixpkgs-overlays)
     ];
