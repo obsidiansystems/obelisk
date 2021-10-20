@@ -26,14 +26,6 @@ let
 
     nixpkgsOverlays = [
       (import ./nixpkgs-overlays)
-      # Expose haskell.nix for emscripten patches
-      (self: super: {
-        haskell-nix = import (hackGet ./dep/haskell.nix) { inherit pkgs; };
-      })
-      # Apply haskell.nix emscripten patches
-      (self: super:
-        (import ./dep/haskell.nix/overlays { sources = self.haskell-nix.sources; }).emscripten self super
-      )
     ];
 
     haskellOverlays = [
