@@ -125,8 +125,6 @@ module Obelisk.Route
   , fieldMapEncoder
   , pathFieldEncoder
   , jsonEncoder
-  , byteStringsToPageName
-  , base64UriEncoder
   ) where
 
 import Prelude hiding ((.), id)
