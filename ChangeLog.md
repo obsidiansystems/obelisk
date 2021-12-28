@@ -2,7 +2,7 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
-## Unreleased
+## v0.9.2.0 - 2021-12-28
 
 * Update reflex-platform to v0.9.0.0
 
@@ -21,6 +21,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Feature: When `staticFiles` is a derivation, as opposed to a regular directory, produce a symlink to the result of that derivation at `static.out` and have `ob run` serve static assets from that symlink. This makes it possible for the static asset derivation to be rebuilt and the new results served without restarting `ob run`.
 * Feature: Rebuild static asset derivations while `ob run` is active as long as the change to the derivation is within the project folder. `ob run` now displays a message ("Static assets rebuilt and symlinked to static.out") whenever static assets have been rebuilt and the new static assets are being served.
 * Feature: Add `staticFilePath` to `Obelisk.Generated.Static`. Like `static`, this uses TH to generate a reference to a file. Unlike `static`, this `staticFilePath` generates a path on the filesystem instead of URL path.
+* Docs: Added [documentation](lib/route/docs/introduction.md) for obelisk-routes.
 
 ## v0.9.1.0
 
