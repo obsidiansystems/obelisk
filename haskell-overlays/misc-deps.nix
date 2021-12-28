@@ -29,4 +29,5 @@ in
   shelly = self.callHackage "shelly" "1.9.0" {};
   monad-logger = self.callHackage "monad-logger" "0.3.36" {};
   git = self.callHackage "git" "0.3.0" {};
+  hpack  self.callHackage "hpack" "0.34.1" {};
 }
