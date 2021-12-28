@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "develop",
+  "branch": "aa/remove-hasjscontext",
   "private": false,
-  "rev": "6c2636422a6c721e26481ac5901fb0d359922a90",
-  "sha256": "1axnpqfwzprszfzlab3gk9x3pmd2fhdnjwf4xw9v5k8j9p2j7lv0"
+  "rev": "a3fa3fcb3c30caba5b724a84ff90ad63f72dbfb2",
+  "sha256": "0dmkcb9m21p9wdw1bvs8vhhjd2zpwsnwvrls49rq6q381dys8qm6"
 }
