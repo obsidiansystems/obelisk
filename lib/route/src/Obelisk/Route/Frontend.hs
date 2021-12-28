@@ -136,11 +136,7 @@ instance MonadReader r' m => MonadReader r' (RoutedT t r m) where
   ask = lift ask
   local = mapRoutedT . local
 
-instance HasJSContext m => HasJSContext (RoutedT t r m) where
-  type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
-  askJSContext = lift askJSContext
-
-instance (Prerender js t m, Monad m) => Prerender js t (RoutedT t r m) where
+instance (Prerender t m, Monad m) => Prerender t (RoutedT t r m) where
   type Client (RoutedT t r m) = RoutedT t r (Client m)
   prerender server client = RoutedT $ do
     r <- ask
@@ -166,10 +162,6 @@ instance MonadRef m => MonadRef (RoutedT t r m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
-
-instance HasJS x m => HasJS x (RoutedT t r m) where
-  type JSX (RoutedT t r m) = JSX m
-  liftJS = lift . liftJS
 
 deriving instance EventWriter t w m => EventWriter t w (RoutedT t r m)
 
@@ -307,10 +299,6 @@ instance (MonadFix m, MonadHold t m, DomBuilder t m) => DomBuilder t (SetRouteT 
   textAreaElement = lift . textAreaElement
   selectElement cfg child = SetRouteT $ selectElement cfg $ unSetRouteT child
 
-instance HasJSContext m => HasJSContext (SetRouteT t r m) where
-  type JSContextPhantom (SetRouteT t r m) = JSContextPhantom m
-  askJSContext = lift askJSContext
-
 mapSetRouteT :: (forall x. m x -> n x) -> SetRouteT t r m a -> SetRouteT t r n a
 mapSetRouteT f (SetRouteT x) = SetRouteT (mapEventWriterT f x)
 
@@ -332,7 +320,7 @@ instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m)
 
 instance (Monad m, SetRoute t r m) => SetRoute t r (ReaderT r' m)
 
-instance (PerformEvent t m, Prerender js t m, Monad m, Reflex t) => Prerender js t (SetRouteT t r m) where
+instance (PerformEvent t m, Prerender t m, Monad m, Reflex t) => Prerender t (SetRouteT t r m) where
   type Client (SetRouteT t r m) = SetRouteT t r (Client m)
   prerender server client = do
     d <- lift $ prerender (runSetRouteT server) (runSetRouteT client)
@@ -363,10 +351,6 @@ instance MonadRef m => MonadRef (SetRouteT t r m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
-
-instance HasJS x m => HasJS x (SetRouteT t r m) where
-  type JSX (SetRouteT t r m) = JSX m
-  liftJS = lift . liftJS
 
 instance PrimMonad m => PrimMonad (SetRouteT t r m ) where
   type PrimState (SetRouteT t r m) = PrimState m
@@ -413,11 +397,7 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (ReaderT r' m) where
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m)
 
-instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
-  type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
-  askJSContext = lift askJSContext
-
-instance (Prerender js t m, Monad m) => Prerender js t (RouteToUrlT r m) where
+instance (Prerender t m, Monad m) => Prerender t (RouteToUrlT r m) where
   type Client (RouteToUrlT r m) = RouteToUrlT r (Client m)
   prerender server client = do
     r <- RouteToUrlT ask
@@ -443,10 +423,6 @@ instance MonadRef m => MonadRef (RouteToUrlT r m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
-
-instance HasJS x m => HasJS x (RouteToUrlT r m) where
-  type JSX (RouteToUrlT r m) = JSX m
-  liftJS = lift . liftJS
 
 instance MonadTransControl (RouteToUrlT r) where
   type StT (RouteToUrlT r) a = StT (ReaderT (r -> Text)) a
@@ -527,11 +503,11 @@ runRouteViewT routeEncoder switchover useHash a = do
 -- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
 -- contexts, this widget falls back to using @href@s to control navigation
 routeLink
-  :: forall t m a route js.
+  :: forall t m a route.
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
-     , Prerender js t m
+     , Prerender t m
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
@@ -560,19 +536,19 @@ routeLinkImpl r w = do
   setRoute $ r <$ domEvent Click e
   return (domEvent Click e, a)
 
-scrollToTop :: forall m t js. (Prerender js t m, Monad m) => Event t () -> m ()
+scrollToTop :: forall m t. (Prerender t m, Monad m) => Event t () -> m ()
 scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.currentWindow >>= \case
   Nothing -> pure ()
   Just win -> Window.scrollTo win 0 0
 
 -- | Like 'routeLinkDynAttr' but without custom attributes.
 dynRouteLink
-  :: forall t m a route js.
+  :: forall t m a route.
      ( DomBuilder t m
      , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
-     , Prerender js t m
+     , Prerender t m
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -608,12 +584,12 @@ dynRouteLinkImpl dr w = do
 -- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
 -- build is used so the link still works like 'routeLink'.
 routeLinkDynAttr
-  :: forall t m a route js.
+  :: forall t m a route.
      ( DomBuilder t m
      , PostBuild t m
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
-     , Prerender js t m
+     , Prerender t m
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route

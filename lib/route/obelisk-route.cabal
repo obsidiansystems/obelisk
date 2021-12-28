@@ -1,6 +1,6 @@
 name: obelisk-route
 version: 0.2
-cabal-version: >= 1.2
+cabal-version: >= 1.8
 build-type: Simple
 
 library

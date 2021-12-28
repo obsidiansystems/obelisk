@@ -71,7 +71,7 @@ import Debug.Trace
 
 makePrisms ''Sum
 
-type ObeliskWidget js t route m =
+type ObeliskWidget t route m =
   ( DomBuilder t m
   , MonadFix m
   , MonadHold t m
@@ -87,7 +87,7 @@ type ObeliskWidget js t route m =
   , Ref (Performable m) ~ Ref IO
   , MonadFix (Performable m)
   , PrimMonad m
-  , Prerender js t m
+  , Prerender t m
   , PrebuildAgnostic t route m
   , PrebuildAgnostic t route (Client m)
   , HasConfigs m
@@ -104,11 +104,11 @@ type PrebuildAgnostic t route m =
   )
 
 data Frontend route = Frontend
-  { _frontend_head :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
-  , _frontend_body :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
+  { _frontend_head :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
+  , _frontend_body :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
   }
 
-baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
+baseTag :: forall route t m. ObeliskWidget t route m => RoutedT t route m ()
 baseTag =
   if os == "ios"
     then blank
@@ -212,7 +212,7 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
            , MonadFix (Performable m)
            , MonadFix m
-           , Prerender js DomTimeline (HydrationDomBuilderT s DomTimeline m)
+           , Prerender DomTimeline (HydrationDomBuilderT s DomTimeline m)
            , MonadIO (Performable m)
            )
         => (forall c. HydrationDomBuilderT s DomTimeline m c -> FloatingWidget () c)
