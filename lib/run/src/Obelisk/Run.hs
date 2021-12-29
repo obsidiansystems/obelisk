@@ -160,7 +160,7 @@ runWidget conf configs frontend validFullEncoder = do
               return $ runTLSSocket (tlsSettingsMemory certByteString privateKeyByteString)
             Just certDir -> do
               putStrLn $ "Using certificate information from: " ++ certDir
-              return $ runTLSSocket (tlsSettingsChain (certDir </> "cert.pem") [certDir </> "chain.pem"] (certDir </> "privkey.pem"))
+              return $ runTLSSocket (tlsSettingsChain (certDir </> "cert.pem") [certDir </> "chain.pem"] (certDir </> "key.pem"))
         _ -> return runSettingsSocket
   runner <- prepareRunner
   bracket
