@@ -9,6 +9,7 @@ let
 in
 
 {
+  git = self.callCabal2nix "git" (hackGet ../dep/hs-git) {};
   # hdevtools = haskellLib.markUnbroken super.hdevtools;
   # reflex-ghci = haskellLib.markUnbroken super.reflex-ghci;
   # reflex-process = haskellLib.markUnbroken super.reflex-process;
