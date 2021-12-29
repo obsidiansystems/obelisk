@@ -173,8 +173,8 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
     ] <> rtsFlags
       <> [ "-RTS" ]
 
-run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
-run root interpretPaths = do
+run :: MonadObelisk m => Maybe FilePath -> FilePath -> PathTree Interpret -> m ()
+run certDir root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -191,6 +191,7 @@ run root interpretPaths = do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
+      , "(" ++ show certDir ++ ")"
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
       , "Backend.backend"
       , "Frontend.frontend"

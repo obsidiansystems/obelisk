@@ -84,7 +84,7 @@ initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run [(FilePath, Interpret)]
+   | ObCommand_Run [(FilePath, Interpret)] (Maybe FilePath)
    | ObCommand_Profile String [String]
    | ObCommand_Thunk ThunkOption
    | ObCommand_Repl [(FilePath, Interpret)]
@@ -109,7 +109,7 @@ obCommand cfg = hsubparser
   (mconcat
     [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-    , command "run" $ info (ObCommand_Run <$> interpretOpts) $ progDesc "Run current project in development mode"
+    , command "run" $ info (ObCommand_Run <$> interpretOpts <*> certDirOpts) $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (ObCommand_Repl <$> interpretOpts) $ progDesc "Open an interactive interpreter"
@@ -281,6 +281,11 @@ interpretOpts = many
   where
     common = action "directory" <> metavar "DIR"
 
+certDirOpts :: Parser (Maybe FilePath)
+certDirOpts = optional (strOption (short 'c' <> long "cert" <> metavar "DIRECTORY" <> help helpText))
+  where
+    helpText = "Specify a directory in which to find \'cert.pem\', \'chain.pem\' and \'privkey.pem\' for use with TLS."
+
 shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
   <$> shellFlags
@@ -391,7 +396,7 @@ ob = \case
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run interpretPathsList -> withInterpretPaths interpretPathsList run
+  ObCommand_Run interpretPathsList certDir -> withInterpretPaths interpretPathsList (run certDir)
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
   ObCommand_Thunk to -> case _thunkOption_command to of
     ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
