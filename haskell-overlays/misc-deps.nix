@@ -9,6 +9,13 @@ let
 in
 
 {
+  # Actually broken in current nixpkgs master due to MonadFail changes
+  git = haskellLib.markUnbroken super.git;
+
+  # hpack requires cabal >= 3.0 but the ghc865 package set builds it with 2.4 by default
+  hpack = super.hpack.overrideScope (self: super: { Cabal = self.Cabal_3_2_0_0; });
+
+
   regex-base = self.callHackage "regex-base" "0.94.0.0" {};
   regex-posix = self.callHackage "regex-posix" "0.96.0.0" {};
   regex-tdfa = self.callHackage "regex-tdfa" "1.3.1.0" {};
@@ -28,6 +35,4 @@ in
   unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
   shelly = self.callHackage "shelly" "1.9.0" {};
   monad-logger = self.callHackage "monad-logger" "0.3.36" {};
-  git = self.callHackage "git" "0.3.0" {};
-  hpack = self.callHackage "hpack" "0.34.1" {};
 }
