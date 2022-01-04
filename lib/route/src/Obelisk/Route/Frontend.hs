@@ -408,6 +408,14 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (ReaderT r' m) where
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m)
 
+deriving instance EventWriter t w m => EventWriter t w (RouteToUrlT r m)
+
+instance (Monad m, SetRoute t r' m) => SetRoute t r' (RouteToUrlT r m) where
+
+instance MonadReader r' m => MonadReader r' (RouteToUrlT r m) where
+  ask = lift ask
+  local f = mapRouteToUrlT $ local f
+
 instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
   type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
   askJSContext = lift askJSContext
