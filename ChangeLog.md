@@ -2,6 +2,15 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## v1.0.0.0 - 2022-01-04
+
+* Update reflex-platform to v0.9.2.0
+  * This updated reflex-dom-core to [0.7](https://github.com/reflex-frp/reflex-dom/releases/tag/reflex-dom-core-0.7.0.0), which removes the `js` type parameter from `Prerender` (i.e., `Prerender js t m` becomes `Prerender t m`) and removes `HasJS` and `HasJSContext`. This resulted in changes to the following Obelisk modules:
+    * `Obelisk.Configs`: `HasJSContext` and `HasJS` are no longer derived.
+    * `Obelisk.Frontend`: `ObeliskWidget js t route m` no longer has the `js` type parameter. It is now `ObeliskWidget t route m`.
+    * `Obelisk.Route.Frontend`: There are no longer `HasJSContext` or `HasJS` instances for `RoutedT`, `SetRouteT`, `RouteToUrlT`.
+    * Various functions that were constrained to `Prerender js t m` have been updated to with the constraint `Prerender t m`.
+
 ## v0.9.4.0 - 2021-12-30
 
 * Update reflex-platform to v0.9.0.0
