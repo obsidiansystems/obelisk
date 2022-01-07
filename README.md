@@ -11,7 +11,7 @@ Functional reactive web and mobile applications, with batteries included. Obelis
   - [Who should consider using it?](#who-should-consider-using-it)
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
-    [Local Hoogle](#local-hoogle)
+  - [Local Hoogle](#local-hoogle)
   - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
   - [Running tests](#running-tests)
