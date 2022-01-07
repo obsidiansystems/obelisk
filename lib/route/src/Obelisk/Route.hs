@@ -639,7 +639,7 @@ pathComponentEncoder f = Encoder $ do
         PathEnd _ -> Nothing
         PathSegment t _ -> Just t
   EncoderFunc f' <- checkEnum1EncoderFunc (extractEncoder . f)
-  unEncoder (pathComponentEncoderImpl (enum1Encoder "pathComponentEncoder" (extractPathSegment . f)) f')
+  unEncoder (pathComponentEncoderImpl (enum1Encoder (extractPathSegment . f)) f')
 
 pathComponentEncoderImpl :: forall check parse p. (Monad check, Monad parse)
   => Encoder check parse (Some p) (Maybe Text)
@@ -736,13 +736,13 @@ enum1Encoder
      , Ord r
      , Show r
      )
-  => Text -> (forall a. p a -> r) -> Encoder check parse (Some p) r
-enum1Encoder x f = enumEncoder x $ \(Some p) -> f p
+  => (forall a. p a -> r) -> Encoder check parse (Some p) r
+enum1Encoder f = enumEncoder $ \(Some p) -> f p
 
 -- | Encode an enumerable, bounded type.  WARNING: Don't use this on types that
 -- have a large number of values - it will use a lot of memory.
-enumEncoder :: forall parse check p r. (Universe p, Show p, Ord p, Ord r, MonadError Text parse, MonadError Text check, Show r) => Text -> (p -> r) -> Encoder check parse p r
-enumEncoder x f = Encoder $ do
+enumEncoder :: forall parse check p r. (Universe p, Show p, Ord p, Ord r, MonadError Text parse, MonadError Text check, Show r) => (p -> r) -> Encoder check parse p r
+enumEncoder f = Encoder $ do
   let reversed = Map.fromListWith (<>) [ (f p, Set.singleton p) | p <- universe ]
       checkSingleton k vs = case Set.toList vs of
         [] -> error "enumEncoder: empty reverse mapping; should be impossible"
@@ -757,7 +757,7 @@ enumEncoder x f = Encoder $ do
     Success m -> pure $ EncoderImpl
       { _encoderImpl_decode = \r -> case Map.lookup r m of
           Just a -> pure a
-          Nothing -> throwError $ "enumEncoder: " <> x <> " not recognized: " <> tshow r --TODO: Report this as a better type
+          Nothing -> throwError $ "enumEncoder: not recognized: " <> tshow r --TODO: Report this as a better type
       , _encoderImpl_encode = f
       }
 
