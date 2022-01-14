@@ -16,7 +16,13 @@ let
 
   # Force ghc8_10 to be used by default including project function
   forceGhc810 = rp: let
-    rp810 = rp // { ghc = rp.ghc8_10; ghcjs = rp.ghcjs8_10; };
+    rp810 = rp // { ghc = rp.ghc8_10; ghcjs = rp.ghcjs8_10;
+                    ghcAndroidAarch64 = rp.ghcAndroidAarch64-8_10;
+                    ghcAndroidAarch32 = rp.ghcAndroidAarch32-8_10;
+                    ghcIosSimulator64 = rp.ghcIosSimulator64-8_10;
+                    ghcIosAarch64 = rp.ghcIosAarch64-8_10;
+                    ghcIosAarch32 = rp.ghcIosAarch32-8_10;
+                  };
   in rp810 // { project = args: import ((hackGet ./dep/reflex-platform) + "/project") rp810 (args ({ pkgs = rp.nixpkgs; } // rp810)); };
   getReflexPlatform = { system, enableLibraryProfiling ? profiling }: forceGhc810 (reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
