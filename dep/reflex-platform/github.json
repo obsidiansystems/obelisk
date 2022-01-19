@@ -1,8 +1,8 @@
 {
-  "owner": "reflex-frp",
+  "owner": "hSloan",
   "repo": "reflex-platform",
-  "branch": "release/0.9.0.0",
+  "branch": "is-bluetooth",
   "private": false,
-  "rev": "e8e56516b1df0c6e7024bc0e690f54fcddf79a19",
-  "sha256": "0xb2hdps7bsyd6y84if3317w9fbcpcjh4whrvrhz6mskcw069xjp"
+  "rev": "b43ab69f6a8dab92b7b13874110df3584ed7f5c8",
+  "sha256": "0s2wfirjw78qr3mryk1vg9r6bmp8if17b3amjw1yhz2ysmk5vg5k"
 }
