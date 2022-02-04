@@ -2,6 +2,11 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## Unreleased
+
+* nixpkgs-overlays
+  * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
+
 ## v1.0.0.0 - 2022-01-04
 
 * Update reflex-platform to v0.9.2.0
