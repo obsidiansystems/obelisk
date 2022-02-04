@@ -14,6 +14,7 @@ module Obelisk.Command.Project
   , nixShellRunProc
   , nixShellWithHoogle
   , nixShellWithoutPkgs
+  , mkObNixShellProc
   , obeliskDirName
   , toImplDir
   , toObeliskDir
@@ -319,6 +320,30 @@ bashEscape = BSU.toString . bytes . bash . BSU.fromString
 nixShellRunProc :: NixShellConfig -> ProcessSpec
 nixShellRunProc cfg = setDelegateCtlc True $ proc nixShellPath $ runNixShellConfig cfg
 
+mkObNixShellProc
+  :: MonadObelisk m
+  => FilePath -- ^ Path to project root
+  -> Bool -- ^ Should this be a pure shell?
+  -> Bool -- ^ Should we chdir to the package root in the shell?
+  -> Map Text FilePath -- ^ Package names mapped to their paths
+  -> String -- ^ Shell attribute to use (e.g. @"ghc"@, @"ghcjs"@, etc.)
+  -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
+  -> m ProcessSpec
+mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command = do
+  packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
+  defShellConfig <- nixShellRunConfig root isPure command
+  let setCwd_ = if chdirToRoot then setCwd (Just root) else id
+  pure $ setCwd_ $ nixShellRunProc $ defShellConfig
+    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
+        "{root, pkgs, shell}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
+          \shellPackages = builtins.fromJSON pkgs;\
+        \})).project.shells.${shell}"
+    & nixShellConfig_common . nixCmdConfig_args .~
+        [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
+        , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
+        , strArg "shell" shellAttr
+        ]
+
 nixShellWithoutPkgs
   :: MonadObelisk m
   => FilePath -- ^ Path to project root
@@ -329,19 +354,7 @@ nixShellWithoutPkgs
   -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
   -> m ()
 nixShellWithoutPkgs root isPure chdirToRoot packageNamesAndPaths shellAttr command = do
-  packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
-  defShellConfig <- nixShellRunConfig root isPure command
-  let setCwd_ = if chdirToRoot then setCwd (Just root) else id
-  runProcess_ $ setCwd_ $ nixShellRunProc $ defShellConfig
-    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{root, pkgs, shell}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
-          \shellPackages = builtins.fromJSON pkgs;\
-        \})).project.shells.${shell}"
-    & nixShellConfig_common . nixCmdConfig_args .~
-        [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
-        , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
-        , strArg "shell" shellAttr
-        ]
+  runProcess_ =<< mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command
 
 nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 nixShellWithHoogle root isPure shell' command = do
