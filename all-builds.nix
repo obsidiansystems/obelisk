@@ -1,5 +1,6 @@
 { self-args ? {
     config.android_sdk.accept_license = true;
+    terms.security.acme.acceptTerms = true;
     iosSdkVersion = "13.2";
   }
 , local-self ? import ./. self-args
@@ -73,6 +74,15 @@ let
       androidSkeleton = skeleton.android.frontend;
       iosSkeleton = skeleton.ios.frontend;
       nameSuffix = if profiling then "profiled" else "unprofiled";
+
+      nixosServer = rawSkeleton.server {
+        version = "0123456789012345678901234567890123456789";
+        hostName = "www.example.com";
+        routeHost = "www.example.com";
+        adminEmail = "test@example.com";
+        enableHttps = true;
+      };
+
       packages = {
         skeletonProfiledObRun = rawSkeleton.__unstable__.profiledObRun;
         inherit
@@ -85,6 +95,14 @@ let
           ghcjs
           serverSkeletonExe
           ;
+      } // lib.optionalAttrs (system == "x86_64-linux") {
+        server =
+          if profiling
+          then {} # build with profiling has deps marked as broken (e.g. ‘th-orphans-0.13.7’)
+          else
+            # collect expands these into the entirety of nixpkgs, which has broken pkgs
+            let avoidBuildingNixpkgs = attrs: builtins.removeAttrs attrs [ "config" "options" "pkgs" ];
+            in avoidBuildingNixpkgs nixosServer;
       } // lib.optionalAttrs reflex-platform.androidSupport {
         inherit androidSkeleton;
       } // lib.optionalAttrs reflex-platform.iosSupport {
