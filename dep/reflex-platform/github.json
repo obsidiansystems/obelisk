@@ -1,8 +1,8 @@
 {
   "owner": "hSloan",
   "repo": "reflex-platform",
-  "branch": "is-bluetooth",
+  "branch": "is-jni-wrapper-refactor",
   "private": false,
-  "rev": "dafdbe4223df59342ddd314607fbe03a4d69270c",
-  "sha256": "1q18pw6i3di36yg4l47lzkjx6was0y9lszzqirbbz5b8xpnpd51h"
+  "rev": "e4a7ef948d05f2b7e97ee072d755ebdefff6bec2",
+  "sha256": "1caxxfdslqphrl0825giskbi78qciys3zm8xwxwf5n5xvx2n23kf"
 }
