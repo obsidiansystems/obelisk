@@ -22,7 +22,7 @@ in
 
   # https://github.com/haskell/hackage-security/issues/247
   hackage-security = haskellLib.dontCheck super.hackage-security; # only tests use aeson and are not compat with 1.5;
-  heist = haskellLib.doJailbreak super.heist; # aeson 1.5 bump
+  heist = haskellLib.dontCheck (haskellLib.doJailbreak super.heist); # aeson 1.5 bump
   aeson-gadt-th = haskellLib.doJailbreak super.aeson-gadt-th; # requires aeson 1.5 for ghc8.10 support?
   deriving-compat = self.callHackage "deriving-compat" "0.6" {};
   http-api-data = haskellLib.doJailbreak super.http-api-data;
