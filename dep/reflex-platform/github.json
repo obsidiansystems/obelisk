@@ -1,8 +1,8 @@
 {
-  "owner": "reflex-frp",
+  "owner": "hSloan",
   "repo": "reflex-platform",
-  "branch": "delete-bluetooth-class",
+  "branch": "is-delete-bluetooth-class",
   "private": false,
-  "rev": "03b55c111b425e19ad19b5e2e8a64061be33b8de",
-  "sha256": "1vzlfbzqh766j1c4mb1d8q8s08njwibnb3vm81g7ykzh9zp05mb3"
+  "rev": "87e77eb9bee86c8e2f7b1aca63d08d5df85a1f04",
+  "sha256": "0qm5s9xadynhjrq1d52ywh1pwdafki6d4yf84qd9pg3ny3mfq8x8"
 }
