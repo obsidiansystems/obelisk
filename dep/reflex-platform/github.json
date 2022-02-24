@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "release/0.7.0.0",
+  "branch": "cn/ignore-more-libuv-tests-obelisk-side",
   "private": false,
-  "rev": "27a7851a780ff21472d85f9a02fb84635ef9027a",
-  "sha256": "1m4zlw91dpjlbdchjyxhvhv3k7lilm0qa17dhhww868xxc27sann"
+  "rev": "a689faaf8b386a514fe5fb5e18545332b1120238",
+  "sha256": "1jpj2sb70a8a3f73ksc7rlhdf9ljfl2naxzpmm5wgp7alqki2iva"
 }
