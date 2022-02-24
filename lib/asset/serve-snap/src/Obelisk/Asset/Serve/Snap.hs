@@ -14,7 +14,7 @@ import Obelisk.Snap.Extras
 
 import Snap
   (MonadSnap, getHeader, getRequest, getsRequest, modifyResponse, pass, redirect, sendFile, setContentLength, setContentType, setHeader, setResponseCode)
-import Snap.Util.FileServe (defaultMimeTypes, fileType, getSafePath, serveFile)
+import Snap.Util.FileServe (fileType, getSafePath, serveFile)
 import Snap.Internal.Util.FileServe (checkRangeReq)
 
 import Control.Applicative ((<|>))
@@ -101,7 +101,7 @@ serveAsset' doRedirect base fallback p = do
           stat <- liftIO $ getFileStatus finalFilename
           modifyResponse $ setHeader "Last-Modified" "Thu, 1 Jan 1970 00:00:00 GMT"
             . setHeader "Accept-Ranges" "bytes"
-            . setContentType (fileType defaultMimeTypes p)
+            . setContentType (fileType modernMimeTypes p)
           let size = fromIntegral $ fileSize stat
           req <- getRequest
           -- Despite the name, this function actually does all of the work for
@@ -111,7 +111,8 @@ serveAsset' doRedirect base fallback p = do
           unless wasRange $ do
             modifyResponse $ setResponseCode 200 . setContentLength size
             sendFile finalFilename
-        Just _ -> cachePermanently >> modifyResponse (setResponseCode 304)
+        Just _ -> do
+          cachePermanently >> modifyResponse (setResponseCode 304)
     Right "redirect" -> do
       mtarget <- liftIO $ getAssetTarget $ base </> p
       case mtarget of
@@ -119,8 +120,10 @@ serveAsset' doRedirect base fallback p = do
                        then do
                          doNotCache
                          redirect target
-                       else serveAsset' doRedirect base fallback $ takeDirectory p </> T.unpack (decodeUtf8 target)
-        Nothing -> serveFile $ fallback </> p
+                       else do
+                         serveAsset' doRedirect base fallback $ takeDirectory p </> T.unpack (decodeUtf8 target)
+        Nothing -> do
+          serveFile $ fallback </> p
     Right unknown -> error $ T.unpack ("serveAssets': Unknown asset " <> decodeUtf8 unknown)
     Left err | isDoesNotExistError err -> (doNotCache >> serveFileIfExists (fallback </> p)) <|> do
                  let (dirname, filename) = splitFileName p
