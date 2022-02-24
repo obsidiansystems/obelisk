@@ -189,6 +189,7 @@ run root interpretPaths = do
   ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root True
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
+    liftIO $ putStrLn $ show assets
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
