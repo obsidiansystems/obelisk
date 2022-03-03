@@ -83,6 +83,21 @@ let
         description = "Directory where certificate and other state is stored.";
       };
 
+      extraDomainNames = mkOption {
+        type = types.attrsOf (types.nullOr types.str);
+        default = {};
+        example = literalExample ''
+          {
+            "example.org" = null;
+            "mydomain.org" = null;
+          }
+        '';
+        description = ''
+          A list of extra domain names, which are included in the one certificate to be issued.
+          Setting a distinct server root is deprecated and not functional in 20.03+
+        '';
+      };
+
       extraDomains = mkOption {
         type = types.attrsOf (types.nullOr types.str);
         default = {};
