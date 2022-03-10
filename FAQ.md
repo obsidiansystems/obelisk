@@ -7,6 +7,7 @@
 1. [How do I fix invalid entitlements?](#how-do-i-fix-invalid-entitlements)
 1. [`ob thunk update` or `ob deploy update` fails](#ob-thunk-update-or-ob-deploy-update-fails)
 1. [How do I fix `Ambiguous module name` errors?](#how-do-i-fix-ambiguous-module-name-errors)
+1. [Names of some variables in all.js (produced by GHCJS) collide with already existing static JS files in my project](#names-of-some-variables-in-all.js-(produced-by-ghcjs)-collide-with-already-existing-static-JS-files-in-my-project)
 
 ### How do I declare a new Haskell dependency?
 
@@ -115,3 +116,12 @@ error:
 ```
 then specify the package you want in the import, e.g:
 `import "cryptonite" Crypto.Hash`
+
+### Names of some variables in all.js (produced by GHCJS) collide with already existing static JS files in my project
+Obelisk now allows the addition of a file to resolve such name collision errors. You can add a file inside the static folder, this file must be named `externs.js`.
+
+This file should have declarations for the global variables that are needed by your static JS files, for example:
+```haskell
+var require = false;
+var lib = false;
+```

@@ -2,6 +2,10 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## Unreleased
+* Added support for a static/externs.js file. This file allows users to specify global variables and namespaces in JS, that should not be used by the Google Closure Compiler
+during minification of the GHCJS produced JS.
+
 ## v0.9.1.0
 
 * [#801](https://github.com/obsidiansystems/obelisk/pull/801): Remove errors and warning for local packages without a library component
