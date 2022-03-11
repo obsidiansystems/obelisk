@@ -10,7 +10,7 @@ import Data.List (intersperse, isPrefixOf, sortOn)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy.Builder as TL
 import qualified Data.Text.Lazy.Encoding as TL
-import Distribution.Compiler (CompilerFlavor (..))
+import Distribution.Compiler (CompilerFlavor (..), perCompilerFlavorToList)
 import Language.Haskell.Extension (Extension (..), Language(..))
 import System.Directory (canonicalizePath)
 import System.IO (IOMode (..), hPutStrLn, stderr, withFile)
@@ -59,6 +59,7 @@ writeOutput packageInfo' origPath outPath = withFile outPath WriteMode $ \hOut -
   where
     hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
 
+--NOTE: We cannot restrict the package set by adding '-package' flags to OPTIONS_GHC, because GHC rejects them there.  It seems that we won't be able to properly handle that situation until GHC itself supports loading multiple packages officially in GHCi
 generateHeader :: FilePath -> CabalPackageInfo -> TL.Builder
 generateHeader origPath packageInfo =
     hsExtensions <> ghcOptions <> lineNumberPragma origPath
@@ -87,7 +88,9 @@ generateHeader origPath packageInfo =
     ghcOptList
       = filter (not . isPrefixOf "-O")
       $ fromMaybe []
-      $ lookup GHC (_cabalPackageInfo_compilerOptions packageInfo)
+      $ lookup GHC
+      $ perCompilerFlavorToList
+      $ _cabalPackageInfo_compilerOptions packageInfo
     optList = _cabalPackageInfo_cppOptions packageInfo <> ghcOptList
 
 lineNumberPragma :: FilePath -> TL.Builder

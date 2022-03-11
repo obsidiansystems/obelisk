@@ -6,21 +6,21 @@ module Obelisk.Asset.Gather
   , toHashedPath
   ) where
 
-import Control.DeepSeq
+import Control.DeepSeq (force)
 import Control.Monad (forM)
-import Data.Bits
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.ByteString.Lazy.Builder as LBS
-import Data.Char
-import Data.Digest.Pure.SHA
+import Data.Bits (shift, (.|.), (.&.))
+import qualified Data.ByteString.Lazy as LBS (readFile, toStrict, ByteString, length, index)
+import qualified Data.ByteString.Lazy.Builder as LBS (toLazyByteString, word8)
+import Data.Char (ord)
+import Data.Digest.Pure.SHA (bytestringDigest, sha256)
 import Data.Map (Map)
-import qualified Data.Map as Map
-import qualified Data.Text as T
-import Data.Text.Encoding
-import qualified Data.Vector.Unboxed as UV
-import Data.Word
-import System.FilePath.Posix
-import System.Directory
+import qualified Data.Map as Map (singleton)
+import qualified Data.Text as T (unpack)
+import Data.Text.Encoding (decodeUtf8)
+import qualified Data.Vector.Unboxed as UV ((!), fromList)
+import Data.Word (Word8)
+import System.FilePath.Posix ((</>), splitFileName, normalise)
+import System.Directory (listDirectory, doesFileExist)
 
 -- | Given a path, recursively explore it, creating hashed paths for all files found
 gatherHashedPaths
