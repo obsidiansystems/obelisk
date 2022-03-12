@@ -192,17 +192,21 @@ in rec {
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }@args:
+  serverModule = { exe, hostName, adminEmail, routeHost, enableHttps, version, ... }@args: {...}: {
+    imports = [
+      ((args.module or (serverModules.mkBaseEc2)) { inherit (args) exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
+      (serverModules.mkDefaultNetworking args)
+      (serverModules.mkObeliskApp args)
+    ];
+  };
+
+  server = args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
       system = "x86_64-linux";
       configuration = {
-        imports = [
-          (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
-          (serverModules.mkDefaultNetworking args)
-          (serverModules.mkObeliskApp args)
-        ];
+        imports = [(serverModule args)];
       };
     };
 
@@ -374,6 +378,18 @@ in rec {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
+
+      # the "classic flavor", as a "deployable" module
+      deployLinuxServerModule = {version, buildConfigs}: serverModule ({
+        inherit version;
+        exe = linuxExe version;
+      } // buildConfigs);
+
+      # the "classic flavor", as a module
+      linuxServerModule = args@{ hostName, adminEmail, routeHost, enableHttps, version, ...}:
+        serverModule ({ module = serverModules.mkBaseEc2; exe = linuxExe version; } // args);
+
+      # the "classic flavor", as a full nixos configuration
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
