@@ -3,8 +3,7 @@
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
 ## Unreleased
-* Added support for a static/externs.js file. This file allows users to specify global variables and namespaces in JS, that should not be used by the Google Closure Compiler
-during minification of the GHCJS produced JS.
+* Added support for a file which allows users to specify global variables and namespaces in JS, that should not be used by the Google Closure Compiler during minification of the GHCJS produced JS.
 
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.

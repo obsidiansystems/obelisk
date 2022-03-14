@@ -125,10 +125,18 @@ This can show up when when doing nix-build (ie for deployment).
 This is probably because you have a package that needs a C compiler (like `snap-core`) in your `common` or `frontend` modules which need to be built for `ghcjs` which does not in fact have a C compiler. You'll need to remove those packages from your cabal files and rework your app to not need them in the frontend.
 
 ### Names of some variables in all.js (produced by GHCJS) collide with already existing static JS files in my project
-Obelisk now allows the addition of a file to resolve such name collision errors. You can add a file inside the static folder, this file must be named `externs.js`.
+Obelisk now allows the addition of a file to resolve such name collision errors. The file's path can be passed in the configuration via the **externjs** key, as shown below:
+```nix
+project ./. ({ pkgs, hackGet, ... }: with pkgs.haskell.lib; {
+  staticFiles = ...
+  externjs = path/to/file
+})
+```
 
 This file should have declarations for the global variables that are needed by your static JS files, for example:
 ```haskell
 var require = false;
 var lib = false;
 ```
+
+Any variables defined in this file will not be used in the minification process.
