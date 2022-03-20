@@ -20,6 +20,12 @@ in
   universe-instances-extended = haskellLib.doJailbreak super.universe-instances-extended;
   stylish-haskell = null; # FIXME
 
+  # Not required on x86_64, but only on other archs?
+  cryptohash-sha256 = haskellLib.dontCheck super.cryptohash-sha256;
+  text-metrics = haskellLib.doJailbreak super.text-metrics;
+  github = haskellLib.doJailbreak super.github;
+  hnix-store-core = haskellLib.dontCheck super.hnix-store-core;
+
   # https://github.com/haskell/hackage-security/issues/247
   hackage-security = haskellLib.dontCheck super.hackage-security; # only tests use aeson and are not compat with 1.5;
   heist = haskellLib.dontCheck (haskellLib.doJailbreak super.heist); # aeson 1.5 bump

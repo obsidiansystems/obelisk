@@ -309,10 +309,10 @@ in rec {
                   self.commonName
                 ];
 
-                shells-ghcSavedSplices = [
-                  self.commonName
-                  self.frontendName
-                ];
+                # shells-ghcSavedSplices = [
+                #   self.commonName
+                #   self.frontendName
+                # ];
 
                 shellToolOverrides = lib.composeExtensions
                   self.userSettings.shellToolOverrides
@@ -328,8 +328,8 @@ in rec {
                   overrides = self.totalOverrides;
                   packages = self.combinedPackages;
                   shells = {
-                    ${if self.userSettings.android == null && self.userSettings.ios == null then null else "ghcSavedSplices"} =
-                      lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
+                    # ${if self.userSettings.android == null && self.userSettings.ios == null then null else "ghcSavedSplices"} =
+                    #   lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
                     ghc = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghc;
                     ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
                   };
