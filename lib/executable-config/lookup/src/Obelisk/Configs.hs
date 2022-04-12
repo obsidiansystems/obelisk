@@ -21,7 +21,7 @@ module Obelisk.Configs
 import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus)
 import Control.Monad.Base (MonadBase)
-import Control.Monad.Catch (MonadThrow)
+import Control.Monad.Catch (MonadThrow, MonadCatch, MonadMask)
 #if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
 #endif
@@ -91,6 +91,8 @@ newtype ConfigsT m a = ConfigsT { unConfigsT :: ReaderT (Map Text ByteString) m 
     , MonadFail
     , MonadFix
     , MonadThrow
+    , MonadCatch
+    , MonadMask
     , MonadIO
     , MonadBase m'
     , MonadBaseControl m'
