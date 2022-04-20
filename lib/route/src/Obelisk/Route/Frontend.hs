@@ -76,20 +76,24 @@ import qualified Data.List as L
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Monoid
-import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Type.Coercion
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
-import Language.Javascript.JSaddle (MonadJSM, jsNull, liftJSM) --TODO: Get rid of this - other platforms can also be routed
+import Language.Javascript.JSaddle (MonadJSM, function, jsNull, liftJSM, toJSVal) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
 import Reflex.Class
-import Reflex.Dom.Builder.Class
-import Reflex.Dom.Core
+import Reflex.Dom.Builder.Class hiding (preventDefault)
+import Reflex.Dom.Core hiding (preventDefault)
 import Reflex.Host.Class
 import Unsafe.Coerce
+
+import JSDOM.Generated.Event (preventDefault)
+import JSDOM.Generated.EventTarget (addEventListener)
+import JSDOM.Generated.MouseEvent (MouseEvent(..), getCtrlKey)
+import JSDOM.Types (DOM, EventListener(..), IsEventTarget, askDOM, runDOM)
 
 import Obelisk.Configs
 import Obelisk.Route
@@ -519,6 +523,40 @@ runRouteViewT routeEncoder switchover useHash a = do
           setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
 
+getClickEvent :: (MonadJSM m, TriggerEvent t m, IsEventTarget (RawElement d)) => Element er d t -> (MouseEvent -> DOM ()) -> m (Event t MouseEvent)
+getClickEvent elm onComplete = do
+  (sendEv, sendFn) <- newTriggerEvent
+
+  liftJSM $ do
+    ctx <- askDOM
+
+    let
+      haskellHandler _ _ [res] = do
+        let
+          mouseEv = MouseEvent res
+        liftIO $ sendFn mouseEv
+        runDOM (onComplete mouseEv) ctx
+      haskellHandler _ _ _ = pure ()
+
+    jsHandler <- function haskellHandler >>= toJSVal
+    addEventListener (_element_raw elm) (T.pack "click") (Just $ EventListener jsHandler) False
+
+  pure sendEv
+
+preventDefaultClick :: MouseEvent -> DOM ()
+preventDefaultClick mouseEv = do
+  wasCtrlPressed <- getCtrlKey mouseEv
+  unless wasCtrlPressed $
+    preventDefault mouseEv
+
+whenCtrlPressed :: (PerformEvent t m, MonadJSM (Performable m)) => Event t MouseEvent -> Dynamic t a -> m (Event t a)
+whenCtrlPressed clickEv xDyn = do
+  xEv <- performEvent $ (,) <$> current xDyn <@> clickEv <&> \(x, mouseClick) -> do
+    getCtrlKey mouseClick >>= \wasCtrlPressed -> if wasCtrlPressed
+      then pure Nothing
+      else pure $ Just x
+  pure $ fmapMaybe id xEv
+
 -- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
 -- contexts, this widget falls back to using @href@s to control navigation
 routeLink
@@ -526,7 +564,12 @@ routeLink
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
-     , Prerender js t m
+     , Prerender t m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
@@ -542,6 +585,11 @@ routeLinkImpl
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
@@ -549,10 +597,11 @@ routeLinkImpl
 routeLinkImpl r w = do
   enc <- askRouteToUrl
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
-        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
-  setRoute $ r <$ domEvent Click e
+  clickEv <- getClickEvent e preventDefaultClick
+  routeEv <- whenCtrlPressed clickEv $ constDyn r
+  setRoute routeEv
   return (domEvent Click e, a)
 
 scrollToTop :: forall m t js. (Prerender js t m, Monad m) => Event t () -> m ()
@@ -567,7 +616,12 @@ dynRouteLink
      , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
-     , Prerender js t m
+     , Prerender t m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -584,6 +638,11 @@ dynRouteLinkImpl
      , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -592,12 +651,12 @@ dynRouteLinkImpl dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
-        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  let clk = domEvent Click e
-  setRoute $ tag (current dr) clk
-  return (clk, a)
+  clickEv <- getClickEvent e preventDefaultClick
+  routeEv <- whenCtrlPressed clickEv dr
+  setRoute routeEv
+  return (domEvent Click e, a)
 
 -- | An @a@-tag link widget that, when clicked, sets the route to current value of the
 -- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
@@ -608,7 +667,12 @@ routeLinkDynAttr
      , PostBuild t m
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
-     , Prerender js t m
+     , Prerender t m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route
@@ -626,6 +690,11 @@ routeLinkDynAttrImpl
      , PostBuild t m
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route
@@ -635,12 +704,12 @@ routeLinkDynAttrImpl dAttr dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
-        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  let clk = domEvent Click e
-  setRoute $ tag (current dr) clk
-  return (clk, a)
+  clickEv <- getClickEvent e preventDefaultClick
+  routeEv <- whenCtrlPressed clickEv dr
+  setRoute routeEv
+  return (domEvent Click e, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
