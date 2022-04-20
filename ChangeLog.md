@@ -2,6 +2,9 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## Unreleased
+* Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave exactly like `<a href="...">` when run by JavaScript. These functions now open a new tab when Ctrl-clicked.
+
 ## v0.9.1.0
 
 * [#801](https://github.com/obsidiansystems/obelisk/pull/801): Remove errors and warning for local packages without a library component
