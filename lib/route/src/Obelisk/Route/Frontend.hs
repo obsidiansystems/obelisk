@@ -564,7 +564,7 @@ routeLink
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
-     , Prerender t m
+     , Prerender js t m
      , MonadJSM m
      , TriggerEvent t m
      , PerformEvent t m
@@ -616,7 +616,7 @@ dynRouteLink
      , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
-     , Prerender t m
+     , Prerender js t m
      , MonadJSM m
      , TriggerEvent t m
      , PerformEvent t m
@@ -667,7 +667,7 @@ routeLinkDynAttr
      , PostBuild t m
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
-     , Prerender t m
+     , Prerender js t m
      , MonadJSM m
      , TriggerEvent t m
      , PerformEvent t m
