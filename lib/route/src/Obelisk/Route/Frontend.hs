@@ -82,6 +82,9 @@ import Data.Type.Coercion
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
+import GHCJS.DOM.EventTarget (addEventListener)
+import GHCJS.DOM.MouseEvent (getCtrlKey)
+import GHCJS.DOM.Event (preventDefault)
 import Language.Javascript.JSaddle (MonadJSM, function, jsNull, liftJSM, toJSVal) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
 import Reflex.Class
@@ -89,11 +92,6 @@ import Reflex.Dom.Builder.Class hiding (preventDefault)
 import Reflex.Dom.Core hiding (preventDefault)
 import Reflex.Host.Class
 import Unsafe.Coerce
-
-import JSDOM.Generated.Event (preventDefault)
-import JSDOM.Generated.EventTarget (addEventListener)
-import JSDOM.Generated.MouseEvent (MouseEvent(..), getCtrlKey)
-import JSDOM.Types (DOM, EventListener(..), IsEventTarget, askDOM, runDOM)
 
 import Obelisk.Configs
 import Obelisk.Route
@@ -523,33 +521,33 @@ runRouteViewT routeEncoder switchover useHash a = do
           setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
 
-getClickEvent :: (MonadJSM m, TriggerEvent t m, IsEventTarget (RawElement d)) => Element er d t -> (MouseEvent -> DOM ()) -> m (Event t MouseEvent)
+getClickEvent :: (MonadJSM m, TriggerEvent t m, DOM.IsEventTarget (RawElement d)) => Element er d t -> (DOM.MouseEvent -> DOM.DOM ()) -> m (Event t DOM.MouseEvent)
 getClickEvent elm onComplete = do
   (sendEv, sendFn) <- newTriggerEvent
 
   liftJSM $ do
-    ctx <- askDOM
+    ctx <- DOM.askDOM
 
     let
       haskellHandler _ _ [res] = do
         let
-          mouseEv = MouseEvent res
+          mouseEv = DOM.MouseEvent res
         liftIO $ sendFn mouseEv
-        runDOM (onComplete mouseEv) ctx
+        DOM.runDOM (onComplete mouseEv) ctx
       haskellHandler _ _ _ = pure ()
 
     jsHandler <- function haskellHandler >>= toJSVal
-    addEventListener (_element_raw elm) (T.pack "click") (Just $ EventListener jsHandler) False
+    addEventListener (_element_raw elm) (T.pack "click") (Just $ DOM.EventListener jsHandler) False
 
   pure sendEv
 
-preventDefaultClick :: MouseEvent -> DOM ()
+preventDefaultClick :: DOM.MouseEvent -> DOM.DOM ()
 preventDefaultClick mouseEv = do
   wasCtrlPressed <- getCtrlKey mouseEv
   unless wasCtrlPressed $
     preventDefault mouseEv
 
-whenCtrlPressed :: (PerformEvent t m, MonadJSM (Performable m)) => Event t MouseEvent -> Dynamic t a -> m (Event t a)
+whenCtrlPressed :: (PerformEvent t m, MonadJSM (Performable m)) => Event t DOM.MouseEvent -> Dynamic t a -> m (Event t a)
 whenCtrlPressed clickEv xDyn = do
   xEv <- performEvent $ (,) <$> current xDyn <@> clickEv <&> \(x, mouseClick) -> do
     getCtrlKey mouseClick >>= \wasCtrlPressed -> if wasCtrlPressed
@@ -569,7 +567,7 @@ routeLink
      , TriggerEvent t m
      , PerformEvent t m
      , MonadJSM (Performable m)
-     , IsEventTarget (RawElement (DomBuilderSpace m))
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
@@ -589,7 +587,7 @@ routeLinkImpl
      , TriggerEvent t m
      , PerformEvent t m
      , MonadJSM (Performable m)
-     , IsEventTarget (RawElement (DomBuilderSpace m))
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
@@ -621,7 +619,7 @@ dynRouteLink
      , TriggerEvent t m
      , PerformEvent t m
      , MonadJSM (Performable m)
-     , IsEventTarget (RawElement (DomBuilderSpace m))
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -642,7 +640,7 @@ dynRouteLinkImpl
      , TriggerEvent t m
      , PerformEvent t m
      , MonadJSM (Performable m)
-     , IsEventTarget (RawElement (DomBuilderSpace m))
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -672,7 +670,7 @@ routeLinkDynAttr
      , TriggerEvent t m
      , PerformEvent t m
      , MonadJSM (Performable m)
-     , IsEventTarget (RawElement (DomBuilderSpace m))
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route
@@ -694,7 +692,7 @@ routeLinkDynAttrImpl
      , TriggerEvent t m
      , PerformEvent t m
      , MonadJSM (Performable m)
-     , IsEventTarget (RawElement (DomBuilderSpace m))
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route

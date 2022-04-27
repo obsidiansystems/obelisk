@@ -19,7 +19,6 @@ library
                  ghcjs-dom,
                  http-types,
                  jsaddle,
-                 jsaddle-dom,
                  lens,
                  mmorph,
                  monad-control,
