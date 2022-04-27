@@ -46,6 +46,7 @@ module Obelisk.Route.Frontend
   , mapSetRouteT
   , RouteToUrl(..)
   , RouteToUrlT(..)
+  , RouteClick
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
@@ -497,6 +498,18 @@ runRouteViewT routeEncoder switchover useHash a = do
           setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
 
+-- | Constraints required to implement route click widgets.
+--
+-- These widgets support Ctrl-clicking ie opening a new tab when Ctrl key is pressed while they are clicked.
+-- Upon clicking normally (without Ctrl), they use client side routing.
+type RouteClick t m =
+  ( MonadJSM m
+  , TriggerEvent t m
+  , PerformEvent t m
+  , MonadJSM (Performable m)
+  , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
+  )
+
 getClickEvent :: (MonadJSM m, TriggerEvent t m, DOM.IsEventTarget (RawElement d)) => Element er d t -> (DOM.MouseEvent -> DOM.DOM ()) -> m (Event t DOM.MouseEvent)
 getClickEvent elm onComplete = do
   (sendEv, sendFn) <- newTriggerEvent
@@ -539,11 +552,7 @@ routeLink
      , RouteToUrl route m
      , SetRoute t route m
      , Prerender t m
-     , MonadJSM m
-     , TriggerEvent t m
-     , PerformEvent t m
-     , MonadJSM (Performable m)
-     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
+     , RouteClick t m
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
@@ -559,11 +568,7 @@ routeLinkImpl
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
-     , MonadJSM m
-     , TriggerEvent t m
-     , PerformEvent t m
-     , MonadJSM (Performable m)
-     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
+     , RouteClick t m
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
@@ -591,11 +596,7 @@ dynRouteLink
      , RouteToUrl route m
      , SetRoute t route m
      , Prerender t m
-     , MonadJSM m
-     , TriggerEvent t m
-     , PerformEvent t m
-     , MonadJSM (Performable m)
-     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
+     , RouteClick t m
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -612,11 +613,7 @@ dynRouteLinkImpl
      , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
-     , MonadJSM m
-     , TriggerEvent t m
-     , PerformEvent t m
-     , MonadJSM (Performable m)
-     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
+     , RouteClick t m
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -642,11 +639,7 @@ routeLinkDynAttr
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
      , Prerender t m
-     , MonadJSM m
-     , TriggerEvent t m
-     , PerformEvent t m
-     , MonadJSM (Performable m)
-     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
+     , RouteClick t m
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route
@@ -664,11 +657,7 @@ routeLinkDynAttrImpl
      , PostBuild t m
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
-     , MonadJSM m
-     , TriggerEvent t m
-     , PerformEvent t m
-     , MonadJSM (Performable m)
-     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
+     , RouteClick t m
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route
