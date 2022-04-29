@@ -16,7 +16,7 @@ library
                , text
   exposed-modules:
     Frontend
-  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -fno-show-valid-hole-fits
 
 executable frontend-a
   main-is: frontend-a.hs
@@ -29,7 +29,7 @@ executable frontend-a
                , obelisk-generated-static
                , frontend
                , obelisk-executable-config-lookup
-  ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates
+  ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -fno-show-valid-hole-fits
   if impl(ghcjs)
     ghc-options: -dedupe
     cpp-options: -DGHCJS_BROWSER
@@ -47,7 +47,7 @@ executable frontend-b
                , obelisk-generated-static
                , frontend
                , obelisk-executable-config-lookup
-  ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates
+  ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -fno-show-valid-hole-fits
   if impl(ghcjs)
     ghc-options: -dedupe
     cpp-options: -DGHCJS_BROWSER

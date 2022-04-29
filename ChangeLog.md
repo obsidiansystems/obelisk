@@ -2,6 +2,17 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## v0.9.1.0
+
+* [#801](https://github.com/obsidiansystems/obelisk/pull/801): Remove errors and warning for local packages without a library component
+* [#812](https://github.com/obsidiansystems/obelisk/pull/812): Add support for `NoImplicitPrelude` and other extensions disabled via `No`
+* Pinned version bumps:
+  * reflex-platform [0.7.0.0](https://github.com/reflex-frp/reflex-platform/releases/tag/v0.7.0.0)
+  * hnix 0.8.0
+* [#787](https://github.com/obsidiansystems/obelisk/pull/787): Set `immutable` cache control directive when serving content-addressed static assets
+* Use iOS SDK 13.2
+
+
 ## v0.9.0.1
 
 * ([#810](https://github.com/obsidiansystems/obelisk/pull/810)) Fix loading of `all.js` in fully compiled web apps.

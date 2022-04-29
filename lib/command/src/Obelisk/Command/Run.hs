@@ -14,7 +14,7 @@ module Obelisk.Command.Run where
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
 import Control.Lens (ifor, (.~), (&))
-import Control.Monad (filterM, unless)
+import Control.Monad (filterM)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -303,15 +303,16 @@ parseCabalPackage
   -> m (Maybe CabalPackageInfo)
 parseCabalPackage dir = parseCabalPackage' dir >>= \case
   Left err -> Nothing <$ putLog Error err
-  Right (warnings, pkgInfo) -> do
+  Right (Just (warnings, pkgInfo)) -> do
     for_ warnings $ putLog Warning . T.pack . show
     pure $ Just pkgInfo
+  Right Nothing -> pure Nothing
 
 -- | Like 'parseCabalPackage' but returns errors and warnings directly so as to avoid 'MonadObelisk'.
 parseCabalPackage'
   :: (MonadIO m)
   => FilePath -- ^ Package directory
-  -> m (Either T.Text ([Dist.PWarning], CabalPackageInfo))
+  -> m (Either T.Text (Maybe ([Dist.PWarning], CabalPackageInfo)))
 parseCabalPackage' pkg = runExceptT $ do
   (cabalContents, packageFile, packageName) <- guessCabalPackageFile pkg >>= \case
     Left GuessPackageFileError_NotFound -> throwError $ "No .cabal or package.yaml file found in " <> T.pack pkg
@@ -339,7 +340,7 @@ parseCabalPackage' pkg = runExceptT $ do
   case condLibrary <$> result of
     Right (Just condLib) -> do
       let (_, lib) = simplifyCondTree evalConfVar condLib
-      pure $ (warnings,) $ CabalPackageInfo
+      pure $ Just $ (warnings,) $ CabalPackageInfo
         { _cabalPackageInfo_packageName = T.pack packageName
         , _cabalPackageInfo_packageFile = packageFile
         , _cabalPackageInfo_packageRoot = takeDirectory packageFile
@@ -353,17 +354,17 @@ parseCabalPackage' pkg = runExceptT $ do
         , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
         , _cabalPackageInfo_cppOptions = cppOptions $ libBuildInfo lib
         }
-    Right Nothing -> throwError "Haskell package has no library component"
+    Right Nothing -> pure Nothing
     Left (_, errors) ->
       throwError $ T.pack $ "Failed to parse " <> packageFile <> ":\n" <> unlines (map show errors)
 
 parsePackagesOrFail :: (MonadObelisk m, Foldable f) => f FilePath -> m (NE.NonEmpty CabalPackageInfo)
 parsePackagesOrFail dirs' = do
-  (pkgDirErrs, packageInfos') <- fmap partitionEithers $ for dirs $ \dir -> do
+  packageInfos' <- fmap catMaybes $ for dirs $ \dir -> do
     flip fmap (parseCabalPackage dir) $ \case
       Just packageInfo
-        | _cabalPackageInfo_buildable packageInfo -> Right packageInfo
-      _ -> Left dir
+        | _cabalPackageInfo_buildable packageInfo -> Just packageInfo
+      _ -> Nothing
 
   -- Sort duplicate packages such that we prefer shorter paths, but fall back to alphabetical ordering.
   let packagesByName = Map.map (NE.sortBy $ comparing $ \p -> let n = _cabalPackageInfo_packageFile p in (length n, n))
@@ -384,9 +385,6 @@ parsePackagesOrFail dirs' = do
     Nothing -> failWith $ T.pack $
       "No valid, buildable packages found" <> (if null dirs then "" else " in " <> intercalate ", " dirs)
     Just xs -> pure xs
-
-  unless (null pkgDirErrs) $
-    putLog Warning $ T.pack $ "Failed to find buildable packages in " <> intercalate ", " pkgDirErrs
 
   pure packageInfos
   where

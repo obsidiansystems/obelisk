@@ -219,9 +219,9 @@ runWidget conf configs backend mkValidFullEncoder = do
 
             cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
             _ <- X509.setPublicKey cert privateKey
-            now <- getCurrentTime
-            _ <- X509.setNotBefore cert $ addUTCTime (-1) now
-            _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) now
+            timenow <- getCurrentTime
+            _ <- X509.setNotBefore cert $ addUTCTime (-1) timenow
+            _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) timenow
             _ <- X509.signX509 cert privateKey Nothing
 
             certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert

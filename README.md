@@ -221,7 +221,7 @@ Your account must also belong to an Apple Developer Team, if you want to access 
 1. Click accept to authorize on both the computer and the iPhone.
 
 ##### Xcode
-Install Xcode 8.2 (contains iOS SDK 10.2) and open it so that it runs its post install tool setup.
+Install Xcode 11.2 (contains iOS SDK 13.2) and open it so that it runs its post install tool setup.
 
 These versions will work out of the box but iOS SDKs prior to 11.3 should also work. You can choose another installed version in `default.nix`
 
