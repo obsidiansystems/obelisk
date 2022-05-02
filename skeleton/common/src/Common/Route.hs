@@ -82,7 +82,7 @@ domainAFullRouteEncoder = mkFullRouteEncoder
   backendSegment
   (\case
     FrontendRouteA_Main -> PathEnd $ unitEncoder mempty
-    FrontendRouteA_Int -> PathSegment "int" readShowEncoder)
+    FrontendRouteA_Int -> PathSegment "int" unsafeShowEncoder)
 
 domainBFullRouteEncoder :: Encoder (Either Text) Identity (R (FullRoute BackendRoute FrontendRouteB)) PageName
 domainBFullRouteEncoder = mkFullRouteEncoder

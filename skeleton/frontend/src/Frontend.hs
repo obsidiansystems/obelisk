@@ -1,6 +1,5 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Frontend where
 
@@ -27,7 +26,7 @@ frontendA :: Frontend (R FrontendRouteA)
 frontendA = Frontend
   { _frontend_head = do
       el "title" $ text "Obelisk Minimal Example"
-      elAttr "link" ("href" =: static @"main.css" <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
+      elAttr "link" ("href" =: $(static "main.css") <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
   , _frontend_body = do
       el "h1" $ text "Welcome to Obelisk!"
       el "p" $ text $ T.pack commonStuff
@@ -47,8 +46,8 @@ frontendA = Frontend
         --el "li" $ routeLink (DomainRoute_B (FullRoute_Frontend $ ObeliskRoute_App BRoute_Text) :/ "AAA") $ text "Frontend B Text"
 
       let example = elAttr "div" ("style" =: "background-color: #CCF; padding: 0.5rem;")
-      example $ text $ static @"obelisk.jpg"
-      elAttr "img" ("src" =: static @"obelisk.jpg") blank
+      example $ text $ $(static "obelisk.jpg")
+      elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
       el "div" $ do
         exampleConfig <- getConfig "common/example"
         case exampleConfig of
@@ -61,7 +60,7 @@ frontendB :: Frontend (R FrontendRouteB)
 frontendB = Frontend
   { _frontend_head = do
       el "title" $ text "Obelisk Minimal Example"
-      elAttr "link" ("href" =: static @"main.css" <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
+      elAttr "link" ("href" =: $(static "main.css") <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
   , _frontend_body = do
       el "h1" $ text "Welcome to Obelisk!"
       el "p" $ text $ T.pack commonStuff
@@ -79,8 +78,8 @@ frontendB = Frontend
         el "li" $ routeLink (FrontendRouteB_Text :/ "AAA") $ text "Frontend B Text"
 
       let example = elAttr "div" ("style" =: "background-color: #CCF; padding: 0.5rem;")
-      example $ text $ static @"obelisk.jpg"
-      elAttr "img" ("src" =: static @"obelisk.jpg") blank
+      example $ text $ $(static "obelisk.jpg")
+      elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
       el "div" $ do
         exampleConfig <- getConfig "common/example"
         case exampleConfig of
