@@ -20,7 +20,7 @@ zopfliEncodings = file:
   nixpkgs.stdenv.mkDerivation {
     name = "encodings";
 
-    input = file;
+    input = mkPath file;
 
     builder = builtins.toFile "builder.sh" ''
       source "$stdenv/setup"
@@ -46,7 +46,7 @@ gzipEncodings = file:
   nixpkgs.stdenv.mkDerivation {
     name = "encodings";
 
-    input = file;
+    input = mkPath file;
 
     builder = builtins.toFile "builder.sh" ''
       source "$stdenv/setup"
@@ -70,7 +70,7 @@ noEncodings = file:
   nixpkgs.stdenv.mkDerivation {
     name = "encodings";
 
-    input = file;
+    input = mkPath file;
 
     builder = builtins.toFile "builder.sh" ''
       source "$stdenv/setup"
@@ -203,7 +203,7 @@ hashFile = path:
       nixpkgs.nix
     ];
     preferLocalBuild = true;
-    inherit path;
+    path = mkPath path;
   } ''
     nix-hash --flat --base32 --type sha256 "$path" | tr -d '\n' >"$out"
   '');
@@ -224,7 +224,30 @@ symlink = path: {
   inherit path;
 };
 
-# Given a encoding generation function and a file entry resulting from readDirRecursive in the form { name :: String, value: { path :: String } },
+# Tests if a given character (string of length 1) is valid for a derivation path name.
+# Passing a string of length other than 1 is undefined.
+# :: Char -> Bool
+isValidDrvNameChar = c: "a" <= c && c <= "z" || "A" <= c && c <= "Z" || "0" <= c && c <= "9" || c == "+" || c == "-" || c == "_" || c == "?" || c == "=" || c == ".";
+
+# Convert a string into a string that could be used in a derivation name.
+# replacement lets you choose how to replace invalid characters. It may be any length.
+# If it contains invalid characters then the result will also be invalid.
+# :: { str :: String, replacement :: String } -> String
+mkValidDrvName = { str, replacement ? "?" }:
+  let
+    newName = stringAsChars (c: if isValidDrvNameChar c then c else replacement) str;
+  in if builtins.substring 0 1 newName == "." then "_" + newName else newName;
+
+# Like builtins.path but always ensures the name is valid.
+mkPath = path:
+  if builtins.typeOf path == "path" # Don't mess with non-paths
+    then builtins.path {
+      inherit path;
+      name = mkValidDrvName { str = builtins.baseNameOf path; };
+    }
+    else path;
+
+# Given an encoding generation function and a file entry resulting from readDirRecursive in the form { name :: String, value: { path :: String } },
 # build a DirEntry for dirToPath with the various encodings of the asset for dirToPath to build into a final directory tree.
 mkAsset = encodings: {name, value}:
   let nameWithHash = "${hashFile value.path}-${name}";

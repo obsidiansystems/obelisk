@@ -1,5 +1,5 @@
 name: obelisk-command
-version: 0.6
+version: 0.9.0.1
 cabal-version: >= 1.8
 build-type: Simple
 
@@ -10,8 +10,6 @@ library
     , aeson-pretty
     , ansi-terminal
     , base
-    , base16-bytestring
-    , binary
     , bytestring
     , Cabal
     , containers
@@ -20,7 +18,9 @@ library
     , either
     , errors
     , exceptions
+    , extra
     , filepath
+    , fsnotify
     , git
     , github
     , here
@@ -32,6 +32,7 @@ library
     , megaparsec
     , modern-uri
     , monad-loops
+    , monoidal-containers
     , mtl
     , network
     , network-uri
@@ -39,13 +40,17 @@ library
     , optparse-applicative
     , placeholders
     , process
+    , reflex
+    , reflex-fsnotify
+    , shell-escape
     , temporary
     , terminal-size
     , text
     , time
     , transformers
-    , unix
+    , unix-compat
     , unordered-containers
+    , utf8-string
     , which
     , yaml
   exposed-modules:
@@ -64,4 +69,4 @@ library
 executable ob
   main-is: src-bin/ob.hs
   build-depends: base, obelisk-command
-  ghc-options: -Wall -O2 -threaded
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -threaded

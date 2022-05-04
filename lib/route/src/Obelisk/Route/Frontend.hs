@@ -1,24 +1,24 @@
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Obelisk.Route.Frontend
   ( module Obelisk.Route
@@ -57,49 +57,42 @@ module Obelisk.Route.Frontend
 
 import Prelude hiding ((.), id)
 
-import Obelisk.Route
-
 import Control.Category (Category (..), (.))
 import Control.Category.Cartesian ((&&&))
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
 import Control.Monad ((<=<))
 import Control.Monad.Fix
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Compose
+import Data.Functor.Misc
 import Data.GADT.Compare
+import qualified Data.List as L
 import Data.Map (Map)
+import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Functor.Compose
-import Data.Functor.Misc
-import Reflex.Class
-import Reflex.Host.Class
-import Reflex.PostBuild.Class
-import Reflex.TriggerEvent.Class
-import Reflex.PerformEvent.Class
-import Reflex.EventWriter.Class
-import Reflex.EventWriter.Base
-import Reflex.Dynamic
-import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
-import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
-import Reflex.Dom.Core
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
+import Language.Javascript.JSaddle (MonadJSM, jsNull, liftJSM) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
-import Data.Maybe (fromMaybe)
-import qualified Data.List as L
-
+import Reflex.Class
+import Reflex.Dom.Builder.Class
+import Reflex.Dom.Core
+import Reflex.Host.Class
 import Unsafe.Coerce
 
 import Obelisk.Configs
+import Obelisk.Route
 
 infixr 5 :~
 pattern (:~) :: Reflex t => f a -> Dynamic t a -> DSum f (Compose (Dynamic t) Identity)
@@ -116,17 +109,29 @@ instance Monad m => Routed t r (RoutedT t r m) where
 instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m)
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadFix
+    , MonadTrans
+    , MFunctor
+    , NotReady t
+    , MonadHold t
+    , MonadSample t
+    , PostBuild t
+    , TriggerEvent t
+    , MonadIO
+    , MonadReflexCreateTrigger t
+    , HasDocument
+    , DomRenderHook t
+    )
 
 instance MonadReader r' m => MonadReader r' (RoutedT t r m) where
   ask = lift ask
   local = mapRoutedT . local
 
-instance HasJSContext m => HasJSContext (RoutedT t r m) where
-  type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
-  askJSContext = lift askJSContext
-
-instance (Prerender js t m, Monad m) => Prerender js t (RoutedT t r m) where
+instance (Prerender t m, Monad m) => Prerender t (RoutedT t r m) where
   type Client (RoutedT t r m) = RoutedT t r (Client m)
   prerender server client = RoutedT $ do
     r <- ask
@@ -152,10 +157,6 @@ instance MonadRef m => MonadRef (RoutedT t r m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
-
-instance HasJS x m => HasJS x (RoutedT t r m) where
-  type JSX (RoutedT t r m) = JSX m
-  liftJS = lift . liftJS
 
 deriving instance EventWriter t w m => EventWriter t w (RoutedT t r m)
 
@@ -191,6 +192,10 @@ instance (Monad m, SetRoute t r m) => SetRoute t r (QueryT t q m)
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (EventWriterT t w m)
 
 instance (Monad m, SetRoute t r m) => SetRoute t r (EventWriterT t w m)
+
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (DynamicWriterT t w m)
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (DynamicWriterT t w m)
 
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
@@ -256,7 +261,7 @@ dynamicIdentityCoercion = unsafeCoerce (Coercion :: Coercion (Identity ()) ()) -
 factorRouted :: (Reflex t, MonadFix m, MonadHold t m, GEq f) => RoutedT t (DSum f (Dynamic t)) m a -> RoutedT t (DSum f Identity) m a
 factorRouted r = RoutedT $ ReaderT $ \d -> do
   d' <- factorDyn d
-  runRoutedT r $ (coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d')
+  runRoutedT r $ coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d'
 
 maybeRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Maybe (Dynamic t a)) m b -> RoutedT t (Maybe a) m b
 maybeRouted r = RoutedT $ ReaderT $ \d -> do
@@ -289,10 +294,6 @@ instance (MonadFix m, MonadHold t m, DomBuilder t m) => DomBuilder t (SetRouteT 
   textAreaElement = lift . textAreaElement
   selectElement cfg child = SetRouteT $ selectElement cfg $ unSetRouteT child
 
-instance HasJSContext m => HasJSContext (SetRouteT t r m) where
-  type JSContextPhantom (SetRouteT t r m) = JSContextPhantom m
-  askJSContext = lift askJSContext
-
 mapSetRouteT :: (forall x. m x -> n x) -> SetRouteT t r m a -> SetRouteT t r n a
 mapSetRouteT f (SetRouteT x) = SetRouteT (mapEventWriterT f x)
 
@@ -314,7 +315,7 @@ instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m)
 
 instance (Monad m, SetRoute t r m) => SetRoute t r (ReaderT r' m)
 
-instance (PerformEvent t m, Prerender js t m, Monad m, Reflex t) => Prerender js t (SetRouteT t r m) where
+instance (PerformEvent t m, Prerender t m, Monad m, Reflex t) => Prerender t (SetRouteT t r m) where
   type Client (SetRouteT t r m) = SetRouteT t r (Client m)
   prerender server client = do
     d <- lift $ prerender (runSetRouteT server) (runSetRouteT client)
@@ -345,10 +346,6 @@ instance MonadRef m => MonadRef (SetRouteT t r m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
-
-instance HasJS x m => HasJS x (SetRouteT t r m) where
-  type JSX (SetRouteT t r m) = JSX m
-  liftJS = lift . liftJS
 
 instance PrimMonad m => PrimMonad (SetRouteT t r m ) where
   type PrimState (SetRouteT t r m) = PrimState m
@@ -395,11 +392,7 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (ReaderT r' m) where
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m)
 
-instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
-  type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
-  askJSContext = lift askJSContext
-
-instance (Prerender js t m, Monad m) => Prerender js t (RouteToUrlT r m) where
+instance (Prerender t m, Monad m) => Prerender t (RouteToUrlT r m) where
   type Client (RouteToUrlT r m) = RouteToUrlT r (Client m)
   prerender server client = do
     r <- RouteToUrlT ask
@@ -425,10 +418,6 @@ instance MonadRef m => MonadRef (RouteToUrlT r m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
-
-instance HasJS x m => HasJS x (RouteToUrlT r m) where
-  type JSX (RouteToUrlT r m) = JSX m
-  liftJS = lift . liftJS
 
 instance MonadTransControl (RouteToUrlT r) where
   type StT (RouteToUrlT r) a = StT (ReaderT (r -> Text)) a
@@ -464,7 +453,7 @@ runRouteViewT
      , MonadJSM (Performable m)
      , MonadFix m
      )
-  => (Encoder Identity Identity r PageName)
+  => Encoder Identity Identity r PageName
   --TODO: Get rid of the switchover and useHash arguments
   -- useHash can probably be baked into the encoder
   -> Event t () -- ^ Switchover event, nothing is done until this event fires. Used to prevent incorrect DOM expectations at hydration switchover time
@@ -509,11 +498,11 @@ runRouteViewT routeEncoder switchover useHash a = do
 -- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
 -- contexts, this widget falls back to using @href@s to control navigation
 routeLink
-  :: forall t m a route js.
+  :: forall t m a route.
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
-     , Prerender js t m
+     , Prerender t m
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
@@ -542,19 +531,19 @@ routeLinkImpl r w = do
   setRoute $ r <$ domEvent Click e
   return (domEvent Click e, a)
 
-scrollToTop :: forall m t js. (Prerender js t m, Monad m) => Event t () -> m ()
+scrollToTop :: forall m t. (Prerender t m, Monad m) => Event t () -> m ()
 scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.currentWindow >>= \case
   Nothing -> pure ()
   Just win -> Window.scrollTo win 0 0
 
 -- | Like 'routeLinkDynAttr' but without custom attributes.
 dynRouteLink
-  :: forall t m a route js.
+  :: forall t m a route.
      ( DomBuilder t m
      , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
-     , Prerender js t m
+     , Prerender t m
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -590,12 +579,12 @@ dynRouteLinkImpl dr w = do
 -- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
 -- build is used so the link still works like 'routeLink'.
 routeLinkDynAttr
-  :: forall t m a route js.
+  :: forall t m a route.
      ( DomBuilder t m
      , PostBuild t m
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
-     , Prerender js t m
+     , Prerender t m
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route

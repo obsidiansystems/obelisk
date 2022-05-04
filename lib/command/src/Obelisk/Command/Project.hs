@@ -1,56 +1,75 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
+
 module Obelisk.Command.Project
   ( InitSource (..)
   , findProjectObeliskCommand
   , findProjectRoot
+  , findProjectAssets
   , initProject
   , nixShellRunConfig
   , nixShellRunProc
   , nixShellWithHoogle
-  , nixShellWithPkgs
+  , nixShellWithoutPkgs
+  , mkObNixShellProc
   , obeliskDirName
-  , projectShell
   , toImplDir
-  , toNixPath
   , toObeliskDir
   , withProjectRoot
+  , bashEscape
+  , getHaskellManifestProjectPath
+  , AssetSource(..)
+  , describeImpureAssetSource
+  , watchStaticFilesDerivation
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
-import Control.Lens ((.~), (?~), (<&>))
+import Control.Lens ((.~), (?~), (<&>), (^.), _2, _3)
 import Control.Monad
+import Control.Monad.Except
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Log
 import Control.Monad.State
 import qualified Data.Aeson as Json
+import qualified Data.ByteString.UTF8 as BSU
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
 import Data.Function ((&), on)
-import Data.List (isInfixOf)
 import Data.Map (Map)
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Traversable (for)
+import Reflex
+import Reflex.FSNotify
+import Reflex.Host.Headless
 import System.Directory
 import System.Environment (lookupEnv)
+import System.Exit (ExitCode(..))
 import System.FilePath
+import System.FSNotify (defaultConfig, eventPath, WatchConfig(..))
+import qualified System.Info as SysInfo
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
-import System.Posix (FileStatus, FileMode, CMode (..), UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
-import System.Posix.Files
-import System.Process (waitForProcess)
+import System.PosixCompat.Files
+import System.PosixCompat.Types
+import System.PosixCompat.User
+import qualified System.Process as Proc
+import Text.ShellEscape (bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
-import Obelisk.App (MonadObelisk)
+import Obelisk.App (MonadObelisk, runObelisk, getObelisk)
 import Obelisk.CliApp
 import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
-import Obelisk.Command.Utils (nixExePath)
+import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -96,20 +115,26 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
       | otherwise -> failWith "ob init requires an empty directory. Use the flag --force to init anyway, potentially overwriting files."
   skeleton <- withSpinner "Setting up obelisk" $ do
     liftIO $ createDirectory obDir
+    -- Clone the git source and repack it with the init source obelisk
+    -- The purpose of this is to ensure we use the correct thunk spec.
+    let cloneAndRepack src = do
+          putLog Debug $ "Cloning obelisk into " <> T.pack implDir <> " and repacking using itself"
+          commit <- getLatestRev src
+          gitCloneForThunkUnpack (thunkSourceToGitSource src) (_thunkRev_commit commit) implDir
+          callHandoffOb implDir ["thunk", "pack", implDir]
     case source of
-      InitSource_Default -> createThunkWithLatest implDir obeliskSource
-      InitSource_Branch branch -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+      InitSource_Default -> cloneAndRepack obeliskSource
+      InitSource_Branch branch -> cloneAndRepack $ obeliskSourceWithBranch branch
       InitSource_Symlink path -> do
         let symlinkPath = if isAbsolute path
               then path
               else ".." </> path
         liftIO $ createSymbolicLink symlinkPath implDir
     _ <- nixBuildAttrWithCache implDir "command"
-    --TODO: We should probably handoff to the impl here
     skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
 
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp"
+      proc cp
         [ "-r"
         , "--preserve=links"
         , obDir
@@ -119,7 +144,7 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
 
   withSpinner "Copying project skeleton" $ do
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp"
+      proc cp
         [ "-r"
         , "--no-preserve=mode"
         , "-T"
@@ -130,6 +155,30 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     let configDir = "config"
     createDirectoryIfMissing False configDir
     mapM_ (createDirectoryIfMissing False . (configDir </>)) ["backend", "common", "frontend"]
+  putLog Notice $ T.intercalate "\n"
+    [ "An obelisk project has been successfully initialized. Next steps:"
+    , "  'ob run': Start a development server"
+    , "  'ob watch': Watch for changes without starting a server"
+    , "  'ob repl': Load your project into GHCi"
+    ]
+
+callHandoffOb
+  :: MonadObelisk m
+  => FilePath -- ^ Directory of the obelisk we want to handoff to
+  -> [String] -- ^ Arguments to pass to ob
+  -> m ()
+callHandoffOb dir args = do
+  obeliskCommandPkg <- nixCmd $ NixCmd_Build $ def
+    & nixBuildConfig_outLink .~ OutLink_None
+    & nixCmdConfig_target .~ Target
+      { _target_path = Just dir
+      , _target_attr = Just "command"
+      , _target_expr = Nothing
+      }
+  let impl = obeliskCommandPkg </> "bin" </> "ob"
+  -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
+  putLog Debug $ "Running '" <> T.pack (unwords args) <> "' with " <> T.pack impl
+  callProcessAndLogOutput (Debug, Warning) (proc impl ("--no-handoff" : args))
 
 --TODO: Allow the user to ignore our security concerns
 -- | Find the Obelisk implementation for the project at the given path
@@ -249,13 +298,6 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
     fileGroupWritable = fileMode s .&. 0o020 == 0o020
     umaskGroupWritable = umask .&. 0o020 == 0
 
--- | Nix syntax requires relative paths to be prefixed by @./@ or
--- @../@. This will make a 'FilePath' that can be embedded in a Nix
--- expression.
-toNixPath :: FilePath -> FilePath
-toNixPath root | "/" `isInfixOf` root = root
-               | otherwise = "./" <> root
-
 nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
 nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
@@ -264,46 +306,179 @@ nixShellRunConfig root isPure command = do
   pure $ def
     & nixShellConfig_pure .~ isPure
     & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
-    & nixShellConfig_run .~ (command <&> \c -> mconcat
-      [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
-      , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
-      , c
+    & nixShellConfig_run .~ (command <&> \cs -> unwords $ concat
+      [ ["export", BSU.toString . bytes . bash $ "NIX_PATH=nixpkgs=" <> encodeUtf8 nixpkgsPath, ";"]
+      , maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
+      , [cs]
       ])
 
-nixShellRunProc :: NixShellConfig -> ProcessSpec
-nixShellRunProc cfg = setDelegateCtlc True $ proc "nix-shell" $ runNixShellConfig cfg
+bashEscape :: String -> String
+bashEscape = BSU.toString . bytes . bash . BSU.fromString
 
-nixShellWithPkgs :: MonadObelisk m => FilePath -> Bool -> Bool -> Map Text FilePath -> Maybe String -> m ()
-nixShellWithPkgs root isPure chdirToRoot packageNamesAndPaths command = do
+nixShellRunProc :: NixShellConfig -> ProcessSpec
+nixShellRunProc cfg = setDelegateCtlc True $ proc nixShellPath $ runNixShellConfig cfg
+
+mkObNixShellProc
+  :: MonadObelisk m
+  => FilePath -- ^ Path to project root
+  -> Bool -- ^ Should this be a pure shell?
+  -> Bool -- ^ Should we chdir to the package root in the shell?
+  -> Map Text FilePath -- ^ Package names mapped to their paths
+  -> String -- ^ Shell attribute to use (e.g. @"ghc"@, @"ghcjs"@, etc.)
+  -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
+  -> m ProcessSpec
+mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command = do
   packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
   defShellConfig <- nixShellRunConfig root isPure command
   let setCwd_ = if chdirToRoot then setCwd (Just root) else id
-  (_, _, _, ph) <- createProcess_ "nixShellWithPkgs" $ setCwd_ $ nixShellRunProc $ defShellConfig
+  pure $ setCwd_ $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{root, pkgs}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
+        "{root, pkgs, shell}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
           \shellPackages = builtins.fromJSON pkgs;\
-        \})).project.shells.ghc"
+        \})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~
         [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
         , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
+        , strArg "shell" shellAttr
         ]
-  void $ liftIO $ waitForProcess ph
+
+nixShellWithoutPkgs
+  :: MonadObelisk m
+  => FilePath -- ^ Path to project root
+  -> Bool -- ^ Should this be a pure shell?
+  -> Bool -- ^ Should we chdir to the package root in the shell?
+  -> Map Text FilePath -- ^ Package names mapped to their paths
+  -> String -- ^ Shell attribute to use (e.g. @"ghc"@, @"ghcjs"@, etc.)
+  -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
+  -> m ()
+nixShellWithoutPkgs root isPure chdirToRoot packageNamesAndPaths shellAttr command = do
+  runProcess_ =<< mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command
 
 nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 nixShellWithHoogle root isPure shell' command = do
   defShellConfig <- nixShellRunConfig root isPure command
-  (_, _, _, ph) <- createProcess_ "nixShellWithHoogle" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
+  runProcess_ $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
         "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
           \userSettings = super.userSettings // { withHoogle = true; };\
         \})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
-  void $ liftIO $ waitForProcess ph
 
-projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
-projectShell root isPure shellName command = do
-  defShellConfig <- nixShellRunConfig root isPure command
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
-    & nixShellConfig_common . nixCmdConfig_target . target_path ?~ "default.nix"
-    & nixShellConfig_common . nixCmdConfig_target . target_attr ?~ ("shells." <> shellName)
-  void $ liftIO $ waitForProcess ph
+-- | Describes the provenance of static assets (i.e., are they the result of a derivation
+-- that was built, or just a folder full of files.
+data AssetSource = AssetSource_Derivation
+                 | AssetSource_Files
+  deriving (Eq)
+
+-- | Some log messages to make it easier to tell where static files are coming from
+describeImpureAssetSource :: AssetSource -> Text -> Text
+describeImpureAssetSource src path = case src of
+  AssetSource_Files -> "Assets impurely loaded from: " <> path
+  AssetSource_Derivation -> "Assets derivation built and impurely loaded from: " <> path
+
+-- | Determine where the static files of a project are and whether they're plain files or a derivation.
+-- If they are a derivation, that derivation will be built.
+findProjectAssets :: MonadObelisk m => FilePath -> m (AssetSource, Text)
+findProjectAssets root = do
+  isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+    proc nixExePath
+      [ "eval"
+      , "(let a = import ./. {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+      , "--raw"
+      -- `--raw` is not available with old nix-instantiate. It drops quotation
+      -- marks and trailing newline, so is very convenient for shelling out.
+      ]
+  -- Check whether the impure static files are a derivation (and so must be built)
+  if isDerivation == "1"
+    then do
+      _ <- buildStaticFilesDerivationAndSymlink
+        (readProcessAndLogStderr Debug)
+        root
+      pure (AssetSource_Derivation, T.pack $ root </> "static.out")
+    else fmap (AssetSource_Files,) $ do
+      path <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+        proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
+      _ <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+        proc lnPath ["-sfT", T.unpack path, "./static.out"]
+      pure path
+
+-- | Get the nix store path to the generated static asset manifest module (e.g., "obelisk-generated-static")
+getHaskellManifestProjectPath :: MonadObelisk m => FilePath -> m Text
+getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+  proc nixBuildExePath
+    [ "--no-out-link"
+    , "-E"
+    , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
+    ]
+
+-- | Watch the project directory for file changes and check whether those file changes
+-- cause changes in the static files nix derivation. If so, rebuild it.
+watchStaticFilesDerivation
+  :: (MonadIO m, MonadObelisk m)
+  => FilePath
+  -> m ()
+watchStaticFilesDerivation root = do
+  ob <- getObelisk
+  drv0 <- showDerivation
+  liftIO $ runHeadlessApp $ do
+    pb <- getPostBuild
+    checkForChanges <- batchOccurrences 0.25 =<< watchDirectoryTree
+      -- On macOS, use the polling backend due to https://github.com/luite/hfsevents/issues/13
+      (defaultConfig { confUsePolling = SysInfo.os == "darwin", confPollInterval = 250000 })
+      (root <$ pb)
+      ((/="static.out") . takeFileName . eventPath)
+    drv <- performEvent $ ffor checkForChanges $ \_ ->
+      liftIO $ runObelisk ob showDerivation
+    drvs <- foldDyn (\new (_, old, _) -> (old, new, old /= new)) (drv0, drv0, False) drv
+    void $ throttleBatchWithLag
+      (\e -> performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $ do
+        putLog Notice "Static assets being built..."
+        buildStaticCatchErrors >>= \case
+          Nothing -> pure ()
+          Just _ -> putLog Notice "Static assets built and symlinked to static.out"
+      )
+      ((() <$) . ffilter (\x -> isJust (x ^._2) && x ^._3) $ updated drvs)
+    pure never
+  where
+    handleBuildFailure
+      :: MonadObelisk m
+      => (ExitCode, String, String)
+      -> m (Maybe Text)
+    handleBuildFailure (ex, out, err) = case ex of
+      ExitSuccess -> pure $ Just $ T.pack out
+      _ -> do
+        putLog Error $
+          ("Static assets build failed: " <>) $
+            T.unlines $ reverse $ take 10 $ reverse $ T.lines $ T.pack err
+        pure Nothing
+    showDerivation :: MonadObelisk m => m (Maybe Text)
+    showDerivation =
+      handleBuildFailure <=< readCreateProcessWithExitCode $
+          setCwd (Just root) $ ProcessSpec
+            { _processSpec_createProcess = Proc.proc nixExePath
+              [ "show-derivation"
+              , "-f", "."
+              , "passthru.staticFilesImpure"
+              ]
+            , _processSpec_overrideEnv = Nothing
+            }
+    buildStaticCatchErrors :: MonadObelisk m => m (Maybe Text)
+    buildStaticCatchErrors = handleBuildFailure =<<
+      buildStaticFilesDerivationAndSymlink
+        readCreateProcessWithExitCode
+        root
+
+buildStaticFilesDerivationAndSymlink
+  :: MonadObelisk m
+  => (ProcessSpec -> m a)
+  -> FilePath
+  -> m a
+buildStaticFilesDerivationAndSymlink f root = f $
+  setCwd (Just root) $ ProcessSpec
+    { _processSpec_createProcess = Proc.proc
+        nixBuildExePath
+        [ "-o", "static.out"
+        , "-E", "(import ./. {}).passthru.staticFilesImpure"
+        ]
+    , _processSpec_overrideEnv = Nothing
+    }

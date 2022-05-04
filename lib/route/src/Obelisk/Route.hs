@@ -1,3 +1,9 @@
+{-# LANGUAGE CPP #-}
+{-|
+
+Types and functions for defining routes and 'Encoder's.
+
+-}
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE EmptyCase #-}
@@ -5,7 +11,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -19,19 +24,22 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route
-  ( R
+  ( -- * Primary Types
+    R
+  , PageName
+  , PathQuery
+  , Encoder
+  , EncoderImpl (..)
+  , EncoderFunc (..)
+
+  -- * Patterns, operators, and utilities
   , (:.)
   , (?/)
   , hoistR
   , pattern (:.)
   , pattern (:/)
-  , PageName
-  , PathQuery
-  , Encoder
   , unsafeEncoder
   , checkEncoder
-  , EncoderImpl (..)
-  , EncoderFunc (..)
   , unsafeMkEncoder
   , encode
   , decode
@@ -39,8 +47,35 @@ module Obelisk.Route
   , hoistCheck
   , hoistParse
   , mapSome
+  , rPrism
+  , _R
+  , renderObeliskRoute
+  , renderBackendRoute
+  , renderFrontendRoute
+  , byteStringsToPageName
+
+  -- * Collating Routes
   , SegmentResult (..)
   , pathComponentEncoder
+
+  , FullRoute (..)
+  , _FullRoute_Frontend
+  , _FullRoute_Backend
+  , mkFullRouteEncoder
+
+  , ObeliskRoute (..)
+  , _ObeliskRoute_App
+  , _ObeliskRoute_Resource
+  , ResourceRoute (..)
+
+  , JSaddleWarpRoute (..)
+  , jsaddleWarpRouteEncoder
+
+  , IndexOnlyRoute (..)
+  , indexOnlyRouteSegment
+  , indexOnlyRouteEncoder
+
+  -- * Provided Encoders
   , enumEncoder
   , enum1Encoder
   , checkEnum1EncoderFunc
@@ -50,9 +85,12 @@ module Obelisk.Route
   , pathParamEncoder
   , pathLiteralEncoder
   , singletonListEncoder
+  , packTextEncoder
   , unpackTextEncoder
   , prefixTextEncoder
   , unsafeTshowEncoder
+  , unsafeShowEncoder
+  , readShowEncoder
   , someConstEncoder
   , singlePathSegmentEncoder
   , maybeEncoder
@@ -60,6 +98,7 @@ module Obelisk.Route
   , justEncoder
   , nothingEncoder
   , isoEncoder
+  , viewEncoder
   , wrappedEncoder
   , unwrappedEncoder
   , listToNonEmptyEncoder
@@ -68,34 +107,16 @@ module Obelisk.Route
   , toListMapEncoder
   , shadowEncoder
   , prismEncoder
-  , rPrism
-  , _R
+  , reviewEncoder
   , obeliskRouteEncoder
   , obeliskRouteSegment
   , pageNameEncoder
   , handleEncoder
-  , FullRoute (..)
-  , _FullRoute_Frontend
-  , _FullRoute_Backend
-  , mkFullRouteEncoder
-  , ObeliskRoute (..)
-  , _ObeliskRoute_App
-  , _ObeliskRoute_Resource
-  , ResourceRoute (..)
-  , JSaddleWarpRoute (..)
-  , jsaddleWarpRouteEncoder
-  , IndexOnlyRoute (..)
-  , indexOnlyRouteSegment
-  , indexOnlyRouteEncoder
   , someSumEncoder
   , Void1
   , void1Encoder
   , pathSegmentsTextEncoder
   , queryParametersTextEncoder
-  , renderObeliskRoute
-  , renderBackendRoute
-  , renderFrontendRoute
-  , readShowEncoder
   , integralEncoder
   , pathSegmentEncoder
   , queryOnlyEncoder
@@ -104,7 +125,6 @@ module Obelisk.Route
   , fieldMapEncoder
   , pathFieldEncoder
   , jsonEncoder
-  , byteStringsToPageName
   ) where
 
 import Prelude hiding ((.), id)
@@ -132,20 +152,24 @@ import Control.Lens
   , Prism'
   , prism'
   , re
+  , review
   , view
   , Wrapped (..)
   )
 import Control.Monad.Except
-import Control.Monad.Writer (execWriter, tell)
 import qualified Control.Monad.State.Strict as State
 import Control.Monad.Trans (lift)
+import Control.Monad.Writer (execWriter, tell)
+import Data.Aeson (FromJSON, ToJSON)
+import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
-import Data.Dependent.Sum (DSum (..))
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum (DSum (..))
 import Data.Either.Validation (Validation (..))
 import Data.Foldable
+import Data.Functor (($>))
 import Data.Functor.Sum
 import Data.GADT.Compare
 import Data.GADT.Compare.TH
@@ -158,18 +182,18 @@ import Data.Monoid ((<>))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Some (Some(Some))
+import Data.Tabulation
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import Data.Text.Lens (IsText, packed, unpacked)
+import Data.Type.Equality
 import Data.Universe
 import Data.Universe.Some
 import Network.HTTP.Types.URI
 import qualified Numeric.Lens
 import Obelisk.Route.TH
 import Text.Read (readMaybe)
-import Data.Tabulation
-import qualified Data.Aeson as Aeson
-import Data.Aeson (FromJSON, ToJSON)
 
 -- Design goals:
 -- No start-up time on the frontend (not yet met)
@@ -193,6 +217,24 @@ import Data.Aeson (FromJSON, ToJSON)
 -- Subroutes/paths
 --------------------------------------------------------------------------------
 
+-- | This alias is used to wrap the type of a route GADT so that the type variable of the GADT is existentially quantified.
+--
+-- Given the following route type :
+--
+-- @
+--
+-- data MyRoutes a where
+--   MyRoutes_Main :: MyRoutes ()
+--   MyRoutes_A :: MyRoutes Text
+--   MyRoutes_B :: MyRoutes Int
+-- @
+--
+-- Using 'R' we're able to write type signatures without worrying about the 'a':
+--
+-- @
+-- myRoutesWidget :: RoutedT t (R MyRoutes) m ()
+-- @
+--
 type R f = DSum f Identity --TODO: Better name
 
 -- | Convenience builder for an 'R' using 'Identity' for the functor.
@@ -219,7 +261,19 @@ hoistR f (x :=> Identity y) = f x :/ y
 infixr 5 :.
 type (:.) = (,)
 
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ >= 810
 {-# COMPLETE (:.) #-}
+#else
+{-# WARNING (:.)
+  [ "Use of this pattern in GHC < 8.10 will result in spurious non-exhaustive warnings at every use site."
+  , "We cannot provide a COMPLETE pragma to silence these due to a GHC bug: https://gitlab.haskell.org/ghc/ghc/issues/17729."
+  , "The bug hides incompleteness warnings for all two tuples when the COMPLETE pattern is in scope."
+  , "Instead, you should use (,) directly until you can switch to GHC >= 8.10, where the COMPLETE pragma is reinstated."
+  ]
+  #-}
+#endif
+#endif
 pattern (:.) :: a -> b -> a :. b
 pattern a :. b = (a, b)
 
@@ -285,13 +339,13 @@ decode e x = runIdentity (tryDecode e x)
 -- | Once an 'Encoder' has been checked, so that its check monad has become 'Identity', even if the same is not true of the
 -- parse monad, we may still attempt to decode with it in its parse monad.
 tryDecode :: Encoder Identity parse decoded encoded -> encoded -> parse decoded
-tryDecode (Encoder (Identity impl)) x = _encoderImpl_decode impl x
+tryDecode (Encoder (Identity impl)) = _encoderImpl_decode impl
 
 -- | Similar to 'decode', once an encoder has been checked so that its check monad is Identity, it
 -- can be used to actually encode by using this. Note that while there's no constraint on the parse monad here,
 -- one should usually be applying decode and encode to the same 'Encoder'
 encode :: Encoder Identity parse decoded encoded -> decoded -> encoded
-encode (Encoder (Identity impl)) x = _encoderImpl_encode impl x
+encode (Encoder (Identity impl)) = _encoderImpl_encode impl
 
 -- | This is a primitive used to build encoders which can't fail to check. It should not be used unless one is
 -- reasonably certain that the law given for 'EncoderImpl' above holds.
@@ -338,7 +392,7 @@ instance Monad parse => Bifunctor (,) (EncoderImpl parse) (EncoderImpl parse) (E
     }
 
 instance (Monad parse, Applicative check) => Braided (Encoder check parse) (,) where
-  braid = isoEncoder (iso swap swap)
+  braid = viewEncoder (iso swap swap)
 
 
 instance (Applicative check, Monad parse) => PFunctor (,) (Encoder check parse) (Encoder check parse) where
@@ -374,11 +428,11 @@ instance (Monad parse, Applicative check) => Bifunctor Either (Encoder check par
   bimap f g = Encoder $ liftA2 bimap (unEncoder f) (unEncoder g)
 
 instance (Applicative check, Monad parse) => Associative (Encoder check parse) Either where
-  associate = isoEncoder (iso (associate @(->) @Either) disassociate)
-  disassociate = isoEncoder (iso disassociate associate)
+  associate = viewEncoder (iso (associate @(->) @Either) disassociate)
+  disassociate = viewEncoder (iso disassociate associate)
 
 instance (Monad parse, Applicative check) => Braided (Encoder check parse) Either where
-  braid = isoEncoder (iso swap swap)
+  braid = viewEncoder (iso swap swap)
 
 
 
@@ -432,17 +486,17 @@ instance (Applicative check, Monad parse) => Monoidal (Encoder check parse) (,) 
 --------------------------------------------------------------------------------
 
 -- | Given a valid 'Iso' from lens, construct an 'Encoder'
-isoEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
-isoEncoder f = unsafeMkEncoder $ EncoderImpl
+viewEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
+viewEncoder f = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode = view f
   , _encoderImpl_decode = pure . view (from f)
   }
 
 wrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse (Unwrapped a) a
-wrappedEncoder = isoEncoder $ from _Wrapped'
+wrappedEncoder = viewEncoder $ from _Wrapped'
 
 unwrappedEncoder :: (Wrapped a, Applicative check, Applicative parse) => Encoder check parse a (Unwrapped a)
-unwrappedEncoder = isoEncoder _Wrapped'
+unwrappedEncoder = viewEncoder $ _Wrapped'
 
 maybeToEitherEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Maybe a) (Either () a)
 maybeToEitherEncoder = unsafeMkEncoder $ EncoderImpl
@@ -467,11 +521,11 @@ maybeEncoder f g = shadowEncoder f g . maybeToEitherEncoder
 
 -- | Encode a value by simply applying 'Just'
 justEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a (Maybe a)
-justEncoder = prismEncoder _Just
+justEncoder = reviewEncoder _Just
 
 -- | Encode () to 'Nothing'.
 nothingEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse () (Maybe a)
-nothingEncoder = prismEncoder _Nothing
+nothingEncoder = reviewEncoder _Nothing
 
 someConstEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Const a)) a
 someConstEncoder = unsafeMkEncoder $ EncoderImpl
@@ -479,8 +533,14 @@ someConstEncoder = unsafeMkEncoder $ EncoderImpl
   , _encoderImpl_decode = pure . Some . Const
   }
 
--- | WARNING: This is only safe if the Show and Read instances for 'a' are
--- inverses of each other
+-- | WARNING: This is only safe if the Show and Read instances for 'a' are inverses of each other
+--
+-- Instances must be able to satisfy the following property for this 'Encoder' to be safe:
+--
+-- @
+-- forall a. reads (show a) === [(a, "")]
+-- @
+--
 unsafeTshowEncoder :: (Show a, Read a, Applicative check, MonadError Text parse) => Encoder check parse a Text
 unsafeTshowEncoder = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode = tshow
@@ -508,10 +568,16 @@ checkEnum1EncoderFunc f = do
   pure $ EncoderFunc $ \p -> unsafeMkEncoder . unFlip $
     DMap.findWithDefault (error "checkEnum1EncoderFunc: EncoderImpl not found (should be impossible)") p encoderImpls
 
--- | This type is used by pathComponentEncoder to allow the user to indicate how to treat various cases when encoding a dependent sum of type `(R p)`.
+-- | This type is used by pathComponentEncoder to allow the user to indicate how to treat
+-- various cases when encoding a dependent sum of type `(R p)`.
 data SegmentResult check parse a =
-    PathEnd (Encoder check parse a (Map Text (Maybe Text))) -- ^ Indicate that the path is finished, with an Encoder that translates the corresponding value into query parameters
-  | PathSegment Text (Encoder check parse a PageName) -- ^ Indicate that the key should be represented by an additional path segment with the given 'Text', and give an Encoder for translating the corresponding value into the remainder of the route.
+    PathEnd (Encoder check parse a (Map Text (Maybe Text)))
+    -- ^ Indicate that the path is finished, with an Encoder that translates the
+    -- corresponding value into query parameters
+  | PathSegment Text (Encoder check parse a PageName)
+    -- ^ Indicate that the key should be represented by an additional path segment with
+    -- the given 'Text', and give an Encoder for translating the corresponding value into
+    -- the remainder of the route.
 
 -- | Encode a dependent sum of type `(R p)` into a PageName (i.e. the path and query part of a URL) by using the
 -- supplied function to decide how to encode the constructors of p using the SegmentResult type. It is important
@@ -536,11 +602,11 @@ pathComponentEncoder f = Encoder $ do
   unEncoder (pathComponentEncoderImpl (enum1Encoder (extractPathSegment . f)) f')
 
 pathComponentEncoderImpl :: forall check parse p. (Monad check, Monad parse)
-  => (Encoder check parse (Some p) (Maybe Text))
+  => Encoder check parse (Some p) (Maybe Text)
   -> (forall a. p a -> Encoder Identity parse a PageName)
   -> Encoder check parse (R p) PageName
-pathComponentEncoderImpl this rest =
-  chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consEncoder) this rest
+pathComponentEncoderImpl =
+  chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consEncoder)
 
 --NOTE: Naming convention in this module is to always talk about things in the *encoding* direction, never in the *decoding* direction
 
@@ -756,11 +822,11 @@ prefixNonemptyTextEncoder p = Encoder $ pure $ EncoderImpl
         Just stripped -> pure stripped
   }
 
-unpackTextEncoder :: (Applicative check, Applicative parse) => Encoder check parse Text String
-unpackTextEncoder = Encoder $ pure $ EncoderImpl
-  { _encoderImpl_encode = T.unpack
-  , _encoderImpl_decode = pure . T.pack
-  }
+packTextEncoder :: (Applicative check, Applicative parse, IsText text) => Encoder check parse String text
+packTextEncoder = isoEncoder packed
+
+unpackTextEncoder :: (Applicative check, Applicative parse, IsText text) => Encoder check parse text String
+unpackTextEncoder = isoEncoder unpacked
 
 toListMapEncoder :: (Applicative check, Applicative parse, Ord k) => Encoder check parse (Map k v) [(k, v)]
 toListMapEncoder = Encoder $ pure $ EncoderImpl
@@ -796,7 +862,7 @@ rPrism
   :: forall f f'
   .  (forall a. Prism' (f a) (f' a))
   -> Prism' (R f) (R f')
-rPrism p = dSumPrism p
+rPrism = dSumPrism
 
 dSumPrism'
   :: forall f g a
@@ -808,7 +874,7 @@ dSumGEqPrism
   :: GEq f
   => f a
   -> Prism' (DSum f g) (g a)
-dSumGEqPrism variant = dSumPrism' $ prism' (\Refl -> variant) (\x -> geq variant x)
+dSumGEqPrism variant = dSumPrism' $ prism' (\Refl -> variant) (geq variant)
 
 -- | Given a 'tag :: f a', make a prism for 'R f'. This generalizes the usual
 -- prisms for a sum type (the ones that 'mkPrisms' would make), just as 'R'
@@ -825,12 +891,19 @@ _R variant = dSumGEqPrism variant . iso runIdentity Identity
 
 -- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
 -- if the prism doesn't match.
-prismEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
-prismEncoder p = unsafeMkEncoder $ EncoderImpl
-  { _encoderImpl_encode = (^. re p)
+--
+-- Note that a 'Prism' from @a@ to @b@ will produce an 'Encoder' from @b@ to @a@
+-- (i.e. 'reviewEncoder' is a contravariant functor from the category of prisms to the category of encoders),
+-- just like 'review' produces a function @b -> a@. This is because 'Prism's extract values, in a way that might
+-- fail, in their forward direction and inject values, in a way that cannot fail, in their reverse direction;
+-- whereas 'Encoder's encode, which cannot fail, in their forward direction, and decode, which can fail, in their
+-- reverse direction. In short @reviewEncoder (f . g) = reviewEncoder g . reviewEncoder f@.
+reviewEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
+reviewEncoder p = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = review p
   , _encoderImpl_decode = \r -> case r ^? p of
       Just a -> pure a
-      Nothing -> throwError "prismEncoder: value is not present in the prism"
+      Nothing -> throwError "reviewEncoder: value is not present in the prism"
   }
 
 -- | A URL path and query string, in which trailing slashes don't matter in the path
@@ -968,9 +1041,9 @@ obeliskRouteSegment r appRouteSegment = case r of
 -- be combined with other such segment encoders before 'pathComponentEncoder' turns it into a proper 'Encoder'.
 resourceRouteSegment :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> SegmentResult check parse a
 resourceRouteSegment = \case
-  ResourceRoute_Static -> PathSegment "static" $ pathOnlyEncoderIgnoringQuery
-  ResourceRoute_Ghcjs -> PathSegment "ghcjs" $ pathOnlyEncoder
-  ResourceRoute_JSaddleWarp -> PathSegment "jsaddle" $ jsaddleWarpRouteEncoder
+  ResourceRoute_Static -> PathSegment "static" pathOnlyEncoderIgnoringQuery
+  ResourceRoute_Ghcjs -> PathSegment "ghcjs" pathOnlyEncoder
+  ResourceRoute_JSaddleWarp -> PathSegment "jsaddle" jsaddleWarpRouteEncoder
   ResourceRoute_Version -> PathSegment "version" $ unitEncoder mempty
 
 data JSaddleWarpRoute :: * -> * where
@@ -982,7 +1055,7 @@ jsaddleWarpRouteEncoder :: (MonadError Text check, MonadError Text parse) => Enc
 jsaddleWarpRouteEncoder = pathComponentEncoder $ \case
   JSaddleWarpRoute_JavaScript -> PathSegment "jsaddle.js" $ unitEncoder mempty
   JSaddleWarpRoute_WebSocket ->  PathEnd $ unitEncoder mempty
-  JSaddleWarpRoute_Sync -> PathSegment "sync" $ pathOnlyEncoder
+  JSaddleWarpRoute_Sync -> PathSegment "sync" pathOnlyEncoder
 
 instance GShow appRoute => GShow (ObeliskRoute appRoute) where
   gshowsPrec prec = \case
@@ -1013,8 +1086,8 @@ someSumEncoder = Encoder $ pure $ EncoderImpl
 
 data Void1 :: * -> * where {}
 
-instance Universe (Some Void1) where
-  universe = []
+instance UniverseSome Void1 where
+  universeSome = []
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder = Encoder $ pure $ EncoderImpl
@@ -1025,17 +1098,6 @@ void1Encoder = Encoder $ pure $ EncoderImpl
 
 instance GShow Void1 where
   gshowsPrec _ = \case {}
-
-concat <$> mapM deriveRouteComponent
-  [ ''ResourceRoute
-  , ''JSaddleWarpRoute
-  , ''IndexOnlyRoute
-  ]
-
-makePrisms ''ObeliskRoute
-makePrisms ''FullRoute
-deriveGEq ''Void1
-deriveGCompare ''Void1
 
 -- | Given a backend route and a checked route encoder, render the route (path
 -- and query string). See 'checkEncoder' for how to produce a checked encoder.
@@ -1065,15 +1127,31 @@ renderObeliskRoute e r =
       enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
   in (T.pack . uncurry (<>)) $ encode enc r
 
+-- | As per the 'unsafeTshowEncoder' but does not use the 'Text' type.
+--
+-- WARNING: Just like 'unsafeTshowEncoder' this is only safe if the Show and Read
+-- instances for 'a' are inverses of each other
+--
+-- Instances must be able to satisfy the following property for this 'Encoder' to be safe:
+--
+-- @
+-- forall a. reads (show a) === [(a, "")]
+-- @
+--
+unsafeShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) => Encoder check parse a PageName
+unsafeShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
+
+-- | This 'Encoder' does not properly indicate that its use may be unsafe and is being renamed to 'unsafeShowEncoder'
 readShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) => Encoder check parse a PageName
-readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
+readShowEncoder = unsafeShowEncoder
+{-# DEPRECATED readShowEncoder "This function has been renamed to 'unsafeShowEncoder'. 'readShowEncoder' will be removed in a future release" #-}
 
 integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
-integralEncoder = prismEncoder (Numeric.Lens.integral)
+integralEncoder = reviewEncoder Numeric.Lens.integral
 
 pathSegmentEncoder :: (MonadError Text parse, Applicative check, Cons as as a a) =>
   Encoder check parse (a, (as, b)) (as, b)
-pathSegmentEncoder = first (prismEncoder _Cons) . disassociate
+pathSegmentEncoder = first (reviewEncoder _Cons) . disassociate
 
 newtype Decoder check parse b a = Decoder { toEncoder :: Encoder check parse a b }
 
@@ -1144,7 +1222,7 @@ pathFieldEncoder fieldEncoder = unsafeEncoder $ do
       fieldEncoderPure f = toEncoder (DMap.findWithDefault (error "bad") f fieldEncoderPureMap)
   pure $ EncoderImpl
     { _encoderImpl_encode = \(x, rest) -> execWriter $ do
-      _ <- traverseWithField (\f x_i -> tell (pure $ encode (fieldEncoderPure f) x_i) *> pure x_i) x
+      _ <- traverseWithField (\f x_i -> tell (pure $ encode (fieldEncoderPure f) x_i) $> x_i) x
       tell rest
     , _encoderImpl_decode = State.runStateT $ tabulateFieldsA $ \f -> State.get >>= \case
       [] -> throwError $ T.pack "not enough path components"
@@ -1180,3 +1258,34 @@ byteStringsToPageName p q =
   in decode pageNameEncoder' (T.unpack (T.decodeUtf8 p), T.unpack (T.decodeUtf8 q))
 
 --TODO: decodeURIComponent as appropriate
+
+
+{-# DEPRECATED isoEncoder "Instead of 'isoEncoder f', use 'viewEncoder f'" #-}
+-- | Given a valid 'Iso' from lens, construct an 'Encoder'
+isoEncoder :: (Applicative check, Applicative parse) => Iso' a b -> Encoder check parse a b
+isoEncoder = viewEncoder
+
+{-# DEPRECATED prismEncoder "Instead of 'prismEncoder f', use 'reviewEncoder f'" #-}
+-- | An encoder that only works on the items available via the prism. An error will be thrown in the parse monad
+-- if the prism doesn't match.
+--
+-- Note that a 'Prism' from @a@ to @b@ will produce an 'Encoder' from @b@ to @a@
+-- (i.e. 'prismEncoder' is a contravariant functor from the category of prisms to the category of encoders),
+-- just like 'review' produces a function @b -> a@. This is because 'Prism's extract values, in a way that might
+-- fail, in their forward direction and inject values, in a way that cannot fail, in their reverse direction;
+-- whereas 'Encoder's encode, which cannot fail, in their forward direction, and decode, which can fail, in their
+-- reverse direction. In short @prismEncoder (f . g) = prismEncoder g . prismEncoder f@.
+prismEncoder :: (Applicative check, MonadError Text parse) => Prism' b a -> Encoder check parse a b
+prismEncoder = reviewEncoder
+
+
+concat <$> mapM deriveRouteComponent
+  [ ''ResourceRoute
+  , ''JSaddleWarpRoute
+  , ''IndexOnlyRoute
+  ]
+
+makePrisms ''ObeliskRoute
+makePrisms ''FullRoute
+deriveGEq ''Void1
+deriveGCompare ''Void1

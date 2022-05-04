@@ -32,6 +32,8 @@ module Obelisk.Command.Nix
 
   , boolArg
   , nixCmd
+  , nixCmdProc
+  , nixCmdProc'
   , rawArg
   , runNixShellConfig
   , strArg
@@ -188,27 +190,35 @@ runNixShellConfig cfg = mconcat
     ["--run", run] | run <- maybeToList $ cfg ^. nixShellConfig_run
   ]
 
-nixCmd :: MonadObelisk m => NixCmd -> m FilePath
-nixCmd cmdCfg = withSpinner' ("Running " <> cmd <> desc) (Just $ const $ "Built " <> desc) $ do
-  output <- readProcessAndLogStderr Debug $ proc (T.unpack cmd) options
-  -- Remove final newline that Nix appends
-  Just (outPath, '\n') <- pure $ T.unsnoc output
-  pure $ T.unpack outPath
+nixCmdProc :: NixCmd -> ProcessSpec
+nixCmdProc = fst . nixCmdProc'
+
+nixCmdProc' :: NixCmd -> (ProcessSpec, T.Text)
+nixCmdProc' cmdCfg = (proc (T.unpack cmd) options, cmd)
   where
-    (cmd, options, commonCfg) = case cmdCfg of
+    (cmd, options) = case cmdCfg of
       NixCmd_Build cfg' ->
         ( "nix-build"
         , runNixBuildConfig cfg'
-        , cfg' ^. nixCommonConfig
         )
       NixCmd_Instantiate cfg' ->
         ( "nix-instantiate"
         , runNixInstantiateConfig cfg'
-        , cfg' ^. nixCommonConfig
         )
-    path = commonCfg ^. nixCmdConfig_target . target_path
-    desc = T.pack $ mconcat $ catMaybes
-      [ (" on " <>) <$> path
-      , (\a -> " [" <> a <> "]") <$> (commonCfg ^. nixCmdConfig_target . target_attr)
-      ]
 
+nixCmd :: MonadObelisk m => NixCmd -> m FilePath
+nixCmd cmdCfg = withSpinner' (T.unwords $ "Running" : cmd : desc) (Just $ const $ T.unwords $ "Built" : desc) $ do
+  output <- readProcessAndLogStderr Debug cmdProc
+  -- Remove final newline that Nix appends
+  Just (outPath, '\n') <- pure $ T.unsnoc output
+  pure $ T.unpack outPath
+  where
+    (cmdProc, cmd) = nixCmdProc' cmdCfg
+    commonCfg = case cmdCfg of
+      NixCmd_Build cfg' -> cfg' ^. nixCommonConfig
+      NixCmd_Instantiate cfg' -> cfg' ^. nixCommonConfig
+    path = commonCfg ^. nixCmdConfig_target . target_path
+    desc = concat $ catMaybes
+      [ (\x -> ["on", T.pack x]) <$> path
+      , (\a -> ["[" <> T.pack a <> "]"]) <$> (commonCfg ^. nixCmdConfig_target . target_attr)
+      ]

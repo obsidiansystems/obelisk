@@ -1,6 +1,6 @@
 name: obelisk-route
 version: 0.2
-cabal-version: >= 1.2
+cabal-version: >= 1.8
 build-type: Simple
 
 library
@@ -20,6 +20,7 @@ library
                  http-types,
                  jsaddle,
                  lens,
+                 mmorph,
                  monad-control,
                  mtl,
                  network-uri,
@@ -38,4 +39,4 @@ library
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend
-  ghc-options: -Wall -fwarn-redundant-constraints
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
