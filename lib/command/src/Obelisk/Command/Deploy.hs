@@ -5,6 +5,11 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
+{-|
+   Description:
+   The deploy command which sets up a staging area for configuration and deployment
+   of an obelisk project.
+-}
 module Obelisk.Command.Deploy where
 
 import Control.Applicative (liftA2)
@@ -39,16 +44,30 @@ import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
+-- | Options passed to the `init` verb
 data DeployInitOpts = DeployInitOpts
   { _deployInitOpts_outputDir :: FilePath
+  -- ^ Where to set up the deployment staging area
   , _deployInitOpts_sshKey :: FilePath
+  -- ^ Which SSH Key will be used to interface with the deployment hosts
   , _deployInitOpts_hostname :: [String]
+  -- ^ The hostnames that locate the deployment hosts
   , _deployInitOpts_route :: String
+  -- ^ The route they are serving
   , _deployInitOpts_adminEmail :: String
+  -- ^ The administrator email, for ACME
   , _deployInitOpts_enableHttps :: Bool
+  -- ^ Whether or not to use HTTPS, which entails using Lets Encrypt by default
   } deriving Show
 
-deployInit :: MonadObelisk m => DeployInitOpts -> FilePath -> m ()
+-- | The `init` verb
+deployInit
+  :: MonadObelisk m
+  => DeployInitOpts
+  -- ^ Command line arguments
+  -> FilePath
+  -- ^ Project root, which cannot be the same as the deployment dir
+  -> m ()
 deployInit deployOpts root = do
   let deployDir = _deployInitOpts_outputDir deployOpts
   rootEqualsTarget <- liftIO $ liftA2 equalFilePath (canonicalizePath root) (canonicalizePath deployDir)
@@ -59,6 +78,8 @@ deployInit deployOpts root = do
     _ -> getThunkPtr CheckClean_NotIgnored root Nothing
   deployInit' thunkPtr deployOpts
 
+-- | The preamble in 'deployInit' provides deployInit' with a 'ThunkPtr' that it can install in
+-- the staging directory.
 deployInit'
   :: MonadObelisk m
   => ThunkPtr
@@ -108,6 +129,8 @@ deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminE
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
+-- | Installs an obelisk impl in the staging dir that points at the obelisk of the
+-- project thunk.
 setupObeliskImpl :: MonadIO m => FilePath -> m ()
 setupObeliskImpl deployDir = liftIO $ do
   let
@@ -116,8 +139,15 @@ setupObeliskImpl deployDir = liftIO $ do
   createDirectoryIfMissing True implDir
   writeFile (implDir </> "default.nix") $ "(import " <> toNixPath (goBackUp </> "src") <> " {}).obelisk"
 
-deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
-deployPush deployPath getNixBuilders = do
+-- | Executes the deployment specified in the supplied staging dir
+deployPush
+  :: MonadObelisk m
+  => FilePath
+  -- ^ Path to the staging directory
+  -> [String]
+  -- ^ nix builders arg string for the nix-build that builds the deployment artefacts
+  -> m ()
+deployPush deployPath builders = do
   hosts <- Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "backend_hosts"
   adminEmail <- readDeployConfig deployPath "admin_email"
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
@@ -192,12 +222,15 @@ deployPush deployPath getNixBuilders = do
       let p = setEnvOverride (envMap <>) $ setDelegateCtlc True $ proc cmd args
       callProcessAndLogOutput (Notice, Notice) p
 
+-- | Update the source thunk in the staging directory to the HEAD of the branch.
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest (ThunkUpdateConfig Nothing (ThunkConfig Nothing)) (deployPath </> "src")
 
+-- | Platforms that we deploy obelisk artefacts to.
 data PlatformDeployment = Android | IOS
   deriving (Show, Eq)
 
+-- | Pretty print PlatformDeployment
 renderPlatformDeployment :: PlatformDeployment -> String
 renderPlatformDeployment = \case
   Android -> "android"
