@@ -1,12 +1,16 @@
 # Obelisk
 
+[![Haskell Programming Language](https://img.shields.io/badge/language-Haskell-blue.svg)](http://www.haskell.org)
+[![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)](https://tldrlegal.com/license/bsd-3-clause-license-%28revised%29)
+
+
 Obelisk provides an easy way to develop and deploy your [Reflex](https://github.com/reflex-frp/reflex) project as web apps and as mobile apps.
 
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
-  - [Hoogle](#hoogle)
   - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
+  - [Running over https](#running-over-https)
 - [Deploying](#deploying)
   - [Locally](#locally)
   - [EC2](#ec2)
@@ -22,14 +26,15 @@ Obelisk provides an easy way to develop and deploy your [Reflex](https://github.
 1. Set up nix caches
     1. If you are running NixOS, add this to `/etc/nixos/configuration.nix`:
         ```
-        nix.binaryCaches = [ "https://cache.nixos.org/" "https://nixcache.reflex-frp.org" ];
+        nix.binaryCaches = [ "https://nixcache.reflex-frp.org" ];
         nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
         and rebuild your NixOS configuration (e.g. `sudo nixos-rebuild switch`).
     1. If you are using another operating system or linux distribution, ensure that these lines are present in your Nix configuration file (`/etc/nix/nix.conf` on most systems; [see full list](https://nixos.org/nix/manual/#sec-conf-file)):
         ```
-        substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
-        trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
+       binary-caches = https://cache.nixos.org https://nixcache.reflex-frp.org
+       binary-cache-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
+       binary-caches-parallel-connections = 40
         ```
         * other Linux: enable sandboxing (see these [issue172](https://github.com/obsidiansystems/obelisk/issues/172#issuecomment-411507818) or [issue6](https://github.com/obsidiansystems/obelisk/issues/6) if you run into build problems)
           ```
@@ -60,6 +65,28 @@ Or to launch ghcid for `lib/command` project:
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid -c 'cabal new-repl'"
 ```
 
+To re-install `ob` from source do
+```
+nix-env -f /path/to/obelisk -iA command
+```
+
+Note that `ob` will defer to the version found in your project's `.obelisk/impl` directory. To update that version specifically:
+
+```shell
+ob thunk unpack ./.obelisk/impl
+cd ./.obelisk/impl
+# apply your changes
+```
+
+If you want to commit your changes, first push them to your fork of obelisk and then
+
+```shell
+cd /your/project/root
+ob thunk pack .obelisk/impl
+git add .obelisk/impl
+git commit -m "Bump obelisk"
+```
+
 ### Accessing private repositories
 
 To allow the Nix builder to access private git repositories, you must be set up
@@ -83,15 +110,10 @@ Obelisk leverages ghcid to provide a live-reloading server that handles both fro
 ob run
 ```
 
-Now go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Now, with an appropriate browser, go to http://localhost:8000 (or the address/port specified in `config/common/route`) to access your app.
+Firefox will not be able to properly run the development website due to [issue 460](https://github.com/obsidiansystems/obelisk/issues/460). Fortunately, this problem does not occur on a fully built website.
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
-
-### Hoogle
-
-To enter a nix-shell from which you can run the hoogle command-line client or a hoogle server for your project:
-
-`nix-shell -A shells.ghc --arg withHoogle true`
 
 ### Adding packages
 
@@ -99,14 +121,14 @@ In order to add package dependencies, declare them under the build-depends field
 
 ### Adding package overrides
 
-To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package, your `default.nix` will look like:
+To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package fetched from GitHub and a specific version of the `waargonaut` package fetched from Hackage, your `default.nix` will look like:
 
 ```nix
 # ...
 project ./. ({ pkgs, ... }: {
 # ...
   overrides = self: super: let
-    aeson = pkgs.fetchFromGitHub {
+    aesonSrc = pkgs.fetchFromGitHub {
       owner = "obsidiansystems";
       repo = "aeson-gadt-th";
       rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
@@ -114,12 +136,40 @@ project ./. ({ pkgs, ... }: {
     };
   in
   {
-    aeson = self.callCabal2nix "aeson" aeson {};
+    aeson = self.callCabal2nix "aeson" aesonSrc {};
+    waargonaut = self.callHackageDirect {
+      pkg = "waargonaut";
+      ver = "0.8.0.1";
+      sha256 = "1zv28np3k3hg378vqm89v802xr0g8cwk7gy3mr77xrzy5jbgpa39";
+    } {};
   };
 # ...
 ```
 
 For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
+
+### Adding extra local packages
+
+If the standard packages (`frontend`, `backend`, and `common`) are not
+enough, to add more local Haskell packages, define them with the
+`packages` parameter. The sources of these packages will be
+automatically reloaded by `ob run`.
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  packages = {
+    another = ./another;
+  };
+# ...
+```
+
+### Running over https
+
+To run your app locally over https, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+
+Since Obelisk generates a self-signed certificate for running https, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
 
 ## Deploying
 
@@ -128,14 +178,16 @@ For further information see [the Haskell section](https://nixos.org/nixpkgs/manu
 Build everything:
 
 ```
-nix-build -A exe -o result-exe
+nix-build -A exe --no-out-link
 ```
 
-Run the server:
+Copy the result to a new directory, add configuration, and run!
 
 ```
-cd result-exe
-./backend
+mkdir test-app
+ln -s $(nix-build -A exe --no-out-link)/* test-app/
+cp -r config test-app
+(cd test-app && ./backend)
 ```
 
 ### EC2
@@ -144,7 +196,7 @@ In this section we will demonstrate how to deploy your Obelisk app to an Amazon 
 
 First create a new EC2 instance:
 
-1. Launch a NixOS 18.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-009c9c3f1af480ff3))
+1. Launch a NixOS 19.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-00a8eeaf232a74f84))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
 1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and 443.
@@ -167,9 +219,11 @@ ob deploy init \
   ~/code/myapp-deploy
 ```
 
-NOTE: HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
+HTTPS is enabled by default; to disable https, pass `--disable-https` to the `ob deploy init` command above.
 
-Then go to that created deployment configuration directory, and initiate the deployment:
+This step will also require that you manually verify the authenticity of the host `$SERVER`. Obelisk will save the fingerprint in a deployment-specific configuration. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
+
+Next, go to the deployment directory that you just initialized and deploy!
 
 ```
 cd ~/code/myapp-deploy
@@ -295,9 +349,9 @@ This command will accomplish the following:
 1. Build a Signed Android apk for your application
 1. Deploy the Signed apk to your connected Android device
 
-In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`
+In the event that you change your key or keystore password, you will have to update your credentials within the JSON object found in `android_keytool_config.json`.
 
-Additional documentation on java key stores can be found [here] (https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html)
+Additional documentation on Java key stores can be found [here](https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html).
 
 This should copy over and install the application on your device (if you see a  "*signatures do not match*" error, simply uninstall the previous app from the device before retrying the deploy). The name of the installed application will be what you have specified for `android.displayName` in the `default.nix`.
 

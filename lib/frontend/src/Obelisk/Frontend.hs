@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -45,7 +46,7 @@ import qualified GHCJS.DOM.History as DOM
 import qualified GHCJS.DOM.Window as DOM
 import Language.Javascript.JSaddle (MonadJSM, JSM, jsNull)
 import GHCJS.DOM (currentDocument)
-import GHCJS.DOM.Document (getHead)
+import "ghcjs-dom" GHCJS.DOM.Document (getHead)
 import GHCJS.DOM.Node (Node, removeChild_)
 import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
 import GHCJS.DOM.ParentNode (querySelectorAll)
@@ -197,7 +198,6 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , PrimMonad m
            , MonadSample DomTimeline (Performable m)
            , DOM.MonadJSM m
-           , Monad (Performable (Client (HydrationDomBuilderT s DomTimeline m)))
            , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
            , MonadFix (Performable m)
            , MonadFix m
@@ -229,7 +229,7 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
 renderFrontendHtml
   :: ( t ~ DomTimeline
      , MonadIO m
-     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost)))))))
+     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost))))))))
      )
   => Map Text ByteString
   -> Cookies
@@ -241,7 +241,7 @@ renderFrontendHtml
   -> m ByteString
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-  html <- fmap snd $ liftIO $ renderStatic $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
+  html <- fmap snd $ liftIO $ renderStatic $ runHydratableT $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
     el "html" $ do
       el "head" $ do
         baseTag

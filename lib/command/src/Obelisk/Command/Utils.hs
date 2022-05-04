@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Obelisk.Command.Utils where
 
 import Control.Applicative hiding (many)
@@ -20,18 +21,28 @@ import Data.Maybe (maybeToList)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
-import System.Directory (canonicalizePath)
-import System.Environment (getExecutablePath)
 import System.Exit (ExitCode)
-import qualified System.Process as P
+import System.Which (staticWhich)
 import Text.Megaparsec as MP
 import Text.Megaparsec.Char as MP
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp
 
-getObeliskExe :: IO FilePath
-getObeliskExe = getExecutablePath >>= canonicalizePath
+cp :: FilePath
+cp = $(staticWhich "cp")
+
+ghcidExePath :: FilePath
+ghcidExePath = $(staticWhich "ghcid")
+
+findExePath :: FilePath
+findExePath = $(staticWhich "find")
+
+nixExePath :: FilePath
+nixExePath = $(staticWhich "nix")
+
+nixBuildExePath :: FilePath
+nixBuildExePath = $(staticWhich "nix-build")
 
 -- Check whether the working directory is clean
 checkGitCleanStatus :: MonadObelisk m => FilePath -> Bool -> m Bool
@@ -61,20 +72,31 @@ initGit repo = do
   git ["add", "."]
   git ["commit", "-m", "Initial commit."]
 
-gitProcNoRepo :: [String] -> P.CreateProcess
-gitProcNoRepo = P.proc "git"
+gitProcNoRepo :: [String] -> ProcessSpec
+gitProcNoRepo args = setEnvOverride (M.singleton "GIT_TERMINAL_PROMPT" "0" <>) $ proc "git" args
 
-gitProc :: FilePath -> [String] -> P.CreateProcess
+gitProc :: FilePath -> [String] -> ProcessSpec
 gitProc repo = gitProcNoRepo . runGitInDir
   where
     runGitInDir args' = case filter (not . null) args' of
       args@("clone":_) -> args <> [repo]
       args -> ["-C", repo] <> args
 
--- | Recursively copy a directory using `cp -a`
-copyDir :: FilePath -> FilePath -> P.CreateProcess
+isolateGitProc :: ProcessSpec -> ProcessSpec
+isolateGitProc = setEnvOverride (overrides <>)
+  where
+    overrides = M.fromList
+      [ ("HOME", "/dev/null")
+      , ("GIT_CONFIG_NOSYSTEM", "1")
+      , ("GIT_TERMINAL_PROMPT", "0") -- git 2.3+
+      , ("GIT_ASKPASS", "echo") -- pre git 2.3 to just use empty password
+      , ("GIT_SSH_COMMAND", "ssh -o PreferredAuthentications password -o PubkeyAuthentication no -o GSSAPIAuthentication no")
+      ]
+
+-- | Recursively copy a directory using `cp -a` -- TODO: Should use -rT instead of -a
+copyDir :: FilePath -> FilePath -> ProcessSpec
 copyDir src dest =
-  (P.proc "cp" ["-a", ".", dest]) { P.cwd = Just src }
+  setCwd (Just src) $ proc cp ["-a", ".", dest] -- TODO: This will break if dest is relative since we change cwd
 
 readGitProcess :: MonadObelisk m => FilePath -> [String] -> m Text
 readGitProcess repo = readProcessAndLogOutput (Debug, Notice) . gitProc repo
@@ -87,15 +109,15 @@ processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
   where quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
 
 -- | A simpler wrapper for CliApp's most used process function with sensible defaults.
-runProc :: MonadObelisk m => P.CreateProcess -> m ()
+runProc :: MonadObelisk m => ProcessSpec -> m ()
 runProc = callProcessAndLogOutput (Notice, Error)
 
 -- | Like runProc, but all output goes to Debug logging level
-runProcSilently :: MonadObelisk m => P.CreateProcess -> m ()
+runProcSilently :: MonadObelisk m => ProcessSpec -> m ()
 runProcSilently = callProcessAndLogOutput (Debug, Debug)
 
 -- | A simpler wrapper for CliApp's readProcessAndLogStderr with sensible defaults.
-readProc :: MonadObelisk m => P.CreateProcess -> m Text
+readProc :: MonadObelisk m => ProcessSpec -> m Text
 readProc = readProcessAndLogOutput (Debug, Error)
 
 tshow :: Show a => a -> Text
@@ -129,13 +151,13 @@ gitLsRemote repository mRef mBranch = do
   (exitCode, out, _err) <- case mBranch of
     Nothing -> readCreateProcessWithExitCode $ gitProcNoRepo $
         ["ls-remote", "--exit-code", "--symref", repository]
-        ++ (maybeToList $ T.unpack . showGitRef <$> mRef)
-    Just branchName -> readCreateProcessWithExitCode $ gitProcNoRepo $
+        ++ maybeToList (T.unpack . showGitRef <$> mRef)
+    Just branchName -> readCreateProcessWithExitCode $ gitProcNoRepo
         ["ls-remote", "--exit-code", repository, branchName]
   let t = T.pack out
   maps <- case MP.runParser parseLsRemote "" t of
     Left err -> failWith $ T.pack $ MP.errorBundlePretty err
-    Right table -> pure $ bimap M.fromList M.fromList $ partitionEithers $ table
+    Right table -> pure $ bimap M.fromList M.fromList $ partitionEithers table
   putLog Debug $ "git ls-remote maps: " <> T.pack (show maps)
   pure (exitCode, maps)
 
