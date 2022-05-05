@@ -40,6 +40,7 @@ library
     primitive,
     mmorph,
     monad-control,
+    mtl,
     reflex,
     reflex-dom-core,
     jsaddle

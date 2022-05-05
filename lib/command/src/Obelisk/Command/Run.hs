@@ -27,10 +27,7 @@ import Data.Foldable (fold, for_, toList)
 import Data.Functor.Identity (runIdentity)
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.UTF8 as BSU
 import Data.Either
-import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -89,16 +86,11 @@ import Obelisk.CliApp (
     setCwd,
     setDelegateCtlc,
     withSpinner,
-    callCommand,
-    getCliConfig,
-    runCli
     )
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
-import System.Which (staticWhich)
-import Text.ShellEscape (bash, bytes)
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -551,6 +543,37 @@ runGhciRepl root (toList -> packages) ghciArgs =
   nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
     Just $ unwords $ fmap bashEscape $ "ghci" : ghciArgs
 
+-- -- | Run ghcid
+-- runGhcid
+--   :: (MonadObelisk m, Foldable f)
+--   => FilePath -- ^ Path to project root
+--   -> Bool -- ^ Should we chdir to root when running this process?
+--   -> [String] -- ^ GHCi arguments
+--   -> f CabalPackageInfo -- ^ Packages to keep unbuilt
+--   -> Maybe String -- ^ Optional command to run at every reload
+--   -> m ()
+-- runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
+--   nixShellWithoutPkgs root True chdirToRoot (packageInfoToNamePathMap packages) "ghc" $
+--     Just $ unwords $ fmap bashEscape $ ghcidExePath : opts
+--   where
+--     opts =
+--       [ "-W"
+--       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
+--       , "--command=" <> (BSU.toString $ bytes $ bash $ BSU.fromString $
+--           "ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> unwords (makeBaseGhciOptions dotGhci))
+--       , "--reload=config"
+--       , "--outputfile=ghcid-output.txt"
+--       ] <> map (\x -> "--reload='" <> x <> "'") reloadFiles
+--         <> map (\x -> "--restart='" <> x <> "'") restartFiles
+--         <> testCmd
+--         <> ["--command='" <> unwords ("ghci" : ghciArgs) <> "'"] -- TODO: Shell escape
+--     testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
+
+--     adjustRoot x = if chdirToRoot then makeRelative root x else x
+--     reloadFiles = map adjustRoot [root </> "config"]
+--     restartFiles = map (adjustRoot . _cabalPackageInfo_packageFile) packages
+
+
 -- | Run ghcid
 runGhcid
   :: (MonadObelisk m, Foldable f)
@@ -564,19 +587,14 @@ runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
   nixShellWithoutPkgs root True chdirToRoot (packageInfoToNamePathMap packages) "ghc" $
     Just $ unwords $ fmap bashEscape $ ghcidExePath : opts
   where
-    opts =
-      [ "-W"
-      --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
-      , "--command=" <> (BSU.toString $ bytes $ bash $ BSU.fromString $
-          "ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> unwords (makeBaseGhciOptions dotGhci))
-      , "--reload=config"
-      , "--outputfile=ghcid-output.txt"
-      ] <> map (\x -> "--reload='" <> x <> "'") reloadFiles
-        <> map (\x -> "--restart='" <> x <> "'") restartFiles
-        <> testCmd
-        <> ["--command='" <> unwords ("ghci" : ghciArgs) <> "'"] -- TODO: Shell escape
-    testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
-
+    opts = concat
+      [ ["-W"]
+      , ["--outputfile=ghcid-output.txt"]
+      , map (\x -> "--reload=" <> x) reloadFiles
+      , map (\x -> "--restart=" <> x) restartFiles
+      , maybe [] (\cmd -> ["--test=" <> cmd]) mcmd
+      , ["--command=" <> unwords ("ghci" : ghciArgs)]
+      ]
     adjustRoot x = if chdirToRoot then makeRelative root x else x
     reloadFiles = map adjustRoot [root </> "config"]
     restartFiles = map (adjustRoot . _cabalPackageInfo_packageFile) packages

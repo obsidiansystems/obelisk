@@ -16,13 +16,6 @@ module Obelisk.Command.Project
   , nixShellWithoutPkgs
   , mkObNixShellProc
   , obeliskDirName
-  , withProjectRoot
-  , inProjectProc
-  , inProjectShell
-  , inImpureProjectShell
-  , projectProc
-  , projectShell
-  , toObeliskDir
   , toImplDir
   , toObeliskDir
   , withProjectRoot

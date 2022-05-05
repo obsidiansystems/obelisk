@@ -48,7 +48,7 @@ library
     , text
     , time
     , transformers
-    , unix
+    , unix-compat
     , unordered-containers
     , utf8-string
     , which

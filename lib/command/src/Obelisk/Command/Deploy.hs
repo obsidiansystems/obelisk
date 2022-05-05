@@ -25,7 +25,7 @@ import GHC.Generics
 import System.Directory
 import System.FilePath
 import System.IO
-import System.Posix.Files
+import System.PosixCompat.Files
 import Text.URI (URI)
 import qualified Text.URI as URI
 import Text.URI.Lens

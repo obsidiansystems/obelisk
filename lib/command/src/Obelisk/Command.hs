@@ -13,9 +13,6 @@ import Data.List (isInfixOf, isPrefixOf)
 import Data.List.NonEmpty (NonEmpty, nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
-import qualified Data.ByteString.UTF8 as BSU
-import Data.List
-import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Traversable (for)
 import Options.Applicative
@@ -25,8 +22,7 @@ import System.Environment
 import System.FilePath
 import qualified System.Info
 import System.IO (hIsTerminalDevice, stdout)
-import Text.ShellEscape (bash)
-import System.Posix.Process (executeFile)
+import System.Process (rawSystem)
 
 import Obelisk.App
 import Obelisk.CliApp
@@ -107,25 +103,6 @@ data ObInternal
       [(FilePath, Interpret)]
       Bool -- ^ Use relative paths
    deriving Show
-
-
-inNixShell' :: MonadObelisk m => StaticPtr (ObeliskT IO ()) -> m ()
-inNixShell' p = withProjectRoot "." $ \root -> do
-  cmd <- liftIO $ fmap (bash . BSU.fromString) <$> mkCmd
-  projectProc root True "ghc" (Just cmd)
-  where
-    mkCmd = do
-      argsCfg <- getArgsConfig
-      myArgs <- getArgs
-      obArgs <- parseCLIArgs argsCfg myArgs
-      progName <- getObeliskExe
-      return $ progName : catMaybes
-        [ Just "--no-handoff"
-        , bool Nothing (Just "--verbose") $ _args_verbose obArgs
-        , Just "internal"
-        , Just "run-static-io"
-        , Just $ encodeStaticKey $ staticKey p
-        ]
 
 obCommand :: ArgsConfig -> Parser ObCommand
 obCommand cfg = hsubparser

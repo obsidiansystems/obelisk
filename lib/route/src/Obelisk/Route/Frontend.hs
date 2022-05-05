@@ -517,11 +517,11 @@ routeLink r w = do
 -- | Like 'routeLink', but takes additional attributes as argument.
 --
 routeLinkAttr
-  :: forall t m a route js.
+  :: forall t m a route.
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
-     , Prerender js t m
+     , Prerender t m
      )
   => Map AttributeName Text -- ^ Additional attributes
   -> route -- ^ Target route
