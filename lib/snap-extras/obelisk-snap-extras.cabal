@@ -12,7 +12,6 @@ library
     , base
     , bytestring
     , snap-core
-    , unix
     , directory
     , filepath
     , text

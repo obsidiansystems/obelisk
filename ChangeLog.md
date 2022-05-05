@@ -51,6 +51,7 @@ This project's release branch is `master`. This log is written from the perspect
 * [#787](https://github.com/obsidiansystems/obelisk/pull/787): Set `immutable` cache control directive when serving content-addressed static assets
 * Use iOS SDK 13.2
 
+
 ## v0.9.0.1
 
 * ([#810](https://github.com/obsidiansystems/obelisk/pull/810)) Fix loading of `all.js` in fully compiled web apps.
@@ -60,6 +61,15 @@ This project's release branch is `master`. This log is written from the perspect
 * **(Breaking change)** Backport nixpkgs upgrades to ACME/Let's Encrypt handling so that HTTPS deployments continue to work flawlessly. If your deployment is having trouble renewing [Let's Encrypt](https://letsencrypt.org/) certificates, upgrade to this version.
   * **IMPORTANT:** In order to use [Let's Encrypt](https://letsencrypt.org/) you must now accept their [terms of service](https://letsencrypt.org/repository/). To do that, add `terms.security.acme.acceptTerms = true;` to the `import ./.obelisk/impl {` section in your `default.nix`. The new skeleton application may serve as an [example](https://github.com/obsidiansystems/obelisk/blob/4759342ab3570888c027d4c58cb5694cb832d624/skeleton/default.nix#L13).
 * Update reflex-platform dependency to v0.6.0.0
+* ([#715](https://github.com/obsidiansystems/obelisk/pull/715)) In `Obelisk.Route` deprecate `isoEncoder` and `prismEncoder` in favor of more precisely named `viewEncoder` and `reviewEncoder` (respectively) and improve documentation regarding contravariance of `reviewEncoder`.
+* ([#739](https://github.com/obsidiansystems/obelisk/pull/739)) Improve `ob shell` by allowing commands to be passed verbatim after a `--` argument. For example, `ob shell 'run command'` can now be written `ob shell -- run command`.
+* ([#735](https://github.com/obsidiansystems/obelisk/pull/735)) Fix regression causing custom `Prelude`s to break `ob run`/`ob watch`/`ob repl`.
+* ([#737](https://github.com/obsidiansystems/obelisk/pull/737)) Fix bug causing custom `Prelude`s to break `ob profile`.
+* ([#752](https://github.com/obsidiansystems/obelisk/pull/752)) Fix the `ob` command-line tool to return non-zero exit code when underlying processes fail.
+* ([#742](https://github.com/obsidiansystems/obelisk/pull/742), [#57](https://github.com/obsidiansystems/obelisk/pull/57), [#406](https://github.com/obsidiansystems/obelisk/pull/406)) Enable `-dedupe` and `-DGHCJS_BROWSER` in GHCJS builds to make JavaScript output considerably smaller leading to faster load/parse times and faster build times.
+  * **Migration:** New Obelisk projects will automatically benefit from this change, but existing projects need to apply a change similar to [this one](https://github.com/obsidiansystems/obelisk/blob/371cb3302085601c5ec73e9574d51c8b95e3e493/skeleton/frontend/frontend.cabal#L32-L34).
+* ([#742](https://github.com/obsidiansystems/obelisk/pull/742)) Update `reflex-platform` which includes:
+    * A new version of GHCJS where `-dedupe` is fixed.
 
 ## v0.8.0.0
 
@@ -122,12 +132,6 @@ This project's release branch is `master`. This log is written from the perspect
 * Improve the skeleton in small ways. ([#593](https://github.com/obsidiansystems/obelisk/pull/593), [#589](https://github.com/obsidiansystems/obelisk/pull/589))
 * Fix `ob` commands to again support running from any subdirectory of an obelisk project ([#591](https://github.com/obsidiansystems/obelisk/pull/591))
 * Add `reflex-platform-func` argument to Obelisk's `default.nix`. It defaults to its prior behavior of using the reflex-platform in in `dep`. ([#612](https://github.com/obsidiansystems/obelisk/pull/612))
-
-## Unreleased
-
-* Obelisk now depends directly on reflex-dom-core instead of
-  reflex-dom. This avoids requiring a jsaddle-webkit2gtk dependency in
-  apps that are only using jsaddle-warp.
 
 ## v0.3.0.0 - 2019-12-20
 

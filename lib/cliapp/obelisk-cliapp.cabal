@@ -20,6 +20,7 @@ library
     , mtl
     , shell-escape
     , process
+    , shell-escape
     , terminal-size
     , text
     , time

@@ -43,7 +43,7 @@ import Data.Map (Map)
 import Data.Maybe (isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Traversable (for)
 import Reflex
 import Reflex.FSNotify
@@ -306,10 +306,10 @@ nixShellRunConfig root isPure command = do
   pure $ def
     & nixShellConfig_pure .~ isPure
     & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
-    & nixShellConfig_run .~ (command <&> \c -> mconcat
-      [ "export NIX_PATH=nixpkgs=", T.unpack nixpkgsPath, "; "
-      , maybe "" (\v -> "export NIX_REMOTE=" <> v <> "; ") nixRemote
-      , c
+    & nixShellConfig_run .~ (command <&> \cs -> unwords $ concat
+      [ ["export", BSU.toString . bytes . bash $ "NIX_PATH=nixpkgs=" <> encodeUtf8 nixpkgsPath, ";"]
+      , maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
+      , [cs]
       ])
 
 bashEscape :: String -> String

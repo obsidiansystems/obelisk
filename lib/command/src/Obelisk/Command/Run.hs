@@ -74,6 +74,7 @@ import System.Environment (getExecutablePath)
 import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
+
 import Obelisk.App (MonadObelisk, getObelisk, runObelisk)
 import Obelisk.CliApp (
     Severity (..),
@@ -542,37 +543,6 @@ runGhciRepl root (toList -> packages) ghciArgs =
   -- ghc that is provided by the shell in the user's project.
   nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
     Just $ unwords $ fmap bashEscape $ "ghci" : ghciArgs
-
--- -- | Run ghcid
--- runGhcid
---   :: (MonadObelisk m, Foldable f)
---   => FilePath -- ^ Path to project root
---   -> Bool -- ^ Should we chdir to root when running this process?
---   -> [String] -- ^ GHCi arguments
---   -> f CabalPackageInfo -- ^ Packages to keep unbuilt
---   -> Maybe String -- ^ Optional command to run at every reload
---   -> m ()
--- runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
---   nixShellWithoutPkgs root True chdirToRoot (packageInfoToNamePathMap packages) "ghc" $
---     Just $ unwords $ fmap bashEscape $ ghcidExePath : opts
---   where
---     opts =
---       [ "-W"
---       --TODO: The decision of whether to use -fwarn-redundant-constraints should probably be made by the user
---       , "--command=" <> (BSU.toString $ bytes $ bash $ BSU.fromString $
---           "ghci -Wall -ignore-dot-ghci -fwarn-redundant-constraints " <> unwords (makeBaseGhciOptions dotGhci))
---       , "--reload=config"
---       , "--outputfile=ghcid-output.txt"
---       ] <> map (\x -> "--reload='" <> x <> "'") reloadFiles
---         <> map (\x -> "--restart='" <> x <> "'") restartFiles
---         <> testCmd
---         <> ["--command='" <> unwords ("ghci" : ghciArgs) <> "'"] -- TODO: Shell escape
---     testCmd = maybeToList (flip fmap mcmd $ \cmd -> "--test='" <> cmd <> "'") -- TODO: Shell escape
-
---     adjustRoot x = if chdirToRoot then makeRelative root x else x
---     reloadFiles = map adjustRoot [root </> "config"]
---     restartFiles = map (adjustRoot . _cabalPackageInfo_packageFile) packages
-
 
 -- | Run ghcid
 runGhcid

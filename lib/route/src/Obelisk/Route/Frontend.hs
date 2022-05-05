@@ -74,8 +74,7 @@ import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.GADT.Compare
 import qualified Data.List as L
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map as Map (Map, lookup)
 import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Proxy

@@ -39,7 +39,7 @@ import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import Reflex
-import Reflex.Host.Class
+import Reflex.Host.Class (MonadReflexCreateTrigger)
 import Reflex.Dom.Core
   ( DomBuilder
   , DomRenderHook
