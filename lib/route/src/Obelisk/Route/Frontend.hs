@@ -85,12 +85,12 @@ import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
 import GHCJS.DOM.EventTarget (addEventListener)
 import GHCJS.DOM.MouseEvent (getCtrlKey)
-import GHCJS.DOM.Event (preventDefault)
+import qualified GHCJS.DOM.Event as E
 import Language.Javascript.JSaddle (MonadJSM, function, jsNull, liftJSM, toJSVal) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
 import Reflex.Class
-import Reflex.Dom.Builder.Class hiding (preventDefault)
-import Reflex.Dom.Core hiding (preventDefault)
+import Reflex.Dom.Builder.Class
+import Reflex.Dom.Core
 import Reflex.Host.Class
 import Unsafe.Coerce
 
@@ -558,7 +558,7 @@ preventDefaultClick :: DOM.MouseEvent -> DOM.DOM ()
 preventDefaultClick mouseEv = do
   wasCtrlPressed <- getCtrlKey mouseEv
   unless wasCtrlPressed $
-    preventDefault mouseEv
+    E.preventDefault mouseEv
 
 whenCtrlPressed :: (PerformEvent t m, MonadJSM (Performable m)) => Event t DOM.MouseEvent -> Dynamic t a -> m (Event t a)
 whenCtrlPressed clickEv xDyn = do
