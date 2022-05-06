@@ -571,6 +571,25 @@ unlessCtrlPressed clickEv xDyn = do
       else pure $ Just x
   pure $ fmapMaybe id xEv
 
+-- | This function sets the route as per the input dynamic, whenever the input element is clicked,
+-- provided that Ctrl key was NOT pressed. It will also prevent the default action for the click event in this case.
+--
+-- If the Ctrl key was pressed while the element was clicked, the function will not do anything.
+--
+-- This is required so that `routeLink` functions perform similarly to <a> tag, when Ctrl-clicked.
+-- If Ctrl was pressed, we do nothing, and let the browser handle everything (ie opening the link in a new tab)
+-- If Ctrl was NOT pressed, we take over, prevent the default action, and set the route ourselves. This stays in line
+-- with the client side routing that Obelisk has.
+setRouteUnlessCtrlPressed
+  :: (RouteClick t m, SetRoute t route m)
+  => Element er (DomBuilderSpace m) t
+  -> Dynamic t route
+  -> m ()
+setRouteUnlessCtrlPressed e routeDyn = do
+  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
+  routeEv <- unlessCtrlPressed clickEv routeDyn
+  setRoute routeEv
+
 -- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
 -- contexts, this widget falls back to using @href@s to control navigation
 routeLink
@@ -605,9 +624,7 @@ routeLinkImpl r w = do
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
-  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
-  routeEv <- unlessCtrlPressed clickEv $ constDyn r
-  setRoute routeEv
+  setRouteUnlessCtrlPressed e $ constDyn r
   return (domEvent Click e, a)
 
 scrollToTop :: forall m t. (Prerender t m, Monad m) => Event t () -> m ()
@@ -651,9 +668,7 @@ dynRouteLinkImpl dr w = do
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
-  routeEv <- unlessCtrlPressed clickEv dr
-  setRoute routeEv
+  setRouteUnlessCtrlPressed e dr
   return (domEvent Click e, a)
 
 -- | An @a@-tag link widget that, when clicked, sets the route to current value of the
@@ -696,9 +711,7 @@ routeLinkDynAttrImpl dAttr dr w = do
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
-  routeEv <- unlessCtrlPressed clickEv dr
-  setRoute routeEv
+  setRouteUnlessCtrlPressed e dr
   return (domEvent Click e, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
