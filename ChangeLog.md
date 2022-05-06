@@ -3,7 +3,7 @@
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
 ## Unreleased
-* Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave exactly like `<a href="...">` when run by JavaScript. These functions now open a new tab when Ctrl-clicked.
+* Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave like `<a href="...">` when Ctrl was pressed while the element was being clicked, they would load the link in the current tab instead of opening a new tab. These functions now open a new tab when Ctrl-clicked.
 
 ## v0.9.1.0
 
