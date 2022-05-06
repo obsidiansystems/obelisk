@@ -585,10 +585,10 @@ preventDefaultClickOnCtrlPress mouseEv = do
 
 -- | This function samples a given `Dynamic` based on a event containing a [MouseEvent](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent).
 --
--- Whenever the input event triggers, we sample the input dynamic if the Ctrl key was pressed.
--- If the Ctrl key was not pressed, that event occurrence is discarded.
-whenCtrlPressed :: (PerformEvent t m, MonadJSM (Performable m)) => Event t DOM.MouseEvent -> Dynamic t a -> m (Event t a)
-whenCtrlPressed clickEv xDyn = do
+-- Whenever the input event triggers, we sample the input dynamic if the Ctrl key was NOT pressed.
+-- If the Ctrl key was pressed, that event occurrence is discarded.
+unlessCtrlPressed :: (PerformEvent t m, MonadJSM (Performable m)) => Event t DOM.MouseEvent -> Dynamic t a -> m (Event t a)
+unlessCtrlPressed clickEv xDyn = do
   xEv <- performEvent $ (,) <$> current xDyn <@> clickEv <&> \(x, mouseClick) -> do
     getCtrlKey mouseClick >>= \wasCtrlPressed -> if wasCtrlPressed
       then pure Nothing
@@ -630,7 +630,7 @@ routeLinkImpl r w = do
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
   clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
-  routeEv <- whenCtrlPressed clickEv $ constDyn r
+  routeEv <- unlessCtrlPressed clickEv $ constDyn r
   setRoute routeEv
   return (domEvent Click e, a)
 
@@ -676,7 +676,7 @@ dynRouteLinkImpl dr w = do
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
   clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
-  routeEv <- whenCtrlPressed clickEv dr
+  routeEv <- unlessCtrlPressed clickEv dr
   setRoute routeEv
   return (domEvent Click e, a)
 
@@ -721,7 +721,7 @@ routeLinkDynAttrImpl dAttr dr w = do
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
   clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
-  routeEv <- whenCtrlPressed clickEv dr
+  routeEv <- unlessCtrlPressed clickEv dr
   setRoute routeEv
   return (domEvent Click e, a)
 
