@@ -510,7 +510,27 @@ type RouteClick t m =
   , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
   )
 
-getClickEvent :: (MonadJSM m, TriggerEvent t m, DOM.IsEventTarget (RawElement d)) => Element er d t -> (DOM.MouseEvent -> DOM.DOM ()) -> m (Event t DOM.MouseEvent)
+-- | This function returns a Reflex event containing a [MouseEvent](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent) for an element.
+--
+-- This funcion is needed because the default Reflex click event is lacking. As can be seen
+-- from the aforementioned link, click events have a lot of metadata. Reflex does not have a way of
+-- providing the user with this metadata. If a user wanted to know whether Ctrl/Alt keys were pressed
+-- while the element was being clicked, Reflex doesn't have a way of providing this information.
+-- There are events for keypress, but they only seem to work with input elements.
+--
+-- Another thing that this function provides is the capability to conditionally handle events.
+-- For example, consider a situation where clicks should not be propagated if Alt key was pressed during the click.
+-- We would treat the event normally when Alt key was NOT pressed (ie allow propagation), and stop propagation whenever
+-- Alt key was pressed. Reflex doesn't have a way to deal with this situation. It has mechanisms to stop event propagation,
+-- but they are not conditional, ie either they will ALWAYS stop event propagation, or ALWAYS allow event propagation.
+-- The same argument holds for preventing default event behavior. This function allows it, Reflex doesn't.
+getClickEvent
+  :: (MonadJSM m, TriggerEvent t m, DOM.IsEventTarget (RawElement d))
+  => Element er d t
+  -- ^ The element for which click event is needed
+  -> (DOM.MouseEvent -> DOM.DOM ())
+  -- ^ DOM action, to be run immediately after event the event handler. Can be used to stop propagation/prevent default behavior.
+  -> m (Event t DOM.MouseEvent)
 getClickEvent elm onComplete = do
   (sendEv, sendFn) <- newTriggerEvent
 
@@ -530,12 +550,19 @@ getClickEvent elm onComplete = do
 
   pure sendEv
 
-preventDefaultClick :: DOM.MouseEvent -> DOM.DOM ()
-preventDefaultClick mouseEv = do
+-- | DOM action for preventing the default behavior of a mouse click,
+-- only when the Ctrl key pressed. If Ctrl key was NOT pressed, no action will be taken.
+-- This function can be passed as an argument to `getClickEvent`.
+preventDefaultClickOnCtrlPress :: DOM.MouseEvent -> DOM.DOM ()
+preventDefaultClickOnCtrlPress mouseEv = do
   wasCtrlPressed <- getCtrlKey mouseEv
   unless wasCtrlPressed $
     E.preventDefault mouseEv
 
+-- | This function samples a given `Dynamic` based on a event containing a [MouseEvent](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent).
+--
+-- Whenever the input event triggers, we sample the input dynamic if the Ctrl key was pressed.
+-- If the Ctrl key was not pressed, that event occurrence is discarded.
 whenCtrlPressed :: (PerformEvent t m, MonadJSM (Performable m)) => Event t DOM.MouseEvent -> Dynamic t a -> m (Event t a)
 whenCtrlPressed clickEv xDyn = do
   xEv <- performEvent $ (,) <$> current xDyn <@> clickEv <&> \(x, mouseClick) -> do
@@ -578,7 +605,7 @@ routeLinkImpl r w = do
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
-  clickEv <- getClickEvent e preventDefaultClick
+  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
   routeEv <- whenCtrlPressed clickEv $ constDyn r
   setRoute routeEv
   return (domEvent Click e, a)
@@ -624,7 +651,7 @@ dynRouteLinkImpl dr w = do
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  clickEv <- getClickEvent e preventDefaultClick
+  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
   routeEv <- whenCtrlPressed clickEv dr
   setRoute routeEv
   return (domEvent Click e, a)
@@ -669,7 +696,7 @@ routeLinkDynAttrImpl dAttr dr w = do
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  clickEv <- getClickEvent e preventDefaultClick
+  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
   routeEv <- whenCtrlPressed clickEv dr
   setRoute routeEv
   return (domEvent Click e, a)
