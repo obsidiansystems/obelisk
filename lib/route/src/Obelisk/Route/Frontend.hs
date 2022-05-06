@@ -649,9 +649,7 @@ routeLinkImpl r w = do
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_initialAttributes .~ "href" =: enc r
   (e, a) <- element "a" cfg w
-  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
-  routeEv <- unlessCtrlPressed clickEv $ constDyn r
-  setRoute routeEv
+  setRouteUnlessCtrlPressed e $ constDyn r
   return (domEvent Click e, a)
 
 scrollToTop :: forall m t js. (Prerender js t m, Monad m) => Event t () -> m ()
@@ -703,9 +701,7 @@ dynRouteLinkImpl dr w = do
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
-  routeEv <- unlessCtrlPressed clickEv dr
-  setRoute routeEv
+  setRouteUnlessCtrlPressed e dr
   return (domEvent Click e, a)
 
 -- | An @a@-tag link widget that, when clicked, sets the route to current value of the
@@ -756,9 +752,7 @@ routeLinkDynAttrImpl dAttr dr w = do
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  clickEv <- getClickEvent e preventDefaultClickOnCtrlPress
-  routeEv <- unlessCtrlPressed clickEv dr
-  setRoute routeEv
+  setRouteUnlessCtrlPressed e dr
   return (domEvent Click e, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
