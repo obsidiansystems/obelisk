@@ -6,6 +6,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
+  * Add routeLinkAttr to Obelisk.Route.Frontend
 
 ## v1.0.0.0 - 2022-01-04
 

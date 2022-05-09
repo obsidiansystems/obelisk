@@ -555,7 +555,7 @@ routeLinkImpl attrs r w = do
         & elementConfig_initialAttributes .~ ("href" =: enc r <> attrs)
         & (if targetBlank
            then id
-           else elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault))
+           else elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault))
   (e, a) <- element "a" cfg w
   when (not targetBlank) $ setRoute $ r <$ domEvent Click e
   return (domEvent Click e, a)
@@ -597,7 +597,7 @@ dynRouteLinkImpl dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
-        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
   let clk = domEvent Click e
@@ -640,7 +640,7 @@ routeLinkDynAttrImpl dAttr dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
-        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
   let clk = domEvent Click e
