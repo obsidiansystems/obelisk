@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -19,6 +20,7 @@ module Obelisk.Frontend
   , renderFrontendHtml
   , removeHTMLConfigs
   , FrontendMode (..)
+  , FrontendWidgetT
   , module Obelisk.Frontend.Cookie
   ) where
 
@@ -34,7 +36,6 @@ import Control.Monad.Ref
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.ByteString (ByteString)
 import Data.Foldable (for_)
-import Data.Functor.Sum
 import Data.Map (Map)
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
@@ -45,7 +46,7 @@ import qualified GHCJS.DOM.History as DOM
 import qualified GHCJS.DOM.Window as DOM
 import Language.Javascript.JSaddle (MonadJSM, JSM, jsNull)
 import GHCJS.DOM (currentDocument)
-import GHCJS.DOM.Document (getHead)
+import "ghcjs-dom" GHCJS.DOM.Document (getHead)
 import GHCJS.DOM.Node (Node, removeChild_)
 import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
 import GHCJS.DOM.ParentNode (querySelectorAll)
@@ -56,13 +57,12 @@ import Reflex.Host.Class
 import Obelisk.Configs
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
+import System.Info (os)
 import Web.Cookie
 
 import Debug.Trace
 
-makePrisms ''Sum
-
-type ObeliskWidget js t route m =
+type ObeliskWidget t route m =
   ( DomBuilder t m
   , MonadFix m
   , MonadHold t m
@@ -78,7 +78,7 @@ type ObeliskWidget js t route m =
   , Ref (Performable m) ~ Ref IO
   , MonadFix (Performable m)
   , PrimMonad m
-  , Prerender js t m
+  , Prerender t m
   , PrebuildAgnostic t route m
   , PrebuildAgnostic t route (Client m)
   , HasConfigs m
@@ -95,12 +95,15 @@ type PrebuildAgnostic t route m =
   )
 
 data Frontend route = Frontend
-  { _frontend_head :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
-  , _frontend_body :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
+  { _frontend_head :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
+  , _frontend_body :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
   }
 
-baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
-baseTag = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+baseTag :: forall route t m. ObeliskWidget t route m => RoutedT t route m ()
+baseTag =
+  if os == "ios"
+    then blank
+    else elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
 
 removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
@@ -180,7 +183,7 @@ runFrontendWithConfigsAndCurrentRoute
   -> Frontend (R frontendRoute)
   -> JSM ()
 runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = do
-  let ve = validFullEncoder . hoistParse errorLeft (prismEncoder (rPrism $ _FullRoute_Frontend . _ObeliskRoute_App))
+  let ve = validFullEncoder . hoistParse errorLeft (reviewEncoder (rPrism $ _FullRoute_Frontend . _ObeliskRoute_App))
       errorLeft = \case
         Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
         Right x -> Identity x
@@ -197,11 +200,10 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , PrimMonad m
            , MonadSample DomTimeline (Performable m)
            , DOM.MonadJSM m
-           , Monad (Performable (Client (HydrationDomBuilderT s DomTimeline m)))
            , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
            , MonadFix (Performable m)
            , MonadFix m
-           , Prerender js DomTimeline (HydrationDomBuilderT s DomTimeline m)
+           , Prerender DomTimeline (HydrationDomBuilderT s DomTimeline m)
            , MonadIO (Performable m)
            )
         => (forall c. HydrationDomBuilderT s DomTimeline m c -> FloatingWidget () c)
@@ -226,18 +228,17 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
     then runHydrationWidgetWithHeadAndBody (pure ()) w
     else runImmediateWidgetWithHeadAndBody w
 
+type FrontendWidgetT r = RoutedT DomTimeline r (SetRouteT DomTimeline r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost))))))))
+
 renderFrontendHtml
-  :: ( t ~ DomTimeline
-     , MonadIO m
-     , widget ~ RoutedT t r (SetRouteT t r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT t (StaticDomBuilderT t (PerformEventT t DomHost))))))))
-     )
+  :: MonadIO m
   => Map Text ByteString
   -> Cookies
   -> (r -> Text)
   -> r
   -> Frontend r
-  -> widget ()
-  -> widget ()
+  -> FrontendWidgetT r ()
+  -> FrontendWidgetT r ()
   -> m ByteString
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
