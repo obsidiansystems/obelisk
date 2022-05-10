@@ -222,6 +222,48 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   , help "Path to directory containing thunk data"
   ]
 
+
+profileCommand :: Parser (String, [String])
+profileCommand = (,)
+  <$> strOption
+    (  long "output"
+    <> short 'o'
+    <> help "Base output to use for profiling output. Suffixes are added to this based on the profiling type. Defaults to a timestamped path in the profile/ directory in the project's root."
+    <> metavar "PATH"
+    <> value "profile/%Y-%m-%dT%H:%M:%S"
+    <> showDefault
+    )
+  <*> (words <$> strOption
+    (  long "rts-flags"
+    <> help "RTS Flags to pass to the executable."
+    <> value "-p -hc"
+    <> metavar "FLAGS"
+    <> showDefault
+    ))
+
+thunkConfig :: Parser ThunkConfig
+thunkConfig = ThunkConfig
+  <$>
+    (   flag' (Just True) (long "private" <> help "Mark thunks as pointing to a private repository")
+    <|> flag' (Just False) (long "public" <> help "Mark thunks as pointing to a public repository")
+    <|> pure Nothing
+    )
+
+thunkUpdateConfig :: Parser ThunkUpdateConfig
+thunkUpdateConfig = ThunkUpdateConfig
+  <$> optional (strOption (long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
+  <*> thunkConfig
+
+thunkPackConfig :: Parser ThunkPackConfig
+thunkPackConfig = ThunkPackConfig
+  <$> switch (long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care.")
+  <*> thunkConfig
+
+data ThunkOption = ThunkOption
+  { _thunkOption_thunks :: NonEmpty FilePath
+  , _thunkOption_command :: ThunkCommand
+  } deriving Show
+
 data ThunkCommand
    = ThunkCommand_Update [FilePath] (Maybe String)
    | ThunkCommand_Unpack [FilePath]
