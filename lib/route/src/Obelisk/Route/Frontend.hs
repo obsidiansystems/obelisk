@@ -56,12 +56,17 @@ module Obelisk.Route.Frontend
   , setAdaptedUriPath
   ) where
 
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ < 810
+import Control.Monad ((<=<))
+#endif
+#endif
+
 import Prelude hiding ((.), id)
 
 import Control.Category (Category (..), (.))
 import Control.Category.Cartesian ((&&&))
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
-import Control.Monad ((<=<))
 import Control.Monad.Fix
 import Control.Monad.Morph
 import Control.Monad.Primitive
