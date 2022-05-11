@@ -50,7 +50,8 @@ data DeployInitOpts = DeployInitOpts
   , _deployInitOpts_route :: String
   , _deployInitOpts_adminEmail :: String
   , _deployInitOpts_enableHttps :: Bool
-  , _deployInitOpts_checkKnownHosts :: Bool
+  , _deployInitOpts_checkKnownHosts :: Bool 
+  -- ^ Wheter or not to use known_hosts file
   } deriving Show
 
 deployInit :: MonadObelisk m => DeployInitOpts -> FilePath -> m ()
@@ -320,7 +321,12 @@ readDeployConfig :: MonadObelisk m => FilePath -> FilePath -> m String
 readDeployConfig deployDir fname = liftIO $ do
   fmap (T.unpack . T.strip) $ T.readFile $ deployDir </> fname
 
-lookupKnownHosts :: MonadObelisk m  => String -> m [BS.ByteString]
+-- | Lookup known hosts using ssh-keygen command
+lookupKnownHosts :: MonadObelisk m  
+                 => String 
+                 -- ^ the host name
+                 -> m [BS.ByteString]
+                 -- ^ obtained hosts
 lookupKnownHosts hostName =
   fmap filterComments $ readCreateProcessWithExitCode $ proc "ssh-keygen" ["-F", hostName]
    where
@@ -331,7 +337,13 @@ lookupKnownHosts hostName =
            -- ssh-keygen prints the following above each result it finds: "# Host <hostname> found: line <lineno>"
            filter (not . C.isPrefixOf "# Host") $ C.lines $ C.pack out
 
-addKnownHostFromEnv :: MonadObelisk m => String -> FilePath -> m ()
+-- | insert a host/pair in backend_known_hosts file
+addKnownHostFromEnv :: MonadObelisk m 
+                    => String 
+                    -- ^ hostname
+                    -> FilePath 
+                    -- ^ path to backend_known_hosts file
+                    -> m ()
 addKnownHostFromEnv hostName obKnownHostsPath = do
   lookupKnownHosts hostName >>= \res -> case res of
     [knownKey] -> liftIO $ BS.appendFile obKnownHostsPath (knownKey `BS.append` C.singleton '\n')

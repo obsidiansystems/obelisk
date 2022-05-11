@@ -186,7 +186,7 @@ data DeployCommand
   | DeployCommand_Update
   deriving Show
 
---TODO: Result should provide normalised path and also original user input for error reporting.
+-- | Provide a way to get the path to a directory with thunk data
 thunkDirectoryParser :: Parser FilePath
 thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
   [ action "directory"
