@@ -6,7 +6,10 @@ This project's release branch is `master`. This log is written from the perspect
 
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
-  * Add routeLinkAttr to Obelisk.Route.Frontend
+* CLI
+  * [#784](https://github.com/obsidiansystems/obelisk/pull/784): hint for users to take advantage of ob shell --no-interpret option for thunks
+* obelisk-route
+  * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
 
 ## v1.0.0.0 - 2022-01-04
 
