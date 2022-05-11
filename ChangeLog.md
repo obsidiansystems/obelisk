@@ -14,8 +14,6 @@ This project's release branch is `master`. This log is written from the perspect
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
 
-
-
 ## v1.0.0.0 - 2022-01-04
 
 * Update reflex-platform to v0.9.2.0
