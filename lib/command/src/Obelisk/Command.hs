@@ -186,23 +186,6 @@ data DeployCommand
   | DeployCommand_Update
   deriving Show
 
-data DeployInitOpts = DeployInitOpts
-  { _deployInitOpts_outputDir :: FilePath
-  , _deployInitOpts_sshKey :: FilePath
-  , _deployInitOpts_hostname :: [String]
-  , _deployInitOpts_route :: String
-  , _deployInitOpts_adminEmail :: String
-  , _deployInitOpts_enableHttps :: Bool
-  , _deployInitOpts_checkSystemKnownHosts :: Bool
-  }
-  deriving Show
-
-internalCommand :: Parser ObInternal
-internalCommand = subparser $ mconcat
-  [ command "run-static-io" $ info (ObInternal_RunStaticIO <$> argument (eitherReader decodeStaticKey) (action "static-key")) mempty
-  , command "clidemo" $ info (pure ObInternal_CLIDemo) mempty
-  ]
-
 --TODO: Result should provide normalised path and also original user input for error reporting.
 thunkDirectoryParser :: Parser FilePath
 thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
@@ -210,47 +193,6 @@ thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgumen
   , metavar "THUNKDIR"
   , help "Path to directory containing thunk data"
   ]
-=======
-profileCommand :: Parser (String, [String])
-profileCommand = (,)
-  <$> strOption
-    (  long "output"
-    <> short 'o'
-    <> help "Base output to use for profiling output. Suffixes are added to this based on the profiling type. Defaults to a timestamped path in the profile/ directory in the project's root."
-    <> metavar "PATH"
-    <> value "profile/%Y-%m-%dT%H:%M:%S"
-    <> showDefault
-    )
-  <*> (words <$> strOption
-    (  long "rts-flags"
-    <> help "RTS Flags to pass to the executable."
-    <> value "-p -hc"
-    <> metavar "FLAGS"
-    <> showDefault
-    ))
-
-thunkConfig :: Parser ThunkConfig
-thunkConfig = ThunkConfig
-  <$>
-    (   flag' (Just True) (long "private" <> help "Mark thunks as pointing to a private repository")
-    <|> flag' (Just False) (long "public" <> help "Mark thunks as pointing to a public repository")
-    <|> pure Nothing
-    )
-
-thunkUpdateConfig :: Parser ThunkUpdateConfig
-thunkUpdateConfig = ThunkUpdateConfig
-  <$> optional (strOption (long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
-  <*> thunkConfig
-
-thunkPackConfig :: Parser ThunkPackConfig
-thunkPackConfig = ThunkPackConfig
-  <$> switch (long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care.")
-  <*> thunkConfig
-
-data ThunkOption = ThunkOption
-  { _thunkOption_thunks :: NonEmpty FilePath
-  , _thunkOption_command :: ThunkCommand
-  } deriving Show
 
 profileCommand :: Parser (String, [String])
 profileCommand = (,)
@@ -450,30 +392,7 @@ ob :: MonadObelisk m => ObCommand -> m ()
 ob = \case
   ObCommand_Init source force -> initProject source force
   ObCommand_Deploy dc -> case dc of
-    DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> do
-      let deployDir = _deployInitOpts_outputDir deployOpts
-      r <- liftIO $ canonicalizePath root
-      rootEqualsTarget <- liftIO $ equalFilePath r <$> canonicalizePath deployDir
-      when rootEqualsTarget $
-        failWith $ "Deploy directory " <> T.pack deployDir <> " should not be the same as project root."
-      thunkPtr <- readThunk root >>= \case
-        Left err -> failWith $ case err of
-          ReadThunkError_AmbiguousFiles ->
-            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
-          ReadThunkError_UnrecognizedFiles ->
-            "Project root " <> T.pack r <> " is not a git repository or valid thunk"
-          _ -> "thunk read: " <> T.pack (show err)
-        Right (ThunkData_Packed ptr) -> return ptr
-        Right (ThunkData_Checkout (Just ptr)) -> return ptr
-        Right (ThunkData_Checkout Nothing) ->
-          getThunkPtr False root
-      let sshKeyPath = _deployInitOpts_sshKey deployOpts
-          hostname = _deployInitOpts_hostname deployOpts
-          route = _deployInitOpts_route deployOpts
-          adminEmail = _deployInitOpts_adminEmail deployOpts
-          enableHttps = _deployInitOpts_enableHttps deployOpts
-          checkKnownHosts = _deployInitOpts_checkSystemKnownHosts deployOpts
-      deployInit thunkPtr deployDir sshKeyPath hostname route adminEmail enableHttps checkKnownHosts
+    DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployPush deployPath $ case remoteBuilder of

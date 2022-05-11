@@ -50,6 +50,7 @@ data DeployInitOpts = DeployInitOpts
   , _deployInitOpts_route :: String
   , _deployInitOpts_adminEmail :: String
   , _deployInitOpts_enableHttps :: Bool
+  , _deployInitOpts_checkKnownHosts :: Bool
   } deriving Show
 
 deployInit :: MonadObelisk m => DeployInitOpts -> FilePath -> m ()
@@ -61,66 +62,14 @@ deployInit deployOpts root = do
   thunkPtr <- readThunk root >>= \case
     Right (ThunkData_Packed _ ptr) -> return ptr
     _ -> getThunkPtr CheckClean_NotIgnored root Nothing
-  deployInit' thunkPtr deployOpts
-
-deployInit''
-  :: MonadObelisk m
-  => ThunkPtr
-  -> FilePath
-  -> FilePath
-  -> [String] -- ^ hostnames
-  -> String -- ^ route
-  -> String -- ^ admin email
-  -> Bool -- ^ enable https
-  -> Bool -- ^ check system known_hosts
-  -> m ()
-deployInit thunkPtr deployDir sshKeyPath hostnames route adminEmail enableHttps checkKnownHosts = do
-  localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
-    localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
-      False -> failWith $ T.pack $ "ob deploy init: file does not exist: " <> sshKeyPath
-      True -> pure $ deployDir </> "ssh_key"
-    callProcessAndLogOutput (Notice, Error) $
-      proc "cp" [sshKeyPath, localKey]
-    liftIO $ setFileMode localKey $ ownerReadMode .|. ownerWriteMode
-    return localKey
-  withSpinner "Validating configuration" $ do
-    void $ getHostFromRoute enableHttps route -- make sure that hostname is present
-  let obKnownHostsPath = deployDir </> "backend_known_hosts"
-  forM_ hostnames $ \hostname -> do
-    putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
-    when checkKnownHosts $ addKnownHostFromEnv hostname obKnownHostsPath
-    -- Note: we can't use a spinner here as this function will prompt the user.
-    verifyHostKey obKnownHostsPath localKey hostname
-
-  --IMPORTANT: We cannot copy config directory from the development project to
-  --the deployment directory.  If we do, it's very likely someone will
-  --accidentally create a production deployment that uses development
-  --credentials to connect to some resources.  This could result in, e.g.,
-  --production data backed up to a dev environment.
-  withSpinner "Creating project configuration directories" $ do
-    callProcessAndLogOutput (Notice, Error) $
-      proc "mkdir" [ "-p"
-                   , deployDir </> "config" </> "backend"
-                   , deployDir </> "config" </> "common"
-                   , deployDir </> "config" </> "frontend"
-                   ]
-  withSpinner "Writing deployment configuration" $ do
-    writeDeployConfig deployDir "backend_hosts" $ unlines hostnames
-    writeDeployConfig deployDir "enable_https" $ show enableHttps
-    writeDeployConfig deployDir "admin_email" adminEmail
-    writeDeployConfig deployDir ("config" </> "common" </> "route") $ route
-  withSpinner "Creating source thunk (./src)" $ liftIO $ do
-    createThunk (deployDir </> "src") thunkPtr
-    setupObeliskImpl deployDir
-  withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
-    initGit deployDir
+  deployInit' thunkPtr deployOpts 
 
 deployInit'
   :: MonadObelisk m
   => ThunkPtr
   -> DeployInitOpts
   -> m ()
-deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminEmail enableHttps) = do
+deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminEmail enableHttps checkKnownHosts) = do
   liftIO $ createDirectoryIfMissing True deployDir
   localKey <- withSpinner ("Preparing " <> T.pack deployDir) $ do
     localKey <- liftIO (doesFileExist sshKeyPath) >>= \case
@@ -135,10 +84,9 @@ deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminE
   let obKnownHostsPath = deployDir </> "backend_known_hosts"
   forM_ hostnames $ \hostname -> do
     putLog Notice $ "Verifying host keys (" <> T.pack hostname <> ")"
-    when checkKnownHosts $ addKnownHostFromEnv hostname obKnownHostsPath
     -- Note: we can't use a spinner here as this function will prompt the user.
+    when checkKnownHosts $ addKnownHostFromEnv hostname obKnownHostsPath
     verifyHostKey obKnownHostsPath localKey hostname
-
   --IMPORTANT: We cannot copy config directory from the development project to
   --the deployment directory.  If we do, it's very likely someone will
   --accidentally create a production deployment that uses development
