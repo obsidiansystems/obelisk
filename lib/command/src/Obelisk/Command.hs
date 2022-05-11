@@ -173,6 +173,7 @@ deployInitOpts = DeployInitOpts
   <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Publicly accessible URL of your app")
   <*> strOption (long "admin-email" <> metavar "ADMINEMAIL" <> help "Email address where administrative alerts will be sent")
   <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
+  <*> flag False True (long "check-known-hosts" <> help "Add keys for the system's known_hosts matching the hostname to the configuration's known_hosts")
 
 type TeamID = String
 data RemoteBuilder = RemoteBuilder_ObeliskVM
@@ -184,6 +185,14 @@ data DeployCommand
   | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
   deriving Show
+
+-- | Provide a way to get the path to a directory with thunk data
+thunkDirectoryParser :: Parser FilePath
+thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
+  [ action "directory"
+  , metavar "THUNKDIR"
+  , help "Path to directory containing thunk data"
+  ]
 
 profileCommand :: Parser (String, [String])
 profileCommand = (,)
