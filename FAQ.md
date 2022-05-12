@@ -7,6 +7,7 @@
 1. [How do I fix invalid entitlements?](#how-do-i-fix-invalid-entitlements)
 1. [`ob thunk update` or `ob deploy update` fails](#ob-thunk-update-or-ob-deploy-update-fails)
 1. [How do I fix `Ambiguous module name` errors?](#how-do-i-fix-ambiguous-module-name-errors)
+1. [How do I fix `no C compiler provided for this platform` errors?](#how-do-i-fix-no-c-compiler-provided-for-this-platform-errors)
 
 ### How do I declare a new Haskell dependency?
 
@@ -115,3 +116,9 @@ error:
 ```
 then specify the package you want in the import, e.g:
 `import "cryptonite" Crypto.Hash`
+
+### How do I fix `no C compiler provided for this platform` errors?
+
+This can show up when when doing nix-build (ie for deployment). 
+
+This is probably because you have a package that needs a C compiler (like `snap-core`) in your `common` or `frontend` modules which need to be built for `ghcjs` which does not in fact have a C compiler. You'll need to remove those packages from your cabal files and rework your app to not need them in the frontend.

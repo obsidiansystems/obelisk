@@ -1,6 +1,6 @@
 name: obelisk-route
 version: 0.2
-cabal-version: >= 1.2
+cabal-version: >= 1.8
 build-type: Simple
 
 library
@@ -35,7 +35,7 @@ library
                  th-extras,
                  transformers,
                  universe,
-                 universe-dependent-sum
+                 universe-some
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend

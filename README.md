@@ -11,6 +11,11 @@ Functional reactive web and mobile applications, with batteries included. Obelis
   - [Who should consider using it?](#who-should-consider-using-it)
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
+  - [Local Hoogle](#local-hoogle)
+  - [Adding Packages](#adding-packages)
+  - [Adding Package Overrides](#adding-package-overrides)
+  - [Running tests](#running-tests)
+  - [Running over HTTPS](#running-over-https)
   - [IDE Support](#ide-support)
 - [Deploying](#deploying)
   - [Default EC2 Deployment](#default-ec2-deployment)
@@ -99,6 +104,73 @@ Firefox will not be able to properly run the development website due to [issue 4
 
 Every time you change the Haskell source files in frontend, common or backend, `ob run` will automatically recompile the modified files and reload the server. Furthermore, it will display on screen compilation errors and warnings if any.
 
+### Local Hoogle
+
+Obelisk can also provide a local [Hoogle](https://hoogle.haskell.org) server that lets you browse and search the types and documentation for all of the dependencies in your entire Obelisk application. To start the Hoogle server, in a spare terminal run the following command from the root of your Obelisk application:
+
+```shell
+$ ob hoogle
+```
+
+You can then access your local Hoogle from your web browser at `http://localhost:8080`, or by
+instructing an editor plugin to use that address.
+
+### Adding packages
+
+In order to add package dependencies, declare them under the build-depends field in the appropriate cabal files (backend, common, and frontend each have their own). The corresponding Nix packages will automatically be selected when building.
+
+### Adding package overrides
+
+To add a version override to any Haskell package, or to add a Haskell package that doesn't exist in the nixpkgs used by Obelisk, use the `overrides` attribute in your project's `default.nix`. For example, to use a specific version of the `aeson` package fetched from GitHub and a specific version of the `waargonaut` package fetched from Hackage, your `default.nix` will look like:
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  overrides = self: super: let
+    aesonSrc = pkgs.fetchFromGitHub {
+      owner = "obsidiansystems";
+      repo = "aeson-gadt-th";
+      rev = "ed573c2cccf54d72aa6279026752a3fecf9c1383";
+      sha256 = "08q6rnz7w9pn76jkrafig6f50yd0f77z48rk2z5iyyl2jbhcbhx3";
+    };
+  in
+  {
+    aeson = self.callCabal2nix "aeson" aesonSrc {};
+    waargonaut = self.callHackageDirect {
+      pkg = "waargonaut";
+      ver = "0.8.0.1";
+      sha256 = "1zv28np3k3hg378vqm89v802xr0g8cwk7gy3mr77xrzy5jbgpa39";
+    } {};
+  };
+# ...
+```
+
+For further information see [the Haskell section](https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure) of nixpkgs Contributors Guide.
+
+### Adding extra local packages
+
+If the standard packages (`frontend`, `backend`, and `common`) are not
+enough, to add more local Haskell packages, define them with the
+`packages` parameter. The sources of these packages will be
+automatically reloaded by `ob run`.
+
+```nix
+# ...
+project ./. ({ pkgs, ... }: {
+# ...
+  packages = {
+    another = ./another;
+  };
+# ...
+```
+
+### Running over HTTPS
+
+To run your app locally over HTTPS, update the protocol in `config/common/route` to `https`, and then use `ob run` as normal.
+
+Since Obelisk generates a self-signed certificate for running HTTPS, the browser will issue a warning about using an invalid certificate. On Chrome, you can go to `chrome://flags/#allow-insecure-localhost` to enable invalid certificates for localhost.
+
 ### IDE Support
 
 Obelisk officially supports terminal-based feedback (akin to [`ghcid`](https://github.com/ndmitchell/ghcid)) in `ob run` and `ob watch`.
@@ -136,7 +208,7 @@ ob deploy init \
 
 HTTPS is enabled by default; to disable HTTPS pass `--disable-https` to the `ob deploy init` command above.
 
-This step will also require that you manually verify the authenticity of the host `$SERVER`. Obelisk will save the fingerprint in a deployment-specific configuration. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
+This step will also require that you manually verify the authenticity of the host `$SERVER`. You can specify that you want `ob deploy init` to check your `~/.ssh/known_hosts` file and save any fingerprints matching the host to the deployment-specific configuration by passing the `check_known_hosts` option to the `deploy init` command. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine during deployment.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
 
 Next, go to the deployment directory that you just initialized and deploy!
 
