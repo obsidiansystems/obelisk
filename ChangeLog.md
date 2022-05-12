@@ -13,6 +13,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#916](https://github.com/obsidiansystems/obelisk/pull/916): Add `check-known-hosts` option in `ob deploy init`.
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
+* Add GHC 8.10.7 support for `obelisk-route`
 
 ## v1.0.0.0 - 2022-01-04
 
@@ -200,4 +201,3 @@ This project's release branch is `master`. This log is written from the perspect
 
 * Use reflex-dom's `HydrationDomBuilder` to "hydrate" statically rendered DOM served by the Obelisk backend (rather than re-creating DOM and replacing it all).
 * Add `HasCookies` and `CookiesT` to allow `ObeliskWidget`s to access cookies during static and "hydrated" DOM rendering.
-
