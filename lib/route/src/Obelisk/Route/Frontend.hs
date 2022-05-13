@@ -49,18 +49,24 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , routeLinkAttr
   , routeLinkDynAttr
   , dynRouteLink
   , adaptedUriPath
   , setAdaptedUriPath
   ) where
 
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ < 810
+import Control.Monad ((<=<))
+#endif
+#endif
+
 import Prelude hiding ((.), id)
 
 import Control.Category (Category (..), (.))
 import Control.Category.Cartesian ((&&&))
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
-import Control.Monad ((<=<))
 import Control.Monad.Fix
 import Control.Monad.Morph
 import Control.Monad.Primitive
@@ -73,7 +79,7 @@ import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.GADT.Compare
 import qualified Data.List as L
-import Data.Map (Map)
+import Data.Map as Map (Map, lookup)
 import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Text (Text)
@@ -601,8 +607,28 @@ routeLink
   -> m a -- ^ Child widget
   -> m a
 routeLink r w = do
-  (e, a) <- routeLinkImpl r w
+  (e, a) <- routeLinkImpl mempty r w
   scrollToTop e
+  return a
+
+-- | Like 'routeLink', but takes additional attributes as argument.
+--
+routeLinkAttr
+  :: forall t m a route.
+     ( DomBuilder t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender t m
+     )
+  => Map AttributeName Text -- ^ Additional attributes
+  -> route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+routeLinkAttr attrs r w = do
+  (e, a) <- routeLinkImpl attrs r w
+  let
+    targetBlank = Map.lookup "target" attrs == Just "_blank"
+  when (not targetBlank) $ scrollToTop e
   return a
 
 -- | Raw implementation of 'routeLink'. Does not scroll to the top of the page on clicks.
@@ -617,15 +643,24 @@ routeLinkImpl
      , MonadJSM (Performable m)
      , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
-  => route -- ^ Target route
+  => Map AttributeName Text
+  -> route -- ^ Target route
   -> m a -- ^ Child widget
   -> m (Event t (), a)
-routeLinkImpl r w = do
+routeLinkImpl attrs r w = do
   enc <- askRouteToUrl
-  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
-        & elementConfig_initialAttributes .~ "href" =: enc r
+  let
+    -- If targetBlank == True, the link will be opened in another page. In that
+    -- case, we don't prevent the default behaviour, and we don't need to
+    -- setRoute.
+    targetBlank = Map.lookup "target" attrs == Just "_blank"
+    cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_initialAttributes .~ ("href" =: enc r <> attrs)
+        & (if targetBlank
+           then id
+           else elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault))
   (e, a) <- element "a" cfg w
-  setRouteUnlessCtrlPressed e $ constDyn r
+  when (not targetBlank) $ setRouteUnlessCtrlPressed e $ constDyn r
   return (domEvent Click e, a)
 
 scrollToTop :: forall m t. (Prerender t m, Monad m) => Event t () -> m ()
@@ -675,6 +710,7 @@ dynRouteLinkImpl dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
   setRouteUnlessCtrlPressed e dr
@@ -726,6 +762,7 @@ routeLinkDynAttrImpl dAttr dr w = do
   enc <- askRouteToUrl
   er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
   setRouteUnlessCtrlPressed e dr

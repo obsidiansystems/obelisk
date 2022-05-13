@@ -6,7 +6,15 @@ This project's release branch is `master`. This log is written from the perspect
 
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
-* Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave like `<a href="...">` when Ctrl was pressed while the element was being clicked, they would load the link in the current tab instead of opening a new tab. These functions now open a new tab when Ctrl-clicked.
+* skeleton
+  * [#844](https://github.com/obsidiansystems/obelisk/pull/844): Jsaddle FFI example extended in skeleton. Note the remark on minifier renaming in /skeleton/static/lib.js
+* CLI
+  * [#784](https://github.com/obsidiansystems/obelisk/pull/784): hint for users to take advantage of ob shell --no-interpret option for thunks
+  * [#916](https://github.com/obsidiansystems/obelisk/pull/916): Add `check-known-hosts` option in `ob deploy init`.
+* obelisk-route
+  * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
+  * [#912](https://github.com/obsidiansystems/obelisk/pull/912): Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave like `<a href="...">` when Ctrl was pressed while the element was being clicked, they would load the link in the current tab instead of opening a new tab. These functions now open a new tab when Ctrl-clicked.
+  * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
 
 ## v1.0.0.0 - 2022-01-04
 
