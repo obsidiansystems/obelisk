@@ -359,7 +359,7 @@ main' argsCfg = do
     , "args=" <> show myArgs
     , "logging-level=" <> show logLevel
     ]
-
+  liftIO $ setEnv "LANG" "C.UTF-8"
   --TODO: We'd like to actually use the parser to determine whether to hand off,
   --but in the case where this implementation of 'ob' doesn't support all
   --arguments being passed along, this could fail.  For now, we don't bother
