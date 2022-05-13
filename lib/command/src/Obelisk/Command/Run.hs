@@ -192,8 +192,14 @@ run root interpretPaths = do
       -- Get the port from config/common/route
       -- It is necessary to put this code here, since this code needs to run every time `ob run` needs to reload
       -- This command is passed straight to the repl, and can't be changed later on
-      [ "let uri = getPublicConfigs >>= either (fail . T.unpack) pure . getConfigRoute"
-      , "let port = uri Data.Functor.<&> \\u -> fromIntegral $ fromMaybe 80 $ u ^? uriAuthority . _Right . authPort . _Just"
+      [ "import Control.Lens"
+      , "import Data.Functor"
+      , "import Data.Maybe"
+      , "import Data.Text"
+      , "import System.Environment"
+      , "import Text.URI.Lens"
+      , "let uri = getPublicConfigs >>= either (fail . unpack) pure . getConfigRoute"
+      , "let port = uri <&> \\u -> fromIntegral $ fromMaybe 80 $ u ^? uriAuthority . _Right . authPort . _Just"
       , "port >>= \\p -> withArgs [\"--port\", show p, \"--address\", \"127.0.0.1\", \"--hostname\", \"localhost\"] Main.main"
       ]
 
