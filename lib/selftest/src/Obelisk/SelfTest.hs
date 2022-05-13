@@ -211,8 +211,8 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       setStdin "print 3\n:q"
       output <- runOb ["repl"]
       liftIO $ assertBool "" $
-        [ "*Obelisk.Run Obelisk.Run Frontend Backend> 3"
-        , "*Obelisk.Run Obelisk.Run Frontend Backend> Leaving GHCi."
+        [ "*Obelisk.Run Obelisk.Run Frontend Backend Main> 3"
+        , "*Obelisk.Run Obelisk.Run Frontend Backend Main> Leaving GHCi."
         ] `isInfixOf` T.lines (T.strip output)
     it "works with custom Prelude" $ inTmpObInit $ \_ -> do
       writefile "common/src/Prelude.hs"
@@ -220,7 +220,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       setStdin ":q"
       output <- runOb ["repl"]
       liftIO $ assertBool "" $
-        "*Obelisk.Run Obelisk.Run Frontend Backend> Leaving GHCi." `T.isInfixOf` output
+        "*Obelisk.Run Obelisk.Run Frontend Backend Main> Leaving GHCi." `T.isInfixOf` output
 
   describe "obelisk project" $ parallel $ do
     it "can build obelisk command"  $ inTmpObInit $ \_ -> nixBuild ["-A", "command" , toTextIgnore obeliskRepoReadOnly]
@@ -407,7 +407,7 @@ maskExitSuccess = handle_sh (\case ExitSuccess -> pure (); e -> throw e)
 testObRunInDir :: String -> [Text] -> Maybe FilePath -> HTTP.Manager -> Sh ()
 testObRunInDir executable extraArgs mdir httpManager = maskExitSuccess $ do
   [p0, p1] <- liftIO $ getFreePorts 2
-  let uri p = "http://localhost:" <> T.pack (show p) <> "/" -- trailing slash required for comparison
+  let uri p = "http://127.0.0.1:" <> T.pack (show p)
   writefile "config/common/route" $ uri p0
   maybe id chdir mdir $ runHandles executable extraArgs [] $ \_stdin stdout stderr -> do
     firstUri <- handleObRunStdout httpManager stdout stderr
@@ -461,6 +461,8 @@ alterRouteTo uri stdout = do
     "Reloading failed: " <> T.pack (show t)
   hGetLineSkipBlanks stdout >>= \t -> when (t /= "  config/common/route") $ errorExit $
     "Reloading failed: " <> T.pack (show t)
+  hGetLineSkipBlanks stdout >>= \t -> when (t /= "Shutting down..") $ errorExit $
+    "Reloading failed: " <> T.pack (show t)
   hGetLineSkipBlanks stdout >>= \t -> when (t /= "Interrupted.") $ errorExit $
     "Reloading failed: " <> T.pack (show t)
 
@@ -478,7 +480,7 @@ handleObRunStdout httpManager stdout stderr = flip fix (ObRunState_Init, []) $ \
       -- | Just port <- "Backend running on port " `T.stripPrefix` t -> loop $ ObRunState_BackendStarted port
       | not (T.null t) -> errorExit $ "Startup: " <> t -- If theres any other output here, startup failed
     ObRunState_BackendStarted
-      | Just uri <- "Frontend running on " `T.stripPrefix` t -> do
+      | Just uri <- "Listening on " `T.stripPrefix` t -> do
         obRunCheck httpManager stdout uri
         pure uri
       | not (T.null t) -> errorExit $ "Started: " <> t -- If theres any other output here, startup failed
@@ -491,10 +493,17 @@ handleObRunStdout httpManager stdout stderr = flip fix (ObRunState_Init, []) $ \
 
 -- | Make requests to frontend/backend servers to check they are working properly
 obRunCheck :: HTTP.Manager -> Handle -> Text -> Sh ()
-obRunCheck httpManager _stdout frontendUri = do
+obRunCheck httpManager stdout frontendUri = do
   let req uri = liftIO $ HTTP.parseRequest (T.unpack uri) >>= flip HTTP.httpLbs httpManager
   req frontendUri >>= \r -> when (HTTP.responseStatus r /= HTTP.ok200) $ errorExit $
     "Request to frontend server failed: " <> T.pack (show r)
+
+  -- Read the access log of the above request from stdout
+  -- This is necessary now, since ob run uses backend/src-bin/Main.hs,
+  -- and work exactly like the built binary. Any requests to the backend are now logged.
+  --
+  -- Prior to this, ob run did not capture requests arising due to curl or code.
+  void $ hGetLineSkipBlanks stdout
 
 getFreePorts :: Int -> IO [Socket.PortNumber]
 getFreePorts 0 = pure []

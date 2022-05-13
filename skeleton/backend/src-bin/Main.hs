@@ -1,3 +1,5 @@
+module Main where
+
 import Backend
 import Frontend
 import Obelisk.Backend
