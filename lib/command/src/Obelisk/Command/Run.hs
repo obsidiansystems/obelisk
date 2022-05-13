@@ -193,7 +193,7 @@ run root interpretPaths = do
       -- It is necessary to put this code here, since this code needs to run every time `ob run` needs to reload
       -- This command is passed straight to the repl, and can't be changed later on
       [ "port <- Obelisk.Run.getPortFromConfig"
-      , "withArgs [\"--port\", show port, \"--address\", \"127.0.0.1\", \"--hostname\", \"localhost\"] Main.main"
+      , "System.Environment.withArgs [\"--port\", show port, \"--address\", \"127.0.0.1\", \"--hostname\", \"localhost\"] Main.main"
       ]
 
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
