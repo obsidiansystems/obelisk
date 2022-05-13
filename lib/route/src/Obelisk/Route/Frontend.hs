@@ -82,6 +82,7 @@ import qualified Data.List as L
 import Data.Map as Map (Map, lookup)
 import Data.Maybe (fromMaybe)
 import Data.Monoid
+import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Type.Coercion
@@ -619,6 +620,11 @@ routeLinkAttr
      , RouteToUrl route m
      , SetRoute t route m
      , Prerender t m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Map AttributeName Text -- ^ Additional attributes
   -> route -- ^ Target route
