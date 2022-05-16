@@ -38,6 +38,9 @@ let
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
 
   haskellLib = pkgs.haskell.lib;
+  
+  helpNix = pkgs.callPackage dep/help.nix {};
+  inherit (helpNix) withHelp;
 
 in rec {
   inherit reflex-platform;
@@ -53,7 +56,6 @@ in rec {
   selftest = pkgs.writeScript "selftest" ''
     #!${pkgs.runtimeShell}
     set -euo pipefail
-
     PATH="${command}/bin:$PATH"
     cd ${./.}
     "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
@@ -338,25 +340,40 @@ in rec {
         version;
       linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
-    in mainProjectOut // {
+      wh = withHelp (help: _:
+        let
+          help' = helpNix.internal.shallowAnnotate; # Don't recurse into these because they have errors
+        in mainProjectOut // {
+          linuxExeConfigurable = help "Function taking a version to create a deploy-ready application build for a Linux system" linuxExe;
+          linuxExe = help "Deploy-ready application build for a Linux system (a dummy is supplied for the version)" (linuxExe dummyVersion);
+          exe = help "Deploy-ready application build for the native system (a dummy is supplied for the version)" (serverOn mainProjectOut dummyVersion);
+          server = help "Function used by 'ob deploy' to create a NixOS server with this application installed" (args@{ hostName, adminEmail, routeHost, enableHttps, version }:
+            server (args // { exe = linuxExe version; }));
+          obelisk = import (base' + "/.obelisk/impl") {};
+          shells = help "Shells for development (meant to be used with nix-shell)" (helpNix.wrapHelp help mainProjectOut.shells {
+            ghc = "Shell with access to all application dependencies built by GHC";
+            ghcjs = "Shell with access to all application dependencies built by GHCJS";
+            android = "Shell with access to all application dependencies built for Android";
+            ios = "Shell with access to all application dependencies built for iOS";
+        });
+        ghc = help' "GHC builds of any package in the application's dependency tree" mainProjectOut.ghc;
+        ghcjs = help' "GHCJS builds of any package in the application's dependency tree" mainProjectOut.ghcjs;
+    });
+    in mainProjectOut // wh // {
       __unstable__.profiledObRun = let
         profiled = projectOut { inherit system; enableLibraryProfiling = true; };
         exeSource = builtins.toFile "ob-run.hs" ''
           {-# LANGUAGE NoImplicitPrelude #-}
           {-# LANGUAGE PackageImports #-}
           module Main where
-
           -- Explicitly import Prelude from base lest there be multiple modules called Prelude
           import "base" Prelude (IO, (++), read)
-
           import "base" Control.Exception (finally)
           import "reflex" Reflex.Profiled (writeProfilingData)
           import "base" System.Environment (getArgs)
-
           import qualified "obelisk-run" Obelisk.Run
           import qualified Frontend
           import qualified Backend
-
           main :: IO ()
           main = do
             [portStr, assets, profFileName] <- getArgs
@@ -381,4 +398,5 @@ in rec {
   haskellPackageSets = {
     inherit (reflex-platform) ghc ghcjs;
   };
+
 }
