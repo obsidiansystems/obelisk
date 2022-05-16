@@ -675,9 +675,6 @@ routeLinkImpl attrs r w = do
     targetBlank = Map.lookup "target" attrs == Just "_blank"
     cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_initialAttributes .~ ("href" =: enc r <> attrs)
-        & (if targetBlank
-           then id
-           else elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault))
   (e, a) <- element "a" cfg w
   setRouteUnlessNewTabOpened e targetBlank $ constDyn r
   return (domEvent Click e, a)
