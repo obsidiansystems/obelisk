@@ -4,7 +4,9 @@ cabal-version: >= 1.8
 build-type: Simple
 
 library
-  hs-source-dirs: src
+  hs-source-dirs:
+      src
+    , src-bin
   if impl(ghcjs)
     buildable: False
   build-depends: base
@@ -13,11 +15,12 @@ library
                , obelisk-backend
                , obelisk-route
   exposed-modules:
-    Backend
+      Backend
+    , Main
   ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -fno-show-valid-hole-fits
 
 executable backend
-  main-is: main.hs
+  main-is: Main.hs
   hs-source-dirs: src-bin
   ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -threaded -fno-show-valid-hole-fits
   if impl(ghcjs)

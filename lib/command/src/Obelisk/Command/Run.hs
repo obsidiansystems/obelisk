@@ -187,14 +187,13 @@ run root interpretPaths = do
       void $ liftIO $ forkIO $ runObelisk ob $ watchStaticFilesDerivation root
     _ -> pure ()
   ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root True
-  freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
-    runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
-      [ "Obelisk.Run.run"
-      , show freePort
-      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
-      , "Backend.backend"
-      , "Frontend.frontend"
+    runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ intercalate "\n"
+      -- Get the port from config/common/route
+      -- It is necessary to put this code here, since this code needs to run every time `ob run` needs to reload
+      -- This command is passed straight to the repl, and can't be changed later on
+      [ "port <- Obelisk.Run.getPortFromConfig"
+      , "System.Environment.withArgs [\"--port\", show port, \"--address\", \"127.0.0.1\", \"--hostname\", \"localhost\"] Main.main"
       ]
 
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
@@ -454,6 +453,7 @@ withGhciScript preCommands (toList -> packageInfos) f =
     modulesToLoad = mconcat
       [ [ "Obelisk.Run" | "obelisk-run" `Set.member` packageNames ]
       , [ "Backend" | "backend" `Set.member` packageNames ]
+      , [ "Main" | "backend" `Set.member` packageNames ]
       , [ "Frontend" | "frontend" `Set.member` packageNames ]
       ]
     dotGhci = unlines $
@@ -462,6 +462,7 @@ withGhciScript preCommands (toList -> packageInfos) f =
       , "import qualified Obelisk.Run"
       , "import qualified Frontend"
       , "import qualified Backend"
+      , "import qualified Main"
       ]
 
 -- | Builds a list of options to pass to ghci or set in .ghci file that configures

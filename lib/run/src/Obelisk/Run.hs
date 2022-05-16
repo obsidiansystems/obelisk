@@ -118,6 +118,12 @@ getConfigRoute configs = case Map.lookup "common/route" configs of
           Nothing -> Left $ "Couldn't parse route as URI; value read was: " <> T.pack (show stripped)
     Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
 
+getPortFromConfig :: IO Integer
+getPortFromConfig = do
+  publicConfigs <- getPublicConfigs
+  uri <- either (fail . T.unpack) pure $ getConfigRoute publicConfigs
+  pure $ fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
+
 runWidget
   :: RunConfig
   -> Map Text ByteString
