@@ -4,6 +4,8 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* documentation
+  * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing obelisk branches to CONTRIBUTING.md
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
 * skeleton
@@ -14,7 +16,7 @@ This project's release branch is `master`. This log is written from the perspect
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
-  * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Add blessed command for testing obelisk branches to CONTRIBUTING.md
+
 ## v1.0.0.0 - 2022-01-04
 
 * Update reflex-platform to v0.9.2.0
