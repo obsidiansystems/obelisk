@@ -79,7 +79,6 @@ Add an entry to the changelog when your PR:
 #### In the [Readme](README.md)
 The readme is the first place a lot of people look for information about the repository. Update any parts of the readme that are affected by your PR.
 
-
 ## Development Environment
 
 There are two ways to get live compiler feedback while developing Obelisk libraries. For libraries that are dependencies of the `skeleton` application, the easiest way to get feedback is to
@@ -109,6 +108,15 @@ You can also open a shell with the local version of `ob` available on your `$PAT
 
 ```bash
 nix run -f /path/to/obelisk command
+```
+
+### Testing features from an unmerged branch
+
+If you'd like to use a branch of Obelisk that hasn't been merged into `develop` or `master` (usually to investigate an open PR):
+
+```bash
+cd /your/project/root
+ob thunk update --branch <target-branch> .obelisk/impl
 ```
 
 ### Hacking on Obelisk from within an Obelisk project
