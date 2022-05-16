@@ -4,6 +4,8 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* static files
+  * Serve .wasm files with the correct MIME type
 * documentation
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing obelisk branches to CONTRIBUTING.md
 * nixpkgs-overlays
