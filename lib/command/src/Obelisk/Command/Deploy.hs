@@ -25,7 +25,6 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import GHC.Generics
 import System.Directory
-import System.Environment (getEnvironment)
 import System.Exit (ExitCode(ExitSuccess))
 import System.FilePath
 import System.IO
