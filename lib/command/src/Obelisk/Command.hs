@@ -399,7 +399,6 @@ ob = \case
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
       deployPush deployPath deployBuilders
-
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run interpretPathsList -> withInterpretPaths interpretPathsList run
