@@ -6,6 +6,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 * documentation
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing obelisk branches to CONTRIBUTING.md
+  * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to Obelisk.Command.Deploy
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
 * skeleton
