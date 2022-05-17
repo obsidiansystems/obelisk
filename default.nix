@@ -101,7 +101,7 @@ in rec {
       ec2.hvm = true;
     };
 
-    mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, ... }: {...}: {
+    mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, redirectHosts, ... }: {...}: {
       networking = {
         inherit hostName;
         firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
@@ -113,11 +113,15 @@ in rec {
       services.openssh.enable = true;
       services.openssh.permitRootLogin = "prohibit-password";
 
-      security.acme.certs = if enableHttps then {
-        "${routeHost}".email = adminEmail;
+      security.acme = if enableHttps then {
+        acceptTerms = terms.security.acme.acceptTerms;
+        email = adminEmail;
+        certs = {
+          "${routeHost}" = {
+            extraDomains = builtins.listToAttrs (map (h: { name = h; value = null; }) redirectHosts);
+          };
+        };
       } else {};
-
-      security.acme.${if enableHttps && (terms.security.acme.acceptTerms or false) then "acceptTerms" else null} = true;
     };
 
     mkObeliskApp =
@@ -130,22 +134,34 @@ in rec {
       , baseUrl ? "/"
       , internalPort ? 8000
       , backendArgs ? "--port=${toString internalPort}"
+      , redirectHosts ? [] # Domains to redirect to routeHost; importantly, these domains will be added to the SSL certificate
       , ...
-      }: {...}: {
+      }: {...}:
+      assert lib.assertMsg (!(builtins.elem routeHost redirectHosts)) "routeHost may not be a member of redirectHosts";
+      {
       services.nginx = {
         enable = true;
         recommendedProxySettings = true;
-        virtualHosts."${routeHost}" = {
-          enableACME = enableHttps;
-          forceSSL = enableHttps;
-          locations.${baseUrl} = {
-            proxyPass = "http://127.0.0.1:" + toString internalPort;
-            proxyWebsockets = true;
-            extraConfig = ''
-              access_log off;
-            '';
+        virtualHosts = {
+          "${routeHost}" = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
+            locations.${baseUrl} = {
+              proxyPass = "http://127.0.0.1:" + toString internalPort;
+              proxyWebsockets = true;
+              extraConfig = ''
+                access_log off;
+              '';
+            };
           };
-        };
+        } // builtins.listToAttrs (map (redirectSourceDomain: {
+          name = redirectSourceDomain;
+          value = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
+            globalRedirect = routeHost;
+          };
+        }) redirectHosts);
       };
       systemd.services.${name} = {
         wantedBy = [ "multi-user.target" ];
@@ -192,7 +208,7 @@ in rec {
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [] }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -374,7 +390,7 @@ in rec {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [] }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
     };

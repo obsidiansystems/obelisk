@@ -173,6 +173,7 @@ deployInitOpts = DeployInitOpts
   <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Publicly accessible URL of your app")
   <*> strOption (long "admin-email" <> metavar "ADMINEMAIL" <> help "Email address where administrative alerts will be sent")
   <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
+  <*> flag False True (long "check-known-hosts" <> help "Add keys for the system's known_hosts matching the hostname to the configuration's known_hosts")
 
 type TeamID = String
 data RemoteBuilder = RemoteBuilder_ObeliskVM
@@ -184,6 +185,14 @@ data DeployCommand
   | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
   deriving Show
+
+-- | Provide a way to get the path to a directory with thunk data
+thunkDirectoryParser :: Parser FilePath
+thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
+  [ action "directory"
+  , metavar "THUNKDIR"
+  , help "Path to directory containing thunk data"
+  ]
 
 profileCommand :: Parser (String, [String])
 profileCommand = (,)
@@ -386,9 +395,11 @@ ob = \case
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
-      deployPush deployPath $ case remoteBuilder of
+      deployBuilders <- case remoteBuilder of
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
+      deployPush deployPath deployBuilders
+
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run interpretPathsList -> withInterpretPaths interpretPathsList run
@@ -401,7 +412,8 @@ ob = \case
       thunks = _thunkOption_thunks to
   ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
   ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
-  ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths ->
+  ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths -> do
+    putLog Notice "Hint: use '--no-interpret path/to/dependency' to force building an unpacked dependency and include it in this shell."
     nixShellForInterpretPaths False shellAttr root interpretPaths cmd -- N.B. We do NOT bash escape here; we want to run the command as-is
   ObCommand_Doc shellAttr pkgs -> withInterpretPaths [] $ \root interpretPaths ->
     nixShellForInterpretPaths True shellAttr root interpretPaths $ Just $ haddockCommand pkgs
