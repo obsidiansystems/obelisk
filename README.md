@@ -279,6 +279,44 @@ ob deploy update
 ob deploy push
 ```
 
+### Host Redirection 
+
+A `redirect_hosts` file can be added in the deployment directory (`~/code/myapp-deploy` in the example above), allowing you to specify alternative domain names that will redirect to the deployment domain. 
+This feature assumes the apropriate CNAME records have been added with a domain registration service.
+
+Add one domain per line in `redirect_hosts`.
+All listed domains will redirect to the publicly accessible domain specified by `ob deploy init`.
+For clarity, this is the `$ROUTE` variable in the EC2 deployment example shown earlier.
+The following is an example of a `~/code/myapp-deploy/redirect_hosts` file:
+
+```
+www.foo.com
+www.bar.com
+```
+
+*Caveat*: Your https certificates will cover all your domains automatically, although you may need to force a recertification manually.
+We assume you have root access to the deployment EC2 instance.
+Continuing from the `ob init deploy` example above:
+
+```bash
+ssh root@ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
+
+EMAIL=myname@myapp.com
+ROUTE_TO=myapp.com
+ROUTE_FROM=foo.com
+ROUTE_FROM_2=bar.com
+/nix/store/`ls /nix/store | grep lego`/bin/lego \
+  -d $ROUTE_TO \
+  --email $EMAIL \
+  --path . \
+  --key-type ec256 \
+  --accept-tos \
+  -d $ROUTE_FROM \
+  -d $ROUTE_FROM_2 \
+  --http \
+  --http.webroot /var/lib/acme/acme-challenge run
+```
+
 ## Mobile
 Until Obelisk offers a `ob deploy` equivalent for mobile apps, you are recommended to do it manually as follows.
 

@@ -395,9 +395,10 @@ ob = \case
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
-      deployPush deployPath $ case remoteBuilder of
+      deployBuilders <- case remoteBuilder of
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
+      deployPush deployPath deployBuilders
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run interpretPathsList -> withInterpretPaths interpretPathsList run
