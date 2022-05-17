@@ -421,7 +421,7 @@ addKnownHostFromEnv hostName obKnownHostsPath = do
 verifyHostKey
   :: MonadObelisk m
   => FilePath
-  -- ^ knownhosts file to use for hosts that have already been verified.
+  -- ^ known_hosts file to use for hosts that have already been verified.
   -> FilePath
   -- ^ Path to the ssh key used to connect to the host
   -> String
@@ -438,11 +438,11 @@ verifyHostKey knownHostsPath keyPath hostName =
 -- | Create arguments to pass to ssh on the command line
 sshArgs
   :: FilePath
-  -- ^ Path to knownhosts file
+  -- ^ Path to known_hosts file
   -> FilePath
   -- ^ Path to the ssh key to use
   -> Bool
-  -- ^ If true, then prompt the user when a host is not in the knownhosts file,
+  -- ^ If true, then prompt the user when a host is not in the known_hosts file,
   -- otherwise use strict host checking.
   -> [String]
 sshArgs knownHostsPath keyPath askHostKeyCheck =
