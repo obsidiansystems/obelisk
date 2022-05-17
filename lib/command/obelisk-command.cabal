@@ -39,6 +39,7 @@ library
     , obelisk-cliapp
     , optparse-applicative
     , placeholders
+    , prettyprinter
     , process
     , reflex
     , reflex-fsnotify

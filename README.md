@@ -208,7 +208,7 @@ ob deploy init \
 
 HTTPS is enabled by default; to disable HTTPS pass `--disable-https` to the `ob deploy init` command above.
 
-This step will also require that you manually verify the authenticity of the host `$SERVER`. Obelisk will save the fingerprint in a deployment-specific configuration. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
+This step will also require that you manually verify the authenticity of the host `$SERVER`. You can specify that you want `ob deploy init` to check your `~/.ssh/known_hosts` file and save any fingerprints matching the host to the deployment-specific configuration by passing the `check_known_hosts` option to the `deploy init` command. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine during deployment.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
 
 Next, go to the deployment directory that you just initialized and deploy!
 
@@ -277,6 +277,44 @@ If you'd like to deploy an updated version (with new commits) of your Obelisk ap
 cd ~/code/myapp-deploy
 ob deploy update
 ob deploy push
+```
+
+### Host Redirection 
+
+A `redirect_hosts` file can be added in the deployment directory (`~/code/myapp-deploy` in the example above), allowing you to specify alternative domain names that will redirect to the deployment domain. 
+This feature assumes the apropriate CNAME records have been added with a domain registration service.
+
+Add one domain per line in `redirect_hosts`.
+All listed domains will redirect to the publicly accessible domain specified by `ob deploy init`.
+For clarity, this is the `$ROUTE` variable in the EC2 deployment example shown earlier.
+The following is an example of a `~/code/myapp-deploy/redirect_hosts` file:
+
+```
+www.foo.com
+www.bar.com
+```
+
+*Caveat*: Your https certificates will cover all your domains automatically, although you may need to force a recertification manually.
+We assume you have root access to the deployment EC2 instance.
+Continuing from the `ob init deploy` example above:
+
+```bash
+ssh root@ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
+
+EMAIL=myname@myapp.com
+ROUTE_TO=myapp.com
+ROUTE_FROM=foo.com
+ROUTE_FROM_2=bar.com
+/nix/store/`ls /nix/store | grep lego`/bin/lego \
+  -d $ROUTE_TO \
+  --email $EMAIL \
+  --path . \
+  --key-type ec256 \
+  --accept-tos \
+  -d $ROUTE_FROM \
+  -d $ROUTE_FROM_2 \
+  --http \
+  --http.webroot /var/lib/acme/acme-challenge run
 ```
 
 ## Mobile
