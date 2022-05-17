@@ -5,6 +5,13 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
+{-|
+   Description:
+   Implementation of the CLI deploy commands. Deployment is done by intializing
+   a staging area for deployment configuration, and then by actually executing
+   the deployment by installing a NixOS configuration at the configured deployment
+   locations.
+-}
 module Obelisk.Command.Deploy where
 
 import Control.Applicative (liftA2)
@@ -47,18 +54,32 @@ import Obelisk.Command.Project
 import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
 
+-- | Options passed to the `init` verb
 data DeployInitOpts = DeployInitOpts
   { _deployInitOpts_outputDir :: FilePath
+  -- ^ Where to set up the deployment staging area
   , _deployInitOpts_sshKey :: FilePath
+  -- ^ Which SSH Key will be used to interface with the deployment hosts
   , _deployInitOpts_hostname :: [String]
+  -- ^ The hostnames that locate the deployment hosts
   , _deployInitOpts_route :: String
+  -- ^ The route they are serving
   , _deployInitOpts_adminEmail :: String
+  -- ^ The administrator email, for ACME
   , _deployInitOpts_enableHttps :: Bool
-  , _deployInitOpts_checkKnownHosts :: Bool 
-  -- ^ Wheter or not to use known_hosts file
+  -- ^ Whether or not to use HTTPS, which entails using Lets Encrypt by default
+  , _deployInitOpts_checkKnownHosts :: Bool
+  -- ^ Whether or not to use known_hosts file when assessing the identity of the deployment hosts
   } deriving Show
 
-deployInit :: MonadObelisk m => DeployInitOpts -> FilePath -> m ()
+-- | The `init` verb
+deployInit
+  :: MonadObelisk m
+  => DeployInitOpts
+  -- ^ Command line arguments
+  -> FilePath
+  -- ^ Project root, which cannot be the same as the deployment dir
+  -> m ()
 deployInit deployOpts root = do
   let deployDir = _deployInitOpts_outputDir deployOpts
   rootEqualsTarget <- liftIO $ liftA2 equalFilePath (canonicalizePath root) (canonicalizePath deployDir)
@@ -67,8 +88,10 @@ deployInit deployOpts root = do
   thunkPtr <- readThunk root >>= \case
     Right (ThunkData_Packed _ ptr) -> return ptr
     _ -> getThunkPtr CheckClean_NotIgnored root Nothing
-  deployInit' thunkPtr deployOpts 
+  deployInit' thunkPtr deployOpts
 
+-- | The preamble in 'deployInit' provides deployInit' with a 'ThunkPtr' that it can install in
+-- the staging directory.
 deployInit'
   :: MonadObelisk m
   => ThunkPtr
@@ -120,6 +143,8 @@ deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminE
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
+-- | Installs an obelisk impl in the staging dir that points at the obelisk of the
+-- project thunk.
 setupObeliskImpl :: MonadIO m => FilePath -> m ()
 setupObeliskImpl deployDir = liftIO $ do
   let
@@ -128,8 +153,15 @@ setupObeliskImpl deployDir = liftIO $ do
   createDirectoryIfMissing True implDir
   writeFile (implDir </> "default.nix") $ "(import " <> toNixPath (goBackUp </> "src") <> " {}).obelisk"
 
-deployPush :: MonadObelisk m => FilePath -> m [String] -> m ()
-deployPush deployPath getNixBuilders = do
+-- | Executes the deployment specified in the supplied staging dir
+deployPush
+  :: MonadObelisk m
+  => FilePath
+  -- ^ Path to the staging directory
+  -> [String]
+  -- ^ nix builders arg string for the nix-build that builds the deployment artefacts
+  -> m ()
+deployPush deployPath builders = do
   hosts <- Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "backend_hosts"
   adminEmail <- readDeployConfig deployPath "admin_email"
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
@@ -147,7 +179,6 @@ deployPush deployPath getNixBuilders = do
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
-  builders <- getNixBuilders
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile
   buildOutputByHost <- ifor (Map.fromSet (const ()) hosts) $ \host () -> do
@@ -208,18 +239,32 @@ deployPush deployPath getNixBuilders = do
       let p = setEnvOverride (envMap <>) $ setDelegateCtlc True $ proc cmd args
       callProcessAndLogOutput (Notice, Notice) p
 
+-- | Update the source thunk in the staging directory to the HEAD of the branch.
 deployUpdate :: MonadObelisk m => FilePath -> m ()
 deployUpdate deployPath = updateThunkToLatest (ThunkUpdateConfig Nothing (ThunkConfig Nothing)) (deployPath </> "src")
 
+-- | Platforms that we deploy obelisk artefacts to.
 data PlatformDeployment = Android | IOS
   deriving (Show, Eq)
 
+-- | Pretty print PlatformDeployment
 renderPlatformDeployment :: PlatformDeployment -> String
 renderPlatformDeployment = \case
   Android -> "android"
   IOS -> "ios"
 
-deployMobile :: forall m. MonadObelisk m => PlatformDeployment -> [String] -> m ()
+-- | Produce the mobile app for an Obelisk project and deploy it onto a personal device.
+-- This does not submit the artefacts to any app stores, or anything like that. It is
+-- primarily useful for testing, or individual use of an Obelisk project.
+deployMobile
+  :: forall m. MonadObelisk m
+  => PlatformDeployment
+  -- ^ Which mobile artefact to deploy; e.g. Android or iOS
+  -> [String]
+  -- ^ Extra arguments to pass to the executable that actually loads
+  -- the artefact onto the testing device. An example is the Team ID
+  -- associated with an Apple developer account.
+  -> m ()
 deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
   let srcDir = root </> "src"
       configDir = root </> "config"
@@ -299,16 +344,23 @@ deployMobile platform mobileArgs = withProjectRoot "." $ \root -> do
       (hSetEcho stdin)
       (const f)
 
+-- | obelisk uses keytool, a certificate and keypair management tool that comes with Java,
+-- to manage the cryptographic assets needed to deploy to an Android device.
 data KeytoolConfig = KeytoolConfig
   { _keytoolConfig_keystore :: FilePath
+  -- ^ Where is the keystore that keytool should create keypairs?
   , _keytoolConfig_alias :: String
+  -- ^ Name of the entry in the keystore to process
   , _keytoolConfig_storepass :: String
+  -- ^ Password for the keystore
   , _keytoolConfig_keypass :: String
+  -- ^ Password for the keypair under consideration
   } deriving (Show, Generic)
 
 instance FromJSON KeytoolConfig
 instance ToJSON KeytoolConfig
 
+-- | Creates a keystore, and a keypair in that keystore.
 createKeystore :: MonadObelisk m => FilePath -> KeytoolConfig -> m ()
 createKeystore root config =
   callProcessAndLogOutput (Notice, Notice) $ setCwd (Just root) $ proc jreKeyToolPath
@@ -325,13 +377,20 @@ createKeystore root config =
 writeDeployConfig :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
 writeDeployConfig deployDir fname = liftIO . writeFile (deployDir </> fname)
 
-readDeployConfig :: MonadObelisk m => FilePath -> FilePath -> m String
+-- | Read the deployment config file from a deployment staging directory.
+readDeployConfig
+  :: MonadObelisk m
+  => FilePath
+  -- ^ Deployment staging directory
+  -> FilePath
+  -- ^ The path to the config file relative to the staging directory.
+  -> m String
 readDeployConfig deployDir fname = liftIO $ do
   fmap (T.unpack . T.strip) $ T.readFile $ deployDir </> fname
 
 -- | Lookup known hosts using ssh-keygen command
-lookupKnownHosts :: MonadObelisk m  
-                 => String 
+lookupKnownHosts :: MonadObelisk m
+                 => String
                  -- ^ the host name
                  -> m [BS.ByteString]
                  -- ^ obtained hosts
@@ -346,10 +405,10 @@ lookupKnownHosts hostName =
            filter (not . C.isPrefixOf "# Host") $ C.lines $ C.pack out
 
 -- | insert a host/pair in backend_known_hosts file
-addKnownHostFromEnv :: MonadObelisk m 
-                    => String 
+addKnownHostFromEnv :: MonadObelisk m
+                    => String
                     -- ^ hostname
-                    -> FilePath 
+                    -> FilePath
                     -- ^ path to backend_known_hosts file
                     -> m ()
 addKnownHostFromEnv hostName obKnownHostsPath = do
@@ -357,8 +416,17 @@ addKnownHostFromEnv hostName obKnownHostsPath = do
     [knownKey] -> liftIO $ BS.appendFile obKnownHostsPath (knownKey `BS.append` C.singleton '\n')
     [] -> putLog Notice "Found no matching hosts in user's known_hosts file"
     _ -> putLog Notice "Found more than one matching host/key pair in user's known_hosts"
-    
-verifyHostKey :: MonadObelisk m => FilePath -> FilePath -> String -> m ()
+
+-- | Verify the identity of a remote host that we would like to deploy to.
+verifyHostKey
+  :: MonadObelisk m
+  => FilePath
+  -- ^ known_hosts file to use for hosts that have already been verified.
+  -> FilePath
+  -- ^ Path to the ssh key used to connect to the host
+  -> String
+  -- ^ Name of the host
+  -> m ()
 verifyHostKey knownHostsPath keyPath hostName =
   callProcessAndLogOutput (Notice, Warning) $ proc sshPath $
     sshArgs knownHostsPath keyPath True <>
@@ -367,7 +435,16 @@ verifyHostKey knownHostsPath keyPath hostName =
       , "exit"
       ]
 
-sshArgs :: FilePath -> FilePath -> Bool -> [String]
+-- | Create arguments to pass to ssh on the command line
+sshArgs
+  :: FilePath
+  -- ^ Path to known_hosts file
+  -> FilePath
+  -- ^ Path to the ssh key to use
+  -> Bool
+  -- ^ If true, then prompt the user when a host is not in the known_hosts file,
+  -- otherwise use strict host checking.
+  -> [String]
 sshArgs knownHostsPath keyPath askHostKeyCheck =
   [ "-o", "UserKnownHostsFile=" <> knownHostsPath
   , "-o", "StrictHostKeyChecking=" <> if askHostKeyCheck then "ask" else "yes"
@@ -377,12 +454,18 @@ sshArgs knownHostsPath keyPath askHostKeyCheck =
 -- common/route validation
 -- TODO: move these to executable-config once the typed-config stuff is done.
 
+-- | Ways in which the route configured for a deployment host can be invalid
 data InvalidRoute
   = InvalidRoute_NotHttps URI
+  -- ^ We do not deploy non-https routes unless explicitly asked for
   | InvalidRoute_MissingScheme URI
+  -- ^ We demand a URI scheme
   | InvalidRoute_MissingHost URI
+  -- ^ We demand a hostname
   | InvalidRoute_HasPort URI
+  -- ^ We do not deploy to a route with a particular port number
   | InvalidRoute_HasPath URI
+  -- ^ We do not deploy to a route that is served at a particular path
   deriving Show
 
 instance Exception InvalidRoute where
@@ -408,10 +491,15 @@ getHostFromRoute mustBeHttps route = do
     validateCommonRouteAndGetHost mustBeHttps =<< URI.mkURI (T.strip $ T.pack route)
   either (failWith . T.pack . displayException) pure result
 
+-- | When deploying, we ensure that the route we are deploying for makes sense.
+-- In particular, we extract the hostname that we are deploying to from the
+-- route.
 validateCommonRouteAndGetHost
   :: (MonadThrow m, MonadObelisk m)
-  => Bool -- ^ Ensure https?
+  => Bool
+  -- ^ If true, demand that the route we are deploying is an HTTPS route
   -> URI
+  -- ^ The route to validate
   -> m String
 validateCommonRouteAndGetHost mustBeHttps uri = do
   case uri ^? uriScheme of
