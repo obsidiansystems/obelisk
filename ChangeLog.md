@@ -9,8 +9,6 @@ This project's release branch is `master`. This log is written from the perspect
   * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to Obelisk.Command.Deploy
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
-* skeleton
-  * [#844](https://github.com/obsidiansystems/obelisk/pull/844): Jsaddle FFI example extended in skeleton. Note the remark on minifier renaming in /skeleton/static/lib.js
 * CLI
   * [#784](https://github.com/obsidiansystems/obelisk/pull/784): hint for users to take advantage of ob shell --no-interpret option for thunks
   * [#916](https://github.com/obsidiansystems/obelisk/pull/916): Add `check-known-hosts` option in `ob deploy init`.
@@ -19,6 +17,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
 * Javascript FFI
+  * [#844](https://github.com/obsidiansystems/obelisk/pull/844): Jsaddle FFI example extended in skeleton (example project which is installed by `ob init`). Note the remark on minifier renaming in /skeleton/static/lib.js
   * [#903](https://github.com/obsidiansystems/obelisk/pull/903): Added support for a file which allows users to specify global variables and namespaces in JS, that should not be used by the Google Closure Compiler during minification of the GHCJS produced JS. See the [FAQ](FAQ.md).
 * Static Assets
   * [#922](https://github.com/obsidiansystems/obelisk/pull/922): Serve .wasm files with the correct MIME type
