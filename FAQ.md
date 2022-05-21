@@ -142,6 +142,6 @@ var lib = false;
 
 Any variables defined in this file will not be used in the minification process.
 
-###why-does-ob-run-hang-in-firefox
+### Why does ob run hang in firefox?
 
 `ob run` runs the project frontend through the jsaddle library, instead of compiling it to javascript. There is an issue with the way that jsaddle interfaces with the browser which causes `ob run` to fail to operate on some browsers. For more information, see [this issue](https://github.com/ghcjs/jsaddle/issues/64).
