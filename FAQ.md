@@ -10,6 +10,7 @@
 1. [How do I fix `Ambiguous module name` errors?](#how-do-i-fix-ambiguous-module-name-errors)
 1. [How do I fix `no C compiler provided for this platform` errors?](#how-do-i-fix-no-c-compiler-provided-for-this-platform-errors)
 1. [Names of some variables in all.js (produced by GHCJS) collide with already existing static JS files in my project](#names-of-some-variables-in-all.js-(produced-by-ghcjs)-collide-with-already-existing-static-JS-files-in-my-project)
+1. [How do I fix systemd-timesyncd causing my deployment to fail?](#how-do-i-fix-systemd-timesyncd-causing-my-deployment-to-fail)
 
 ### How do I declare a new Haskell dependency?
 
@@ -145,3 +146,7 @@ Any variables defined in this file will not be used in the minification process.
 ### Why does ob run hang in firefox?
 
 `ob run` runs the project frontend through the jsaddle library, instead of compiling it to javascript. There is an issue with the way that jsaddle interfaces with the browser which causes `ob run` to fail to operate on some browsers. For more information, see [this issue](https://github.com/ghcjs/jsaddle/issues/64).
+
+### How do I fix systemd-timesyncd causing my deployment to fail?
+
+This is an upstream issue that can be resolved by deleting `/var/lib/systemd/timesync` and `/var/lib/private` on the machine targeted for deployment, as per [issue #670](https://github.com/obsidiansystems/obelisk/issues/670).
