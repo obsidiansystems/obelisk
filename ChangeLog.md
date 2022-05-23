@@ -21,6 +21,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#903](https://github.com/obsidiansystems/obelisk/pull/903): Added support for a file which allows users to specify global variables and namespaces in JS, that should not be used by the Google Closure Compiler during minification of the GHCJS produced JS. See the [FAQ](FAQ.md).
 * Static Assets
   * [#922](https://github.com/obsidiansystems/obelisk/pull/922): Serve .wasm files with the correct MIME type
+  * Add a warning to ob run when `static` is called with a path to a file that doesn't exist
 
 ## v1.0.0.0 - 2022-01-04
 
