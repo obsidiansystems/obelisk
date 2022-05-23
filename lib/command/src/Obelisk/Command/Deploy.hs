@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -35,6 +36,7 @@ import System.Directory
 import System.Exit (ExitCode(ExitSuccess))
 import System.FilePath
 import System.IO
+import System.Which
 import System.PosixCompat.Files
 import Text.URI (URI)
 import qualified Text.URI as URI
@@ -394,7 +396,7 @@ lookupKnownHosts :: MonadObelisk m
                  -> m [BS.ByteString]
                  -- ^ obtained hosts
 lookupKnownHosts hostName =
-  fmap filterComments $ readCreateProcessWithExitCode $ proc "ssh-keygen" ["-F", hostName]
+  fmap filterComments $ readCreateProcessWithExitCode $ proc $(staticWhichNix "ssh-keygen") ["-F", hostName]
    where
      filterComments (exitCode, out, _) =
        if exitCode /= ExitSuccess || null out
