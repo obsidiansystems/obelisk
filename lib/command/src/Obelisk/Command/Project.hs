@@ -1,39 +1,76 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
+
 module Obelisk.Command.Project
   ( InitSource (..)
-  , initProject
   , findProjectObeliskCommand
   , findProjectRoot
-  , withProjectRoot
-  , inProjectShell
-  , inImpureProjectShell
-  , projectShell
-
-  , toObeliskDir
+  , findProjectAssets
+  , initProject
+  , nixShellRunConfig
+  , nixShellRunProc
+  , nixShellWithHoogle
+  , nixShellWithoutPkgs
+  , mkObNixShellProc
+  , obeliskDirName
   , toImplDir
+  , toObeliskDir
+  , withProjectRoot
+  , bashEscape
+  , getHaskellManifestProjectPath
+  , AssetSource(..)
+  , describeImpureAssetSource
+  , watchStaticFilesDerivation
   ) where
 
+import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
+import Control.Lens ((.~), (?~), (<&>), (^.), _2, _3)
 import Control.Monad
+import Control.Monad.Except
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Log
 import Control.Monad.State
+import qualified Data.Aeson as Json
+import qualified Data.ByteString.UTF8 as BSU
 import Data.Bits
-import Data.Function (on)
+import qualified Data.ByteString.Lazy as BSL
+import Data.Default (def)
+import Data.Function ((&), on)
+import Data.Map (Map)
+import Data.Maybe (isJust)
+import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.Traversable (for)
+import Reflex
+import Reflex.FSNotify
+import Reflex.Host.Headless
 import System.Directory
+import System.Environment (lookupEnv)
+import System.Exit (ExitCode(..))
 import System.FilePath
+import System.FSNotify (defaultConfig, eventPath, WatchConfig(..))
+import qualified System.Info as SysInfo
 import System.IO.Temp
-import System.Posix (FileStatus, UserID, deviceID, fileID, fileMode, fileOwner, getFileStatus, getRealUserID)
-import System.Posix.Files
-import System.Process (CreateProcess, cwd, proc, waitForProcess, delegate_ctlc)
+import System.IO.Unsafe (unsafePerformIO)
+import System.PosixCompat.Files
+import System.PosixCompat.Types
+import System.PosixCompat.User
+import qualified System.Process as Proc
+import Text.ShellEscape (bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
-import Obelisk.App (MonadObelisk)
+import Obelisk.App (MonadObelisk, runObelisk, getObelisk)
 import Obelisk.CliApp
+import Obelisk.Command.Nix
 import Obelisk.Command.Thunk
+import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath)
+
 --TODO: Make this module resilient to random exceptions
 
 --TODO: Don't hardcode this
@@ -47,17 +84,21 @@ obeliskSourceWithBranch branch = ThunkSource_GitHub $ GitHubSource
   { _gitHubSource_owner = "obsidiansystems"
   , _gitHubSource_repo = "obelisk"
   , _gitHubSource_branch = Just branch
+  , _gitHubSource_private = False
   }
 
 data InitSource
-   = InitSource_Default
-   | InitSource_Branch (Name Branch)
-   | InitSource_Symlink FilePath
-   deriving Show
+  = InitSource_Default
+  | InitSource_Branch (Name Branch)
+  | InitSource_Symlink FilePath
+  deriving Show
+
+obeliskDirName :: FilePath
+obeliskDirName = ".obelisk"
 
 -- | Path to obelisk directory in given path
 toObeliskDir :: FilePath -> FilePath
-toObeliskDir p = p </> ".obelisk"
+toObeliskDir p = p </> obeliskDirName
 
 -- | Path to impl file in given path
 toImplDir :: FilePath -> FilePath
@@ -74,20 +115,26 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
       | otherwise -> failWith "ob init requires an empty directory. Use the flag --force to init anyway, potentially overwriting files."
   skeleton <- withSpinner "Setting up obelisk" $ do
     liftIO $ createDirectory obDir
+    -- Clone the git source and repack it with the init source obelisk
+    -- The purpose of this is to ensure we use the correct thunk spec.
+    let cloneAndRepack src = do
+          putLog Debug $ "Cloning obelisk into " <> T.pack implDir <> " and repacking using itself"
+          commit <- getLatestRev src
+          gitCloneForThunkUnpack (thunkSourceToGitSource src) (_thunkRev_commit commit) implDir
+          callHandoffOb implDir ["thunk", "pack", implDir]
     case source of
-      InitSource_Default -> createThunkWithLatest implDir obeliskSource
-      InitSource_Branch branch -> createThunkWithLatest implDir $ obeliskSourceWithBranch branch
+      InitSource_Default -> cloneAndRepack obeliskSource
+      InitSource_Branch branch -> cloneAndRepack $ obeliskSourceWithBranch branch
       InitSource_Symlink path -> do
         let symlinkPath = if isAbsolute path
               then path
               else ".." </> path
         liftIO $ createSymbolicLink symlinkPath implDir
     _ <- nixBuildAttrWithCache implDir "command"
-    --TODO: We should probably handoff to the impl here
     skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
 
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp"
+      proc cp
         [ "-r"
         , "--preserve=links"
         , obDir
@@ -97,7 +144,7 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
 
   withSpinner "Copying project skeleton" $ do
     callProcessAndLogOutput (Notice, Error) $
-      proc "cp"
+      proc cp
         [ "-r"
         , "--no-preserve=mode"
         , "-T"
@@ -108,21 +155,46 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     let configDir = "config"
     createDirectoryIfMissing False configDir
     mapM_ (createDirectoryIfMissing False . (configDir </>)) ["backend", "common", "frontend"]
+  putLog Notice $ T.intercalate "\n"
+    [ "An obelisk project has been successfully initialized. Next steps:"
+    , "  'ob run': Start a development server"
+    , "  'ob watch': Watch for changes without starting a server"
+    , "  'ob repl': Load your project into GHCi"
+    ]
+
+callHandoffOb
+  :: MonadObelisk m
+  => FilePath -- ^ Directory of the obelisk we want to handoff to
+  -> [String] -- ^ Arguments to pass to ob
+  -> m ()
+callHandoffOb dir args = do
+  obeliskCommandPkg <- nixCmd $ NixCmd_Build $ def
+    & nixBuildConfig_outLink .~ OutLink_None
+    & nixCmdConfig_target .~ Target
+      { _target_path = Just dir
+      , _target_attr = Just "command"
+      , _target_expr = Nothing
+      }
+  let impl = obeliskCommandPkg </> "bin" </> "ob"
+  -- Invoke the real implementation, using --no-handoff to prevent infinite recursion
+  putLog Debug $ "Running '" <> T.pack (unwords args) <> "' with " <> T.pack impl
+  callProcessAndLogOutput (Debug, Warning) (proc impl ("--no-handoff" : args))
 
 --TODO: Allow the user to ignore our security concerns
 -- | Find the Obelisk implementation for the project at the given path
 findProjectObeliskCommand :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectObeliskCommand target = do
   myUid <- liftIO getRealUserID
+  processUmask <- liftIO getUmask
   targetStat <- liftIO $ getFileStatus target
-  (result, insecurePaths) <- flip runStateT [] $ walkToProjectRoot target targetStat myUid >>= \case
+  (result, insecurePaths) <- flip runStateT [] $ walkToProjectRoot target targetStat processUmask myUid >>= \case
     Nothing -> pure Nothing
     Just projectRoot -> liftIO (doesDirectoryExist $ toImplDir projectRoot) >>= \case
       False -> do
         putLog Warning $ "Found obelisk directory in " <> T.pack projectRoot <> " but the implementation (impl) file is missing"
         pure Nothing
       True -> do
-        walkToImplDir projectRoot myUid -- For security check
+        walkToImplDir projectRoot myUid processUmask -- For security check
         return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
@@ -133,17 +205,37 @@ findProjectObeliskCommand target = do
       putLog Error $ T.unlines
         [ "Error: Found a project at " <> T.pack (normalise projDir) <> ", but had to traverse one or more insecure directories to get there:"
         , T.unlines $ fmap (T.pack . normalise) insecurePaths
-        , "Please ensure that all of these directories are owned by you and are not writable by anyone else."
+        , "Please ensure that all of these directories are owned by you, not world-writable, and no more group-writable than permitted by your umask."
         ]
       return Nothing
+
+-- | Get the umask for the Obelisk process.
+--
+-- Because of
+-- http://man7.org/linux/man-pages/man2/umask.2.html#NOTES we have to set the
+-- umask to read it. We are using 'withMVarMasked' to guarantee that setting and
+-- reading isn't interrupted by any exception or interleaved with another thread.
+getUmask :: IO FileMode
+getUmask = withMVarMasked globalUmaskLock $ \() -> do
+  initialMask <- setFileCreationMask safeUmask
+  void (setFileCreationMask initialMask)
+  pure initialMask
+  where
+    safeUmask :: FileMode
+    safeUmask = CMode 0o22
+
+{-# NOINLINE globalUmaskLock #-}
+globalUmaskLock :: MVar ()
+globalUmaskLock = unsafePerformIO (newMVar ())
 
 -- | Get the FilePath to the containing project directory, if there is one
 findProjectRoot :: MonadObelisk m => FilePath -> m (Maybe FilePath)
 findProjectRoot target = do
   myUid <- liftIO getRealUserID
   targetStat <- liftIO $ getFileStatus target
-  (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat myUid) []
-  return result
+  umask <- liftIO getUmask
+  (result, _) <- liftIO $ runStateT (walkToProjectRoot target targetStat umask myUid) []
+  return $ makeRelative "." <$> result
 
 withProjectRoot :: MonadObelisk m => FilePath -> (FilePath -> m a) -> m a
 withProjectRoot target f = findProjectRoot target >>= \case
@@ -155,15 +247,15 @@ withProjectRoot target f = findProjectRoot target >>= \case
 -- traversed in the process.  Return the project root directory, if found.
 walkToProjectRoot
   :: (MonadState [FilePath] m, MonadIO m)
-  => FilePath -> FileStatus -> UserID -> m (Maybe FilePath)
-walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \case
+  => FilePath -> FileStatus -> FileMode -> UserID -> m (Maybe FilePath)
+walkToProjectRoot this thisStat desiredUmask myUid = liftIO (doesDirectoryExist this) >>= \case
   -- It's not a directory, so it can't be a project
   False -> do
     let dir = takeDirectory this
     dirStat <- liftIO $ getFileStatus dir
-    walkToProjectRoot dir dirStat myUid
+    walkToProjectRoot dir dirStat desiredUmask myUid
   True -> do
-    when (not $ isWritableOnlyBy thisStat myUid) $ modify (this:)
+    when (not $ isWellOwnedAndWellPermissioned thisStat myUid desiredUmask) $ modify (this:)
     liftIO (doesDirectoryExist $ toObeliskDir this) >>= \case
       True -> return $ Just this
       False -> do
@@ -173,48 +265,220 @@ walkToProjectRoot this thisStat myUid = liftIO (doesDirectoryExist this) >>= \ca
             isSameFileAs = (==) `on` fileIdentity
         if thisStat `isSameFileAs` nextStat
           then return Nothing -- Found a cycle; probably hit root directory
-          else walkToProjectRoot next nextStat myUid
+          else walkToProjectRoot next nextStat desiredUmask myUid
 
 -- | Walk from the given project root directory to its Obelisk implementation
 -- directory, accumulating potentially insecure directories that were traversed
 -- in the process.
-walkToImplDir :: (MonadState [FilePath] m, MonadIO m) => FilePath -> UserID -> m ()
-walkToImplDir projectRoot myUid = do
+walkToImplDir :: (MonadState [FilePath] m, MonadIO m) => FilePath -> UserID -> FileMode -> m ()
+walkToImplDir projectRoot myUid umask = do
   let obDir = toObeliskDir projectRoot
   obDirStat <- liftIO $ getFileStatus obDir
-  when (not $ isWritableOnlyBy obDirStat myUid) $ modify (obDir:)
+  when (not $ isWellOwnedAndWellPermissioned obDirStat myUid umask) $ modify (obDir:)
   let implThunk = obDir </> "impl"
   implThunkStat <- liftIO $ getFileStatus implThunk
-  when (not $ isWritableOnlyBy implThunkStat myUid) $ modify (implThunk:)
+  when (not $ isWellOwnedAndWellPermissioned implThunkStat myUid umask) $ modify (implThunk:)
 
---TODO: Is there a better way to ask if anyone else can write things?
---E.g. what about ACLs?
--- | Check to see if directory is only writable by a user whose User ID matches the second argument provided
-isWritableOnlyBy :: FileStatus -> UserID -> Bool
-isWritableOnlyBy s uid = fileOwner s == uid && fileMode s .&. 0o22 == 0
+-- | Check to see if directory is writable by a user whose User ID matches the
+-- second argument provided, and if the fact that other people can write to that
+-- directory is in accordance with the umask of the system, passed as the third
+-- argument.
+isWellOwnedAndWellPermissioned :: FileStatus -> UserID -> FileMode -> Bool
+isWellOwnedAndWellPermissioned s uid umask = isOwnedBy s uid && filePermissionIsSafe s umask
 
--- | Run a command in the given shell for the current project
-inProjectShell :: MonadObelisk m => String -> String -> m ()
-inProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root True shellName (Just command)
+isOwnedBy :: FileStatus -> UserID -> Bool
+isOwnedBy s uid = fileOwner s == uid
 
-inImpureProjectShell :: MonadObelisk m => String -> String -> m ()
-inImpureProjectShell shellName command = withProjectRoot "." $ \root ->
-  projectShell root False shellName (Just command)
+-- | Check to see if a directory respect the umask, but check explicitly that
+-- it's not world writable in any case.
+filePermissionIsSafe :: FileStatus -> FileMode -> Bool
+filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= umaskGroupWritable
+  where
+    fileWorldWritable = fileMode s .&. 0o002 == 0o002
+    fileGroupWritable = fileMode s .&. 0o020 == 0o020
+    umaskGroupWritable = umask .&. 0o020 == 0
 
-projectShell :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
-projectShell root isPure shellName command = do
-  (_, _, _, ph) <- createProcess_ "runNixShellAttr" $ setCtlc $ setCwd (Just root) $ proc "nix-shell" $
-     [ "--pure" | isPure ] <>
-     [ "-A"
-     , "shells." <> shellName
-     ] <> case command of
-       Nothing -> []
-       Just c -> ["--run", c]
-  void $ liftIO $ waitForProcess ph
+nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
+nixShellRunConfig root isPure command = do
+  nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+    proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
+  pure $ def
+    & nixShellConfig_pure .~ isPure
+    & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
+    & nixShellConfig_run .~ (command <&> \cs -> unwords $ concat
+      [ ["export", BSU.toString . bytes . bash $ "NIX_PATH=nixpkgs=" <> encodeUtf8 nixpkgsPath, ";"]
+      , maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
+      , [cs]
+      ])
 
-setCtlc :: CreateProcess -> CreateProcess
-setCtlc cfg = cfg { delegate_ctlc = True }
+bashEscape :: String -> String
+bashEscape = BSU.toString . bytes . bash . BSU.fromString
 
-setCwd :: Maybe FilePath -> CreateProcess -> CreateProcess
-setCwd fp cfg = cfg { cwd = fp }
+nixShellRunProc :: NixShellConfig -> ProcessSpec
+nixShellRunProc cfg = setDelegateCtlc True $ proc nixShellPath $ runNixShellConfig cfg
+
+mkObNixShellProc
+  :: MonadObelisk m
+  => FilePath -- ^ Path to project root
+  -> Bool -- ^ Should this be a pure shell?
+  -> Bool -- ^ Should we chdir to the package root in the shell?
+  -> Map Text FilePath -- ^ Package names mapped to their paths
+  -> String -- ^ Shell attribute to use (e.g. @"ghc"@, @"ghcjs"@, etc.)
+  -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
+  -> m ProcessSpec
+mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command = do
+  packageNamesAndAbsPaths <- liftIO $ for packageNamesAndPaths makeAbsolute
+  defShellConfig <- nixShellRunConfig root isPure command
+  let setCwd_ = if chdirToRoot then setCwd (Just root) else id
+  pure $ setCwd_ $ nixShellRunProc $ defShellConfig
+    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
+        "{root, pkgs, shell}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
+          \shellPackages = builtins.fromJSON pkgs;\
+        \})).project.shells.${shell}"
+    & nixShellConfig_common . nixCmdConfig_args .~
+        [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
+        , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
+        , strArg "shell" shellAttr
+        ]
+
+nixShellWithoutPkgs
+  :: MonadObelisk m
+  => FilePath -- ^ Path to project root
+  -> Bool -- ^ Should this be a pure shell?
+  -> Bool -- ^ Should we chdir to the package root in the shell?
+  -> Map Text FilePath -- ^ Package names mapped to their paths
+  -> String -- ^ Shell attribute to use (e.g. @"ghc"@, @"ghcjs"@, etc.)
+  -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
+  -> m ()
+nixShellWithoutPkgs root isPure chdirToRoot packageNamesAndPaths shellAttr command = do
+  runProcess_ =<< mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command
+
+nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
+nixShellWithHoogle root isPure shell' command = do
+  defShellConfig <- nixShellRunConfig root isPure command
+  runProcess_ $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
+    & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
+        "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
+          \userSettings = super.userSettings // { withHoogle = true; };\
+        \})).project.shells.${shell}"
+    & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
+
+-- | Describes the provenance of static assets (i.e., are they the result of a derivation
+-- that was built, or just a folder full of files.
+data AssetSource = AssetSource_Derivation
+                 | AssetSource_Files
+  deriving (Eq)
+
+-- | Some log messages to make it easier to tell where static files are coming from
+describeImpureAssetSource :: AssetSource -> Text -> Text
+describeImpureAssetSource src path = case src of
+  AssetSource_Files -> "Assets impurely loaded from: " <> path
+  AssetSource_Derivation -> "Assets derivation built and impurely loaded from: " <> path
+
+-- | Determine where the static files of a project are and whether they're plain files or a derivation.
+-- If they are a derivation, that derivation will be built.
+findProjectAssets :: MonadObelisk m => FilePath -> m (AssetSource, Text)
+findProjectAssets root = do
+  isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+    proc nixExePath
+      [ "eval"
+      , "(let a = import ./. {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+      , "--raw"
+      -- `--raw` is not available with old nix-instantiate. It drops quotation
+      -- marks and trailing newline, so is very convenient for shelling out.
+      ]
+  -- Check whether the impure static files are a derivation (and so must be built)
+  if isDerivation == "1"
+    then do
+      _ <- buildStaticFilesDerivationAndSymlink
+        (readProcessAndLogStderr Debug)
+        root
+      pure (AssetSource_Derivation, T.pack $ root </> "static.out")
+    else fmap (AssetSource_Files,) $ do
+      path <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+        proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
+      _ <- readProcessAndLogStderr Debug $ setCwd (Just root) $
+        proc lnPath ["-sfT", T.unpack path, "./static.out"]
+      pure path
+
+-- | Get the nix store path to the generated static asset manifest module (e.g., "obelisk-generated-static")
+getHaskellManifestProjectPath :: MonadObelisk m => FilePath -> m Text
+getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+  proc nixBuildExePath
+    [ "--no-out-link"
+    , "-E"
+    , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
+    ]
+
+-- | Watch the project directory for file changes and check whether those file changes
+-- cause changes in the static files nix derivation. If so, rebuild it.
+watchStaticFilesDerivation
+  :: (MonadIO m, MonadObelisk m)
+  => FilePath
+  -> m ()
+watchStaticFilesDerivation root = do
+  ob <- getObelisk
+  drv0 <- showDerivation
+  liftIO $ runHeadlessApp $ do
+    pb <- getPostBuild
+    checkForChanges <- batchOccurrences 0.25 =<< watchDirectoryTree
+      -- On macOS, use the polling backend due to https://github.com/luite/hfsevents/issues/13
+      (defaultConfig { confUsePolling = SysInfo.os == "darwin", confPollInterval = 250000 })
+      (root <$ pb)
+      ((/="static.out") . takeFileName . eventPath)
+    drv <- performEvent $ ffor checkForChanges $ \_ ->
+      liftIO $ runObelisk ob showDerivation
+    drvs <- foldDyn (\new (_, old, _) -> (old, new, old /= new)) (drv0, drv0, False) drv
+    void $ throttleBatchWithLag
+      (\e -> performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $ do
+        putLog Notice "Static assets being built..."
+        buildStaticCatchErrors >>= \case
+          Nothing -> pure ()
+          Just _ -> putLog Notice "Static assets built and symlinked to static.out"
+      )
+      ((() <$) . ffilter (\x -> isJust (x ^._2) && x ^._3) $ updated drvs)
+    pure never
+  where
+    handleBuildFailure
+      :: MonadObelisk m
+      => (ExitCode, String, String)
+      -> m (Maybe Text)
+    handleBuildFailure (ex, out, err) = case ex of
+      ExitSuccess -> pure $ Just $ T.pack out
+      _ -> do
+        putLog Error $
+          ("Static assets build failed: " <>) $
+            T.unlines $ reverse $ take 10 $ reverse $ T.lines $ T.pack err
+        pure Nothing
+    showDerivation :: MonadObelisk m => m (Maybe Text)
+    showDerivation =
+      handleBuildFailure <=< readCreateProcessWithExitCode $
+          setCwd (Just root) $ ProcessSpec
+            { _processSpec_createProcess = Proc.proc nixExePath
+              [ "show-derivation"
+              , "-f", "."
+              , "passthru.staticFilesImpure"
+              ]
+            , _processSpec_overrideEnv = Nothing
+            }
+    buildStaticCatchErrors :: MonadObelisk m => m (Maybe Text)
+    buildStaticCatchErrors = handleBuildFailure =<<
+      buildStaticFilesDerivationAndSymlink
+        readCreateProcessWithExitCode
+        root
+
+buildStaticFilesDerivationAndSymlink
+  :: MonadObelisk m
+  => (ProcessSpec -> m a)
+  -> FilePath
+  -> m a
+buildStaticFilesDerivationAndSymlink f root = f $
+  setCwd (Just root) $ ProcessSpec
+    { _processSpec_createProcess = Proc.proc
+        nixBuildExePath
+        [ "-o", "static.out"
+        , "-E", "(import ./. {}).passthru.staticFilesImpure"
+        ]
+    , _processSpec_overrideEnv = Nothing
+    }

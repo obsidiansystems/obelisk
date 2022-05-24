@@ -9,9 +9,7 @@ library
                , obelisk-route
                , mtl
                , text
-  default-extensions:
-    TypeFamilies
-    PolyKinds
   exposed-modules:
     Common.Api
     Common.Route
+  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -fno-show-valid-hole-fits

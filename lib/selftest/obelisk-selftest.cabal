@@ -9,18 +9,21 @@ library
   hs-source-dirs: src
   build-depends:
       base
+    , bytestring
+    , aeson
     , containers
     , directory
+    , filepath
     , hspec
     , http-client
     , http-types
     , HUnit
-    , obelisk-cliapp
+    , network
     , obelisk-executable-config-lookup
     , obelisk-run
+    , which
     , process
-    , network
-    , shelly
+    , shelly >= 1.9.0
     , temporary
     , text
   exposed-modules:
