@@ -90,7 +90,7 @@ import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
 import GHCJS.DOM.EventTarget (addEventListener)
-import GHCJS.DOM.MouseEvent (getCtrlKey)
+import GHCJS.DOM.MouseEvent (getAltKey, getCtrlKey, getMetaKey, getShiftKey)
 import qualified GHCJS.DOM.Event as E
 import Language.Javascript.JSaddle (MonadJSM, function, jsNull, liftJSM, toJSVal) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
@@ -544,49 +544,54 @@ getClickEvent elm onComplete = do
 
   pure sendEv
 
+-- This function takes a [MouseEvent](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent),
+-- and checks if it should be handled by us. To be specific, it checks for:
+--  1. Whether the Alt key was pressed
+--  2. Whether the Ctrl key was pressed
+--  3. Whether the Shift key was pressed
+--  4. Whether the Meta key was pressed
+-- If any of the above keys were pressed, this mouse click should be left to be handled by the browser,
+-- hence this function will return `False`. Otherwise, it returns `True`.
+shouldMouseClickBeHandled :: (DOM.MonadDOM m) => DOM.MouseEvent -> m Bool
+shouldMouseClickBeHandled mouseClick = not . or <$> sequence
+  [ getAltKey mouseClick
+  , getCtrlKey mouseClick
+  , getShiftKey mouseClick
+  , getMetaKey mouseClick
+  ]
+
 -- | DOM action for preventing the default behavior of a mouse click,
--- only when a new tab should be opened. If a new tab should not be opened, no action will be taken.
+-- only when we should handle the click. If we should not handle the click
+-- (ie browser should take the default action), no action will be taken.
 -- This function can be passed as an argument to `getClickEvent`.
---
--- Currently, actions that open a new tab are:
--- 1. Pressing Ctrl while clicking a link
--- 2. Any link with the target attribute set to _blank.
-preventDefaultClickOnNewTabOpen :: Bool -> DOM.MouseEvent -> DOM.DOM ()
-preventDefaultClickOnNewTabOpen isTargetBlank mouseEv = do
-  wasCtrlPressed <- getCtrlKey mouseEv
-  unless (wasCtrlPressed || isTargetBlank) $
-    E.preventDefault mouseEv
+preventDefaultAction :: Bool -> DOM.MouseEvent -> DOM.DOM ()
+preventDefaultAction isTargetBlank mouseClick = do
+  b <- shouldMouseClickBeHandled mouseClick
+  when (b && not isTargetBlank) $
+    E.preventDefault mouseClick
 
 -- | This function samples a given `Dynamic` based on a event containing a [MouseEvent](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent).
 --
--- Whenever the input event triggers, we sample the input dynamic if a new tab should NOT be opened.
--- If a new tab should be opened, that event occurrence is discarded.
---
--- Currently, actions that open a new tab are:
--- 1. Pressing Ctrl while clicking a link
--- 2. Any link with the target attribute set to _blank.
-unlessNewTabOpened :: (PerformEvent t m, MonadJSM (Performable m)) => Bool -> Event t DOM.MouseEvent -> Dynamic t a -> m (Event t a)
-unlessNewTabOpened isTargetBlank clickEv xDyn = do
+-- Whenever the input event triggers, we sample the input dynamic if we should handle the click.
+-- If we should not handle the event (ie leave it to the default action by the browser), the event is discarded.
+removeDefaultHandledClicks :: (PerformEvent t m, MonadJSM (Performable m)) => Bool -> Event t DOM.MouseEvent -> Dynamic t a -> m (Event t a)
+removeDefaultHandledClicks isTargetBlank clickEv xDyn = do
   xEv <- performEvent $ (,) <$> current xDyn <@> clickEv <&> \(x, mouseClick) -> do
-    getCtrlKey mouseClick >>= \wasCtrlPressed -> if wasCtrlPressed || isTargetBlank
-      then pure Nothing
-      else pure $ Just x
+    b <- shouldMouseClickBeHandled mouseClick
+    pure $ if b && not isTargetBlank
+      then Just x
+      else Nothing
   pure $ fmapMaybe id xEv
 
 -- | This function sets the route as per the input dynamic, whenever the input element is clicked,
--- provided that a new tab should NOT be opened. It will also prevent the default action for the click event in this case.
+-- provided that we should handle the click. It will also prevent the default action for the click event in this case.
 --
--- If a new tab should be opened, the function will not do anything.
+-- In case we should not handle the click, ie browser should take the default action, the function will not do anything.
 --
--- Currently, actions that open a new tab are:
--- 1. Pressing Ctrl while clicking a link
--- 2. Any link with the target attribute set to _blank.
---
--- This is required so that `routeLink` functions perform similarly to <a> tag, when a new tab should be opened.
--- If new tab should be opened, we do nothing, and let the browser handle everything (ie opening the link in a new tab)
--- If new tab should NOT opened, we take over, prevent the default action, and set the route ourselves. This stays in line
--- with the client side routing that Obelisk has.
-setRouteUnlessNewTabOpened
+-- This is required so that `routeLink` functions perform similarly to <a> tag, in cases where a modifier key is pressed (Alt/Ctrl/Shift/Meta).
+-- In such cases, we let the browser handle the mouse click and do nothing. If not, we prevent the default behavior
+-- and handle the click ourselves. This stays in line with the client side routing that Obelisk has.
+setRouteUnlessDefaultHandled
   :: ( SetRoute t route m
      , MonadJSM m
      , TriggerEvent t m
@@ -598,9 +603,9 @@ setRouteUnlessNewTabOpened
   -> Bool
   -> Dynamic t route
   -> m ()
-setRouteUnlessNewTabOpened e isTargetBlank routeDyn = do
-  clickEv <- getClickEvent e $ preventDefaultClickOnNewTabOpen isTargetBlank
-  routeEv <- unlessNewTabOpened isTargetBlank clickEv routeDyn
+setRouteUnlessDefaultHandled e isTargetBlank routeDyn = do
+  clickEv <- getClickEvent e $ preventDefaultAction isTargetBlank
+  routeEv <- removeDefaultHandledClicks isTargetBlank clickEv routeDyn
   setRoute routeEv
 
 -- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
@@ -676,7 +681,7 @@ routeLinkImpl attrs r w = do
     cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_initialAttributes .~ ("href" =: enc r <> attrs)
   (e, a) <- element "a" cfg w
-  setRouteUnlessNewTabOpened e targetBlank $ constDyn r
+  setRouteUnlessDefaultHandled e targetBlank $ constDyn r
   return (domEvent Click e, a)
 
 scrollToTop :: forall m t. (Prerender t m, Monad m) => Event t () -> m ()
@@ -729,7 +734,7 @@ dynRouteLinkImpl dr w = do
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  setRouteUnlessNewTabOpened e False dr
+  setRouteUnlessDefaultHandled e False dr
   return (domEvent Click e, a)
 
 -- | An @a@-tag link widget that, when clicked, sets the route to current value of the
@@ -781,7 +786,7 @@ routeLinkDynAttrImpl dAttr dr w = do
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  setRouteUnlessNewTabOpened e False dr
+  setRouteUnlessDefaultHandled e False dr
   return (domEvent Click e, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the

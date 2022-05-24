@@ -13,7 +13,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#916](https://github.com/obsidiansystems/obelisk/pull/916): Add `check-known-hosts` option in `ob deploy init`.
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
-  * [#912](https://github.com/obsidiansystems/obelisk/pull/912): Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave like `<a href="...">` when Ctrl was pressed while the element was being clicked, they would load the link in the current tab instead of opening a new tab. These functions now open a new tab when Ctrl-clicked.
+  * [#912](https://github.com/obsidiansystems/obelisk/pull/912): Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave like `<a href="...">` when Alt/Ctrl/Shift/Meta was pressed while the element was being clicked. Now, these functions leave the click to be handled by the browser whenever these keys are pressed along with the click.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
 
 ## v1.0.0.0 - 2022-01-04
