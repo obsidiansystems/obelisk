@@ -59,7 +59,6 @@ import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), std
 import qualified System.Process as Process
 import Text.ShellEscape (bash, bytes)
 import qualified Data.Aeson as Aeson
-
 import Control.Monad.Log (Severity (..))
 import Obelisk.CliApp.Logging (putLog, putLogRaw)
 import Obelisk.CliApp.Types (CliLog, CliThrow)

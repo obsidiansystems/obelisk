@@ -9,6 +9,16 @@ let
 in
 
 {
+  # Actually broken in current nixpkgs master due to MonadFail changes
+  git = haskellLib.markUnbroken super.git;
+
+  # hpack requires cabal >= 3.0 but the ghc865 package set builds it with 2.4 by default
+  hpack = super.hpack.overrideScope (self: super: { Cabal = self.Cabal_3_2_0_0; });
+
+  # These versions work with both the ghc865 and ghc8107 package sets
+  universe = self.callHackage "universe" "1.2" {};
+  universe-instances-extended = self.callHackage "universe-instances-extended" "1.1.1" {};
+
   regex-base = self.callHackage "regex-base" "0.94.0.0" {};
   regex-posix = self.callHackage "regex-posix" "0.96.0.0" {};
   regex-tdfa = self.callHackage "regex-tdfa" "1.3.1.0" {};

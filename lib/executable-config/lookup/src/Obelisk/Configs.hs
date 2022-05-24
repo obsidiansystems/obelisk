@@ -44,8 +44,6 @@ import Reflex.Dom.Core
   ( DomBuilder
   , DomRenderHook
   , HasDocument
-  , HasJS
-  , HasJSContext
   , Prerender (Client)
   , StaticDomBuilderT
   , prerender
@@ -106,8 +104,6 @@ newtype ConfigsT m a = ConfigsT { unConfigsT :: ReaderT (Map Text ByteString) m 
     , TriggerEvent t
     , HasDocument
     , DomRenderHook t
-    , HasJSContext
-    , HasJS js
 #ifndef ghcjs_HOST_OS
     , MonadJSM
 #endif
@@ -126,7 +122,7 @@ instance Adjustable t m => Adjustable t (ConfigsT m) where
   traverseIntMapWithKeyWithAdjust f m e = ConfigsT $ traverseIntMapWithKeyWithAdjust (\k v -> unConfigsT $ f k v) m e
   traverseDMapWithKeyWithAdjustWithMove f m e = ConfigsT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> unConfigsT $ f k v) m e
 
-instance Prerender js t m => Prerender js t (ConfigsT m) where
+instance Prerender t m => Prerender t (ConfigsT m) where
   type Client (ConfigsT m) = ConfigsT (Client m)
   prerender server client = ConfigsT $ ReaderT $ \configs ->
     prerender (runConfigsT configs server) (runConfigsT configs client)
