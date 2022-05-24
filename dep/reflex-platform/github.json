@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "mobile-and-force-8.10",
+  "branch": "aliao/mobile-8_10-wip",
   "private": false,
-  "rev": "df66d649e095b86f0f020afae1b98e174552b02b",
-  "sha256": "0asvxbmwhpgn5s77lzach8bkkg39dsv2ashmh93sjjxr4sl8s9i7"
+  "rev": "f6401bfc3e6af208c0c870032cdc7078b0dd75c3",
+  "sha256": "1mag0dzga0vj95j2kdkhw2nnn798jy9dygsgf57qqc92lblcf7wz"
 }
