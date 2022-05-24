@@ -7,23 +7,27 @@ cabal-version: >=1.2
 library
   hs-source-dirs: src
   build-depends:
-      ansi-terminal
+      aeson
+    , ansi-terminal
     , base
     , bytestring
+    , containers
     , exceptions
     , io-streams
     , lens
     , logging-effect
     , monad-loops
     , mtl
+    , shell-escape
     , process
+    , shell-escape
     , terminal-size
     , text
     , time
     , transformers
+    , utf8-string
   exposed-modules:
     Obelisk.CliApp
-    Obelisk.CliApp.Demo
   other-modules:
     Obelisk.CliApp.Logging
     Obelisk.CliApp.Process
@@ -31,4 +35,4 @@ library
     Obelisk.CliApp.TerminalString
     Obelisk.CliApp.Theme
     Obelisk.CliApp.Types
-  ghc-options: -Wall -fobject-code
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O

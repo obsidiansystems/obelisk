@@ -1,28 +1,24 @@
-{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Obelisk.Route.Frontend
   ( module Obelisk.Route
@@ -35,6 +31,8 @@ module Obelisk.Route.Frontend
   , mapRoutedT
   , subRoute
   , subRoute_
+  , subPairRoute
+  , subPairRoute_
   , maybeRoute
   , maybeRoute_
   , maybeRouted
@@ -51,52 +49,56 @@ module Obelisk.Route.Frontend
   , runRouteToUrlT
   , mapRouteToUrlT
   , routeLink
+  , routeLinkAttr
+  , routeLinkDynAttr
   , dynRouteLink
   , adaptedUriPath
   , setAdaptedUriPath
   ) where
 
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ < 810
+import Control.Monad ((<=<))
+#endif
+#endif
+
 import Prelude hiding ((.), id)
 
-import Obelisk.Route
-
 import Control.Category (Category (..), (.))
-import Control.Category.Cartesian
+import Control.Category.Cartesian ((&&&))
 import Control.Lens hiding (Bifunctor, bimap, universe, element)
-import Control.Monad ((<=<))
 import Control.Monad.Fix
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Control
 import Data.Coerce
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Compose
+import Data.Functor.Misc
 import Data.GADT.Compare
+import qualified Data.List as L
+import Data.Map as Map (Map, lookup)
+import Data.Maybe (fromMaybe)
 import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Functor.Compose
-import Reflex.Class
-import Reflex.Host.Class
-import Reflex.PostBuild.Class
-import Reflex.TriggerEvent.Class
-import Reflex.PerformEvent.Class
-import Reflex.EventWriter.Class
-import Reflex.EventWriter.Base
-import Reflex.Dynamic
-import Reflex.Dom.Builder.Class
 import Data.Type.Coercion
-import Language.Javascript.JSaddle --TODO: Get rid of this - other platforms can also be routed
-import Reflex.Dom.Core
+import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
+import qualified GHCJS.DOM.Window as Window
+import Language.Javascript.JSaddle (MonadJSM, jsNull, liftJSM) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
-import Data.Maybe (fromMaybe)
-import qualified Data.List as L
-
+import Reflex.Class
+import Reflex.Dom.Builder.Class
+import Reflex.Dom.Core
+import Reflex.Host.Class
 import Unsafe.Coerce
 
 import Obelisk.Configs
+import Obelisk.Route
 
 infixr 5 :~
 pattern (:~) :: Reflex t => f a -> Dynamic t a -> DSum f (Compose (Dynamic t) Identity)
@@ -113,17 +115,29 @@ instance Monad m => Routed t r (RoutedT t r m) where
 instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m)
 
 newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadIO, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadFix
+    , MonadTrans
+    , MFunctor
+    , NotReady t
+    , MonadHold t
+    , MonadSample t
+    , PostBuild t
+    , TriggerEvent t
+    , MonadIO
+    , MonadReflexCreateTrigger t
+    , HasDocument
+    , DomRenderHook t
+    )
 
 instance MonadReader r' m => MonadReader r' (RoutedT t r m) where
   ask = lift ask
   local = mapRoutedT . local
 
-instance HasJSContext m => HasJSContext (RoutedT t r m) where
-  type JSContextPhantom (RoutedT t r m) = JSContextPhantom m
-  askJSContext = lift askJSContext
-
-instance (Prerender js t m, Monad m) => Prerender js t (RoutedT t r m) where
+instance (Prerender t m, Monad m) => Prerender t (RoutedT t r m) where
   type Client (RoutedT t r m) = RoutedT t r (Client m)
   prerender server client = RoutedT $ do
     r <- ask
@@ -149,10 +163,6 @@ instance MonadRef m => MonadRef (RoutedT t r m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
-
-instance HasJS x m => HasJS x (RoutedT t r m) where
-  type JSX (RoutedT t r m) = JSX m
-  liftJS = lift . liftJS
 
 deriving instance EventWriter t w m => EventWriter t w (RoutedT t r m)
 
@@ -189,6 +199,10 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (EventWriterT t w m)
 
 instance (Monad m, SetRoute t r m) => SetRoute t r (EventWriterT t w m)
 
+instance (Monad m, RouteToUrl r m) => RouteToUrl r (DynamicWriterT t w m)
+
+instance (Monad m, SetRoute t r m) => SetRoute t r (DynamicWriterT t w m)
+
 runRoutedT :: RoutedT t r m a -> Dynamic t r -> m a
 runRoutedT = runReaderT . unRoutedT
 
@@ -202,9 +216,17 @@ subRoute_ :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r 
 subRoute_ f = factorRouted $ strictDynWidget_ $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute_ :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m ()) -> RoutedT t (a, b) m ()
+subPairRoute_ f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute_ (\(Const2 a) -> f a)
+
 subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m b) -> RoutedT t (R r) m (Dynamic t b)
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
+
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m c) -> RoutedT t (a, b) m (Dynamic t c)
+subPairRoute f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute (\(Const2 a) -> f a)
 
 maybeRoute_ :: (MonadFix m, MonadHold t m, Adjustable t m) => m () -> RoutedT t r m () -> RoutedT t (Maybe r) m ()
 maybeRoute_ n j = maybeRouted $ strictDynWidget_ $ \case
@@ -245,7 +267,7 @@ dynamicIdentityCoercion = unsafeCoerce (Coercion :: Coercion (Identity ()) ()) -
 factorRouted :: (Reflex t, MonadFix m, MonadHold t m, GEq f) => RoutedT t (DSum f (Dynamic t)) m a -> RoutedT t (DSum f Identity) m a
 factorRouted r = RoutedT $ ReaderT $ \d -> do
   d' <- factorDyn d
-  runRoutedT r $ (coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d')
+  runRoutedT r $ coerceWith (dynamicCoercion $ dsumValueCoercion dynamicIdentityCoercion) d'
 
 maybeRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Maybe (Dynamic t a)) m b -> RoutedT t (Maybe a) m b
 maybeRouted r = RoutedT $ ReaderT $ \d -> do
@@ -278,10 +300,6 @@ instance (MonadFix m, MonadHold t m, DomBuilder t m) => DomBuilder t (SetRouteT 
   textAreaElement = lift . textAreaElement
   selectElement cfg child = SetRouteT $ selectElement cfg $ unSetRouteT child
 
-instance HasJSContext m => HasJSContext (SetRouteT t r m) where
-  type JSContextPhantom (SetRouteT t r m) = JSContextPhantom m
-  askJSContext = lift askJSContext
-
 mapSetRouteT :: (forall x. m x -> n x) -> SetRouteT t r m a -> SetRouteT t r n a
 mapSetRouteT f (SetRouteT x) = SetRouteT (mapEventWriterT f x)
 
@@ -303,7 +321,7 @@ instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m)
 
 instance (Monad m, SetRoute t r m) => SetRoute t r (ReaderT r' m)
 
-instance (PerformEvent t m, Prerender js t m, Monad m, Reflex t) => Prerender js t (SetRouteT t r m) where
+instance (PerformEvent t m, Prerender t m, Monad m, Reflex t) => Prerender t (SetRouteT t r m) where
   type Client (SetRouteT t r m) = SetRouteT t r (Client m)
   prerender server client = do
     d <- lift $ prerender (runSetRouteT server) (runSetRouteT client)
@@ -334,10 +352,6 @@ instance MonadRef m => MonadRef (SetRouteT t r m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
-
-instance HasJS x m => HasJS x (SetRouteT t r m) where
-  type JSX (SetRouteT t r m) = JSX m
-  liftJS = lift . liftJS
 
 instance PrimMonad m => PrimMonad (SetRouteT t r m ) where
   type PrimState (SetRouteT t r m) = PrimState m
@@ -384,11 +398,7 @@ instance (Monad m, RouteToUrl r m) => RouteToUrl r (ReaderT r' m) where
 
 instance (Monad m, RouteToUrl r m) => RouteToUrl r (RequesterT t req rsp m)
 
-instance HasJSContext m => HasJSContext (RouteToUrlT r m) where
-  type JSContextPhantom (RouteToUrlT r m) = JSContextPhantom m
-  askJSContext = lift askJSContext
-
-instance (Prerender js t m, Monad m) => Prerender js t (RouteToUrlT r m) where
+instance (Prerender t m, Monad m) => Prerender t (RouteToUrlT r m) where
   type Client (RouteToUrlT r m) = RouteToUrlT r (Client m)
   prerender server client = do
     r <- RouteToUrlT ask
@@ -414,10 +424,6 @@ instance MonadRef m => MonadRef (RouteToUrlT r m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
-
-instance HasJS x m => HasJS x (RouteToUrlT r m) where
-  type JSX (RouteToUrlT r m) = JSX m
-  liftJS = lift . liftJS
 
 instance MonadTransControl (RouteToUrlT r) where
   type StT (RouteToUrlT r) a = StT (ReaderT (r -> Text)) a
@@ -453,7 +459,7 @@ runRouteViewT
      , MonadJSM (Performable m)
      , MonadFix m
      )
-  => (Encoder Identity Identity r PageName)
+  => Encoder Identity Identity r PageName
   --TODO: Get rid of the switchover and useHash arguments
   -- useHash can probably be baked into the encoder
   -> Event t () -- ^ Switchover event, nothing is done until this event fires. Used to prevent incorrect DOM expectations at hydration switchover time
@@ -500,43 +506,151 @@ runRouteViewT routeEncoder switchover useHash a = do
 routeLink
   :: forall t m a route.
      ( DomBuilder t m
-     , RouteToUrl (R route) m
-     , SetRoute t (R route) m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender t m
      )
-  => R route -- ^ Target route
+  => route -- ^ Target route
   -> m a -- ^ Child widget
   -> m a
 routeLink r w = do
-  enc <- askRouteToUrl
-  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
-        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
-        & elementConfig_initialAttributes .~ "href" =: enc r
-  (e, a) <- element "a" cfg w
-  setRoute $ r <$ domEvent Click e
+  (e, a) <- routeLinkImpl mempty r w
+  scrollToTop e
   return a
 
--- | A link widget that, when clicked, sets the route to current value of the
--- provided dynamic route. In non-javascript contexts the value of the dynamic post
--- build is used so the link still works like 'routeLink'.
+-- | Like 'routeLink', but takes additional attributes as argument.
+--
+routeLinkAttr
+  :: forall t m a route.
+     ( DomBuilder t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender t m
+     )
+  => Map AttributeName Text -- ^ Additional attributes
+  -> route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+routeLinkAttr attrs r w = do
+  (e, a) <- routeLinkImpl attrs r w
+  let
+    targetBlank = Map.lookup "target" attrs == Just "_blank"
+  when (not targetBlank) $ scrollToTop e
+  return a
+
+-- | Raw implementation of 'routeLink'. Does not scroll to the top of the page on clicks.
+routeLinkImpl
+  :: forall t m a route.
+     ( DomBuilder t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     )
+  => Map AttributeName Text
+  -> route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m (Event t (), a)
+routeLinkImpl attrs r w = do
+  enc <- askRouteToUrl
+  let
+    -- If targetBlank == True, the link will be opened in another page. In that
+    -- case, we don't prevent the default behaviour, and we don't need to
+    -- setRoute.
+    targetBlank = Map.lookup "target" attrs == Just "_blank"
+    cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_initialAttributes .~ ("href" =: enc r <> attrs)
+        & (if targetBlank
+           then id
+           else elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault))
+  (e, a) <- element "a" cfg w
+  when (not targetBlank) $ setRoute $ r <$ domEvent Click e
+  return (domEvent Click e, a)
+
+scrollToTop :: forall m t. (Prerender t m, Monad m) => Event t () -> m ()
+scrollToTop e = prerender_ blank $ performEvent_ $ ffor e $ \_ -> liftJSM $ DOM.currentWindow >>= \case
+  Nothing -> pure ()
+  Just win -> Window.scrollTo win 0 0
+
+-- | Like 'routeLinkDynAttr' but without custom attributes.
 dynRouteLink
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     , Prerender t m
+     )
+  => Dynamic t route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m a
+dynRouteLink r w = do
+  (e, a) <- dynRouteLinkImpl r w
+  scrollToTop e
+  return a
+
+-- | Raw implementation of 'dynRouteLink'. Does not scroll to the top of the page on clicks.
+dynRouteLinkImpl
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl route m
+     , SetRoute t route m
+     )
+  => Dynamic t route -- ^ Target route
+  -> m a -- ^ Child widget
+  -> m (Event t (), a)
+dynRouteLinkImpl dr w = do
+  enc <- askRouteToUrl
+  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+  let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
+        & elementConfig_modifyAttributes .~ er
+  (e, a) <- element "a" cfg w
+  let clk = domEvent Click e
+  setRoute $ tag (current dr) clk
+  return (clk, a)
+
+-- | An @a@-tag link widget that, when clicked, sets the route to current value of the
+-- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
+-- build is used so the link still works like 'routeLink'.
+routeLinkDynAttr
+  :: forall t m a route.
+     ( DomBuilder t m
+     , PostBuild t m
+     , RouteToUrl (R route) m
+     , SetRoute t (R route) m
+     , Prerender t m
+     )
+  => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
+  -> Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget of the @a@ element
+  -> m a
+routeLinkDynAttr dAttr dr w = do
+  (e, a) <- routeLinkDynAttrImpl dAttr dr w
+  scrollToTop e
+  return a
+
+-- | Raw implementation of 'routeLinkDynAttr'. Does not scroll to the top of the page on clicks.
+routeLinkDynAttrImpl
   :: forall t m a route.
      ( DomBuilder t m
      , PostBuild t m
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
      )
-  => Dynamic t (R route) -- ^ Target route
-  -> m a -- ^ Child widget
-  -> m a
-dynRouteLink dr w = do
+  => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
+  -> Dynamic t (R route) -- ^ Target route
+  -> m a -- ^ Child widget of the @a@ element
+  -> m (Event t (), a)
+routeLinkDynAttrImpl dAttr dr w = do
   enc <- askRouteToUrl
-  er <- dynamicAttributesToModifyAttributes $ ("href" =:) . enc <$> dr
+  er <- dynamicAttributesToModifyAttributes $ zipDynWith (<>) (("href" =:) . enc <$> dr) dAttr
   let cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
-        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (\_ -> preventDefault)
+        & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  setRoute $ tag (current dr) $ domEvent Click e
-  return a
+  let clk = domEvent Click e
+  setRoute $ tag (current dr) clk
+  return (clk, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.

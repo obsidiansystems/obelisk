@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -22,7 +23,7 @@ import Data.Text.Encoding (encodeUtf8)
 import Reflex
 import Reflex.Host.Class
 import Reflex.Dom.Core
-import GHCJS.DOM.Document (getCookie, Document)
+import "ghcjs-dom" GHCJS.DOM.Document (getCookie, Document)
 import GHCJS.DOM.Types (MonadJSM)
 import Web.Cookie
 
@@ -68,7 +69,7 @@ newtype CookiesT m a = CookiesT { unCookiesT :: ReaderT Cookies m a }
     , NotReady t
     , PerformEvent t
     , PostBuild t
-    , Prerender js t
+    , Prerender t
     , TriggerEvent t
     , HasDocument
     )
