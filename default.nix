@@ -76,7 +76,7 @@ in rec {
     ${exe} "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
-  compressedJs = frontend: optimizationLevel: pkgs.runCommand "compressedJs" {} ''
+  compressedJs = frontend: optimizationLevel: externs: pkgs.runCommand "compressedJs" {} ''
     set -euo pipefail
     cd '${haskellLib.justStaticExecutables frontend}'
     shopt -s globstar
@@ -87,7 +87,7 @@ in rec {
       ${if optimizationLevel == null then ''
         ln -s "$dir/all.unminified.js" "$dir/all.js"
       '' else ''
-        '${pkgs.closurecompiler}/bin/closure-compiler' --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        '${pkgs.closurecompiler}/bin/closure-compiler' ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
         echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
       ''}
     done
@@ -101,7 +101,7 @@ in rec {
       ec2.hvm = true;
     };
 
-    mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, ... }: {...}: {
+    mkDefaultNetworking = { adminEmail, enableHttps, hostName, routeHost, redirectHosts, ... }: {...}: {
       networking = {
         inherit hostName;
         firewall.allowedTCPPorts = if enableHttps then [ 80 443 ] else [ 80 ];
@@ -113,11 +113,15 @@ in rec {
       services.openssh.enable = true;
       services.openssh.permitRootLogin = "prohibit-password";
 
-      security.acme.certs = if enableHttps then {
-        "${routeHost}".email = adminEmail;
+      security.acme = if enableHttps then {
+        acceptTerms = terms.security.acme.acceptTerms;
+        email = adminEmail;
+        certs = {
+          "${routeHost}" = {
+            extraDomains = builtins.listToAttrs (map (h: { name = h; value = null; }) redirectHosts);
+          };
+        };
       } else {};
-
-      security.acme.${if enableHttps && (terms.security.acme.acceptTerms or false) then "acceptTerms" else null} = true;
     };
 
     mkObeliskApp =
@@ -130,22 +134,34 @@ in rec {
       , baseUrl ? "/"
       , internalPort ? 8000
       , backendArgs ? "--port=${toString internalPort}"
+      , redirectHosts ? [] # Domains to redirect to routeHost; importantly, these domains will be added to the SSL certificate
       , ...
-      }: {...}: {
+      }: {...}:
+      assert lib.assertMsg (!(builtins.elem routeHost redirectHosts)) "routeHost may not be a member of redirectHosts";
+      {
       services.nginx = {
         enable = true;
         recommendedProxySettings = true;
-        virtualHosts."${routeHost}" = {
-          enableACME = enableHttps;
-          forceSSL = enableHttps;
-          locations.${baseUrl} = {
-            proxyPass = "http://127.0.0.1:" + toString internalPort;
-            proxyWebsockets = true;
-            extraConfig = ''
-              access_log off;
-            '';
+        virtualHosts = {
+          "${routeHost}" = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
+            locations.${baseUrl} = {
+              proxyPass = "http://127.0.0.1:" + toString internalPort;
+              proxyWebsockets = true;
+              extraConfig = ''
+                access_log off;
+              '';
+            };
           };
-        };
+        } // builtins.listToAttrs (map (redirectSourceDomain: {
+          name = redirectSourceDomain;
+          value = {
+            enableACME = enableHttps;
+            forceSSL = enableHttps;
+            globalRedirect = routeHost;
+          };
+        }) redirectHosts);
       };
       systemd.services.${name} = {
         wantedBy = [ "multi-user.target" ];
@@ -180,19 +196,19 @@ in rec {
 
   inherit mkAssets;
 
-  serverExe = backend: frontend: assets: optimizationLevel: version:
+  serverExe = backend: frontend: assets: optimizationLevel: externjs: version:
     pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
       ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
       ln -s '${mkAssets assets}' $out/static.assets
-      for d in '${mkAssets (compressedJs frontend optimizationLevel)}'/*/; do
+      for d in '${mkAssets (compressedJs frontend optimizationLevel externjs)}'/*/; do
         ln -s "$d" "$out"/"$(basename "$d").assets"
       done
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [] }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -221,6 +237,7 @@ in rec {
             , tools ? _: []
             , shellToolOverrides ? _: _: {}
             , withHoogle ? false # Setting this to `true` makes shell reloading far slower
+            , externjs ? null
             , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
             , __withGhcide ? false
             , __deprecated ? {}
@@ -230,7 +247,7 @@ in rec {
                 base = base';
                 inherit args;
                 userSettings = {
-                  inherit android ios packages overrides tools shellToolOverrides withHoogle __closureCompilerOptimizationLevel __withGhcide __deprecated;
+                  inherit android ios packages overrides tools shellToolOverrides withHoogle externjs __closureCompilerOptimizationLevel __withGhcide __deprecated;
                   staticFiles = if staticFiles == null then self.base + /static else staticFiles;
                 };
                 frontendName = "frontend";
@@ -321,7 +338,7 @@ in rec {
                       __iosWithConfig __androidWithConfig
                       ;
                     inherit (self.userSettings)
-                      android ios overrides packages shellToolOverrides staticFiles tools withHoogle
+                      android ios overrides packages shellToolOverrides staticFiles tools withHoogle externjs
                       __closureCompilerOptimizationLevel
                       ;
                   };
@@ -335,6 +352,7 @@ in rec {
         mainProjectOut.ghcjs.frontend
         projectInst.passthru.staticFiles
         projectInst.passthru.__closureCompilerOptimizationLevel
+        projectInst.passthru.externjs
         version;
       linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
@@ -374,7 +392,7 @@ in rec {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2 }:
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [] }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
     };
