@@ -205,6 +205,8 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
   describe "ob run" $ {- NOT parallel $ -} do
     it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir' Nothing httpManager
     it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir' (Just "frontend") httpManager
+    it "complains when static files are missing in root directory" $ inTmpObInit $ const $ testObRunInDirWithMissingStaticFile' Nothing
+    it "complains when static files are missing in sub directory" $ inTmpObInit $ const $ testObRunInDirWithMissingStaticFile' (Just "frontend")
 
   describe "ob repl" $ do
     it "accepts stdin commands" $ inTmpObInit $ \_ -> do
@@ -352,6 +354,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
     runOb_ = augmentWithVerbosity run_ ob isVerbose
     runOb = augmentWithVerbosity run ob isVerbose
     testObRunInDir' = augmentWithVerbosity testObRunInDir ob isVerbose ["run"]
+    testObRunInDirWithMissingStaticFile' = augmentWithVerbosity testObRunInDirWithMissingStaticFile ob isVerbose ["run"]
     testThunkPack' = augmentWithVerbosity testThunkPack ob isVerbose []
 
     withObeliskImplClean f =
@@ -419,6 +422,48 @@ testObRunInDir executable extraArgs mdir httpManager = maskExitSuccess $ do
     if runningUri /= newUri
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
+
+testObRunInDirWithMissingStaticFile :: String -> [Text] -> Maybe FilePath -> Sh ()
+testObRunInDirWithMissingStaticFile executable extraArgs mdir = maskExitSuccess $ do
+  -- Rename a static file, so that `ob run` will fail with a specific error
+  run_ "mv" ["static/obelisk.jpg", "static/obelisk2.jpg"]
+
+  -- Now run `ob run` and read the error
+  maybe id chdir mdir $ runHandles executable extraArgs [] $ \_stdin stdout stderr -> do
+    parseObOutput stdout
+  where
+    parseObOutput h = do
+      line <- liftIO $ hGetLineSkipBlanks h
+      -- This means that everything was successful, this should not be the case
+      if line == "Running test..."
+        then errorExit "Could not find any error related to static files"
+        else checkForErrors line h
+
+    -- As can be seen in the example below, we can parse a lot of data.
+    -- For simplicity, we parse the two lines after the `error:` line.
+    -- We also ensure that the file name is same, as the file that we changed ie `obelisk.jpg`
+    checkForErrors line h
+      -- Found an error, check if it is due to static.out
+      | "error:" `T.isSuffixOf` line = do
+        line1 <- liftIO $ hGetLineSkipBlanks h
+        line2 <- liftIO $ hGetLineSkipBlanks h
+        checkStaticError line1 line2
+      | otherwise = parseObOutput h
+
+    -- We are looking for an error of the following type:
+    --  frontend/src/Frontend.hs:40:32: error:
+    --     • Static file obelisk.jpg was not found in static.out
+    --     • In the untyped splice: $(static "obelisk.jpg")
+    --    |
+    -- 40 |       elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
+    --    |                                ^^^^^^^^^^^^^^^^^^^^
+    checkStaticError line1 line2 =
+      if name1 == Just "obelisk.jpg" && name2 == Just "obelisk.jpg"
+        then exit 0
+        else errorExit $ "Expected a different error:\n" <> line1 <> "\n" <> line2
+      where
+        name1 = T.stripPrefix "• The file " (T.stripStart line1) >>= T.stripSuffix " was not found in static.out"
+        name2 = T.stripPrefix "• In the untyped splice: $(static \"" (T.stripStart line2) >>= T.stripSuffix "\")"
 
 testThunkPack :: String -> [Text] -> FilePath -> Sh ()
 testThunkPack executable args path' = withTempFile repoDir "test-file" $ \file handle -> do
