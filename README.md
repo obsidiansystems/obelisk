@@ -187,6 +187,7 @@ First create a new EC2 instance:
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
 1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and HTTPS port 443.
+1. Use Route 53 to set up a new domain name, this will be used as the $ROUTE value
 
 At this stage your instance should be booting and become accessible shortly. Note down the hostname of your EC2 instance.
 
