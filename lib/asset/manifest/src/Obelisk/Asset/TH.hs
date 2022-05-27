@@ -30,7 +30,7 @@ assetPath root relativePath =
   LitE . StringL <$> hashedAssetFilePath root relativePath
 
 staticPrefix :: FilePath
-staticPrefix = "/static"
+staticPrefix = "static"
 
 staticAssetRaw :: FilePath -> Q Exp
 staticAssetRaw fp = do
