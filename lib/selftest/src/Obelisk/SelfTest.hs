@@ -205,6 +205,8 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
   describe "ob run" $ {- NOT parallel $ -} do
     it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir' Nothing httpManager
     it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir' (Just "frontend") httpManager
+    it "can read external TLS certificates in root directory" $ inTmpObInit $ \testDir -> testObRunCert' testDir Nothing
+    it "can read external TLS certificates in sub directory" $ inTmpObInit $ \testDir -> testObRunCert' testDir (Just "frontend")
 
   describe "ob repl" $ do
     it "accepts stdin commands" $ inTmpObInit $ \_ -> do
@@ -352,6 +354,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
     runOb_ = augmentWithVerbosity run_ ob isVerbose
     runOb = augmentWithVerbosity run ob isVerbose
     testObRunInDir' = augmentWithVerbosity testObRunInDir ob isVerbose ["run"]
+    testObRunCert' = augmentWithVerbosity testObRunCert ob isVerbose ["run", "-c", "."]
     testThunkPack' = augmentWithVerbosity testThunkPack ob isVerbose []
 
     withObeliskImplClean f =
@@ -419,6 +422,46 @@ testObRunInDir executable extraArgs mdir httpManager = maskExitSuccess $ do
     if runningUri /= newUri
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
+
+testObRunCert :: String -> [Text] -> FilePath -> Maybe FilePath -> Sh ()
+testObRunCert executable extraArgs testDir mdir = maskExitSuccess $ do
+  -- Generate a TLS key, and then a self-signed certificate using that key
+  mapM_ (\cmd -> run_ "nix-shell" ["-p", "openssl", "--command", cmd])
+    [ "openssl genrsa -out key.pem 2048"
+    , "openssl req -new -key key.pem -out certificate.csr -subj \"/C=US/ST=New York/L=New York/O=Development/OU=IT Department/CN=obsidian.com\""
+    , "openssl x509 -req -in certificate.csr -signkey key.pem -out cert.pem"
+    ]
+
+  -- One more command is required, for generating the chain.pem file.
+  -- For testing purposes, we'll keep it the same as the cert.pem file.
+  run_ "cp" ["cert.pem", "chain.pem"]
+
+  -- Also need to change the route inside config/common/route to https
+  -- in order to trigger the certificates option (the -c option is not honored for http)
+  writefile "config/common/route" "https://localhost:8000"
+
+  maybe id chdir mdir $ runHandles executable extraArgs [] $ \_ stdout _ -> do
+    parseObOutput stdout
+  where
+    parseObOutput h = do
+      isEOF <- liftIO $ hIsEOF h
+      if isEOF
+        then errorExit "Obelisk exited somehow"
+        else do
+          line <- liftIO $ hGetLineSkipBlanks h
+          check line h
+
+    -- Here we check that the certificates are read properly by Obelisk
+    -- In case the server is started without reading the certificates, show an error.
+    check line h
+      | "Using certificate information from:" `T.isPrefixOf` line = do
+        -- Should be followed by a `Frontend running on <url>` line
+        next <- liftIO $ hGetLineSkipBlanks h
+        if "Frontend running on" `T.isPrefixOf` next
+          then exit 0
+          else errorExit $ "Ran into error: " <> next
+      | "Frontend running on" `T.isPrefixOf` line = errorExit "Obelisk did not read the certificates provided via -c option"
+      | otherwise = parseObOutput h
 
 testThunkPack :: String -> [Text] -> FilePath -> Sh ()
 testThunkPack executable args path' = withTempFile repoDir "test-file" $ \file handle -> do
