@@ -8,9 +8,8 @@ module Obelisk.Command where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
-import Data.Foldable (for_)
 import Data.List (isInfixOf, isPrefixOf)
-import Data.List.NonEmpty (NonEmpty, nonEmpty)
+import Data.List.NonEmpty (nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Text as T
@@ -230,17 +229,6 @@ thunkPackConfig = ThunkPackConfig
   <$> switch (long "force" <> short 'f' <> help "Force packing thunks even if there are branches not pushed upstream, uncommitted changes, stashes. This will cause changes that have not been pushed upstream to be lost; use with care.")
   <*> thunkConfig
 
-data ThunkOption = ThunkOption
-  { _thunkOption_thunks :: NonEmpty FilePath
-  , _thunkOption_command :: ThunkCommand
-  } deriving Show
-
-data ThunkCommand
-  = ThunkCommand_Update ThunkUpdateConfig
-  | ThunkCommand_Unpack
-  | ThunkCommand_Pack ThunkPackConfig
-  deriving Show
-
 thunkOption :: Parser ThunkOption
 thunkOption = hsubparser $ mconcat
   [ command "update" $ info (thunkOptionWith $ ThunkCommand_Update <$> thunkUpdateConfig) $ progDesc "Update packed thunk to latest revision available on the tracked branch"
@@ -253,8 +241,10 @@ thunkOption = hsubparser $ mconcat
             <$> thunkDirArg (metavar "THUNKDIRS..." <> help "Paths to directories containing thunk data")
             <*> many (thunkDirArg mempty)
           )
+      <*> thunkPreserveSymlinks
       <*> f
     thunkDirArg opts = fmap (dropTrailingPathSeparator . normalise) $ strArgument $ action "directory" <> opts
+    thunkPreserveSymlinks = switch ( long "preserve-symlinks" <> help "when a THUNKDIR is a symlink, overwrite the target of the symlink, instead of overwriting the symlink itself" )
 
 data ShellOpts
   = ShellOpts
@@ -403,12 +393,7 @@ ob = \case
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run interpretPathsList -> withInterpretPaths interpretPathsList run
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
-  ObCommand_Thunk to -> case _thunkOption_command to of
-    ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
-    ThunkCommand_Unpack -> for_ thunks unpackThunk
-    ThunkCommand_Pack config -> for_ thunks (packThunk config)
-    where
-      thunks = _thunkOption_thunks to
+  ObCommand_Thunk to -> runThunkCommand to
   ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
   ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
   ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths -> do
