@@ -43,9 +43,9 @@ import Data.Time.Clock (getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
-import Distribution.Compiler (CompilerFlavor(..))
-import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
-import Distribution.Parsec.ParseResult (runParseResult)
+import Distribution.Compiler (CompilerFlavor(..), PerCompilerFlavor)
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescription, runParseResult)
+import Distribution.Parsec.Warning (PWarning)
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple.Compiler (PackageDB (GlobalPackageDB))
 import Distribution.Simple.Configure (configCompilerEx, getInstalledPackages)
@@ -54,14 +54,15 @@ import Distribution.Simple.Program.Db (defaultProgramDb)
 import qualified Distribution.System as Dist
 import Distribution.Types.BuildInfo (buildable, cppOptions, defaultExtensions, defaultLanguage, hsSourceDirs, options, targetBuildDepends)
 import Distribution.Types.CondTree (simplifyCondTree)
-import Distribution.Types.Dependency (Dependency (..), depPkgName)
-import Distribution.Types.GenericPackageDescription (ConfVar (Arch, Impl, OS), condLibrary)
+import Distribution.Types.ConfVar (ConfVar (Arch, Impl, OS))
+import Distribution.Types.Dependency (Dependency (..), depPkgName, depVerRange)
+import Distribution.Types.GenericPackageDescription (condLibrary)
 import Distribution.Types.InstalledPackageInfo (compatPackageKey)
 import Distribution.Types.Library (libBuildInfo)
+import Distribution.Types.LibraryName (LibraryName(..))
 import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Types.VersionRange (anyVersion)
 import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
-import qualified Distribution.Parsec.Common as Dist
 import qualified Distribution.Verbosity as Verbosity (silent)
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
@@ -103,7 +104,7 @@ data CabalPackageInfo = CabalPackageInfo
     -- ^ List of globally enable extensions of the library component
   , _cabalPackageInfo_defaultLanguage :: Maybe Language
     -- ^ List of globally set languages of the library component
-  , _cabalPackageInfo_compilerOptions :: [(CompilerFlavor, [String])]
+  , _cabalPackageInfo_compilerOptions :: PerCompilerFlavor [String]
     -- ^ List of compiler-specific options (e.g., the "ghc-options" field of the cabal file)
   , _cabalPackageInfo_cppOptions :: [String]
     -- ^ List of CPP (C Preprocessor) options (e.g. the "cpp-options" field of the cabal file)
@@ -337,7 +338,7 @@ parseCabalPackage dir = parseCabalPackage' dir >>= \case
 parseCabalPackage'
   :: (MonadIO m)
   => FilePath -- ^ Package directory
-  -> m (Either T.Text (Maybe ([Dist.PWarning], CabalPackageInfo)))
+  -> m (Either T.Text (Maybe ([PWarning], CabalPackageInfo)))
 parseCabalPackage' pkg = runExceptT $ do
   (cabalContents, packageFile, packageName) <- guessCabalPackageFile pkg >>= \case
     Left GuessPackageFileError_NotFound -> throwError $ "No .cabal or package.yaml file found in " <> T.pack pkg
@@ -382,7 +383,7 @@ parseCabalPackage' pkg = runExceptT $ do
         }
     Right Nothing -> pure Nothing
     Left (_, errors) ->
-      throwError $ T.pack $ "Failed to parse " <> packageFile <> ":\n" <> unlines (map show errors)
+      throwError $ T.pack $ "Failed to parse " <> packageFile <> ":\n" <> unlines (map show $ toList errors)
 
 parsePackagesOrFail :: (MonadObelisk m, Foldable f) => f FilePath -> m (NE.NonEmpty CabalPackageInfo)
 parsePackagesOrFail dirs' = do
@@ -501,9 +502,9 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
       map (dependencyPackageId installedPackageIndex) $
           filter ((`notElem` packageNames) . depPkgName) $
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
-            [Dependency (mkPackageName "obelisk-run") anyVersion]
+            [Dependency (mkPackageName "obelisk-run") anyVersion (Set.singleton LMainLibName)]
     dependencyPackageId installedPackageIndex dep =
-      case lookupDependency installedPackageIndex dep of
+      case lookupDependency installedPackageIndex (depPkgName dep) (depVerRange dep) of
         ((_version,installedPackageInfo:_) :_) ->
           compatPackageKey installedPackageInfo
         _ -> error $ "Couldn't resolve dependency for " <> prettyShow dep
