@@ -65,6 +65,7 @@ frontendB :: Frontend (R FrontendRouteB)
 frontendB = Frontend
   { _frontend_head = do
       el "title" $ text "Obelisk Minimal Example"
+      elAttr "script" ("type" =: "application/javascript" <> "src" =: $(static "lib.js")) blank
       elAttr "link" ("href" =: $(static "main.css") <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
   , _frontend_body = do
       el "h1" $ text "Welcome to Obelisk!"
