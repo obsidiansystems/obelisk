@@ -3,10 +3,11 @@
 
 module Frontend where
 
+import Control.Lens ((^.))
 import Control.Monad
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import Language.Javascript.JSaddle (eval, liftJSM)
+import Language.Javascript.JSaddle (liftJSM, js, js1, jsg)
 
 import Obelisk.Frontend
 import Obelisk.Configs
@@ -26,6 +27,7 @@ frontendA :: Frontend (R FrontendRouteA)
 frontendA = Frontend
   { _frontend_head = do
       el "title" $ text "Obelisk Minimal Example"
+      elAttr "script" ("type" =: "application/javascript" <> "src" =: $(static "lib.js")) blank
       elAttr "link" ("href" =: $(static "main.css") <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
   , _frontend_body = do
       el "h1" $ text "Welcome to Obelisk!"
@@ -35,7 +37,10 @@ frontendA = Frontend
       -- during prerendering and a different widget to run on the client with
       -- JavaScript. The following will generate a `blank` widget on the server and
       -- print "Hello, World!" on the client.
-      prerender_ blank $ liftJSM $ void $ eval ("console.log('Hello, World!')" :: T.Text)
+      prerender_ blank $ liftJSM $ void
+        $ jsg ("window" :: T.Text)
+        ^. js ("skeleton_lib" :: T.Text)
+        ^. js1 ("log" :: T.Text) ("Hello, World!" :: T.Text)
 
       el "h2" $ display =<< askRoute
       el "ul" $ do
@@ -69,7 +74,10 @@ frontendB = Frontend
       -- during prerendering and a different widget to run on the client with
       -- JavaScript. The following will generate a `blank` widget on the server and
       -- print "Hello, World!" on the client.
-      prerender_ blank $ liftJSM $ void $ eval ("console.log('Hello, World!')" :: T.Text)
+      prerender_ blank $ liftJSM $ void
+        $ jsg ("window" :: T.Text)
+        ^. js ("skeleton_lib" :: T.Text)
+        ^. js1 ("log" :: T.Text) ("Hello, World!" :: T.Text)
 
       el "h2" $ display =<< askRoute
       el "ul" $ do

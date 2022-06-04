@@ -175,7 +175,8 @@ run port serveStaticAsset backend = do
 
 -- Convenience wrapper to handle path segments for 'Snap.serveAsset'
 runServeAsset :: FilePath -> [Text] -> Snap ()
-runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
+runServeAsset rootPath t =
+  Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/" $ t
 
 getConfigRoute :: Map Text ByteString -> Either Text URI
 getConfigRoute configs = case Map.lookup "common/route" configs of

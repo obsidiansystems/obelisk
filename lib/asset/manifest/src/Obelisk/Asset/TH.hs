@@ -12,8 +12,10 @@ module Obelisk.Asset.TH
 
 import Obelisk.Asset.Gather
 
+import Control.Monad
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
+import System.Directory
 import System.FilePath.Posix
 
 -- | Produces the hashed path of a file
@@ -31,7 +33,11 @@ staticPrefix :: FilePath
 staticPrefix = "/static"
 
 staticAssetRaw :: FilePath -> Q Exp
-staticAssetRaw fp = returnQ $ LitE $ StringL $ staticPrefix </> fp
+staticAssetRaw fp = do
+  exists <- runIO $ doesFileExist $ "static.out/" <> fp
+  when (not exists) $
+    fail $ "The file " <> fp <> " was not found in static.out"
+  returnQ $ LitE $ StringL $ staticPrefix </> fp
 
 staticAssetHashed :: FilePath -> FilePath -> Q Exp
 staticAssetHashed root fp = do

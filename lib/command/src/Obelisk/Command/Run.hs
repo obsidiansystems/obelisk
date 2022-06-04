@@ -23,11 +23,11 @@ import Data.Bifoldable (bifoldr1)
 import Data.Bifunctor (bimap)
 import Data.Coerce (coerce)
 import Data.Default (def)
-import Data.Either (partitionEithers)
 import Data.Foldable (fold, for_, toList)
 import Data.Functor.Identity (runIdentity)
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
+import Data.Either
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -87,7 +87,7 @@ import Obelisk.CliApp (
     setCwd,
     setDelegateCtlc,
     withSpinner,
-  )
+    )
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Thunk (attrCacheFileName)

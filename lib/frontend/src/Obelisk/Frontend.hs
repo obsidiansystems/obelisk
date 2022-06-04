@@ -38,7 +38,6 @@ import Control.Monad.Ref
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.ByteString (ByteString)
 import Data.Foldable (for_)
-import Data.Functor.Sum
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
@@ -65,8 +64,6 @@ import System.Info (os)
 import Web.Cookie
 
 import Debug.Trace
-
-makePrisms ''Sum
 
 type ObeliskWidget t route m =
   ( DomBuilder t m
