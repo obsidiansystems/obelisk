@@ -365,7 +365,7 @@ in rec {
           module Main where
 
           -- Explicitly import Prelude from base lest there be multiple modules called Prelude
-          import "base" Prelude (Nothing, IO, (++), read)
+          import "base" Prelude (Maybe(Nothing), IO, (++), read)
 
           import "base" Control.Exception (finally)
           import "reflex" Reflex.Profiled (writeProfilingData)
