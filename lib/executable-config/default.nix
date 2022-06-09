@@ -8,7 +8,7 @@
 }:
 
 let
-  injectConfig = config: assets: runCommand "inject-config" {} (''
+  injectConfig = config: assets: runCommand "inject-config" { } (''
     set -x
     mkdir -p $out
     cp --no-preserve=mode -Lr "${assets}" $out/static
@@ -27,18 +27,19 @@ in
 {
   haskellOverlay = self: super:
     let
-      pkgs = self.callPackage ({pkgs}: pkgs) {};
-    in {
+      pkgs = self.callPackage ({ pkgs }: pkgs) { };
+    in
+    {
       obelisk-executable-config-lookup = pkgs.haskell.lib.overrideCabal
-        (self.callCabal2nix "obelisk-executable-config-lookup" (obeliskCleanSource ./lookup) {})
+        (self.callCabal2nix "obelisk-executable-config-lookup" (obeliskCleanSource ./lookup) { })
         (drv: {
           # Hack until https://github.com/NixOS/cabal2nix/pull/432 lands
-          libraryHaskellDepends = (drv.libraryHaskellDepends or [])
+          libraryHaskellDepends = (drv.libraryHaskellDepends or [ ])
             ++ pkgs.stdenv.lib.optionals (with pkgs.stdenv.hostPlatform; isAndroid && is32bit) [
-              self.android-activity
-            ];
+            self.android-activity
+          ];
         });
-  };
+    };
 
   platforms = {
     android = {
@@ -50,7 +51,7 @@ in
       inject = injectConfig;
     };
     web = {
-      inject = self: self.callCabal2nix "obelisk-executable-config-inject" (obeliskCleanSource ./inject) {};
+      inject = self: self.callCabal2nix "obelisk-executable-config-inject" (obeliskCleanSource ./inject) { };
     };
   };
 }

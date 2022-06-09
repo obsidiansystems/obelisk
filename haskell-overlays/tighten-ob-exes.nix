@@ -1,7 +1,7 @@
 self: super:
 
 let
-  pkgs = self.callPackage ({ pkgs }: pkgs) {};
+  pkgs = self.callPackage ({ pkgs }: pkgs) { };
   haskellLib = pkgs.haskell.lib;
 
   commandRuntimeDeps = with pkgs; [
@@ -19,7 +19,7 @@ in
     (haskellLib.generateOptparseApplicativeCompletion "ob"
       (haskellLib.justStaticExecutables super.obelisk-command))
     (drv: {
-      buildTools = (drv.buildTools or []) ++ [ pkgs.buildPackages.makeWrapper ];
+      buildTools = (drv.buildTools or [ ]) ++ [ pkgs.buildPackages.makeWrapper ];
       postFixup = ''
         ${drv.postFixup or ""}
         # Make `ob` reference its runtime dependencies.
