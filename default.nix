@@ -11,6 +11,8 @@ let
   reflex-platform = getReflexPlatform { inherit system; };
   inherit (reflex-platform) hackGet nixpkgs;
   pkgs = nixpkgs;
+  configPath = builtins.toString ./. + "/config";
+  configHash = builtins.hashString (builtins.toString (map (builtins.hashFile "md5") (pkgs.lib.listFilesRecursive configPath)));
 
   inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
 
@@ -140,23 +142,35 @@ in rec {
       let
         serviceHome = "/var/lib/${user}";
       in
-      {
+      { 
         services.nginx = {
           enable = true;
+          recommendedProxySettings = true;
           virtualHosts."${routeHost}" = {
             enableACME = enableHttps;
             forceSSL = enableHttps;
             locations.${baseUrl} = {
-              proxyPass = "http://localhost:" + toString internalPort;
+              proxyPass = "http://127.0.0.1:" + toString internalPort;
               proxyWebsockets = true;
+              extraConfig = ''
+                access_log off;
+              '';
             };
-          };
+          } // builtins.listToAttrs (map (redirectSourceDomain: {
+            name = redirectSourceDomain;
+            value = {
+              enableACME = enableHttps;
+              forceSSL = enableHttps;
+              globalRedirect = routeHost;
+            };
+          }) redirectHosts);
         };
         systemd.services.${name} = {
           wantedBy = [ "multi-user.target" ];
           after = [ "network.target" ];
           restartIfChanged = true;
           script = ''
+            #${configHash}
             ln -sft . '${exe}'/*
             mkdir -p log
             exec ./backend ${backendArgs} >>backend.out 2>>backend.err </dev/null
@@ -170,13 +184,13 @@ in rec {
           };
         };
         # Restart backend on configuration changes:
-        systemd.services.restart-${name} = {
+        systemd.services.restart-.${name} = {
           serviceConfig = {
             type = "oneshot";
             ExecStart="${nixpkgs.systemd.out}/bin/systemctl restart ${name}.service";
           };
         };
-        systemd.paths.restart-${name} = {
+        systemd.paths.restart-.${name} = {
           wantedBy = [ "multi-user.target" ];
           after = [ "network.target" ];
           pathConfig = {
