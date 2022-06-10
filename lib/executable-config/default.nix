@@ -6,7 +6,6 @@
 , runCommand
 , obeliskCleanSource
 }:
-
 let
   injectConfig = config: assets: runCommand "inject-config" { } (''
     set -x
@@ -23,7 +22,6 @@ let
     find "$out/config" -type f -printf '%P\0' > "$out/config.files"
   '');
 in
-
 {
   haskellOverlay = self: super:
     let

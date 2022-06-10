@@ -1,5 +1,4 @@
 self: super:
-
 let
   pkgs = self.callPackage ({ pkgs }: pkgs) { };
   haskellLib = pkgs.haskell.lib;
@@ -11,7 +10,6 @@ let
     openssh
   ];
 in
-
 {
   # Dynamic linking with split objects dramatically increases startup time (about
   # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.

@@ -1,14 +1,12 @@
 # Add obelisk packages
 
 self: super:
-
 let
   pkgs = self.callPackage ({ pkgs }: pkgs) { };
   inherit (pkgs) obeliskCleanSource;
   haskellLib = pkgs.haskell.lib;
   onLinux = pkg: f: if pkgs.stdenv.isLinux then f pkg else pkg;
 in
-
 {
   obelisk-executable-config-inject = pkgs.obeliskExecutableConfig.platforms.web.inject self;
 

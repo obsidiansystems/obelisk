@@ -1,5 +1,4 @@
 self: super:
-
 let
   inherit (self) lib;
   inherit (import ../dep/gitignore.nix { inherit lib; }) gitignoreSource;

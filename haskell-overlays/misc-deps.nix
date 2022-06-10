@@ -2,12 +2,10 @@
 
 # Fix misc upstream packages
 self: super:
-
 let
   pkgs = self.callPackage ({ pkgs }: pkgs) { };
   haskellLib = pkgs.haskell.lib;
 in
-
 {
   # Actually broken in current nixpkgs master due to MonadFail changes
   git = haskellLib.markUnbroken super.git;

@@ -3,7 +3,6 @@
 { config, lib, pkgs, ... }:
 with lib;
 let
-
   cfg = config.security.acme;
 
   certOpts = { name, ... }: {
@@ -141,7 +140,6 @@ let
   };
 
 in
-
 {
 
   ###### interface

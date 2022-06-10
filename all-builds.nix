@@ -5,7 +5,6 @@
 , local-self ? import ./. self-args
 , supportedSystems ? [ builtins.currentSystem ]
 }:
-
 let
   inherit (local-self.nixpkgs) lib runCommand nix;
   cacheBuildSystems = supportedSystems;
