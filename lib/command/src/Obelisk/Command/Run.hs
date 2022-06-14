@@ -174,13 +174,16 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
     ] <> rtsFlags
       <> [ "-RTS" ]
 
-run :: MonadObelisk m => Bool 
-                      -- ^ use relative paths?
-                      -> FilePath 
-                      -- ^ root folder
-                      -> PathTree Interpret 
-                      -- ^ interpreted paths
-                      -> m ()
+run
+  :: MonadObelisk m => Bool
+  -- ^ use relative paths to the nix store
+  -- which is pertinent to some IDE integration
+  -- tools' functionality. See PR #934
+  -> FilePath
+  -- ^ root folder
+  -> PathTree Interpret
+  -- ^ interpreted paths
+  -> m ()
 run useRelativePaths root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
