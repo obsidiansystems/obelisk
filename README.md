@@ -208,7 +208,17 @@ ob deploy init \
 
 HTTPS is enabled by default; to disable HTTPS pass `--disable-https` to the `ob deploy init` command above.
 
-This step will also require that you manually verify the authenticity of the host `$SERVER`. You can specify that you want `ob deploy init` to check your `~/.ssh/known_hosts` file and save any fingerprints matching the host to the deployment-specific configuration by passing the `check_known_hosts` option to the `deploy init` command. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine during deployment, only potentially during the ob deploy init, as previously mentioned.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
+This step will also require that you manually verify the authenticity of the host `$SERVER`. 
+You can specify that you want `ob deploy init` to check your `~/.ssh/known_hosts` file and save any fingerprints matching the host to the deployment-specific configuration by passing the `--check-known-hosts` option to the `deploy init` command.
+Note that `--check-known-hosts` only works when there is a single keypair associated with a given host.
+
+
+**REMARK (Security): Obelisk deployments do *not* rely on the `known_hosts` of your local machine during deployment, only potentially during the ob deploy init, as previously mentioned.** 
+This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. 
+Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning.
+Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. 
+In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.
+When you run `ob deploy` later it will rely on the saved verification in this step.
 
 Next, go to the deployment directory that you just initialized and deploy!
 
