@@ -174,8 +174,17 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
     ] <> rtsFlags
       <> [ "-RTS" ]
 
-run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
-run root interpretPaths = do
+run
+  :: MonadObelisk m => Bool
+  -- ^ use relative paths to the nix store
+  -- which is pertinent to some IDE integration
+  -- tools' functionality. See PR #934
+  -> FilePath
+  -- ^ root folder
+  -> PathTree Interpret
+  -- ^ interpreted paths
+  -> m ()
+run useRelativePaths root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -186,7 +195,7 @@ run root interpretPaths = do
       putLog Debug "Starting static file derivation watcher..."
       void $ liftIO $ forkIO $ runObelisk ob $ watchStaticFilesDerivation root
     _ -> pure ()
-  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root True
+  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root useRelativePaths
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
