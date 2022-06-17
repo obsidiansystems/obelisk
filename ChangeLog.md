@@ -7,12 +7,15 @@ This project's release branch is `master`. This log is written from the perspect
 * Documentation
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing obelisk branches to CONTRIBUTING.md
   * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to Obelisk.Command.Deploy
+  * [#931](https://github.com/obsidiansystems/obelisk/pull/931): For `ob deploy init`, command-line option `--check-known-host` corrected in readme, caveat added for multiple matching host-keypairs.
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
 * CLI
   * [#784](https://github.com/obsidiansystems/obelisk/pull/784): hint for users to take advantage of ob shell --no-interpret option for thunks
   * [#916](https://github.com/obsidiansystems/obelisk/pull/916): Add `check-known-hosts` option in `ob deploy init`.
   * [#870](https://github.com/obsidiansystems/obelisk/pull/870): Host redirection added to `ob deploy`. Readme updated with tutorial for new functionality.
+  * [#931](https://github.com/obsidiansystems/obelisk/pull/931): Fix bug in `ob deploy init` where `ssh-keygen` was not found in nix store.
+  * [#934](https://github.com/obsidiansystems/obelisk/pull/934): Change the way `ob run` interprets nix store paths from relative to absolute. This ensures that obelisk works on modern MacOS, where the nix store must be mounted on its own volume, which cannot be referred to with relative paths from the main volume. The old behavior was pertinent to some tool integrations, and can be re-enabled by passing `--use-relative-path`
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
