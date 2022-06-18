@@ -179,12 +179,14 @@ run
   -- ^ use relative paths to the nix store
   -- which is pertinent to some IDE integration
   -- tools' functionality. See PR #934
+  -> Maybe FilePath
+  -- ^ Certificate Directory path (optional)
   -> FilePath
   -- ^ root folder
   -> PathTree Interpret
   -- ^ interpreted paths
   -> m ()
-run useRelativePaths root interpretPaths = do
+run useRelativePaths certDir root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -201,6 +203,7 @@ run useRelativePaths root interpretPaths = do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
+      , "(" ++ show certDir ++ ")"
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
       , "Backend.backend"
       , "Frontend.frontend"
