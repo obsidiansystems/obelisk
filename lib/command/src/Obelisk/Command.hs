@@ -81,15 +81,10 @@ initSource = foldl1 (<|>)
 initForce :: Parser Bool
 initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 
--- | Use this option to enable relative paths
-useRelativePathsOpt :: Parser Bool
-useRelativePathsOpt = switch (long "use-relative-path" <> help "Allow ob run with relative paths. It may break on darwin when /nix is mounted on other volumes.")
-
-
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run [(FilePath, Interpret)] Bool (Maybe FilePath)
+   | ObCommand_Run [(FilePath, Interpret)] (Maybe FilePath)
    | ObCommand_Profile String [String]
    | ObCommand_Thunk ThunkOption
    | ObCommand_Repl [(FilePath, Interpret)]
@@ -106,7 +101,6 @@ data ObInternal
    = ObInternal_ApplyPackages String String String [String]
    | ObInternal_ExportGhciConfig
       [(FilePath, Interpret)]
-      Bool -- ^ Use relative paths
    deriving Show
 
 obCommand :: ArgsConfig -> Parser ObCommand
@@ -114,7 +108,7 @@ obCommand cfg = hsubparser
   (mconcat
     [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-    , command "run" $ info (ObCommand_Run <$> interpretOpts <*> useRelativePathsOpt <*> certDirOpts) $ progDesc "Run current project in development mode"
+    , command "run" $ info (ObCommand_Run <$> interpretOpts <*> certDirOpts) $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (ObCommand_Repl <$> interpretOpts) $ progDesc "Open an interactive interpreter"
@@ -131,11 +125,9 @@ obCommand cfg = hsubparser
 
 internalCommand :: Parser ObInternal
 internalCommand = hsubparser $ mconcat
-  [ command "export-ghci-configuration" $ info (ObInternal_ExportGhciConfig <$> interpretOpts <*> useRelativePathsFlag)
+  [ command "export-ghci-configuration" $ info (ObInternal_ExportGhciConfig <$> interpretOpts)
       $ progDesc "Export the GHCi configuration used by ob run, etc.; useful for IDE integration"
   ]
-  where
-    useRelativePathsFlag = switch (long "use-relative-paths" <> help "Use relative paths")
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
@@ -411,7 +403,7 @@ ob = \case
       deployPush deployPath deployBuilders
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run interpretPathsList relPath certDir -> withInterpretPaths interpretPathsList (run relPath certDir)
+  ObCommand_Run interpretPathsList certDir -> withInterpretPaths interpretPathsList (run certDir)
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
   ObCommand_Thunk to -> case _thunkOption_command to of
     ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
@@ -431,8 +423,8 @@ ob = \case
   ObCommand_Internal icmd -> case icmd of
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
-    ObInternal_ExportGhciConfig interpretPathsList useRelativePaths ->
-      liftIO . putStrLn . unlines =<< withInterpretPaths interpretPathsList (exportGhciConfig useRelativePaths)
+    ObInternal_ExportGhciConfig interpretPathsList ->
+      liftIO . putStrLn . unlines =<< withInterpretPaths interpretPathsList exportGhciConfig
 
 -- | A helper for the common case that the command you want to run needs the project root and a resolved
 -- set of interpret paths.

@@ -175,18 +175,15 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
       <> [ "-RTS" ]
 
 run
-  :: MonadObelisk m => Bool
-  -- ^ use relative paths to the nix store
-  -- which is pertinent to some IDE integration
-  -- tools' functionality. See PR #934
-  -> Maybe FilePath
+  :: MonadObelisk m
+  => Maybe FilePath
   -- ^ Certificate Directory path (optional)
   -> FilePath
   -- ^ root folder
   -> PathTree Interpret
   -- ^ interpreted paths
   -> m ()
-run useRelativePaths certDir root interpretPaths = do
+run certDir root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -197,7 +194,7 @@ run useRelativePaths certDir root interpretPaths = do
       putLog Debug "Starting static file derivation watcher..."
       void $ liftIO $ forkIO $ runObelisk ob $ watchStaticFilesDerivation root
     _ -> pure ()
-  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root useRelativePaths
+  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
@@ -212,21 +209,21 @@ run useRelativePaths certDir root interpretPaths = do
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runRepl root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs "." True
+  ghciArgs <- getGhciSessionSettings pkgs "."
   withGhciScriptArgs pkgs $ \dotGhciArgs ->
     runGhciRepl root pkgs (ghciArgs <> dotGhciArgs)
 
 runWatch :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runWatch root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs root True
+  ghciArgs <- getGhciSessionSettings pkgs root
   withGhciScriptArgs pkgs $ \dotGhciArgs ->
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs Nothing
 
-exportGhciConfig :: MonadObelisk m => Bool -> FilePath -> PathTree Interpret -> m [String]
-exportGhciConfig useRelativePaths root interpretPaths = do
+exportGhciConfig :: MonadObelisk m => FilePath -> PathTree Interpret -> m [String]
+exportGhciConfig root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  getGhciSessionSettings pkgs "." useRelativePaths
+  getGhciSessionSettings pkgs "."
 
 nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
 nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
@@ -482,31 +479,26 @@ getGhciSessionSettings
   :: (MonadObelisk m, Foldable f)
   => f CabalPackageInfo -- ^ List of packages to load into ghci
   -> FilePath -- ^ All paths will be relative to this path
-  -> Bool -- ^ Use relative paths
   -> m [String]
-getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
-  -- N.B. ghci settings do NOT support escaping in any way. To minimize the likelihood that
-  -- paths-with-spaces ruin our day, we first canonicalize everything, and then relativize
-  -- all paths to 'pathBase'.
+getGhciSessionSettings (toList -> packageInfos) pathBase = do
   selfExe <- liftIO $ canonicalizePath =<< getExecutablePath
-  canonicalPathBase <- liftIO $ canonicalizePath pathBase
   installedPackageIndex <- loadPackageIndex packageInfos pathBase
 
   (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
     canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
     canonicalPkgFile <- canonicalizePath $ _cabalPackageInfo_packageFile pkg
-    pure (canonicalPkgFile `relativeTo'` canonicalPathBase, (`relativeTo'` canonicalPathBase) <$> canonicalSrcDirs)
+    pure (canonicalPkgFile, canonicalSrcDirs)
 
   pure
     $  baseGhciOptions
     <> ["-DOBELISK_ASSET_PASSTHRU"] -- For passthrough static assets
     <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
-    <> concatMap (\p -> ["-optF", p]) pkgFiles
-    <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]
+    <> concatMap (\p -> ["-optF", p]) (fmap wrapInQuotes pkgFiles)
+    <> [ "-i" <> intercalate ":" (fmap wrapInQuotes (concatMap toList pkgSrcPaths)) ]
     <> concatMap (\packageId -> ["-package-id", packageId ])
                  (packageIds installedPackageIndex)
   where
-    relativeTo' = if useRelativePaths then relativeTo else const
+    wrapInQuotes x = "\"" <> x <> "\""
     -- Package names we're building and not needed from the package DB
     packageNames =
       map (mkPackageName . T.unpack . _cabalPackageInfo_packageName)
