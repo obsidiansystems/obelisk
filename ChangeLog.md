@@ -15,7 +15,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#916](https://github.com/obsidiansystems/obelisk/pull/916): Add `check-known-hosts` option in `ob deploy init`.
   * [#870](https://github.com/obsidiansystems/obelisk/pull/870): Host redirection added to `ob deploy`. Readme updated with tutorial for new functionality.
   * [#931](https://github.com/obsidiansystems/obelisk/pull/931): Fix bug in `ob deploy init` where `ssh-keygen` was not found in nix store.
-  * [#934](https://github.com/obsidiansystems/obelisk/pull/934): Change the way `ob run` interprets nix store paths from relative to absolute. This ensures that obelisk works on modern MacOS, where the nix store must be mounted on its own volume, which cannot be referred to with relative paths from the main volume. The old behavior was pertinent to some tool integrations, and can be re-enabled by passing `--use-relative-path`
+  * [#934](https://github.com/obsidiansystems/obelisk/pull/934)[#936](https://github.com/obsidiansystems/obelisk/pull/936): obelisk now always uses absolute paths when generating `.ghci` files for REPL and IDE support. This is a **BREAKING** change for some old tools that could not handle absolute paths properly. However, due to the behavior of cross-volume relative paths on certain platforms, such as modern MacOS, we cannot guarantee proper operation of obelisk with relative paths.
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
