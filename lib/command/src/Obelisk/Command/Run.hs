@@ -209,7 +209,7 @@ run certDir root interpretPaths = do
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runRepl root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs "."
+  ghciArgs <- getGhciSessionSettings pkgs root
   withGhciScriptArgs pkgs $ \dotGhciArgs ->
     runGhciRepl root pkgs (ghciArgs <> dotGhciArgs)
 
@@ -223,7 +223,7 @@ runWatch root interpretPaths = do
 exportGhciConfig :: MonadObelisk m => FilePath -> PathTree Interpret -> m [String]
 exportGhciConfig root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  getGhciSessionSettings pkgs "."
+  getGhciSessionSettings pkgs root
 
 nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
 nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
@@ -493,17 +493,16 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
     $  baseGhciOptions
     <> ["-DOBELISK_ASSET_PASSTHRU"] -- For passthrough static assets
     <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
-    <> concatMap (\p -> ["-optF", p]) (fmap wrapInQuotes pkgFiles)
-    <> [ "-i" <> intercalate ":" (fmap wrapInQuotes (concatMap toList pkgSrcPaths)) ]
+    <> concatMap (\p -> ["-optF", p]) pkgFiles
+    <> ["-i" <> intercalate ":" (concatMap toList pkgSrcPaths)]
     <> concatMap (\packageId -> ["-package-id", packageId ])
                  (packageIds installedPackageIndex)
   where
-    wrapInQuotes x = "\"" <> x <> "\""
     -- Package names we're building and not needed from the package DB
     packageNames =
       map (mkPackageName . T.unpack . _cabalPackageInfo_packageName)
           packageInfos
-    packageIds installedPackageIndex =
+    packageIds installedPackageIndex = Set.toList $ Set.fromList $
       map (dependencyPackageId installedPackageIndex) $
           filter ((`notElem` packageNames) . depPkgName) $
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
@@ -545,7 +544,7 @@ runGhciRepl
 runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
-  nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
+  nixShellWithoutPkgs root True True (packageInfoToNamePathMap packages) "ghc" $
     Just $ unwords $ fmap bashEscape $ "ghci" : ghciArgs
 
 -- | Run ghcid
@@ -567,7 +566,8 @@ runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
       , map (\x -> "--reload=" <> x) reloadFiles
       , map (\x -> "--restart=" <> x) restartFiles
       , maybe [] (\cmd -> ["--test=" <> cmd]) mcmd
-      , ["--command=" <> unwords ("ghci" : ghciArgs)]
+      -- N.B. the subcommand to ghcid has to be itself escaped.
+      , ["--command=" <> unwords (fmap bashEscape ("ghci" : ghciArgs))]
       ]
     adjustRoot x = if chdirToRoot then makeRelative root x else x
     reloadFiles = map adjustRoot [root </> "config"]
