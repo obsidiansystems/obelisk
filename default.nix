@@ -14,8 +14,15 @@ let
 
   inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
 
-  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: reflex-platform-func {
+  # Force ghc8_10 to be used by default including project function
+  forceGhc810 = rp: let
+    rp810 = rp // { ghc = rp.ghc8_10; ghcjs = rp.ghcjs8_10; };
+  in rp810 // { project = args: import ((hackGet ./dep/reflex-platform) + "/project") rp810 (args ({ pkgs = rp.nixpkgs; } // rp810)); };
+  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: forceGhc810 (reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
+
+    # disabled until packages are updated to support it
+    useTextJSString = false;
 
     nixpkgsOverlays = [
       (import ./nixpkgs-overlays)
@@ -27,7 +34,7 @@ let
       (import ./haskell-overlays/obelisk.nix)
       (import ./haskell-overlays/tighten-ob-exes.nix)
     ];
-  };
+  });
 
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
   ghcObelisk = reflex-platform.ghc;

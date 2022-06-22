@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -12,7 +13,9 @@ module Obelisk.CliApp.Types where
 
 import Control.Concurrent.MVar (MVar)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif
 import Control.Monad.Log (LoggingT(..), MonadLog, Severity (..), WithSeverity (..), logMessage)
 import Control.Monad.Reader (MonadIO, ReaderT (..), MonadReader (..), ask, mapReaderT)
 import Control.Monad.Writer (WriterT)

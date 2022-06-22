@@ -27,15 +27,28 @@ in
   hnix-store-core = haskellLib.dontCheck super.hnix-store-core;
   hnix-store = haskellLib.dontCheck super.hnix-store;
 
-  aeson-gadt-th = self.callHackage "aeson-gadt-th" "0.2.4" {};
+  # https://github.com/haskell/hackage-security/issues/247
+  hackage-security = haskellLib.dontCheck super.hackage-security; # only tests use aeson and are not compat with 1.5;
+  heist = haskellLib.dontCheck (haskellLib.doJailbreak super.heist); # aeson 1.5 bump
+  aeson-gadt-th = haskellLib.doJailbreak super.aeson-gadt-th; # requires aeson 1.5 for ghc8.10 support?
+  deriving-compat = self.callHackage "deriving-compat" "0.6" {};
+  http-api-data = haskellLib.doJailbreak super.http-api-data;
+  nix-derivation = haskellLib.doJailbreak super.nix-derivation;
+  algebraic-graphs = haskellLib.doJailbreak super.algebraic-graphs;
+  hnix = haskellLib.overrideCabal super.hnix (drv: {
+    jailbreak = true;
+    preBuild = ''
+      substituteInPlace src/Nix/Expr/Types.hs --replace "instance Hashable1 NonEmpty" ""
+    '';
+  });
 
-  ghcid = self.callCabal2nix "ghcid" (hackGet ../dep/ghcid) {};
+  snap = haskellLib.doJailbreak super.snap;
   # Exports more internals
   snap-core = haskellLib.dontCheck (self.callCabal2nix "snap-core" (hackGet ../dep/snap-core) {});
 
-  logging-effect = self.callCabal2nix "logging-effect" (hackGet ../dep/logging-effect) {};
-  resourcet = self.callHackage "resourcet" "1.2.4.2" {};
-  unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
-  shelly = self.callHackage "shelly" "1.9.0" {};
-  monad-logger = self.callHackage "monad-logger" "0.3.36" {};
+  logging-effect = haskellLib.doJailbreak (self.callHackage "logging-effect" "1.3.10" {});
+  # unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
+  # shelly = self.callHackage "shelly" "1.9.0" {};
+  # monad-logger = self.callHackage "monad-logger" "0.3.36" {};
+  hpack = self.callHackage "hpack" "0.34.1" {};
 }

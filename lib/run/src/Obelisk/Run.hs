@@ -34,7 +34,9 @@ import Data.List (uncons)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+#if !MIN_VERSION_base(4,11,0)
 import Data.Semigroup ((<>))
+#endif
 import Data.Streaming.Network (bindPortTCP)
 import Data.String (fromString)
 import Data.Text (Text)

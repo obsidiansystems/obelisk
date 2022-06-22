@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
@@ -39,7 +40,9 @@ import Control.Monad.Log (Severity (..), WithSeverity (..), logMessage, runLoggi
 import Control.Monad.Loops (iterateUntil)
 import Control.Monad.Reader (MonadIO, ReaderT (..))
 import Data.IORef (atomicModifyIORef', newIORef, readIORef, writeIORef)
+#if !MIN_VERSION_base(4,11,0)
 import Data.Semigroup ((<>))
+#endif
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T

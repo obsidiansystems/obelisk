@@ -1,13 +1,18 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Inject where
 
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ < 810
 import Control.Monad (mapM_)
+import Data.Semigroup ((<>))
+#endif
+#endif
 import Control.Monad.IO.Class (MonadIO)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base64 as B64
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import Reflex.Dom.Core hiding (value)
