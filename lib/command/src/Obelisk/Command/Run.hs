@@ -45,7 +45,7 @@ import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
 #if MIN_VERSION_Cabal(3,2,1)
-import Distribution.Compiler (CompilerFlavor(..), perCompilerFlavorToList)
+import Distribution.Compiler (CompilerFlavor(..), perCompilerFlavorToList, PerCompilerFlavor)
 #else
 import Distribution.Compiler (CompilerFlavor(..))
 #endif
@@ -64,6 +64,7 @@ import qualified Distribution.System as Dist
 import Distribution.Types.BuildInfo (buildable, cppOptions, defaultExtensions, defaultLanguage, hsSourceDirs, options, targetBuildDepends)
 import Distribution.Types.CondTree (simplifyCondTree)
 import Distribution.Types.Dependency (Dependency (..), depPkgName)
+import Distribution.Parsec.Warning (PWarning)
 #if MIN_VERSION_Cabal(3,2,1)
 import Distribution.Types.GenericPackageDescription.Lens (ConfVar (Arch, Impl, OS), condLibrary)
 #else
@@ -80,6 +81,7 @@ import qualified Distribution.Parsec.Warning as Dist
 #else
 import qualified Distribution.Parsec.Common as Dist
 #endif
+import Distribution.Types.Dependency (Dependency (..), depPkgName, depVerRange)
 import qualified Distribution.Verbosity as Verbosity (silent)
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
@@ -409,13 +411,8 @@ parseCabalPackage' pkg = runExceptT $ do
         , _cabalPackageInfo_defaultLanguage =
             defaultLanguage $ libBuildInfo lib
         , _cabalPackageInfo_compilerOptions =
-#if MIN_VERSION_Cabal(3,2,1)
-            perCompilerFlavorToList $ options $ libBuildInfo lib
-#else
             options $ libBuildInfo lib
-#endif
         , _cabalPackageInfo_cppOptions = cppOptions $ libBuildInfo lib
-
         , _cabalPackageInfo_buildDepends = targetBuildDepends $ libBuildInfo lib
         }
     Right Nothing -> pure Nothing
@@ -531,11 +528,6 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
           packageInfos
     packageIds installedPackageIndex = Set.toList $ Set.fromList $
       map (dependencyPackageId installedPackageIndex) $
-#if MIN_VERSION_Cabal(3,2,1)
-          filter (`notElem` packageNames) $
-          concatMap (map depPkgName . _cabalPackageInfo_buildDepends) packageInfos <>
-            [(mkPackageName "obelisk-run")]
-#else
           filter ((`notElem` packageNames) . depPkgName) $
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
             [Dependency (mkPackageName "obelisk-run") anyVersion (Set.singleton LMainLibName)]
@@ -544,6 +536,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
         ((_version,installedPackageInfo:_) :_) ->
           compatPackageKey installedPackageInfo
         _ -> error $ "Couldn't resolve dependency for " <> prettyShow dep
+
 
 -- Load the package index used by the GHC in this path's nix project
 loadPackageIndex :: MonadObelisk m => [CabalPackageInfo] -> FilePath -> m InstalledPackageIndex
