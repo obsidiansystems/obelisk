@@ -135,6 +135,7 @@ in rec {
       , internalPort ? 8000
       , backendArgs ? "--port=${toString internalPort}"
       , redirectHosts ? [] # Domains to redirect to routeHost; importantly, these domains will be added to the SSL certificate
+      , configHash ? null
       , ...
       }: {...}:
       assert lib.assertMsg (!(builtins.elem routeHost redirectHosts)) "routeHost may not be a member of redirectHosts";
@@ -169,6 +170,7 @@ in rec {
         restartIfChanged = true;
         path = [ pkgs.gnutar ];
         script = ''
+          echo "Expecting config hash to be ${configHash}, but not verifying this"
           ln -sft . '${exe}'/*
           mkdir -p log
           exec ./backend ${backendArgs} </dev/null
