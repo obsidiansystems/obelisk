@@ -22,14 +22,17 @@ rec {
   # reflex-process = haskellLib.markUnbroken super.reflex-process;
   # reflex-vty = haskellLib.markUnbroken super.reflex-vty;
   # reflex-fsnotify = haskellLib.markUnbroken super.reflex-fsnotify;
-  universe-base = haskellLib.doJailbreak super.universe-base;
+  
+  universe-base = haskellLib.doJailbreak (self.callHackage "universe-base" "1.1.3" {});
+  universe-dependent-sum = self.callHackage "universe-dependent-sum" "1.3" {};
   universe-some = haskellLib.dontHaddock (haskellLib.appendBuildFlags (haskellLib.doJailbreak (self.callHackage "universe-some" "1.2.1" { })) [ "--ghc-option=-Wno-inferred-safe-imports" "--ghc-option=-Wno-missing-safe-haskell-mode" ]);
-  universe-reverse-instances = haskellLib.doJailbreak super.universe-reverse-instances;
-  universe-instances-extended = haskellLib.doJailbreak super.universe-instances-extended;
+  #universe-reverse-instances = haskellLib.doJailbreak super.universe-reverse-instances;
+  #universe-instances-extended = haskellLib.doJailbreak super.universe-instances-extended;
   stylish-haskell = null; # FIXME
 
-  #universe = self.callHackage "universe" "1.2" {};
-  #universe-instances-extended = self.callHackage "universe-instances-extended" "1.1.1" {};
+  universe = self.callHackage "universe" "1.2.2" {};
+  universe-instances-extended = self.callHackage "universe-instances-extended" "1.1.3" {};
+  universe-reverse-instances = self.callHackage "universe-reverse-instances" "1.1.1" {};
   #th-abstraction = self.callHackage "th-abstraction" "0.3.0.0" {};
   #th-abstraction-new = self.callHackage "th-abstraction" "0.4.3.0" {};
   #bifunctors = self.callHackage "bifunctors" "5.5.11" { th-abstraction = th-abstraction-new; };

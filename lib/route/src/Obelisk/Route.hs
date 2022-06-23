@@ -966,7 +966,7 @@ instance (GCompare br, GCompare fr) => GCompare (FullRoute br fr) where
   gcompare (FullRoute_Backend x) (FullRoute_Backend y) = gcompare x y
   gcompare (FullRoute_Frontend x) (FullRoute_Frontend y) = gcompare x y
 
-instance (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) where
+instance  (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) where
   universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome]
               ++ [Some (FullRoute_Frontend x) | Some x <- universeSome]
 
@@ -993,7 +993,7 @@ data ObeliskRoute :: (* -> *) -> * -> * where
 instance UniverseSome f => UniverseSome (ObeliskRoute f) where
   universeSome = concat
     [ (\(Some x) -> Some (ObeliskRoute_App x)) <$> universe
-    , (\(Some x) -> Some (ObeliskRoute_Resource x)) <$> universe
+    , (\(Some x) -> Some (ObeliskRoute_Resource x)) <$> (universe @(Some ResourceRoute))
     ]
 
 instance GEq f => GEq (ObeliskRoute f) where
