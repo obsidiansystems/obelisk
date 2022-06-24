@@ -169,6 +169,8 @@ in rec {
         after = [ "network.target" ];
         restartIfChanged = true;
         path = [ pkgs.gnutar ];
+        # Note that the echo here's value is that it causes a server restart
+        # anytime the configs have changed. see deployPush in Obelisk.Command.Deploy
         script = ''
           echo "Expecting config hash to be ${configHash}, but not verifying this"
           ln -sft . '${exe}'/*

@@ -48,7 +48,7 @@ import Prettyprinter.Render.String (renderString)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (
-  Severity (..), callProcessAndLogOutput, failWith, proc, putLog,
+  Severity (..), callProcessAndLogOutput, failWith, proc, putLog, readProcessAndLogOutput,
   setCwd, setDelegateCtlc, setEnvOverride, withSpinner, readCreateProcessWithExitCode)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
@@ -144,6 +144,12 @@ deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminE
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
 
+type CommitHash = T.Text 
+getCommitHash :: MonadObelisk m => FilePath -> FilePath -> m CommitHash
+getCommitHash repo pathWithinRepo = do
+  let git = readProcessAndLogOutput (Debug, Debug) . gitProc repo
+  git ["rev-parse", "HEAD:" <> pathWithinRepo]
+
 -- | Installs an obelisk impl in the staging dir that points at the obelisk of the
 -- project thunk.
 setupObeliskImpl :: MonadIO m => FilePath -> m ()
@@ -182,7 +188,8 @@ deployPush deployPath builders = do
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile
-  configHash <- error "Not implemented; we need to ensure that the config directory is committed and fully pushed (i *think* we already do that somewhere) and then we can use git to get the tree hash of the config dir"
+  --configHash <- error "Not implemented; we need to ensure that the config directory is committed and fully pushed (i *think* we already do that somewhere) and then we can use git to get the tree hash of the config dir"
+  configHash <- getCommitHash deployPath "config"
   buildOutputByHost <- ifor (Map.fromSet (const ()) hosts) $ \host () -> do
     --TODO: What does it mean if this returns more or less than 1 line of output?
     [result] <- fmap lines $ nixCmd $ NixCmd_Build $ def
@@ -199,7 +206,7 @@ deployPush deployPath builders = do
         , rawArg "redirectHosts" $ renderString $ layoutCompact $ prettyNix $ Nix.mkList $ Nix.mkStr . T.pack <$> Set.toList redirectHosts
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
-        , strArg "configHash" configHash
+        , strArg "configHash" $ T.unpack configHash
         ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
     pure result
