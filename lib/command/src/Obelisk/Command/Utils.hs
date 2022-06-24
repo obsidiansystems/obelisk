@@ -259,6 +259,14 @@ toGitRef = \case
     | Just s <- "refs/tags/" `T.stripPrefix` r -> GitRef_Tag s
     | otherwise -> GitRef_Other r
 
+
+type CommitHash = T.Text 
+getCommitHash :: MonadObelisk m => FilePath -> FilePath -> m CommitHash
+getCommitHash repo pathWithinRepo = do
+  let git = readProcessAndLogOutput (Debug, Debug) . gitProc repo
+  git ["rev-parse", "HEAD:" <> pathWithinRepo]
+
+
 type CommitId = Text
 
 type GitLsRemoteMaps = (Map GitRef GitRef, Map GitRef CommitId)

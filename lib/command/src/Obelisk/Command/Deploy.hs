@@ -48,7 +48,7 @@ import Prettyprinter.Render.String (renderString)
 
 import Obelisk.App (MonadObelisk)
 import Obelisk.CliApp (
-  Severity (..), callProcessAndLogOutput, failWith, proc, putLog, readProcessAndLogOutput,
+  Severity (..), callProcessAndLogOutput, failWith, proc, putLog, 
   setCwd, setDelegateCtlc, setEnvOverride, withSpinner, readCreateProcessWithExitCode)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
@@ -143,12 +143,6 @@ deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminE
 
   withSpinner ("Initializing git repository (" <> T.pack deployDir <> ")") $
     initGit deployDir
-
-type CommitHash = T.Text 
-getCommitHash :: MonadObelisk m => FilePath -> FilePath -> m CommitHash
-getCommitHash repo pathWithinRepo = do
-  let git = readProcessAndLogOutput (Debug, Debug) . gitProc repo
-  git ["rev-parse", "HEAD:" <> pathWithinRepo]
 
 -- | Installs an obelisk impl in the staging dir that points at the obelisk of the
 -- project thunk.
