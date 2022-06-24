@@ -135,7 +135,7 @@ in rec {
       , internalPort ? 8000
       , backendArgs ? "--port=${toString internalPort}"
       , redirectHosts ? [] # Domains to redirect to routeHost; importantly, these domains will be added to the SSL certificate
-      , configHash ? null
+      , configHash ? ""
       , ...
       }: {...}:
       assert lib.assertMsg (!(builtins.elem routeHost redirectHosts)) "routeHost may not be a member of redirectHosts";
@@ -212,7 +212,7 @@ in rec {
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [] }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {

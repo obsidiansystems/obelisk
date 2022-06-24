@@ -206,7 +206,7 @@ deployPush deployPath builders = do
         , rawArg "redirectHosts" $ renderString $ layoutCompact $ prettyNix $ Nix.mkList $ Nix.mkStr . T.pack <$> Set.toList redirectHosts
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
-        , strArg "configHash" $ T.unpack configHash
+        , strArg "configHash" $ T.unpack $ T.strip configHash
         ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
     pure result
