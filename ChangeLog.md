@@ -25,6 +25,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Static Assets
   * [#922](https://github.com/obsidiansystems/obelisk/pull/922): Serve .wasm files with the correct MIME type
   * [#930](https://github.com/obsidiansystems/obelisk/pull/930): Add an error to ob run when `static` is called with a path to a file that doesn't exist
+  * [#940](https://github.com/obsidiansystems/obelisk/pull/940): Instant, auto update to new configs on ob deploy push
 
 ## v1.0.0.0 - 2022-01-04
 
