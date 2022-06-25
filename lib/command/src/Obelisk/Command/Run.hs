@@ -47,13 +47,13 @@ import Debug.Trace (trace)
 #if MIN_VERSION_Cabal(3,2,1)
 import Distribution.Compiler (CompilerFlavor(..), perCompilerFlavorToList, PerCompilerFlavor)
 #else
-import Distribution.Compiler (CompilerFlavor(..))
+import Distribution.Compiler (CompilerFlavor(..), PerCompilerFlavor)
 #endif
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
 #if MIN_VERSION_Cabal(3,2,1)
 import Distribution.Fields.ParseResult (runParseResult)
 #else
-import Distribution.Parsec.ParseResult (runParseResult)
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescription, runParseResult)
 #endif
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple.Compiler (PackageDB (GlobalPackageDB))
@@ -68,7 +68,8 @@ import Distribution.Parsec.Warning (PWarning)
 #if MIN_VERSION_Cabal(3,2,1)
 import Distribution.Types.GenericPackageDescription.Lens (ConfVar (Arch, Impl, OS), condLibrary)
 #else
-import Distribution.Types.GenericPackageDescription (ConfVar (Arch, Impl, OS), condLibrary)
+import Distribution.Types.GenericPackageDescription (condLibrary)
+import Distribution.Types.ConfVar (ConfVar (Arch, Impl, OS))
 #endif
 import Distribution.Types.InstalledPackageInfo (compatPackageKey)
 import Distribution.Types.Library (libBuildInfo)
@@ -79,7 +80,7 @@ import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
 #if MIN_VERSION_Cabal(3,2,1)
 import qualified Distribution.Parsec.Warning as Dist
 #else
-import qualified Distribution.Parsec.Common as Dist
+import qualified Distribution.System as Dist
 #endif
 import Distribution.Types.Dependency (Dependency (..), depPkgName, depVerRange)
 import qualified Distribution.Verbosity as Verbosity (silent)
