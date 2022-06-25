@@ -14,11 +14,15 @@ let
 
   inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
 
-  # Force ghc8_10 to be used by default including project function
+  ghcVersion = "ghc86";
+  
   forceGhc810 = rp: let
     rp810 = rp // { ghc = rp.ghc8_10; ghcjs = rp.ghcjs8_10; };
   in rp810 // { project = args: import ((hackGet ./dep/reflex-platform) + "/project") rp810 (args ({ pkgs = rp.nixpkgs; } // rp810)); };
-  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: forceGhc810 (reflex-platform-func {
+  
+  forceVersion = { ghc810 = forceGhc810; ghc86 = x: x; };
+  
+  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: forceVersion.${ghcVersion} (reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
 
     # disabled until packages are updated to support it
@@ -29,7 +33,7 @@ let
     ];
 
     haskellOverlays = [
-      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; })
+      (import ./haskell-overlays/misc-deps.nix { hackGet = hackGet; version = ghcVersion; })
       pkgs.obeliskExecutableConfig.haskellOverlay
       (import ./haskell-overlays/obelisk.nix)
       (import ./haskell-overlays/tighten-ob-exes.nix)
