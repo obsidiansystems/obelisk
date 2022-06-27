@@ -7,6 +7,7 @@
     security.acme.acceptTerms = false;
   }
 , reflex-platform-func ? import ./dep/reflex-platform
+, ghcVersion ? "ghc810"
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
