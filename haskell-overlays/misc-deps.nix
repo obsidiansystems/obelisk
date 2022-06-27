@@ -46,7 +46,7 @@ rec {
   universe = mkVersionset version universe-86 universe-810;
   universe-instances-extended = mkVersionset version universe-instances-extended-86 universe-instances-extended-810;
   universe-reverse-instances = mkVersionset version super.universe-reverse-instances universe-reverse-instances-810;
-  hnix = mkVersionset version hnix-810 hnix-86;
+  hnix = mkVersionset version hnix-86 hnix-810;
   universe-base = haskellLib.dontCheck (mkVersionset version super.universe-base universe-base-810);
   universe-dependent-sum = mkVersionset version super.universe-dependent-sum universe-dependent-sum-810;
   universe-some-86 = self.callHackage "universe-some" "1.2" {};
