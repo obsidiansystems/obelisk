@@ -4,6 +4,8 @@
   }
 , local-self ? import ./. self-args
 , supportedSystems ? [ builtins.currentSystem ]
+, rp ? import ./dep/reflex-platform 
+, version
 }:
 
 let
@@ -41,9 +43,16 @@ let
     else if lib.isList v then lib.concatMap collect v
     else [];
 
+  forceGhc810 = rp: let
+    rp810 = rp // { ghc = rp.ghc8_10; ghcjs = rp.ghcjs8_10; };
+  in rp810 // { project = args: import (./dep/reflex-platform + "/project") rp810 (args ({ pkgs = rp.nixpkgs; } // rp810)); };
+  
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
-    reflex-platform = import ./dep/reflex-platform { inherit system; };
-
+  reflex-platform = 
+         if version == "ghc86" then
+              rp { inherit system; }
+         else
+              forceGhc810 (rp { inherit system; });
     mkPerProfiling = profiling: let
       obelisk = import ./. (self-args // { inherit system profiling; });
       ghc = pnameToAttrs

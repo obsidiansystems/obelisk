@@ -3,7 +3,7 @@
 }:
 rec {
   recurseForDerivations = true;
-  build = import ./all-builds.nix { inherit supportedSystems; };
+  build = import ./all-builds.nix { inherit supportedSystems; version = "ghc810"; };
   test = import ./all-tests.nix { inherit supportedSystems; };
 
   inherit (build) metaCache;
