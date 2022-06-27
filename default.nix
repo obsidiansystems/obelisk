@@ -7,7 +7,7 @@
     security.acme.acceptTerms = false;
   }
 , reflex-platform-func ? import ./dep/reflex-platform
-, ghcVersion ? "ghc810"
+, ghcVersion ? "ghc-8.10.7"
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -16,15 +16,13 @@ let
 
   inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
 
-  ghcVersion = "ghc810";
-
   forceGhc810 = rp:
     let
       rp810 = rp // { ghc = rp.ghc8_10; ghcjs = rp.ghcjs8_10; };
     in
     rp810 // { project = args: import ((hackGet ./dep/reflex-platform) + "/project") rp810 (args ({ pkgs = rp.nixpkgs; } // rp810)); };
 
-  forceVersion = { ghc810 = forceGhc810; ghc86 = x: x; };
+  forceVersion = { "ghc-8.10.7" = forceGhc810; "ghc-8.6.5" = x: x; };
 
   getReflexPlatform = { system, enableLibraryProfiling ? profiling }: forceVersion.${ghcVersion} (reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;

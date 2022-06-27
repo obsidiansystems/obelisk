@@ -6,7 +6,7 @@ self: super:
 let
   pkgs = self.callPackage ({ pkgs }: pkgs) { };
   haskellLib = pkgs.haskell.lib;
-  mkVersionset = v: p: q: if v == "ghc86" then p else q;
+  mkVersionset = v: p: q: if v == "ghc-8.6.5" then p else q;
 in
 
 rec {
