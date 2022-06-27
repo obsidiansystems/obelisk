@@ -39,7 +39,7 @@ let
       (import ./haskell-overlays/tighten-ob-exes.nix)
     ];
   });
-
+  
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
   ghcObelisk = reflex-platform.ghc;
 
