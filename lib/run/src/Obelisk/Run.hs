@@ -65,6 +65,7 @@ import qualified OpenSSL.X509.Request as X509Request
 import Reflex.Dom.Core
 import Snap.Core (Snap)
 import System.Environment
+import System.FilePath ((</>))
 import System.IO
 import System.Process
 import Text.URI (URI)
@@ -78,11 +79,13 @@ import qualified System.Which
 
 run
   :: Int -- ^ Port to run the backend
+  -> Maybe FilePath -- ^ Optional directory in which to find "cert.pem", "chain.pem" and "privkey.pem" to be used for TLS.
+                    -- If this is Nothing and TLS is enabled, we'll generate a self-signed cert.
   -> ([Text] -> Snap ()) -- ^ Static asset handler
   -> Backend backendRoute frontendRoute -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
-run port serveStaticAsset backend frontend = do
+run port certDir serveStaticAsset backend frontend = do
   prettifyOutput
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
@@ -102,12 +105,13 @@ run port serveStaticAsset backend frontend = do
                     appRouteToUrl (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
                     allJsUrl = renderAllJsPath validFullEncoder
 
-      let conf = defRunConfig { _runConfig_redirectPort = port }
+      let conf = defRunConfig { _runConfig_redirectPort = port, _runConfig_certDir = certDir }
       runWidget conf publicConfigs frontend validFullEncoder `finally` killThread backendTid
 
 -- Convenience wrapper to handle path segments for 'Snap.serveAsset'
 runServeAsset :: FilePath -> [Text] -> Snap ()
-runServeAsset rootPath = Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/"
+runServeAsset rootPath t =
+  Snap.serveAsset "" rootPath . T.unpack . T.intercalate "/" $ t
 
 getConfigRoute :: Map Text ByteString -> Either Text URI
 getConfigRoute configs = case Map.lookup "common/route" configs of
@@ -135,24 +139,29 @@ runWidget conf configs frontend validFullEncoder = do
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
       prepareRunner = case uri ^? uriScheme . _Just . unRText of
         Just "https" -> do
-          -- Generate a private key and self-signed certificate for TLS
-          privateKey <- RSA.generateRSAKey' 2048 3
+          case _runConfig_certDir conf of
+            Nothing -> do
+              -- Generate a private key and self-signed certificate for TLS
+              privateKey <- RSA.generateRSAKey' 2048 3
 
-          certRequest <- X509Request.newX509Req
-          _ <- X509Request.setPublicKey certRequest privateKey
-          _ <- X509Request.signX509Req certRequest privateKey Nothing
+              certRequest <- X509Request.newX509Req
+              _ <- X509Request.setPublicKey certRequest privateKey
+              _ <- X509Request.signX509Req certRequest privateKey Nothing
 
-          cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
-          _ <- X509.setPublicKey cert privateKey
-          now <- getCurrentTime
-          _ <- X509.setNotBefore cert $ addUTCTime (-1) now
-          _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) now
-          _ <- X509.signX509 cert privateKey Nothing
+              cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
+              _ <- X509.setPublicKey cert privateKey
+              timenow <- getCurrentTime
+              _ <- X509.setNotBefore cert $ addUTCTime (-1) timenow
+              _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) timenow
+              _ <- X509.signX509 cert privateKey Nothing
 
-          certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
-          privateKeyByteString <- BSUTF8.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
+              certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
+              privateKeyByteString <- BSUTF8.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
 
-          return $ runTLSSocket (tlsSettingsMemory certByteString privateKeyByteString)
+              return $ runTLSSocket (tlsSettingsMemory certByteString privateKeyByteString)
+            Just certDir -> do
+              putStrLn $ "Using certificate information from: " ++ certDir
+              return $ runTLSSocket (tlsSettingsChain (certDir </> "cert.pem") [certDir </> "chain.pem"] (certDir </> "key.pem"))
         _ -> return runSettingsSocket
   runner <- prepareRunner
   bracket
@@ -257,6 +266,7 @@ data RunConfig = RunConfig
   , _runConfig_redirectHost :: ByteString
   , _runConfig_redirectPort :: Int
   , _runConfig_retryTimeout :: Int -- seconds
+  , _runConfig_certDir :: Maybe FilePath
   }
 
 defRunConfig :: RunConfig
@@ -265,4 +275,5 @@ defRunConfig = RunConfig
   , _runConfig_redirectHost = "127.0.0.1"
   , _runConfig_redirectPort = 3001
   , _runConfig_retryTimeout = 1
+  , _runConfig_certDir = Nothing
   }

@@ -5,6 +5,7 @@ module Obelisk.Snap.Extras
   , ensureSecure
   , serveFileIfExists
   , serveFileIfExistsAs
+  , modernMimeTypes
   ) where
 
 import Control.Monad.IO.Class
@@ -14,10 +15,18 @@ import Snap.Core
 import Snap.Util.FileServe
 import System.Directory
 
+import qualified Data.HashMap.Strict as Map
+
+
+-- | Default mime types with some modern extras
+modernMimeTypes :: MimeMap
+modernMimeTypes =
+  defaultMimeTypes <> Map.fromList [ (".wasm", "application/wasm") ]
+
 -- | Set response header for "permanent" caching
 cachePermanently :: MonadSnap m => m ()
 cachePermanently = do
-  modifyResponse $ setHeader "Cache-Control" "public, max-age=315360000"
+  modifyResponse $ setHeader "Cache-Control" "public, max-age=315360000, immutable"
   modifyResponse $ setHeader "Expires" "Tue, 01 Feb 2050 00:00:00 GMT" --TODO: This should be set to "approximately one year from the time the response is sent"
 
 -- | Set response header to not cache
@@ -30,7 +39,9 @@ doNotCache = do
 serveFileIfExists :: MonadSnap m => FilePath -> m ()
 serveFileIfExists f = do
   exists <- liftIO $ doesFileExist f
-  if exists then serveFile f else pass
+  if exists then serveFileAs mimeType f else pass
+  where
+    mimeType = fileType modernMimeTypes f
 
 -- | Like 'serveFileIfExists', but with a given MIME type
 serveFileIfExistsAs :: MonadSnap m => ByteString -> FilePath -> m ()

@@ -84,7 +84,7 @@ initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run [(FilePath, Interpret)]
+   | ObCommand_Run [(FilePath, Interpret)] (Maybe FilePath)
    | ObCommand_Profile String [String]
    | ObCommand_Thunk ThunkOption
    | ObCommand_Repl [(FilePath, Interpret)]
@@ -101,7 +101,6 @@ data ObInternal
    = ObInternal_ApplyPackages String String String [String]
    | ObInternal_ExportGhciConfig
       [(FilePath, Interpret)]
-      Bool -- ^ Use relative paths
    deriving Show
 
 obCommand :: ArgsConfig -> Parser ObCommand
@@ -109,7 +108,7 @@ obCommand cfg = hsubparser
   (mconcat
     [ command "init" $ info (ObCommand_Init <$> initSource <*> initForce) $ progDesc "Initialize an Obelisk project"
     , command "deploy" $ info (ObCommand_Deploy <$> deployCommand cfg) $ progDesc "Prepare a deployment for an Obelisk project"
-    , command "run" $ info (ObCommand_Run <$> interpretOpts) $ progDesc "Run current project in development mode"
+    , command "run" $ info (ObCommand_Run <$> interpretOpts <*> certDirOpts) $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
     , command "repl" $ info (ObCommand_Repl <$> interpretOpts) $ progDesc "Open an interactive interpreter"
@@ -126,11 +125,9 @@ obCommand cfg = hsubparser
 
 internalCommand :: Parser ObInternal
 internalCommand = hsubparser $ mconcat
-  [ command "export-ghci-configuration" $ info (ObInternal_ExportGhciConfig <$> interpretOpts <*> useRelativePathsFlag)
+  [ command "export-ghci-configuration" $ info (ObInternal_ExportGhciConfig <$> interpretOpts)
       $ progDesc "Export the GHCi configuration used by ob run, etc.; useful for IDE integration"
   ]
-  where
-    useRelativePathsFlag = switch (long "use-relative-paths" <> help "Use relative paths")
 
 packageNames :: Parser [String]
 packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
@@ -173,6 +170,7 @@ deployInitOpts = DeployInitOpts
   <*> strOption (long "route" <> metavar "PUBLICROUTE" <> help "Publicly accessible URL of your app")
   <*> strOption (long "admin-email" <> metavar "ADMINEMAIL" <> help "Email address where administrative alerts will be sent")
   <*> flag True False (long "disable-https" <> help "Disable automatic https configuration for the backend")
+  <*> flag False True (long "check-known-hosts" <> help "Add keys for the system's known_hosts matching the hostname to the configuration's known_hosts")
 
 type TeamID = String
 data RemoteBuilder = RemoteBuilder_ObeliskVM
@@ -184,6 +182,14 @@ data DeployCommand
   | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
   deriving Show
+
+-- | Provide a way to get the path to a directory with thunk data
+thunkDirectoryParser :: Parser FilePath
+thunkDirectoryParser = fmap (dropTrailingPathSeparator . normalise) . strArgument $ mconcat
+  [ action "directory"
+  , metavar "THUNKDIR"
+  , help "Path to directory containing thunk data"
+  ]
 
 profileCommand :: Parser (String, [String])
 profileCommand = (,)
@@ -280,6 +286,11 @@ interpretOpts = many
     )
   where
     common = action "directory" <> metavar "DIR"
+
+certDirOpts :: Parser (Maybe FilePath)
+certDirOpts = optional (strOption (short 'c' <> long "cert" <> metavar "DIRECTORY" <> help helpText))
+  where
+    helpText = "Specify a directory in which to find \'cert.pem\', \'chain.pem\' and \'privkey.pem\' for use with TLS."
 
 shellOpts :: Parser ShellOpts
 shellOpts = ShellOpts
@@ -386,12 +397,13 @@ ob = \case
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
     DeployCommand_Push remoteBuilder -> do
       deployPath <- liftIO $ canonicalizePath "."
-      deployPush deployPath $ case remoteBuilder of
+      deployBuilders <- case remoteBuilder of
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
+      deployPush deployPath deployBuilders
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run interpretPathsList -> withInterpretPaths interpretPathsList run
+  ObCommand_Run interpretPathsList certDir -> withInterpretPaths interpretPathsList (run certDir)
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
   ObCommand_Thunk to -> case _thunkOption_command to of
     ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
@@ -401,7 +413,8 @@ ob = \case
       thunks = _thunkOption_thunks to
   ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
   ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
-  ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths ->
+  ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths -> do
+    putLog Notice "Hint: use '--no-interpret path/to/dependency' to force building an unpacked dependency and include it in this shell."
     nixShellForInterpretPaths False shellAttr root interpretPaths cmd -- N.B. We do NOT bash escape here; we want to run the command as-is
   ObCommand_Doc shellAttr pkgs -> withInterpretPaths [] $ \root interpretPaths ->
     nixShellForInterpretPaths True shellAttr root interpretPaths $ Just $ haddockCommand pkgs
@@ -410,8 +423,8 @@ ob = \case
   ObCommand_Internal icmd -> case icmd of
     ObInternal_ApplyPackages origPath inPath outPath packagePaths -> do
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
-    ObInternal_ExportGhciConfig interpretPathsList useRelativePaths ->
-      liftIO . putStrLn . unlines =<< withInterpretPaths interpretPathsList (exportGhciConfig useRelativePaths)
+    ObInternal_ExportGhciConfig interpretPathsList ->
+      liftIO . putStrLn . unlines =<< withInterpretPaths interpretPathsList exportGhciConfig
 
 -- | A helper for the common case that the command you want to run needs the project root and a resolved
 -- set of interpret paths.

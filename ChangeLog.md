@@ -4,6 +4,82 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* Documentation
+  * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing obelisk branches to CONTRIBUTING.md
+  * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to Obelisk.Command.Deploy
+  * [#931](https://github.com/obsidiansystems/obelisk/pull/931): For `ob deploy init`, command-line option `--check-known-host` corrected in readme, caveat added for multiple matching host-keypairs.
+* nixpkgs-overlays
+  * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
+* CLI
+  * [#784](https://github.com/obsidiansystems/obelisk/pull/784): hint for users to take advantage of ob shell --no-interpret option for thunks
+  * [#916](https://github.com/obsidiansystems/obelisk/pull/916): Add `check-known-hosts` option in `ob deploy init`.
+  * [#870](https://github.com/obsidiansystems/obelisk/pull/870): Host redirection added to `ob deploy`. Readme updated with tutorial for new functionality.
+  * [#931](https://github.com/obsidiansystems/obelisk/pull/931): Fix bug in `ob deploy init` where `ssh-keygen` was not found in nix store.
+  * [#934](https://github.com/obsidiansystems/obelisk/pull/934)[#936](https://github.com/obsidiansystems/obelisk/pull/936): obelisk now always uses absolute paths when generating `.ghci` files for REPL and IDE support. This is a **BREAKING** change for some old tools that could not handle absolute paths properly. However, due to the behavior of cross-volume relative paths on certain platforms, such as modern MacOS, we cannot guarantee proper operation of obelisk with relative paths.
+* obelisk-route
+  * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
+  * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
+* Javascript FFI
+  * [#844](https://github.com/obsidiansystems/obelisk/pull/844): Jsaddle FFI example extended in skeleton (example project which is installed by `ob init`). Note the remark on minifier renaming in /skeleton/static/lib.js
+  * [#903](https://github.com/obsidiansystems/obelisk/pull/903): Added support for a file which allows users to specify global variables and namespaces in JS, that should not be used by the Google Closure Compiler during minification of the GHCJS produced JS. See the [FAQ](FAQ.md).
+* Static Assets
+  * [#922](https://github.com/obsidiansystems/obelisk/pull/922): Serve .wasm files with the correct MIME type
+  * [#930](https://github.com/obsidiansystems/obelisk/pull/930): Add an error to ob run when `static` is called with a path to a file that doesn't exist
+
+## v1.0.0.0 - 2022-01-04
+
+* Update reflex-platform to v0.9.2.0
+  * This updated reflex-dom-core to [0.7](https://github.com/reflex-frp/reflex-dom/releases/tag/reflex-dom-core-0.7.0.0), which removes the `js` type parameter from `Prerender` (i.e., `Prerender js t m` becomes `Prerender t m`) and removes `HasJS` and `HasJSContext`. This resulted in changes to the following Obelisk modules:
+    * `Obelisk.Configs`: `HasJSContext` and `HasJS` are no longer derived.
+    * `Obelisk.Frontend`: `ObeliskWidget js t route m` no longer has the `js` type parameter. It is now `ObeliskWidget t route m`.
+    * `Obelisk.Route.Frontend`: There are no longer `HasJSContext` or `HasJS` instances for `RoutedT`, `SetRouteT`, `RouteToUrlT`.
+    * Various functions that were constrained to `Prerender js t m` have been updated to with the constraint `Prerender t m`.
+
+## v0.9.4.0 - 2021-12-30
+
+* Update reflex-platform to v0.9.0.0
+
+## v0.9.3.0 - 2021-12-30
+
+* Update reflex-platform to v0.8.0.3
+
+## v0.9.2.1 - 2021-12-28
+
+* Update reflex-platform to v0.7.2.0
+
+## v0.9.2.0 - 2021-12-28
+
+* Update reflex-platform to v0.7.1.0
+* Fix bug [#790](https://github.com/obsidiansystems/obelisk/issues/790) which prevented CSS file loading on ios
+* Use TemplateHaskell to determine asset file paths
+  * Migration: All uses of `static @"some/path"` become `$(static "some/path")`. Instead of requiring `TypeApplications` and `DataKinds`, modules calling `static` must now enable `TemplateHaskell`.
+  * Deprecation: Deprecate static asset modules generated via 'obelisk-asset-manifest-generate' in favor of modules generated via 'obelisk-asset-th-generate'. The new executable takes the same arguments as the old and should be a drop-in replacement. To preserve the old behavior, set `__deprecated.useObeliskAssetManifestGenerate = true;` in your obelisk project configuration.
+  * Feature: Files added to the static directory while `ob run` is active no longer require `ob run` to be restarted
+* Feature: When `staticFiles` is a derivation, as opposed to a regular directory, produce a symlink to the result of that derivation at `static.out` and have `ob run` serve static assets from that symlink. This makes it possible for the static asset derivation to be rebuilt and the new results served without restarting `ob run`.
+* Feature: Rebuild static asset derivations while `ob run` is active as long as the change to the derivation is within the project folder. `ob run` now displays a message ("Static assets rebuilt and symlinked to static.out") whenever static assets have been rebuilt and the new static assets are being served.
+* Feature: Add `staticFilePath` to `Obelisk.Generated.Static`. Like `static`, this uses TH to generate a reference to a file. Unlike `static`, this `staticFilePath` generates a path on the filesystem instead of URL path.
+* Docs: Added [documentation](lib/route/docs/introduction.md) for obelisk-routes.
+
+## v0.9.1.0
+
+* [#801](https://github.com/obsidiansystems/obelisk/pull/801): Remove errors and warning for local packages without a library component
+* [#812](https://github.com/obsidiansystems/obelisk/pull/812): Add support for `NoImplicitPrelude` and other extensions disabled via `No`
+* Pinned version bumps:
+  * reflex-platform [0.7.0.0](https://github.com/reflex-frp/reflex-platform/releases/tag/v0.7.0.0)
+  * hnix 0.8.0
+* [#787](https://github.com/obsidiansystems/obelisk/pull/787): Set `immutable` cache control directive when serving content-addressed static assets
+* Use iOS SDK 13.2
+
+
+## v0.9.0.1
+
+* ([#810](https://github.com/obsidiansystems/obelisk/pull/810)) Fix loading of `all.js` in fully compiled web apps.
+
+## v0.9.0.0
+
+* **(Breaking change)** Backport nixpkgs upgrades to ACME/Let's Encrypt handling so that HTTPS deployments continue to work flawlessly. If your deployment is having trouble renewing [Let's Encrypt](https://letsencrypt.org/) certificates, upgrade to this version.
+  * **IMPORTANT:** In order to use [Let's Encrypt](https://letsencrypt.org/) you must now accept their [terms of service](https://letsencrypt.org/repository/). To do that, add `terms.security.acme.acceptTerms = true;` to the `import ./.obelisk/impl {` section in your `default.nix`. The new skeleton application may serve as an [example](https://github.com/obsidiansystems/obelisk/blob/4759342ab3570888c027d4c58cb5694cb832d624/skeleton/default.nix#L13).
+* Update reflex-platform dependency to v0.6.0.0
 * ([#715](https://github.com/obsidiansystems/obelisk/pull/715)) In `Obelisk.Route` deprecate `isoEncoder` and `prismEncoder` in favor of more precisely named `viewEncoder` and `reviewEncoder` (respectively) and improve documentation regarding contravariance of `reviewEncoder`.
 * ([#739](https://github.com/obsidiansystems/obelisk/pull/739)) Improve `ob shell` by allowing commands to be passed verbatim after a `--` argument. For example, `ob shell 'run command'` can now be written `ob shell -- run command`.
 * ([#735](https://github.com/obsidiansystems/obelisk/pull/735)) Fix regression causing custom `Prelude`s to break `ob run`/`ob watch`/`ob repl`.

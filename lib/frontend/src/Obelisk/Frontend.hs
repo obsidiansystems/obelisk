@@ -36,7 +36,6 @@ import Control.Monad.Ref
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.ByteString (ByteString)
 import Data.Foldable (for_)
-import Data.Functor.Sum
 import Data.Map (Map)
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
@@ -58,13 +57,12 @@ import Reflex.Host.Class
 import Obelisk.Configs
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
+import System.Info (os)
 import Web.Cookie
 
 import Debug.Trace
 
-makePrisms ''Sum
-
-type ObeliskWidget js t route m =
+type ObeliskWidget t route m =
   ( DomBuilder t m
   , MonadFix m
   , MonadHold t m
@@ -80,7 +78,7 @@ type ObeliskWidget js t route m =
   , Ref (Performable m) ~ Ref IO
   , MonadFix (Performable m)
   , PrimMonad m
-  , Prerender js t m
+  , Prerender t m
   , PrebuildAgnostic t route m
   , PrebuildAgnostic t route (Client m)
   , HasConfigs m
@@ -97,12 +95,15 @@ type PrebuildAgnostic t route m =
   )
 
 data Frontend route = Frontend
-  { _frontend_head :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
-  , _frontend_body :: !(forall js t m. ObeliskWidget js t route m => RoutedT t route m ())
+  { _frontend_head :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
+  , _frontend_body :: !(forall t m. ObeliskWidget t route m => RoutedT t route m ())
   }
 
-baseTag :: forall route js t m. ObeliskWidget js t route m => RoutedT t route m ()
-baseTag = elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+baseTag :: forall route t m. ObeliskWidget t route m => RoutedT t route m ()
+baseTag =
+  if os == "ios"
+    then blank
+    else elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
 
 removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
@@ -202,7 +203,7 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
            , MonadFix (Performable m)
            , MonadFix m
-           , Prerender js DomTimeline (HydrationDomBuilderT s DomTimeline m)
+           , Prerender DomTimeline (HydrationDomBuilderT s DomTimeline m)
            , MonadIO (Performable m)
            )
         => (forall c. HydrationDomBuilderT s DomTimeline m c -> FloatingWidget () c)

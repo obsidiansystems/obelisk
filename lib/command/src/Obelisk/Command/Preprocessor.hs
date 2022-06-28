@@ -10,7 +10,7 @@ import Data.List (intersperse, isPrefixOf, sortOn)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text.Lazy.Builder as TL
 import qualified Data.Text.Lazy.Encoding as TL
-import Distribution.Compiler (CompilerFlavor (..))
+import Distribution.Compiler (CompilerFlavor (..), perCompilerFlavorToList)
 import Language.Haskell.Extension (Extension (..), Language(..))
 import System.Directory (canonicalizePath)
 import System.IO (IOMode (..), hPutStrLn, stderr, withFile)
@@ -47,7 +47,8 @@ applyPackages origPath inPath outPath packagePaths' = do
       Left err -> do
         hPutStrLn stderr $ "Error: Unable to parse cabal package " <> packagePath <> "; Skipping preprocessor on " <> origPath <> ". Error: " <> show err
         pure Nothing
-      Right (_, packageInfo) -> pure $ Just packageInfo
+      Right (Just (_, packageInfo)) -> pure $ Just packageInfo
+      Right Nothing -> pure Nothing
 
   writeOutput packageInfo' inPath outPath
 
@@ -58,6 +59,7 @@ writeOutput packageInfo' origPath outPath = withFile outPath WriteMode $ \hOut -
   where
     hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
 
+--NOTE: We cannot restrict the package set by adding '-package' flags to OPTIONS_GHC, because GHC rejects them there.  It seems that we won't be able to properly handle that situation until GHC itself supports loading multiple packages officially in GHCi
 generateHeader :: FilePath -> CabalPackageInfo -> TL.Builder
 generateHeader origPath packageInfo =
     hsExtensions <> ghcOptions <> lineNumberPragma origPath
@@ -75,7 +77,7 @@ generateHeader origPath packageInfo =
           ext -> (TL.fromString (show ext) :)
     showExt = \case
       EnableExtension ext -> [TL.fromString (show ext)]
-      DisableExtension _ -> []
+      DisableExtension ext -> ["No" <> TL.fromString (show ext)]
       UnknownExtension ext -> [TL.fromString ext]
 
     ghcOptions =
@@ -86,7 +88,9 @@ generateHeader origPath packageInfo =
     ghcOptList
       = filter (not . isPrefixOf "-O")
       $ fromMaybe []
-      $ lookup GHC (_cabalPackageInfo_compilerOptions packageInfo)
+      $ lookup GHC
+      $ perCompilerFlavorToList
+      $ _cabalPackageInfo_compilerOptions packageInfo
     optList = _cabalPackageInfo_cppOptions packageInfo <> ghcOptList
 
 lineNumberPragma :: FilePath -> TL.Builder

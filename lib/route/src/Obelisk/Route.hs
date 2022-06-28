@@ -1,4 +1,9 @@
 {-# LANGUAGE CPP #-}
+{-|
+
+Types and functions for defining routes and 'Encoder's.
+
+-}
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE EmptyCase #-}
@@ -19,19 +24,22 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route
-  ( R
+  ( -- * Primary Types
+    R
+  , PageName
+  , PathQuery
+  , Encoder
+  , EncoderImpl (..)
+  , EncoderFunc (..)
+
+  -- * Patterns, operators, and utilities
   , (:.)
   , (?/)
   , hoistR
   , pattern (:.)
   , pattern (:/)
-  , PageName
-  , PathQuery
-  , Encoder
   , unsafeEncoder
   , checkEncoder
-  , EncoderImpl (..)
-  , EncoderFunc (..)
   , unsafeMkEncoder
   , encode
   , decode
@@ -39,8 +47,35 @@ module Obelisk.Route
   , hoistCheck
   , hoistParse
   , mapSome
+  , rPrism
+  , _R
+  , renderObeliskRoute
+  , renderBackendRoute
+  , renderFrontendRoute
+  , byteStringsToPageName
+
+  -- * Collating Routes
   , SegmentResult (..)
   , pathComponentEncoder
+
+  , FullRoute (..)
+  , _FullRoute_Frontend
+  , _FullRoute_Backend
+  , mkFullRouteEncoder
+
+  , ObeliskRoute (..)
+  , _ObeliskRoute_App
+  , _ObeliskRoute_Resource
+  , ResourceRoute (..)
+
+  , JSaddleWarpRoute (..)
+  , jsaddleWarpRouteEncoder
+
+  , IndexOnlyRoute (..)
+  , indexOnlyRouteSegment
+  , indexOnlyRouteEncoder
+
+  -- * Provided Encoders
   , enumEncoder
   , enum1Encoder
   , checkEnum1EncoderFunc
@@ -54,6 +89,8 @@ module Obelisk.Route
   , unpackTextEncoder
   , prefixTextEncoder
   , unsafeTshowEncoder
+  , unsafeShowEncoder
+  , readShowEncoder
   , someConstEncoder
   , singlePathSegmentEncoder
   , maybeEncoder
@@ -71,34 +108,15 @@ module Obelisk.Route
   , shadowEncoder
   , prismEncoder
   , reviewEncoder
-  , rPrism
-  , _R
   , obeliskRouteEncoder
   , obeliskRouteSegment
   , pageNameEncoder
   , handleEncoder
-  , FullRoute (..)
-  , _FullRoute_Frontend
-  , _FullRoute_Backend
-  , mkFullRouteEncoder
-  , ObeliskRoute (..)
-  , _ObeliskRoute_App
-  , _ObeliskRoute_Resource
-  , ResourceRoute (..)
-  , JSaddleWarpRoute (..)
-  , jsaddleWarpRouteEncoder
-  , IndexOnlyRoute (..)
-  , indexOnlyRouteSegment
-  , indexOnlyRouteEncoder
   , someSumEncoder
   , Void1
   , void1Encoder
   , pathSegmentsTextEncoder
   , queryParametersTextEncoder
-  , renderObeliskRoute
-  , renderBackendRoute
-  , renderFrontendRoute
-  , readShowEncoder
   , integralEncoder
   , pathSegmentEncoder
   , queryOnlyEncoder
@@ -107,7 +125,6 @@ module Obelisk.Route
   , fieldMapEncoder
   , pathFieldEncoder
   , jsonEncoder
-  , byteStringsToPageName
   ) where
 
 import Prelude hiding ((.), id)
@@ -139,9 +156,16 @@ import Control.Lens
   , view
   , Wrapped (..)
   )
+
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ < 810
+import Control.Monad.Trans (lift)
+import Data.Monoid ((<>))
+#endif
+#endif
+
 import Control.Monad.Except
 import qualified Control.Monad.State.Strict as State
-import Control.Monad.Trans (lift)
 import Control.Monad.Writer (execWriter, tell)
 import Data.Aeson (FromJSON, ToJSON)
 import qualified Data.Aeson as Aeson
@@ -161,7 +185,6 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Monoid ((<>))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Some (Some(Some))
@@ -170,6 +193,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Text.Lens (IsText, packed, unpacked)
+import Data.Type.Equality
 import Data.Universe
 import Data.Universe.Some
 import Network.HTTP.Types.URI
@@ -199,6 +223,24 @@ import Text.Read (readMaybe)
 -- Subroutes/paths
 --------------------------------------------------------------------------------
 
+-- | This alias is used to wrap the type of a route GADT so that the type variable of the GADT is existentially quantified.
+--
+-- Given the following route type :
+--
+-- @
+--
+-- data MyRoutes a where
+--   MyRoutes_Main :: MyRoutes ()
+--   MyRoutes_A :: MyRoutes Text
+--   MyRoutes_B :: MyRoutes Int
+-- @
+--
+-- Using 'R' we're able to write type signatures without worrying about the 'a':
+--
+-- @
+-- myRoutesWidget :: RoutedT t (R MyRoutes) m ()
+-- @
+--
 type R f = DSum f Identity --TODO: Better name
 
 -- | Convenience builder for an 'R' using 'Identity' for the functor.
@@ -497,8 +539,14 @@ someConstEncoder = unsafeMkEncoder $ EncoderImpl
   , _encoderImpl_decode = pure . Some . Const
   }
 
--- | WARNING: This is only safe if the Show and Read instances for 'a' are
--- inverses of each other
+-- | WARNING: This is only safe if the Show and Read instances for 'a' are inverses of each other
+--
+-- Instances must be able to satisfy the following property for this 'Encoder' to be safe:
+--
+-- @
+-- forall a. reads (show a) === [(a, "")]
+-- @
+--
 unsafeTshowEncoder :: (Show a, Read a, Applicative check, MonadError Text parse) => Encoder check parse a Text
 unsafeTshowEncoder = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode = tshow
@@ -526,10 +574,16 @@ checkEnum1EncoderFunc f = do
   pure $ EncoderFunc $ \p -> unsafeMkEncoder . unFlip $
     DMap.findWithDefault (error "checkEnum1EncoderFunc: EncoderImpl not found (should be impossible)") p encoderImpls
 
--- | This type is used by pathComponentEncoder to allow the user to indicate how to treat various cases when encoding a dependent sum of type `(R p)`.
+-- | This type is used by pathComponentEncoder to allow the user to indicate how to treat
+-- various cases when encoding a dependent sum of type `(R p)`.
 data SegmentResult check parse a =
-    PathEnd (Encoder check parse a (Map Text (Maybe Text))) -- ^ Indicate that the path is finished, with an Encoder that translates the corresponding value into query parameters
-  | PathSegment Text (Encoder check parse a PageName) -- ^ Indicate that the key should be represented by an additional path segment with the given 'Text', and give an Encoder for translating the corresponding value into the remainder of the route.
+    PathEnd (Encoder check parse a (Map Text (Maybe Text)))
+    -- ^ Indicate that the path is finished, with an Encoder that translates the
+    -- corresponding value into query parameters
+  | PathSegment Text (Encoder check parse a PageName)
+    -- ^ Indicate that the key should be represented by an additional path segment with
+    -- the given 'Text', and give an Encoder for translating the corresponding value into
+    -- the remainder of the route.
 
 -- | Encode a dependent sum of type `(R p)` into a PageName (i.e. the path and query part of a URL) by using the
 -- supplied function to decide how to encode the constructors of p using the SegmentResult type. It is important
@@ -1038,8 +1092,8 @@ someSumEncoder = Encoder $ pure $ EncoderImpl
 
 data Void1 :: * -> * where {}
 
-instance Universe (Some Void1) where
-  universe = []
+instance UniverseSome Void1 where
+  universeSome = []
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder = Encoder $ pure $ EncoderImpl
@@ -1079,8 +1133,24 @@ renderObeliskRoute e r =
       enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
   in (T.pack . uncurry (<>)) $ encode enc r
 
+-- | As per the 'unsafeTshowEncoder' but does not use the 'Text' type.
+--
+-- WARNING: Just like 'unsafeTshowEncoder' this is only safe if the Show and Read
+-- instances for 'a' are inverses of each other
+--
+-- Instances must be able to satisfy the following property for this 'Encoder' to be safe:
+--
+-- @
+-- forall a. reads (show a) === [(a, "")]
+-- @
+--
+unsafeShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) => Encoder check parse a PageName
+unsafeShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
+
+-- | This 'Encoder' does not properly indicate that its use may be unsafe and is being renamed to 'unsafeShowEncoder'
 readShowEncoder :: (MonadError Text parse, Read a, Show a, Applicative check) => Encoder check parse a PageName
-readShowEncoder = singlePathSegmentEncoder . unsafeTshowEncoder
+readShowEncoder = unsafeShowEncoder
+{-# DEPRECATED readShowEncoder "This function has been renamed to 'unsafeShowEncoder'. 'readShowEncoder' will be removed in a future release" #-}
 
 integralEncoder :: (MonadError Text parse, Applicative check, Integral a) => Encoder check parse a Integer
 integralEncoder = reviewEncoder Numeric.Lens.integral
