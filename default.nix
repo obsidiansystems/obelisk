@@ -7,7 +7,7 @@
     security.acme.acceptTerms = false;
   }
 , reflex-platform-func ? import ./dep/reflex-platform
-, ghcVersion ? "ghc-8.10.7"
+, ghcVersion ? "ghc-8.6.5"
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -24,7 +24,7 @@ let
     inherit iosSdkVersion config system enableLibraryProfiling;
 
     # disabled until packages are updated to support it
-    useTextJSString = false;
+    useTextJSString = true;
 
     nixpkgsOverlays = [
       (import ./nixpkgs-overlays)
