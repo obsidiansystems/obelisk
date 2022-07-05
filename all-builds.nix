@@ -44,11 +44,7 @@ let
     else if lib.isList v then lib.concatMap collect v
     else [ ];
 
-  forceGhc810 = rp:
-    let
-      rp810 = rp // { ghc = rp.ghc8_10; ghcjs = rp.ghcjs8_10; };
-    in
-    rp810 // { project = args: import (./dep/reflex-platform + "/project") rp810 (args ({ pkgs = rp.nixpkgs; } // rp810)); };
+  forceGhc810 = import ./force810.nix id;
 
   perPlatform = lib.genAttrs cacheBuildSystems (system:
     let
