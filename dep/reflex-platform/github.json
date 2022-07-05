@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "bump-ghcjs-8.10",
+  "branch": "develop",
   "private": false,
-  "rev": "fdb6fef41f2f5160e7a5e536dc25230c63716ea0",
-  "sha256": "10pf9snxplg23fvfncgrbrkgx9yjykl3k3qygsxszpkwfpv0rjy1"
+  "rev": "d4006839fbd8355e8374e06b6953876a43138561",
+  "sha256": "0gp0c4m7grpfniy3cshf91i067n7r6kwihyhh1fgg553k14k34fp"
 }
