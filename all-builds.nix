@@ -44,7 +44,7 @@ let
     else if lib.isList v then lib.concatMap collect v
     else [ ];
 
-  forceGhc810 = import ./force810.nix id;
+  forceGhc810 = import ./force810.nix (x: x);
 
   perPlatform = lib.genAttrs cacheBuildSystems (system:
     let
