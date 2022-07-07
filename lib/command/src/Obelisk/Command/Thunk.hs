@@ -546,7 +546,7 @@ in fetch json
 |]
 
 gitHubThunkSpecV6 :: ThunkSpec
-gitHubThunkSpecV6 = mkThunkSpec "github-v5" "github.json" parseGitHubJsonBytes [here|
+gitHubThunkSpecV6 = mkThunkSpec "github-v6" "github.json" parseGitHubJsonBytes [here|
 # DO NOT HAND-EDIT THIS FILE
 let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:
   if !fetchSubmodules && !private then builtins.fetchTarball {
@@ -655,7 +655,7 @@ in fetch json
 |]
 
 gitThunkSpecV6 :: ThunkSpec
-gitThunkSpecV6 = mkThunkSpec "git-v5" "git.json" parseGitJsonBytes [here|
+gitThunkSpecV6 = mkThunkSpec "git-v6" "git.json" parseGitJsonBytes [here|
 # DO NOT HAND-EDIT THIS FILE
 let fetch = {url, rev, branch ? null, sha256 ? null, fetchSubmodules ? false, private ? false, ...}:
   let realUrl = let firstChar = builtins.substring 0 1 url; in
