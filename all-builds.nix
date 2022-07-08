@@ -5,7 +5,7 @@
 , local-self ? import ./. self-args
 , supportedSystems ? [ builtins.currentSystem ]
 , rp ? import ./dep/reflex-platform
-, version ? "ghc-8.10.7"
+, __useNewerCompiler  ? false #true if one wants to use ghc 8.10.7
 }:
 
 let
@@ -44,15 +44,9 @@ let
     else if lib.isList v then lib.concatMap collect v
     else [ ];
 
-  forceGhc810 = import ./force810.nix (x: x);
-
   perPlatform = lib.genAttrs cacheBuildSystems (system:
     let
-      reflex-platform =
-        if version == "ghc-8.6.5" then
-          rp { inherit system; }
-        else
-          forceGhc810 (import ./dep/reflex-platform { inherit system; });
+      reflex-platform = import ./dep/reflex-platform { inherit system; __useNewerCompiler = __useNewerCompiler; };
       mkPerProfiling = profiling:
         let
           obelisk = import ./. (self-args // { inherit system profiling; });

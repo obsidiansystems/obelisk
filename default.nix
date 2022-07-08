@@ -7,7 +7,7 @@
     security.acme.acceptTerms = false;
   }
 , reflex-platform-func ? import ./dep/reflex-platform
-, ghcVersion ? "ghc-8.6.5"
+, __useNewerCompiler ? false #true if one wants to use ghc 8.10.7
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -16,22 +16,20 @@ let
 
   inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
 
-  forceGhc810 = import ./force810.nix hackGet;
-
-  forceVersion = { "ghc-8.10.7" = forceGhc810; "ghc-8.6.5" = x: x; };
-
-  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: forceVersion.${ghcVersion} (reflex-platform-func {
+  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: (reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
 
     # disabled until packages are updated to support it
     useTextJSString = true;
 
+    __useNewerCompiler = __useNewerCompiler;
+    
     nixpkgsOverlays = [
       (import ./nixpkgs-overlays)
     ];
 
     haskellOverlays = [
-      (import ./haskell-overlays/misc-deps.nix { hackGet = hackGet; version = ghcVersion; })
+      (import ./haskell-overlays/misc-deps.nix { hackGet = hackGet; __useNewerCompiler = __useNewerCompiler; })
       pkgs.obeliskExecutableConfig.haskellOverlay
       (import ./haskell-overlays/obelisk.nix)
       (import ./haskell-overlays/tighten-ob-exes.nix)

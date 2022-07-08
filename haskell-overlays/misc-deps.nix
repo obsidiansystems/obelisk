@@ -1,4 +1,4 @@
-{ hackGet, version }:
+{ hackGet, __useNewerCompiler ? false }:
 
 # Fix misc upstream packages
 self: super:
@@ -6,7 +6,7 @@ self: super:
 let
   pkgs = self.callPackage ({ pkgs }: pkgs) { };
   haskellLib = pkgs.haskell.lib;
-  mkVersionset = v: p: q: if v == "ghc-8.6.5" then p else q;
+  mkVersionset = v: p: q: if __useNewerCompiler then q else p;
 in
 
 rec {
@@ -43,14 +43,14 @@ rec {
   universe-instances-extended-86 = self.callHackage "universe-instances-extended" "1.1.1" {};
   hnix-86 = haskellLib.dontCheck super.hnix;
     
-  universe = mkVersionset version universe-86 universe-810;
-  universe-instances-extended = mkVersionset version universe-instances-extended-86 universe-instances-extended-810;
-  universe-reverse-instances = mkVersionset version super.universe-reverse-instances universe-reverse-instances-810;
+  universe = mkVersionset __useNewerCompiler universe-86 universe-810;
+  universe-instances-extended = mkVersionset __useNewerCompiler universe-instances-extended-86 universe-instances-extended-810;
+  universe-reverse-instances = mkVersionset __useNewerCompiler super.universe-reverse-instances universe-reverse-instances-810;
   #hnix = mkVersionset version hnix-86 hnix-810;
-  universe-base = haskellLib.dontCheck (mkVersionset version super.universe-base universe-base-810);
-  universe-dependent-sum = mkVersionset version super.universe-dependent-sum universe-dependent-sum-810;
+  universe-base = haskellLib.dontCheck (mkVersionset __useNewerCompiler super.universe-base universe-base-810);
+  universe-dependent-sum = mkVersionset __useNewerCompiler super.universe-dependent-sum universe-dependent-sum-810;
   universe-some-86 = self.callHackage "universe-some" "1.2" {};
-  universe-some = mkVersionset version universe-some-86 universe-some-810;
+  universe-some = mkVersionset __useNewerCompiler universe-some-86 universe-some-810;
   
   #th-abstraction-86 = self.callHackage "th-abstraction" "0.3.0.0" {};
   #th-abstraction-810 = self.callHackage "th-abstraction" "0.4.3.0" {};
