@@ -133,8 +133,8 @@ drawPathTree showA (PathTree_Node _ ts0) = T.intercalate "\n" $ goForest (Map.to
     annotated ma = maybe id (\a b -> b <> " [" <> showA a <> "]") ma . T.pack
     goTree (fp, PathTree_Node ma forest) = annotated ma fp : goForest (Map.toList forest)
     goForest [] = []
-    goForest [tree] = shift "└─ " "   " (goTree tree)
-    goForest (tree:forest) = shift "├─ " "│  " (goTree tree) <> goForest forest
+    goForest [tree] = shift "|_ " "   " (goTree tree)
+    goForest (tree:forest) = shift "|- " "|  " (goTree tree) <> goForest forest
     shift first other = zipWith (<>) (first : repeat other)
 
 -- | Used to signal to obelisk that it's being invoked as a preprocessor
