@@ -124,6 +124,7 @@ handleLog' noColor output = do
   case output of
     Output_Log m -> liftIO $ do
       writeLog True noColor m
+      hFlush stdout
     Output_LogRaw m -> liftIO $ do
       writeLog False noColor m
       hFlush stdout  -- Explicitly flush, as there is no newline
