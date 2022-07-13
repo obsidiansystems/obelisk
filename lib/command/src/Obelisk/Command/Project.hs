@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE PackageImports #-}
 
 module Obelisk.Command.Project
   ( InitSource (..)
@@ -46,6 +47,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Traversable (for)
+import "nix-thunk" Nix.Thunk
 import Reflex
 import Reflex.FSNotify
 import Reflex.Host.Headless
@@ -67,9 +69,8 @@ import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
 import Obelisk.App (MonadObelisk, runObelisk, getObelisk)
-import Obelisk.CliApp
 import Obelisk.Command.Nix
-import Obelisk.Command.Thunk
+import Cli.Extras
 import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath)
 
 --TODO: Make this module resilient to random exceptions

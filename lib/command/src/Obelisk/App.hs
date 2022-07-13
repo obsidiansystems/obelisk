@@ -22,7 +22,7 @@ import Data.Text (Text)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 import Control.Monad.Log (MonadLog)
 
-import Obelisk.CliApp
+import Cli.Extras
   ( CliConfig
   , CliLog
   , CliThrow
