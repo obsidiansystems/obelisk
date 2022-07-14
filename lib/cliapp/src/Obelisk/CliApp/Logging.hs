@@ -106,7 +106,6 @@ setLogLevel sev = do
 
 handleLog :: MonadIO m => CliConfig e -> Output -> m ()
 handleLog conf output = do
-  T.putStrLn "IN handleLog" 
   level <- getLogLevel' conf
   liftIO $ modifyMVar_ (_cliConfig_lock conf) $ \wasOverwriting -> do
     let noColor = _cliConfig_noColor conf
@@ -124,23 +123,18 @@ handleLog' :: MonadIO m => Bool -> Output -> m Bool
 handleLog' noColor output = do
   case output of
     Output_Log m -> liftIO $ do
-      T.putStrLn "OUTPUT_LOG"
       writeLog True noColor m
     Output_LogRaw m -> liftIO $ do
-      T.putStrLn "OUTPUT_LOGRAW"
       writeLog False noColor m
       hFlush stdout  -- Explicitly flush, as there is no newline
     Output_Write ts -> liftIO $ do
-      T.putStrLn "OUTPUT_WRITE"
       T.putStrLn $ TS.render (not noColor) Nothing ts
       hFlush stdout
     Output_Overwrite ts -> liftIO $ do
-      T.putStrLn "OUTPUT_OVERWRITE"
       width <- TS.getTerminalWidth
       T.putStr $ "\r" <> TS.render (not noColor) width ts
       hFlush stdout
     Output_ClearLine -> liftIO $ do
-      T.putStrLn "OUTPUT_CLEARLINE"
       -- Go to the first column and clear the whole line
       putStr "\r"
       clearLine
