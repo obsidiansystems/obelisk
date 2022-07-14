@@ -124,23 +124,23 @@ handleLog' :: MonadIO m => Bool -> Output -> m Bool
 handleLog' noColor output = do
   case output of
     Output_Log m -> liftIO $ do
-      print "OUTPUT_LOG"
+      T.putStrLn "OUTPUT_LOG"
       writeLog True noColor m
     Output_LogRaw m -> liftIO $ do
-      print "OUTPUT_LOGRAW"
+      T.putStrLn "OUTPUT_LOGRAW"
       writeLog False noColor m
       hFlush stdout  -- Explicitly flush, as there is no newline
     Output_Write ts -> liftIO $ do
-      print "OUTPUT_WRITE"
+      T.putStrLn "OUTPUT_WRITE"
       T.putStrLn $ TS.render (not noColor) Nothing ts
       hFlush stdout
     Output_Overwrite ts -> liftIO $ do
-      print "OUTPUT_OVERWRITE"
+      T.putStrLn "OUTPUT_OVERWRITE"
       width <- TS.getTerminalWidth
       T.putStr $ "\r" <> TS.render (not noColor) width ts
       hFlush stdout
     Output_ClearLine -> liftIO $ do
-      print "OUTPUT_CLEARLINE"
+      T.putStrLn "OUTPUT_CLEARLINE"
       -- Go to the first column and clear the whole line
       putStr "\r"
       clearLine
