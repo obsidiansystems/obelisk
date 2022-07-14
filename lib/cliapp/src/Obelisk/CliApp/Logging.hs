@@ -108,8 +108,8 @@ setLogLevel sev = do
 
 handleLog :: MonadIO m => CliConfig e -> Output -> m ()
 handleLog conf output = do
-  setLocaleEncoding utf8
-  T.putStrLn "hey"
+  liftIO $ setLocaleEncoding utf8
+  liftIO $ T.putStrLn "hey"
   level <- getLogLevel' conf
   liftIO $ modifyMVar_ (_cliConfig_lock conf) $ \wasOverwriting -> do
     let noColor = _cliConfig_noColor conf
