@@ -54,6 +54,8 @@ import qualified Obelisk.CliApp.TerminalString as TS
 import Obelisk.CliApp.Theme
 import Obelisk.CliApp.Types
 
+import GHC.IO.Encoding (setLocaleEncoding, utf8)
+
 newCliConfig
   :: Severity
   -> Bool
@@ -106,6 +108,8 @@ setLogLevel sev = do
 
 handleLog :: MonadIO m => CliConfig e -> Output -> m ()
 handleLog conf output = do
+  setLocaleEncoding utf8
+  T.putStrLn "hey"
   level <- getLogLevel' conf
   liftIO $ modifyMVar_ (_cliConfig_lock conf) $ \wasOverwriting -> do
     let noColor = _cliConfig_noColor conf
