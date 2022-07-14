@@ -106,7 +106,7 @@ setLogLevel sev = do
 
 handleLog :: MonadIO m => CliConfig e -> Output -> m ()
 handleLog conf output = do
-  print "HANDLE_LOG"
+  T.putStrLn "IN handleLog" 
   level <- getLogLevel' conf
   liftIO $ modifyMVar_ (_cliConfig_lock conf) $ \wasOverwriting -> do
     let noColor = _cliConfig_noColor conf
