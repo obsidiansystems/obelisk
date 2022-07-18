@@ -135,7 +135,7 @@ in rec {
       , internalPort ? 8000
       , backendArgs ? "--port=${toString internalPort}"
       , redirectHosts ? [] # Domains to redirect to routeHost; importantly, these domains will be added to the SSL certificate
-      , configHash ? ""
+      , configHash ? "" # The expected hash of the configuration directory tree.
       , ...
       }: {...}:
       assert lib.assertMsg (!(builtins.elem routeHost redirectHosts)) "routeHost may not be a member of redirectHosts";
@@ -169,14 +169,18 @@ in rec {
         after = [ "network.target" ];
         restartIfChanged = true;
         path = [ pkgs.gnutar ];
-        # Note that the echo here's value is that it causes a server restart
-        # anytime the configs have changed. see deployPush in Obelisk.Command.Deploy
+
+        # Even though echoing the hash is functionally useless at
+        # runtime, its inclusion in the service script means that Nix
+        # will automatically restart the server whenever the configHash
+        # argument is changed.
         script = ''
           echo "Expecting config hash to be ${configHash}, but not verifying this"
           ln -sft . '${exe}'/*
           mkdir -p log
           exec ./backend ${backendArgs} </dev/null
         '';
+
         serviceConfig = {
           User = user;
           KillMode = "process";
