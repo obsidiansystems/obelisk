@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 
 -- | An extension of `System.Process` that integrates with logging (`Obelisk.CLI.Logging`)
@@ -57,6 +58,7 @@ import qualified System.IO.Streams as Streams
 import System.IO.Streams.Concurrent (concurrentMerge)
 import System.Process (CreateProcess, ProcessHandle, StdStream (CreatePipe), std_err, std_out)
 import qualified System.Process as Process
+import System.Which (staticWhich)
 import Text.ShellEscape (bash, bytes)
 import qualified Data.Aeson as Aeson
 import Control.Monad.Log (Severity (..))
@@ -71,8 +73,17 @@ data ProcessSpec = ProcessSpec
 proc :: FilePath -> [String] -> ProcessSpec
 proc cmd args = ProcessSpec (Process.proc cmd args) Nothing
 
+-- | When we shell out, we want to know exactly which shell we're using.
+bashPath :: FilePath
+bashPath = $(staticWhich "bash")
+
+-- | We do not use Process.shell because it invokes "/bin/sh", which
+-- is a huge impurity for us. Unfortunately, we cannot guarantee that
+-- our dependent executables, such as ghcid, do the same.
+--
+-- Instead, we invoke `bash' specifically
 shell :: String -> ProcessSpec
-shell cmd = ProcessSpec (Process.shell cmd) Nothing
+shell cmd = ProcessSpec (Process.proc bashPath ["-c", cmd]) Nothing
 
 setEnvOverride :: (Map String String -> Map String String) -> ProcessSpec -> ProcessSpec
 setEnvOverride f p = p { _processSpec_overrideEnv = Just f }
