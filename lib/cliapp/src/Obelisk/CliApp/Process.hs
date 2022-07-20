@@ -77,7 +77,7 @@ proc cmd args = ProcessSpec (Process.proc cmd args) Nothing
 bashPath :: FilePath
 bashPath = $(staticWhich "bash")
 
--- | We do not use Process.shell because it invokes "/bin/sh", which
+-- | We do not use Process.shell because it invokes @/bin/sh@, which
 -- is a huge impurity for us. Unfortunately, we cannot guarantee that
 -- our dependent executables, such as ghcid, do the same.
 --
