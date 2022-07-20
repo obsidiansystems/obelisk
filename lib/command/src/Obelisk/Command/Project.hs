@@ -313,7 +313,7 @@ nixShellRunConfig root isPure command = do
       , [cs]
       ])
 
--- | Escape using ANSI C-style quotes $''
+-- | Escape using ANSI C-style quotes @$''@
 -- This does not work with all shells! Ideally, we would control exactly which shell is used,
 -- down to its sourced configuration, throughout the obelisk environment. At this time, this
 -- is not feasible.
@@ -323,7 +323,7 @@ bashEscape = BSU.toString . bytes . bash . BSU.fromString
 -- | Escape using Bourne style shell escaping
 -- This is not as robust, but is necessary if we are passing to a shell we don't control.
 -- The most prominent issue is that 'System.Process' executes shell commands by invoking
--- @/bin/sh@ instead of something configurable. While we can avoid this by specifying a shell manually,
+-- @\/bin\/sh@ instead of something configurable. While we can avoid this by specifying a shell manually,
 -- we cannot guarantee that our dependencies do the same. In particular, ghcid invokes its
 -- subcommands that way.
 shEscape :: String -> String

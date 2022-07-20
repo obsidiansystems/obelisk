@@ -568,7 +568,7 @@ runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
       , maybe [] (\cmd -> ["--test=" <> cmd]) mcmd
       -- N.B. the subcommand to ghcid has to be itself escaped.
       -- We have to use 'shEscape' instead of 'bashEscape' because
-      -- ghcid invokes System.Process with a shell command, which uses @/bin/sh@
+      -- ghcid invokes System.Process with a shell command, which uses @\/bin\/sh@
       -- instead of the @bash@ we have in scope.
       -- This is not guaranteed to be bash on non-NixOS systems.
       , ["--command=" <> unwords (fmap shEscape ("ghci" : ghciArgs))]
