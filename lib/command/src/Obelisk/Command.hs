@@ -9,7 +9,7 @@ module Obelisk.Command where
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Bool (bool)
 import Data.Foldable (for_)
-import Data.List (isInfixOf, isPrefixOf)
+import Data.List (isInfixOf, isPrefixOf, notElem)
 import Data.List.NonEmpty (NonEmpty, nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
@@ -21,7 +21,7 @@ import System.Directory
 import System.Environment
 import System.FilePath
 import qualified System.Info
-import System.IO (hIsTerminalDevice, stdout)
+import System.IO (hIsTerminalDevice, stdout, stderr, hGetEncoding, hSetEncoding, mkTextEncoding, textEncodingName)
 import System.Process (rawSystem)
 
 import Obelisk.App
@@ -351,11 +351,30 @@ runCommand f = flip runObelisk f =<< mkObeliskConfig
 main :: IO ()
 main = runCommand . main' =<< getArgsConfig
 
+-- | Change the character encoding of the given Handle to transliterate
+-- on unsupported characters, instead of throwing an exception.
+hSetTranslit :: Handle -> IO ()
+hSetTranslit h = do
+  menc <- hGetEncoding h
+  case fmap textEncodingName menc of
+    Just name | '/' `notElem` name -> do
+      enc' <- mkTextEncoding $ name ++ "//TRANSLIT"
+      hSetEncoding h enc'
+    _ -> return ()
+
 main' :: MonadObelisk m => ArgsConfig -> m ()
 main' argsCfg = do
   obPath <- liftIO getExecutablePath
   myArgs <- liftIO getArgs
   logLevel <- getLogLevel
+
+  -- NB: We set the standard output and standard error streams to
+  -- TransliterateCodingFailure so that, on encodings which do not
+  -- support our fancy characters, we print a replacement character
+  -- instead of exploding.
+  hSetTranslit stdout
+  hSetTranslit stderr
+
   putLog Debug $ T.pack $ unwords
     [ "Starting Obelisk <" <> obPath <> ">"
     , "args=" <> show myArgs
