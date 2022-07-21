@@ -21,7 +21,8 @@ import System.Directory
 import System.Environment
 import System.FilePath
 import qualified System.Info
-import System.IO (hIsTerminalDevice, stdout, stderr, hGetEncoding, hSetEncoding, mkTextEncoding, textEncodingName)
+import System.IO (hIsTerminalDevice, Handle, stdout, stderr, hGetEncoding, hSetEncoding, mkTextEncoding)
+import GHC.IO.Encoding.Types (textEncodingName)
 import System.Process (rawSystem)
 
 import Obelisk.App
@@ -372,8 +373,8 @@ main' argsCfg = do
   -- TransliterateCodingFailure so that, on encodings which do not
   -- support our fancy characters, we print a replacement character
   -- instead of exploding.
-  hSetTranslit stdout
-  hSetTranslit stderr
+  liftIO $ hSetTranslit stdout
+  liftIO $ hSetTranslit stderr
 
   putLog Debug $ T.pack $ unwords
     [ "Starting Obelisk <" <> obPath <> ">"
