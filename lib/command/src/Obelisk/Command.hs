@@ -353,7 +353,7 @@ main :: IO ()
 main = runCommand . main' =<< getArgsConfig
 
 -- | Change the character encoding of the given Handle to transliterate
--- on unsupported characters, instead of throwing an exception.
+-- unsupported characters, instead of throwing an exception.
 hSetTranslit :: Handle -> IO ()
 hSetTranslit h = do
   menc <- hGetEncoding h
