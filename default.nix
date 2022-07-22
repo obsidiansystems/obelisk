@@ -135,6 +135,9 @@ in rec {
       services.nginx = {
         enable = true;
         recommendedProxySettings = true;
+        # As recommended by mozilla https://ssl-config.mozilla.org/#server=nginx&version=1.17.7&config=intermediate&openssl=1.1.1d&guideline=5.6
+        # This is also the new default in more modern nixpkgs.
+        sslCiphers = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
         virtualHosts."${routeHost}" = {
           enableACME = enableHttps;
           forceSSL = enableHttps;
