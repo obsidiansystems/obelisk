@@ -79,13 +79,14 @@ import qualified System.Which
 
 run
   :: Int -- ^ Port to run the backend
+  -> Maybe Int
   -> Maybe FilePath -- ^ Optional directory in which to find "cert.pem", "chain.pem" and "privkey.pem" to be used for TLS.
                     -- If this is Nothing and TLS is enabled, we'll generate a self-signed cert.
   -> ([Text] -> Snap ()) -- ^ Static asset handler
   -> Backend backendRoute frontendRoute -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
-run port certDir serveStaticAsset backend frontend = do
+run port frontendPort certDir serveStaticAsset backend frontend = do
   prettifyOutput
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
@@ -105,7 +106,7 @@ run port certDir serveStaticAsset backend frontend = do
                     appRouteToUrl (k :/ v) = renderObeliskRoute validFullEncoder (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
                     allJsUrl = renderAllJsPath validFullEncoder
 
-      let conf = defRunConfig { _runConfig_redirectPort = port, _runConfig_certDir = certDir }
+      let conf = defRunConfig { _runConfig_redirectPort = port, _runConfig_certDir = certDir, _runConfig_portOverride = frontendPort }
       runWidget conf publicConfigs frontend validFullEncoder `finally` killThread backendTid
 
 -- Convenience wrapper to handle path segments for 'Snap.serveAsset'
@@ -130,11 +131,11 @@ runWidget
   -> IO ()
 runWidget conf configs frontend validFullEncoder = do
   uri <- either (fail . T.unpack) pure $ getConfigRoute configs
-  let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
+  let port = fromMaybe (fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just) (_runConfig_portOverride conf)
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
       beforeMainLoop = do
-        putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
+        putStrLn $ "Frontend running on " ++ T.unpack (URI.render (uri & uriAuthority . _Right . authPort .~ Just (fromInteger (fromIntegral port))))
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
       prepareRunner = case uri ^? uriScheme . _Just . unRText of
@@ -225,6 +226,7 @@ bindPortTCPRetry :: Settings
                  -> Int
                  -> IO Socket
 bindPortTCPRetry settings m n = catch (bindPortTCP (settingsPort settings) (settingsHost settings)) $ \(e :: IOError) -> do
+  print (settingsHost settings, settingsPort settings)
   m e
   threadDelay $ 1000000 * n
   bindPortTCPRetry settings (\_ -> pure ()) n
@@ -262,7 +264,7 @@ fallbackProxy host port = RP.waiProxyTo handleRequest RP.defaultOnExc
   where handleRequest _req = return $ RP.WPRProxyDest $ RP.ProxyDest host port
 
 data RunConfig = RunConfig
-  { _runConfig_port :: Int
+  { _runConfig_portOverride :: Maybe Int
   , _runConfig_redirectHost :: ByteString
   , _runConfig_redirectPort :: Int
   , _runConfig_retryTimeout :: Int -- seconds
@@ -271,7 +273,7 @@ data RunConfig = RunConfig
 
 defRunConfig :: RunConfig
 defRunConfig = RunConfig
-  { _runConfig_port = 8000
+  { _runConfig_portOverride = Nothing
   , _runConfig_redirectHost = "127.0.0.1"
   , _runConfig_redirectPort = 3001
   , _runConfig_retryTimeout = 1
