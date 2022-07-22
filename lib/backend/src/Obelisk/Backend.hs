@@ -58,12 +58,13 @@ import Data.GADT.Compare
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
+import Data.Some
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import Data.Universe
 import GHC.Generics (Generic)
-import Network.URI (URI)
+import Network.URI (URI, URIAuth)
 import Obelisk.Asset.Serve.Snap (serveAsset)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
@@ -76,13 +77,13 @@ import Snap (MonadSnap, Snap, Request, commandLineConfig, defaultConfig, getsReq
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
-data Backend route = Backend
-  --{ _backend_routeEncoder :: RouteConfig -> Encoder (Either Text) Identity (R route) DomainPageName
-  { _backend_routeEncoder :: forall b f. route (R (FullRoute b f)) -> Encoder (Either Text) Identity (R (FullRoute b f)) PageName
-  , _backend_obRunBaseRoute :: forall a. RouteConfig -> route a -> URI
-  , _backend_run :: ((forall b f. route (R (FullRoute b f)) -> R b -> Snap ()) -> IO ()) -> IO ()
-  , _backend_frontend :: forall b f. route (R (FullRoute b f)) -> Frontend (R f)
-  , _backend_frontendName :: forall a. route a -> String -- Name of the frontend library, for finding GHCJS assets
+data Backend domainRoute = Backend
+  --{ _backend_routeEncoder :: RouteConfig -> Encoder (Either Text) Identity (R domainRoute) DomainPageName
+  { _backend_routeEncoder :: forall b f. domainRoute (R (FullRoute b f)) -> Encoder (Either Text) Identity (R (FullRoute b f)) PageName
+  , _backend_obRunBaseRoute :: RouteConfig -> Encoder (Either Text) Identity (Some domainRoute) URI
+  , _backend_run :: ((forall b f. domainRoute (R (FullRoute b f)) -> R b -> Snap ()) -> IO ()) -> IO ()
+  , _backend_frontend :: forall b f. domainRoute (R (FullRoute b f)) -> Frontend (R f)
+  , _backend_frontendName :: forall a. domainRoute a -> String -- Name of the frontend library, for finding GHCJS assets
   }
 
 data BackendConfig = BackendConfig
@@ -336,18 +337,19 @@ runBackendWith
   -> IO ()
 runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend = do
   publicConfigs <- getPublicConfigs
+  let routeConfig = getCheckedRouteConfig publicConfigs
   case checkAllEncoders $ _backend_routeEncoder backend of
     Left e -> fail $ "backend error:\n" <> T.unpack e
-    Right (CheckedEncoders mkValidEncoder) -> do
-      let routeConfig = getCheckedRouteConfig publicConfigs
-          backwardsURI :: Map (Maybe Domain) (SomeDomain route)
-          backwardsURI = Map.fromList $ (\(SomeDomain route) -> (uriToDomain $ _backend_obRunBaseRoute backend routeConfig route, SomeDomain route)) <$> universe
-          parseDomain :: Domain -> SomeDomain route
-          parseDomain d = case Map.lookup (Just d) backwardsURI of
-              Nothing -> error $ "parseDomain: couln't find URI: " <> show d
-              Just someDomain -> someDomain
-      _backend_run backend $ \serveRoute -> do
-        runSnap $
+    Right (CheckedEncoders mkValidEncoder) -> case checkEncoder $ _backend_obRunBaseRoute backend routeConfig of
+      Left e -> fail $ "fail to check domain encoder:\n" <> T.unpack e
+      Right domainEncoder -> do
+        let backwardsURI :: Map (Maybe Domain) (SomeDomain route)
+            backwardsURI = Map.fromList $ (\(SomeDomain route) -> (uriToDomain $ encode domainEncoder route, SomeDomain route)) <$> universe
+            parseDomain :: Domain -> SomeDomain route
+            parseDomain d = case Map.lookup (Just d) backwardsURI of
+                Nothing -> error $ "parseDomain: couln't find URI: " <> show d
+                Just someDomain -> someDomain
+        _backend_run backend $ \serveRoute -> runSnap $
           getRouteWith parseDomain mkValidEncoder $ \domainPart -> \case
             Identity (r :: R (FullRoute b f)) -> case r of
               FullRoute_Backend backendRoute :/ a -> do
