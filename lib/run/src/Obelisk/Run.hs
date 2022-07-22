@@ -226,7 +226,6 @@ bindPortTCPRetry :: Settings
                  -> Int
                  -> IO Socket
 bindPortTCPRetry settings m n = catch (bindPortTCP (settingsPort settings) (settingsHost settings)) $ \(e :: IOError) -> do
-  print (settingsHost settings, settingsPort settings)
   m e
   threadDelay $ 1000000 * n
   bindPortTCPRetry settings (\_ -> pure ()) n
