@@ -200,13 +200,14 @@ run certDir portOverride root interpretPaths = do
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
-      [ "Obelisk.Run.run"
-      , show freePort
-      , "(" ++ show portOverride ++ ")"
-      , "(" ++ show certDir ++ ")"
-      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      [ "Obelisk.Run.run (defaultRunApp"
       , "Backend.backend"
       , "Frontend.frontend"
+      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      , ") { _runApp_backendPort =", show freePort
+      , ", _runApp_forceFrontendPort =", show portOverride
+      , ", _runApp_tlsCertDirectory =", show certDir
+      , "}"
       ]
 
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
