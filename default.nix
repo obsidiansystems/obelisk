@@ -386,7 +386,7 @@ in rec {
           main :: IO ()
           main = do
             [portStr, assets, profFileName] <- getArgs
-            Obelisk.Run.run (read portStr) Nothing (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend
+            Obelisk.Run.run (read portStr) Nothing Nothing (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend
               `finally` writeProfilingData (profFileName ++ ".rprof")
         '';
       in nixpkgs.runCommand "ob-run" {
