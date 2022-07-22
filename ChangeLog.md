@@ -7,12 +7,17 @@ This project's release branch is `master`. This log is written from the perspect
 * Documentation
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing obelisk branches to CONTRIBUTING.md
   * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to Obelisk.Command.Deploy
+  * [#931](https://github.com/obsidiansystems/obelisk/pull/931): For `ob deploy init`, command-line option `--check-known-host` corrected in readme, caveat added for multiple matching host-keypairs.
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
 * CLI
   * [#784](https://github.com/obsidiansystems/obelisk/pull/784): hint for users to take advantage of ob shell --no-interpret option for thunks
   * [#916](https://github.com/obsidiansystems/obelisk/pull/916): Add `check-known-hosts` option in `ob deploy init`.
   * [#870](https://github.com/obsidiansystems/obelisk/pull/870): Host redirection added to `ob deploy`. Readme updated with tutorial for new functionality.
+  * [#931](https://github.com/obsidiansystems/obelisk/pull/931): Fix bug in `ob deploy init` where `ssh-keygen` was not found in nix store.
+  * [#934](https://github.com/obsidiansystems/obelisk/pull/934)[#936](https://github.com/obsidiansystems/obelisk/pull/936): obelisk now always uses absolute paths when generating `.ghci` files for REPL and IDE support. This is a **BREAKING** change for some old tools that could not handle absolute paths properly. However, due to the behavior of cross-volume relative paths on certain platforms, such as modern MacOS, we cannot guarantee proper operation of obelisk with relative paths.
+  * [#948](https://github.com/obsidiansystems/obelisk/pull/948): obelisk now always invokes bash instead of the system-wide shell when it can. Some sub-programs, like ghcid, will still use the system-wide shell, which can cause subtle problems due to impurities.
+  * [#949](https://github.com/obsidiansystems/obelisk/pull/949): obelisk now configures its output and error streams to transliterate unsupported to a known-good replacement character.
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
@@ -22,6 +27,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Static Assets
   * [#922](https://github.com/obsidiansystems/obelisk/pull/922): Serve .wasm files with the correct MIME type
   * [#930](https://github.com/obsidiansystems/obelisk/pull/930): Add an error to ob run when `static` is called with a path to a file that doesn't exist
+  * [#940](https://github.com/obsidiansystems/obelisk/pull/940): Instant, auto update to new configs on ob deploy push
 
 ## v1.0.0.0 - 2022-01-04
 

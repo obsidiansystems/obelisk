@@ -174,8 +174,16 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
     ] <> rtsFlags
       <> [ "-RTS" ]
 
-run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
-run root interpretPaths = do
+run
+  :: MonadObelisk m
+  => Maybe FilePath
+  -- ^ Certificate Directory path (optional)
+  -> FilePath
+  -- ^ root folder
+  -> PathTree Interpret
+  -- ^ interpreted paths
+  -> m ()
+run certDir root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -186,12 +194,13 @@ run root interpretPaths = do
       putLog Debug "Starting static file derivation watcher..."
       void $ liftIO $ forkIO $ runObelisk ob $ watchStaticFilesDerivation root
     _ -> pure ()
-  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root True
+  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
+      , "(" ++ show certDir ++ ")"
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
       , "Backend.backend"
       ]
@@ -199,21 +208,21 @@ run root interpretPaths = do
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runRepl root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs "." True
+  ghciArgs <- getGhciSessionSettings pkgs root
   withGhciScriptArgs pkgs $ \dotGhciArgs ->
     runGhciRepl root pkgs (ghciArgs <> dotGhciArgs)
 
 runWatch :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runWatch root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs root True
+  ghciArgs <- getGhciSessionSettings pkgs root
   withGhciScriptArgs pkgs $ \dotGhciArgs ->
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs Nothing
 
-exportGhciConfig :: MonadObelisk m => Bool -> FilePath -> PathTree Interpret -> m [String]
-exportGhciConfig useRelativePaths root interpretPaths = do
+exportGhciConfig :: MonadObelisk m => FilePath -> PathTree Interpret -> m [String]
+exportGhciConfig root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  getGhciSessionSettings pkgs "." useRelativePaths
+  getGhciSessionSettings pkgs root
 
 nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
 nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
@@ -469,36 +478,30 @@ getGhciSessionSettings
   :: (MonadObelisk m, Foldable f)
   => f CabalPackageInfo -- ^ List of packages to load into ghci
   -> FilePath -- ^ All paths will be relative to this path
-  -> Bool -- ^ Use relative paths
   -> m [String]
-getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
-  -- N.B. ghci settings do NOT support escaping in any way. To minimize the likelihood that
-  -- paths-with-spaces ruin our day, we first canonicalize everything, and then relativize
-  -- all paths to 'pathBase'.
+getGhciSessionSettings (toList -> packageInfos) pathBase = do
   selfExe <- liftIO $ canonicalizePath =<< getExecutablePath
-  canonicalPathBase <- liftIO $ canonicalizePath pathBase
   installedPackageIndex <- loadPackageIndex packageInfos pathBase
 
   (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
     canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
     canonicalPkgFile <- canonicalizePath $ _cabalPackageInfo_packageFile pkg
-    pure (canonicalPkgFile `relativeTo'` canonicalPathBase, (`relativeTo'` canonicalPathBase) <$> canonicalSrcDirs)
+    pure (canonicalPkgFile, canonicalSrcDirs)
 
   pure
     $  baseGhciOptions
     <> ["-DOBELISK_ASSET_PASSTHRU"] -- For passthrough static assets
     <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
     <> concatMap (\p -> ["-optF", p]) pkgFiles
-    <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]
+    <> ["-i" <> intercalate ":" (concatMap toList pkgSrcPaths)]
     <> concatMap (\packageId -> ["-package-id", packageId ])
                  (packageIds installedPackageIndex)
   where
-    relativeTo' = if useRelativePaths then relativeTo else const
     -- Package names we're building and not needed from the package DB
     packageNames =
       map (mkPackageName . T.unpack . _cabalPackageInfo_packageName)
           packageInfos
-    packageIds installedPackageIndex =
+    packageIds installedPackageIndex = Set.toList $ Set.fromList $
       map (dependencyPackageId installedPackageIndex) $
           filter ((`notElem` packageNames) . depPkgName) $
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
@@ -540,7 +543,7 @@ runGhciRepl
 runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
-  nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
+  nixShellWithoutPkgs root True True (packageInfoToNamePathMap packages) "ghc" $
     Just $ unwords $ fmap bashEscape $ "ghci" : ghciArgs
 
 -- | Run ghcid
@@ -562,7 +565,12 @@ runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
       , map (\x -> "--reload=" <> x) reloadFiles
       , map (\x -> "--restart=" <> x) restartFiles
       , maybe [] (\cmd -> ["--test=" <> cmd]) mcmd
-      , ["--command=" <> unwords ("ghci" : ghciArgs)]
+      -- N.B. the subcommand to ghcid has to be itself escaped.
+      -- We have to use 'shEscape' instead of 'bashEscape' because
+      -- ghcid invokes System.Process with a shell command, which uses @\/bin\/sh@
+      -- instead of the @bash@ we have in scope.
+      -- This is not guaranteed to be bash on non-NixOS systems.
+      , ["--command=" <> unwords (fmap shEscape ("ghci" : ghciArgs))]
       ]
     adjustRoot x = if chdirToRoot then makeRelative root x else x
     reloadFiles = map adjustRoot [root </> "config"]

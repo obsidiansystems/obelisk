@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -35,6 +36,7 @@ import System.Directory
 import System.Exit (ExitCode(ExitSuccess))
 import System.FilePath
 import System.IO
+import System.Which
 import System.PosixCompat.Files
 import Text.URI (URI)
 import qualified Text.URI as URI
@@ -180,6 +182,8 @@ deployPush deployPath builders = do
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile
+
+  configHash <- getGitHash deployPath "config"
   buildOutputByHost <- ifor (Map.fromSet (const ()) hosts) $ \host () -> do
     --TODO: What does it mean if this returns more or less than 1 line of output?
     [result] <- fmap lines $ nixCmd $ NixCmd_Build $ def
@@ -196,6 +200,7 @@ deployPush deployPath builders = do
         , rawArg "redirectHosts" $ renderString $ layoutCompact $ prettyNix $ Nix.mkList $ Nix.mkStr . T.pack <$> Set.toList redirectHosts
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
+        , strArg "configHash" $ T.unpack $ T.strip (_gitHash_text configHash)
         ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
     pure result
@@ -394,7 +399,7 @@ lookupKnownHosts :: MonadObelisk m
                  -> m [BS.ByteString]
                  -- ^ obtained hosts
 lookupKnownHosts hostName =
-  fmap filterComments $ readCreateProcessWithExitCode $ proc "ssh-keygen" ["-F", hostName]
+  fmap filterComments $ readCreateProcessWithExitCode $ proc $(staticWhichNix "ssh-keygen") ["-F", hostName]
    where
      filterComments (exitCode, out, _) =
        if exitCode /= ExitSuccess || null out
