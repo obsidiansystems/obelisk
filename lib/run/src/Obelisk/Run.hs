@@ -22,7 +22,7 @@ import Prelude hiding ((.), id)
 import Control.Category
 import Control.Concurrent
 import Control.Exception
-import Control.Lens ((%~), (^?), _Just, _Right)
+import Control.Lens ((%~), (^?), (?~), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -135,7 +135,7 @@ runWidget conf configs frontend validFullEncoder = do
       redirectHost = _runConfig_redirectHost conf
       redirectPort = _runConfig_redirectPort conf
       beforeMainLoop = do
-        putStrLn $ "Frontend running on " ++ T.unpack (URI.render (uri & uriAuthority . _Right . authPort .~ Just (fromInteger (fromIntegral port))))
+        putStrLn $ "Frontend running on " ++ T.unpack (URI.render (uri & uriAuthority . _Right . authPort ?~ (fromInteger (fromIntegral port))))
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
       prepareRunner = case uri ^? uriScheme . _Just . unRText of
