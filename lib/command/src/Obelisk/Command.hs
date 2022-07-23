@@ -114,7 +114,7 @@ obCommand cfg = hsubparser
       (   ObCommand_Run
       <$> interpretOpts
       <*> certDirOpts
-      <*> (Just <$> option auto (long "port" <> short 'p' <> help "Port number for server" <> metavar "INT") <|> pure Nothing))
+      <*> (Just <$> option auto (long "port" <> short 'p' <> help "Port number for server; overrides common/config/route" <> metavar "INT") <|> pure Nothing))
       $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
