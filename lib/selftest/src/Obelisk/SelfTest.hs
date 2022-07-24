@@ -210,6 +210,14 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
     it "complains when static files are missing in root directory" $ inTmpObInit $ const $ testObRunInDirWithMissingStaticFile' Nothing
     it "complains when static files are missing in sub directory" $ inTmpObInit $ const $ testObRunInDirWithMissingStaticFile' (Just "frontend")
 
+    it "respects the port given on the command line" $ inTmpObInit $ \testDir -> do
+      [port] <- liftIO $ getFreePorts 1
+      maskExitSuccess $ runHandles ob ["run", "-p", T.pack (show port)] [] $ \_stdin stdout stderr -> do
+        uri <- handleObRunStdout httpManager stdout stderr
+        unless (T.pack (show port ++ "/") `T.isSuffixOf` T.strip uri) $
+          error $ "Expected the URI to end in " ++ show port ++ " but it ended in " ++ T.unpack uri
+        exit 0
+
   describe "ob repl" $ do
     it "accepts stdin commands" $ inTmpObInit $ \_ -> do
       setStdin "print 3\n:q"

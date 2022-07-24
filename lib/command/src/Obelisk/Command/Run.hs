@@ -178,12 +178,14 @@ run
   :: MonadObelisk m
   => Maybe FilePath
   -- ^ Certificate Directory path (optional)
+  -> Maybe Socket.PortNumber
+  -- ^ override the route's port number?
   -> FilePath
   -- ^ root folder
   -> PathTree Interpret
   -- ^ interpreted paths
   -> m ()
-run certDir root interpretPaths = do
+run certDir portOverride root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -198,12 +200,14 @@ run certDir root interpretPaths = do
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
-      [ "Obelisk.Run.run"
-      , show freePort
-      , "(" ++ show certDir ++ ")"
-      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
       , "Backend.backend"
       , "Frontend.frontend"
+      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      , ") { Obelisk.Run._runApp_backendPort =", show freePort
+      ,   ", Obelisk.Run._runApp_forceFrontendPort =", show portOverride
+      ,   ", Obelisk.Run._runApp_tlsCertDirectory =", show certDir
+      , "}"
       ]
 
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
