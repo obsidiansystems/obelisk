@@ -38,8 +38,8 @@ in
   unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
   shelly = self.callHackage "shelly" "1.9.0" {};
   monad-logger = self.callHackage "monad-logger" "0.3.36" {};
-  nix-thunk = self.callHackage "nix-thunk" "0.3.0.0" {};
+  nix-thunk = self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) {};
   cli-extras = self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) {};
-  cli-git = self.callHackage "cli-git" "0.1.0.2" {};
-  cli-nix = self.callHackage "cli-nix" "0.1.0.1" {};
+  cli-git = self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) {};
+  cli-nix = self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) {};
 }

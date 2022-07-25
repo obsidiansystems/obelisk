@@ -8,6 +8,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE PackageImports #-}
 module Obelisk.App where
 
 import Control.Lens
@@ -16,11 +17,12 @@ import Control.Monad.Fail (MonadFail)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Writer (WriterT)
 import Control.Monad.State (StateT)
-import Control.Monad.Except (ExceptT, MonadError)
+import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError)
 import Control.Monad.Trans.Class (MonadTrans, lift)
 import Data.Text (Text)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 import Control.Monad.Log (MonadLog)
+import "nix-thunk" Nix.Thunk (NixThunkError)
 
 import Cli.Extras
   ( CliConfig
@@ -40,6 +42,7 @@ data ObeliskError
     { obeliskError_err :: ProcessFailure
     , obeliskError_mAnn :: Maybe Text
     }
+  | ObeliskError_NixThunkError NixThunkError
   | ObeliskError_Unstructured Text
 
 makePrisms ''ObeliskError
@@ -65,7 +68,7 @@ newtype ObeliskT m a = ObeliskT
     ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadFail
     , MonadLog Output -- CliLog
     , MonadError ObeliskError -- CliThrow ObeliskError
-    , HasCliConfig ObeliskError
+    , HasCliConfig
     )
 
 instance MonadTrans ObeliskT where
@@ -95,9 +98,17 @@ runObelisk c =
   . flip runReaderT c
   . unObeliskT
 
+-- | Wrap an action which may throw 'NixThunkError' (e.g.
+-- 'nixBuildAttrWithCache') in a 'MonadError' which supports throwing
+-- 'ObeliskError'.
+wrapNixThunkError :: (MonadError ObeliskError m, Monad m) => ExceptT NixThunkError m a -> m a
+wrapNixThunkError k = runExceptT k >>= \case
+  Left x -> throwError (ObeliskError_NixThunkError x)
+  Right x -> pure x
+
 type MonadInfallibleObelisk m =
   ( CliLog m
-  , HasCliConfig ObeliskError m
+  , HasCliConfig m
   , HasObelisk m
   , MonadIO m
   , MonadMask m
