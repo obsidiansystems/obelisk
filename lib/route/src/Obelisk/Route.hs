@@ -630,6 +630,13 @@ newtype RouteConfig = RouteConfig ByteString
 -- This is 'Some' but it proves the index is (R FullRoute)
 data SomeDomain d = forall b f. SomeDomain (d (R (FullRoute b f)))
 
+instance GEq d => Eq (SomeDomain d) where
+  SomeDomain a == SomeDomain b = Some a == Some b
+instance GCompare d => Ord (SomeDomain d) where
+  SomeDomain a `compare` SomeDomain b = Some a `compare` Some b
+instance GShow d => Show (SomeDomain d) where
+  show (SomeDomain d) = show (Some d)
+
 --domainEncoder
 --  :: forall check p.
 --     ( Universe (Some p), GCompare p, GShow p

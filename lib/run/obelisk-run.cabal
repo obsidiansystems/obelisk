@@ -27,7 +27,6 @@ library
     , modern-uri
     , mtl
     , network
-    , network-uri
     , obelisk-asset-serve-snap
     , obelisk-backend
     , obelisk-executable-config-lookup

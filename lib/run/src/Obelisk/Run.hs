@@ -52,7 +52,6 @@ import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
 import qualified Network.HTTP.ReverseProxy as RP
 import qualified Network.HTTP.Types as H
 import Network.Socket
-import qualified Network.URI as NetworkURI
 import Network.Wai (Application)
 import qualified Network.Wai as W
 import Network.Wai.Handler.Warp
@@ -95,22 +94,21 @@ run
 run port certDir serveStaticAsset backend = do
   prettifyOutput
   publicConfigs <- getPublicConfigs
-  let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
+  let routeConfig = getCheckedRouteConfig publicConfigs
+      handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
   case checkAllEncoders $ _backend_routeEncoder backend of
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
-    Right (CheckedEncoders mkValidEncoder) -> do
-      let routeConfig = getCheckedRouteConfig publicConfigs
-          backwardsURI :: Map (Maybe Domain) (SomeDomain route)
-          backwardsURI = Map.fromList $ (\(SomeDomain route) -> (uriToDomain $ _backend_obRunBaseRoute backend routeConfig route, SomeDomain route)) <$> universe
-          parseDomain :: Domain -> SomeDomain route
-          parseDomain d = case Map.lookup (Just d) backwardsURI of
-              Nothing -> error $ "parseDomain: couln't find URI: " <> show d
-              Just someDomain -> someDomain
-      backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $
-        _backend_run backend $ \(serveRoute :: forall b f. route (R (FullRoute b f)) -> R b -> Snap ()) ->
-          runSnapWithCommandLineArgs $
-            getRouteWith parseDomain mkValidEncoder $ \domainPart -> \case
+    Right (CheckedEncoders mkValidEncoder) -> case checkEncoder $ _backend_domainEncoder backend routeConfig of
+      Left e -> hPutStrLn stderr $ "fail to check domain encoder:\n" <> T.unpack e
+      Right domainEncoder -> do
+        let parseDomain :: Domain -> SomeDomain route
+            parseDomain (Domain d) = case URI.mkURI d of
+              Nothing -> error $ "parseDomain: invalid URI: " <> T.unpack d
+              Just uri -> decode domainEncoder uri
+        backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $
+          _backend_run backend $ \(serveRoute :: forall b f. route (R (FullRoute b f)) -> R b -> Snap ()) ->
+            runSnapWithCommandLineArgs $ getRouteWith parseDomain mkValidEncoder $ \domainPart -> \case
               Identity (r :: R (FullRoute b f)) -> case r of
                 FullRoute_Backend backendRoute :/ a -> do
                   liftIO $ putStrLn $ "backendRoute"
@@ -127,8 +125,8 @@ run port certDir serveStaticAsset backend = do
                   where
                     appRouteToUrl (k :/ v) = renderObeliskRoute (mkValidEncoder domainPart) (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
                     allJsUrl = renderAllJsPath (mkValidEncoder domainPart)
-      let conf = defRunConfig { _runConfig_redirectPort = port, _runConfig_certDir = certDir }
-      runWidget conf publicConfigs backend mkValidEncoder `finally` killThread backendTid
+        let conf = defRunConfig { _runConfig_redirectPort = port, _runConfig_certDir = certDir }
+        runWidget conf publicConfigs backend mkValidEncoder domainEncoder `finally` killThread backendTid
 
 --run
 --  :: forall route. (Has C route, GEq route, Universe (SomeDomain route))
@@ -195,15 +193,14 @@ runWidget
   -> Backend route
   -- -> Encoder Identity Identity (R route) DomainPageName
   -> (forall b f. route (R (FullRoute b f)) -> Encoder Identity Identity (R (FullRoute b f)) PageName)
+  -> Encoder Identity Identity (SomeDomain route) URI
   -> IO ()
-runWidget conf configs backend mkValidFullEncoder = do
-  let routeConfig = getCheckedRouteConfig configs
+runWidget conf configs backend mkValidFullEncoder domainEncoder = do
   threads <- for universe $ \(SomeDomain baseRoute :: SomeDomain route) -> async $ do
     --let thisEncoder = reverseEncoder validFullEncoder baseRoute
     let thisEncoder = mkValidFullEncoder baseRoute
-    let uri' = _backend_obRunBaseRoute backend routeConfig baseRoute
-    uri <- either (fail . show) pure $ URI.mkURI $ T.pack $ NetworkURI.uriToString id uri' ""
-    let port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
+        uri = encode domainEncoder (SomeDomain baseRoute)
+        port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
         redirectHost = _runConfig_redirectHost conf
         redirectPort = _runConfig_redirectPort conf
         beforeMainLoop = do

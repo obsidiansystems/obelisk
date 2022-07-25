@@ -14,7 +14,7 @@ backend = Backend
     DomainRoute_A -> \r -> liftIO $ print r
     DomainRoute_B -> \r -> liftIO $ print r
   , _backend_routeEncoder = myMkFullRouteEncoder
-  , _backend_obRunBaseRoute = baseRoute
+  , _backend_domainEncoder = baseRoute
   , _backend_frontend = \case
     DomainRoute_A -> frontendA
     DomainRoute_B -> frontendB

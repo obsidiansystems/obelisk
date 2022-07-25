@@ -22,7 +22,7 @@ import Data.Text (Text)
 import Data.Universe
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import qualified Network.URI as URI
+import qualified Text.URI as URI
 
 import Obelisk.Route
 import Obelisk.Route.TH
@@ -65,10 +65,10 @@ myMkFullRouteEncoder = \case
 -- ob run needs something like: DomainRoute -> http/https
 -- backend routing needs: hostName/port -> DomainRoute
 -- ob run also needs: [port] OR DomainRoute -> port with universe of DomainRoute
-baseRoute :: RouteConfig -> DomainRoute a -> URI.URI
-baseRoute (RouteConfig rawRouteConfig) = \case
-  DomainRoute_A -> fromMaybe (error "route A is bad") $ URI.parseURI $ T.unpack $ routeConfig !! 0
-  DomainRoute_B -> fromMaybe (error "route B is bad") $ URI.parseURI $ T.unpack $ routeConfig !! 1
+baseRoute :: MonadError Text check => RouteConfig -> Encoder check Identity (SomeDomain DomainRoute) URI.URI
+baseRoute (RouteConfig rawRouteConfig) = handleEncoder (const $ SomeDomain DomainRoute_A) $ enumEncoder $ \(SomeDomain d) -> case d of
+  DomainRoute_A -> fromMaybe (error "route A is bad") $ URI.mkURI $ routeConfig !! 0
+  DomainRoute_B -> fromMaybe (error "route B is bad") $ URI.mkURI $ routeConfig !! 1
   where
     routeConfig = T.lines $ T.decodeUtf8 rawRouteConfig
 
