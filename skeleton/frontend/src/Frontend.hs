@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -44,9 +45,13 @@ frontend = Frontend
 
       elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
       el "div" $ do
-        exampleConfig <- getConfig "common/example"
-        case exampleConfig of
-          Nothing -> text "No config file found in config/common/example"
-          Just s -> text $ T.decodeUtf8 s
+        let
+          cfg = "common/example"
+          path = "config/" <> cfg
+        getConfig cfg >>= \case
+          Nothing -> text $ "No config file found in " <> path
+          Just bytes -> case T.decodeUtf8' bytes of
+            Left ue -> text $ "Couldn't decode " <> path <> " : " <> T.pack (show ue)
+            Right s -> text s
       return ()
   }

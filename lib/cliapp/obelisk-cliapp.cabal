@@ -26,6 +26,7 @@ library
     , time
     , transformers
     , utf8-string
+    , which
   exposed-modules:
     Obelisk.CliApp
   other-modules:

@@ -259,6 +259,24 @@ toGitRef = \case
     | Just s <- "refs/tags/" `T.stripPrefix` r -> GitRef_Tag s
     | otherwise -> GitRef_Other r
 
+
+-- | A Git hash. Can represent a specific commit, or a file within a
+-- commit.
+newtype GitHash = GitHash { _gitHash_text :: T.Text }
+
+-- | Ask @git@ for the hash of a specific tree (file, directory) within
+-- the given repository. The hash of the given path is always computed
+-- with respect to the @HEAD@ revision.
+getGitHash
+  :: MonadObelisk m
+  => FilePath -- ^ The repository to call @git@ in
+  -> FilePath -- ^ The tree to hash
+  -> m GitHash
+getGitHash repo pathWithinRepo = do
+  let git = readProcessAndLogOutput (Debug, Debug) . gitProc repo
+  GitHash <$> git ["rev-parse", "HEAD:" <> pathWithinRepo]
+
+
 type CommitId = Text
 
 type GitLsRemoteMaps = (Map GitRef GitRef, Map GitRef CommitId)
