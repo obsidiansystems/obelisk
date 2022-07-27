@@ -7,7 +7,7 @@
     security.acme.acceptTerms = false;
   }
 , reflex-platform-func ? import ./dep/reflex-platform
-, __useNewerCompiler ? false #true if one wants to use ghc 8.10.7
+, useGHC810 ? false #true if one wants to use ghc 8.10.7
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -22,14 +22,14 @@ let
     # disabled until packages are updated to support it
     useTextJSString = true;
 
-    __useNewerCompiler = __useNewerCompiler;
-    
+    __useNewerCompiler = useGHC810;
+
     nixpkgsOverlays = [
       (import ./nixpkgs-overlays)
     ];
 
     haskellOverlays = [
-      (import ./haskell-overlays/misc-deps.nix { hackGet = hackGet; __useNewerCompiler = __useNewerCompiler; })
+      (import ./haskell-overlays/misc-deps.nix { hackGet = hackGet; __useNewerCompiler = useGHC810; })
       pkgs.obeliskExecutableConfig.haskellOverlay
       (import ./haskell-overlays/obelisk.nix)
       (import ./haskell-overlays/tighten-ob-exes.nix)
