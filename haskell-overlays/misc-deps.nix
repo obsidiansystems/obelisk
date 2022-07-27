@@ -39,9 +39,5 @@ in
   # Exports more internals
   snap-core = haskellLib.dontCheck (self.callCabal2nix "snap-core" (hackGet ../dep/snap-core) {});
 
-  logging-effect = haskellLib.doJailbreak (self.callHackage "logging-effect" "1.3.10" {});
-  # unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
-  # shelly = self.callHackage "shelly" "1.9.0" {};
-  # monad-logger = self.callHackage "monad-logger" "0.3.36" {};
   hpack = self.callHackage "hpack" "0.34.1" {};
 }

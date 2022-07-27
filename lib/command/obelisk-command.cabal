@@ -24,7 +24,6 @@ library
     , git
     , github
     , here
-    , hnix
     , hpack
     , io-streams
     , lens
