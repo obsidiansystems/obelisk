@@ -39,4 +39,5 @@ library
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend
+                   Obelisk.Route.Frontend.RouteLink
   ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
