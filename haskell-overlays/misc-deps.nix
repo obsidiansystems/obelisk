@@ -13,7 +13,7 @@ in
   git = haskellLib.markUnbroken super.git;
 
   # hpack requires cabal >= 3.0 but the ghc865 package set builds it with 2.4 by default
-  hpack = super.hpack.overrideScope (self: super: { Cabal = self.Cabal_3_2_0_0; });
+  hpack = super.hpack.overrideScope (self: super: { Cabal = self.Cabal_3_2_1_0; });
 
   # These versions work with both the ghc865 and ghc8107 package sets
   universe = self.callHackage "universe" "1.2" {};
@@ -38,4 +38,13 @@ in
   unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
   shelly = self.callHackage "shelly" "1.9.0" {};
   monad-logger = self.callHackage "monad-logger" "0.3.36" {};
+
+  vector-binary-instances = haskellLib.overrideCabal super.vector-binary-instances (old: {
+    preConfigure = ''
+      ${pkgs.gnused}/bin/sed -i "s/Cabal-version:\s*3.0/Cabal-version: 2.0/g" *.cabal
+    '';
+  });
+
+  modern-uri = haskellLib.doJailbreak super.modern-uri;
+  neat-interpolation = self.callHackage "neat-interpolation" "0.5.1" {};
 }
