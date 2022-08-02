@@ -224,10 +224,8 @@ deployPush deployPath builders = do
       proc sshPath $ sshOpts <>
         [ "root@" <> host
         , unwords
-            -- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
-            [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
-            , "&&"
-            , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+            [ "bash -c"
+            , bashEscape (deployActivationScript outputPath)
             ]
         ]
   isClean <- checkGitCleanStatus deployPath True
@@ -242,6 +240,27 @@ deployPush deployPath builders = do
     callProcess' envMap cmd args = do
       let p = setEnvOverride (envMap <>) $ setDelegateCtlc True $ proc cmd args
       callProcessAndLogOutput (Notice, Notice) p
+
+-- | Bash command that will be run on the deployed machine to actually switch the NixOS configuration
+-- This has some more involved logic than merely activating the right profile. It also determines
+-- whether the kernel parameters have changed so that the deployed NixOS instance should be restarted.
+deployActivationScript
+  :: String
+  -- ^ The out path of the configuration to activate
+  -> String
+deployActivationScript outPath =
+-- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
+  [i|set -euxo pipefail
+nix-env -p /nix/var/nix/profiles/system --set "${outPath}"
+/nix/var/nix/profiles/system/bin/switch-to-configuration boot
+booted="$(readlink /run/booted-system/{initrd,kernel,kernel-modules})"
+built="$(readlink /nix/var/nix/profiles/system/{initrd,kernel,kernel-modules})"
+if [ "$booted" = "$built" ]; then
+  /nix/var/nix/profiles/system/bin/switch-to-configuration switch
+else
+  /run/current-system/sw/bin/shutdown -r +1
+fi
+|]
 
 -- | Update the source thunk in the staging directory to the HEAD of the branch.
 deployUpdate :: MonadObelisk m => FilePath -> m ()
