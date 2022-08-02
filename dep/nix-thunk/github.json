@@ -1,0 +1,8 @@
+{
+  "owner": "obsidiansystems",
+  "repo": "nix-thunk",
+  "branch": "aliao/hotfix-v6-spec-tarball",
+  "private": false,
+  "rev": "b37af06d902adb91c8774b31a514af4d9d78312b",
+  "sha256": "01qhhbr04ial8lrcrbdg719kxcjmpp1jjlws5jc7ljcdkdx6mglr"
+}
