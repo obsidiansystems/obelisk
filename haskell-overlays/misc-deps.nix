@@ -38,7 +38,11 @@ in
   unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
   shelly = self.callHackage "shelly" "1.9.0" {};
   monad-logger = self.callHackage "monad-logger" "0.3.36" {};
-  nix-thunk = haskellLib.doJailbreak (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) {});
+  nix-thunk = haskellLib.overrideCabal (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) {}) {
+    librarySystemDepends = with pkgs; [
+      nix-prefetch-url
+    ];
+  };
   cli-extras = self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) {};
   cli-git = haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) {}) {
     librarySystemDepends = with pkgs; [
