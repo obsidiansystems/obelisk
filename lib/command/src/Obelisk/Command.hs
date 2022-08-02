@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE PackageImports #-}
 module Obelisk.Command where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -20,6 +21,7 @@ import Options.Applicative.Help.Pretty (text, (<$$>))
 import System.Directory
 import System.Environment
 import System.FilePath
+import System.Exit
 import qualified System.Info
 import System.IO (hIsTerminalDevice, Handle, stdout, stderr, hGetEncoding, hSetEncoding, mkTextEncoding)
 import GHC.IO.Encoding.Types (textEncodingName)
@@ -27,13 +29,13 @@ import System.Process (rawSystem)
 import Network.Socket (PortNumber)
 
 import Obelisk.App
-import Obelisk.CliApp
 import Obelisk.Command.Deploy
 import Obelisk.Command.Project
 import Obelisk.Command.Run
-import Obelisk.Command.Thunk
 import qualified Obelisk.Command.VmBuilder as VmBuilder
 import qualified Obelisk.Command.Preprocessor as Preprocessor
+import "nix-thunk" Nix.Thunk
+import Cli.Extras
 
 
 data Args = Args
@@ -328,9 +330,10 @@ mkObeliskConfig = do
     ObeliskError_ProcessError (ProcessFailure p code) ann ->
       ( "Process exited with code " <> T.pack (show code) <> "; " <> reconstructCommand p
         <> maybe "" ("\n" <>) ann
-      , 2
+      , ExitFailure 2
       )
-    ObeliskError_Unstructured msg -> (msg, 2)
+    ObeliskError_NixThunkError e -> (prettyNixThunkError e, ExitFailure 2)
+    ObeliskError_Unstructured msg -> (msg, ExitFailure 2)
 
   return $ Obelisk cliConf
   where
@@ -431,7 +434,7 @@ ob = \case
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run interpretPathsList certDir servePort -> withInterpretPaths interpretPathsList (run certDir servePort)
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
-  ObCommand_Thunk to -> case _thunkOption_command to of
+  ObCommand_Thunk to -> wrapNixThunkError $ case _thunkOption_command to of
     ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
     ThunkCommand_Unpack -> for_ thunks unpackThunk
     ThunkCommand_Pack config -> for_ thunks (packThunk config)

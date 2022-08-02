@@ -68,7 +68,7 @@ import Text.ShellEscape (sh, bash, bytes)
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
-import Obelisk.App (MonadObelisk, ObeliskError(..), runObelisk, getObelisk, wrapNixThunkError)
+import Obelisk.App (MonadObelisk, runObelisk, getObelisk, wrapNixThunkError)
 import Obelisk.Command.Nix
 import Cli.Extras
 import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath, runProc)

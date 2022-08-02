@@ -17,11 +17,12 @@ import Control.Monad.Fail (MonadFail)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Writer (WriterT)
 import Control.Monad.State (StateT)
-import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError)
+import Control.Monad.Except (ExceptT, MonadError)
 import Control.Monad.Trans.Class (MonadTrans, lift)
 import Data.Text (Text)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 import Control.Monad.Log (MonadLog)
+import Cli.Extras.Types
 import "nix-thunk" Nix.Thunk (NixThunkError)
 
 import Cli.Extras
@@ -68,7 +69,7 @@ newtype ObeliskT m a = ObeliskT
     ( Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadFail
     , MonadLog Output -- CliLog
     , MonadError ObeliskError -- CliThrow ObeliskError
-    , HasCliConfig
+    , HasCliConfig ObeliskError
     )
 
 instance MonadTrans ObeliskT where
@@ -101,14 +102,18 @@ runObelisk c =
 -- | Wrap an action which may throw 'NixThunkError' (e.g.
 -- 'nixBuildAttrWithCache') in a 'MonadError' which supports throwing
 -- 'ObeliskError'.
-wrapNixThunkError :: (MonadError ObeliskError m, Monad m) => ExceptT NixThunkError m a -> m a
-wrapNixThunkError k = runExceptT k >>= \case
-  Left x -> throwError (ObeliskError_NixThunkError x)
-  Right x -> pure x
+wrapNixThunkError
+  :: (MonadError ObeliskError m, HasCliConfig ObeliskError m, MonadIO m)
+  => CliT NixThunkError m a
+  -> m a
+wrapNixThunkError k = do
+  cfg <- getCliConfig
+  let cfg' = cfg { _cliConfig_errorLogExitCode = _cliConfig_errorLogExitCode cfg . ObeliskError_NixThunkError }
+  runCli cfg' k
 
 type MonadInfallibleObelisk m =
   ( CliLog m
-  , HasCliConfig m
+  , HasCliConfig ObeliskError m
   , HasObelisk m
   , MonadIO m
   , MonadMask m
