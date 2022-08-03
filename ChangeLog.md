@@ -8,6 +8,8 @@ This project's release branch is `master`. This log is written from the perspect
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing obelisk branches to CONTRIBUTING.md
   * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to Obelisk.Command.Deploy
   * [#931](https://github.com/obsidiansystems/obelisk/pull/931): For `ob deploy init`, command-line option `--check-known-host` corrected in readme, caveat added for multiple matching host-keypairs.
+* building
+  * [#956](https://github.com/obsidiansystems/obelisk/pull/956): Squelch closure-compiler warnings. They are not very helpful and can cause issues (see: [closure-compiler#3720](https://github.com/google/closure-compiler/issues/3720))
 * nixpkgs-overlays
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
 * CLI
@@ -18,9 +20,11 @@ This project's release branch is `master`. This log is written from the perspect
   * [#934](https://github.com/obsidiansystems/obelisk/pull/934)[#936](https://github.com/obsidiansystems/obelisk/pull/936): obelisk now always uses absolute paths when generating `.ghci` files for REPL and IDE support. This is a **BREAKING** change for some old tools that could not handle absolute paths properly. However, due to the behavior of cross-volume relative paths on certain platforms, such as modern MacOS, we cannot guarantee proper operation of obelisk with relative paths.
   * [#948](https://github.com/obsidiansystems/obelisk/pull/948): obelisk now always invokes bash instead of the system-wide shell when it can. Some sub-programs, like ghcid, will still use the system-wide shell, which can cause subtle problems due to impurities.
   * [#949](https://github.com/obsidiansystems/obelisk/pull/949): obelisk now configures its output and error streams to transliterate unsupported to a known-good replacement character.
+  * [#951](https://github.com/obsidiansystems/obelisk/pull/951): Add `ob run --port` which allows the user to override the port on which the app is served, rather than always using the port configured in the route.
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
+  * [#952](https://github.com/obsidiansystems/obelisk/pull/952): Add a `Semigroupoid` instance for the `Encoder` type, compatible with its existing `Category` instance.
 * Javascript FFI
   * [#844](https://github.com/obsidiansystems/obelisk/pull/844): Jsaddle FFI example extended in skeleton (example project which is installed by `ob init`). Note the remark on minifier renaming in /skeleton/static/lib.js
   * [#903](https://github.com/obsidiansystems/obelisk/pull/903): Added support for a file which allows users to specify global variables and namespaces in JS, that should not be used by the Google Closure Compiler during minification of the GHCJS produced JS. See the [FAQ](FAQ.md).
