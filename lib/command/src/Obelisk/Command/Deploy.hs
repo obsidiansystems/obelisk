@@ -250,6 +250,9 @@ deployActivationScript
   -> String
 deployActivationScript outPath =
 -- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
+-- This logic follows the nixos auto-upgrade module as of writing.
+-- If the workflow is added to switch-to-configuration proper, we can simplify this:
+-- https://github.com/obsidiansystems/obelisk/issues/958
   [i|set -euxo pipefail
 nix-env -p /nix/var/nix/profiles/system --set "${bashEscape outPath}"
 /nix/var/nix/profiles/system/bin/switch-to-configuration boot
