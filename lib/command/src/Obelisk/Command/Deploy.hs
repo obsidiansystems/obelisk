@@ -251,7 +251,7 @@ deployActivationScript
 deployActivationScript outPath =
 -- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
   [i|set -euxo pipefail
-nix-env -p /nix/var/nix/profiles/system --set "${outPath}"
+nix-env -p /nix/var/nix/profiles/system --set "${bashEscape outPath}"
 /nix/var/nix/profiles/system/bin/switch-to-configuration boot
 booted="$(readlink /run/booted-system/{initrd,kernel,kernel-modules})"
 built="$(readlink /nix/var/nix/profiles/system/{initrd,kernel,kernel-modules})"
