@@ -45,5 +45,9 @@ in
       git
     ];
   };
-  cli-nix = self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) {};
+  cli-nix = haskellLib.overrideCabal (self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) {}) {
+    librarySystemDepends = with pkgs; [
+      nix nix-prefetch-git
+    ];
+  };
 }
