@@ -29,6 +29,7 @@ library
                  ref-tf,
                  reflex,
                  reflex-dom-core,
+                 semigroupoids,
                  template-haskell,
                  tabulation,
                  text,

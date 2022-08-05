@@ -182,6 +182,8 @@ deployPush deployPath builders = do
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile
+
+  configHash <- getGitHash deployPath "config"
   buildOutputByHost <- ifor (Map.fromSet (const ()) hosts) $ \host () -> do
     --TODO: What does it mean if this returns more or less than 1 line of output?
     [result] <- fmap lines $ nixCmd $ NixCmd_Build $ def
@@ -198,6 +200,7 @@ deployPush deployPath builders = do
         , rawArg "redirectHosts" $ renderString $ layoutCompact $ prettyNix $ Nix.mkList $ Nix.mkStr . T.pack <$> Set.toList redirectHosts
         , strArg "version" version
         , boolArg "enableHttps" enableHttps
+        , strArg "configHash" $ T.unpack $ T.strip (_gitHash_text configHash)
         ] <> [rawArg "module" ("import " <> toNixPath moduleFile) | moduleFileExists ])
       & nixCmdConfig_builders .~ builders
     pure result
@@ -221,10 +224,8 @@ deployPush deployPath builders = do
       proc sshPath $ sshOpts <>
         [ "root@" <> host
         , unwords
-            -- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
-            [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
-            , "&&"
-            , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+            [ "bash -c"
+            , bashEscape (deployActivationScript outputPath)
             ]
         ]
   isClean <- checkGitCleanStatus deployPath True
@@ -239,6 +240,30 @@ deployPush deployPath builders = do
     callProcess' envMap cmd args = do
       let p = setEnvOverride (envMap <>) $ setDelegateCtlc True $ proc cmd args
       callProcessAndLogOutput (Notice, Notice) p
+
+-- | Bash command that will be run on the deployed machine to actually switch the NixOS configuration
+-- This has some more involved logic than merely activating the right profile. It also determines
+-- whether the kernel parameters have changed so that the deployed NixOS instance should be restarted.
+deployActivationScript
+  :: String
+  -- ^ The out path of the configuration to activate
+  -> String
+deployActivationScript outPath =
+-- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
+-- This logic follows the nixos auto-upgrade module as of writing.
+-- If the workflow is added to switch-to-configuration proper, we can simplify this:
+-- https://github.com/obsidiansystems/obelisk/issues/958
+  [i|set -euxo pipefail
+nix-env -p /nix/var/nix/profiles/system --set "${bashEscape outPath}"
+/nix/var/nix/profiles/system/bin/switch-to-configuration boot
+booted="$(readlink /run/booted-system/{initrd,kernel,kernel-modules})"
+built="$(readlink /nix/var/nix/profiles/system/{initrd,kernel,kernel-modules})"
+if [ "$booted" = "$built" ]; then
+  /nix/var/nix/profiles/system/bin/switch-to-configuration switch
+else
+  /run/current-system/sw/bin/shutdown -r +1
+fi
+|]
 
 -- | Update the source thunk in the staging directory to the HEAD of the branch.
 deployUpdate :: MonadObelisk m => FilePath -> m ()

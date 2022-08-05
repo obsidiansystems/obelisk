@@ -198,12 +198,14 @@ run
   :: MonadObelisk m
   => Maybe FilePath
   -- ^ Certificate Directory path (optional)
+  -> Maybe Socket.PortNumber
+  -- ^ override the route's port number?
   -> FilePath
   -- ^ root folder
   -> PathTree Interpret
   -- ^ interpreted paths
   -> m ()
-run certDir root interpretPaths = do
+run certDir portOverride root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -218,12 +220,14 @@ run certDir root interpretPaths = do
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
-      [ "Obelisk.Run.run"
-      , show freePort
-      , "(" ++ show certDir ++ ")"
-      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
       , "Backend.backend"
       , "Frontend.frontend"
+      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      , ") { Obelisk.Run._runApp_backendPort =", show freePort
+      ,   ", Obelisk.Run._runApp_forceFrontendPort =", show portOverride
+      ,   ", Obelisk.Run._runApp_tlsCertDirectory =", show certDir
+      , "}"
       ]
 
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
@@ -593,7 +597,11 @@ runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
       , map (\x -> "--restart=" <> x) restartFiles
       , maybe [] (\cmd -> ["--test=" <> cmd]) mcmd
       -- N.B. the subcommand to ghcid has to be itself escaped.
-      , ["--command=" <> unwords (fmap bashEscape ("ghci" : ghciArgs))]
+      -- We have to use 'shEscape' instead of 'bashEscape' because
+      -- ghcid invokes System.Process with a shell command, which uses @\/bin\/sh@
+      -- instead of the @bash@ we have in scope.
+      -- This is not guaranteed to be bash on non-NixOS systems.
+      , ["--command=" <> unwords (fmap shEscape ("ghci" : ghciArgs))]
       ]
     adjustRoot x = if chdirToRoot then makeRelative root x else x
     reloadFiles = map adjustRoot [root </> "config"]

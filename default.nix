@@ -97,7 +97,7 @@ rec {
       ${if optimizationLevel == null then ''
         ln -s "$dir/all.unminified.js" "$dir/all.js"
       '' else ''
-        '${pkgs.closurecompiler}/bin/closure-compiler' ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        '${pkgs.closurecompiler}/bin/closure-compiler' ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
         echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
       ''}
     done
@@ -145,7 +145,8 @@ rec {
       , baseUrl ? "/"
       , internalPort ? 8000
       , backendArgs ? "--port=${toString internalPort}"
-      , redirectHosts ? [ ] # Domains to redirect to routeHost; importantly, these domains will be added to the SSL certificate
+      , redirectHosts ? [] # Domains to redirect to routeHost; importantly, these domains will be added to the SSL certificate
+      , configHash ? "" # The expected hash of the configuration directory tree.
       , ...
       }: { ... }:
         assert lib.assertMsg (!(builtins.elem routeHost redirectHosts)) "routeHost may not be a member of redirectHosts";
@@ -182,6 +183,7 @@ rec {
             restartIfChanged = true;
             path = [ pkgs.gnutar ];
             script = ''
+              echo "Expecting config hash to be ${configHash}, but not verifying this"
               ln -sft . '${exe}'/*
               mkdir -p log
               exec ./backend ${backendArgs} </dev/null
@@ -206,7 +208,6 @@ rec {
           };
         };
   };
-
   inherit mkAssets;
 
   serverExe = backend: frontend: assets: optimizationLevel: externjs: version:
@@ -221,7 +222,7 @@ rec {
       echo ${version} > $out/version
     '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [ ] }@args:
+  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }@args:
     let
       nixos = import (pkgs.path + /nixos);
     in
@@ -398,7 +399,7 @@ rec {
             main :: IO ()
             main = do
               [portStr, assets, profFileName] <- getArgs
-              Obelisk.Run.run (read portStr) Nothing (Obelisk.Run.runServeAsset assets) Backend.backend Frontend.frontend
+              Obelisk.Run.run (Obelisk.Run.defaultRunApp Backend.backend Frontend.frontend (Obelisk.Run.runServeAsset assets)){ Obelisk.Run._runApp_backendPort = read portStr }
                 `finally` writeProfilingData (profFileName ++ ".rprof")
           '';
         in
@@ -414,7 +415,7 @@ rec {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
-      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [ ] }:
+      server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") { };
     };

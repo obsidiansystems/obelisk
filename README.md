@@ -62,6 +62,10 @@ Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Refl
           ```nix
           sandbox = true
           ```
+          then restart the nix daemon
+          ```bash
+          sudo systemctl restart nix-daemon
+          ```
         * If you're on MacOS, disable sandboxing (there are still some impure dependencies for now) by adding the following:
           ```nix
           sandbox = false
