@@ -87,7 +87,7 @@ in rec {
       ${if optimizationLevel == null then ''
         ln -s "$dir/all.unminified.js" "$dir/all.js"
       '' else ''
-        '${pkgs.closurecompiler}/bin/closure-compiler' ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        '${pkgs.closurecompiler}/bin/closure-compiler' ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
         echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
       ''}
     done
@@ -378,7 +378,7 @@ in rec {
           main :: IO ()
           main = do
             [portStr, assets, profFileName] <- getArgs
-            Obelisk.Run.run (read portStr) Nothing (Obelisk.Run.runServeAsset assets) Backend.backend
+            Obelisk.Run.run (Obelisk.Run.defaultRunApp Backend.backend (Obelisk.Run.runServeAsset assets)){ Obelisk.Run._runApp_backendPort = read portStr }
               `finally` writeProfilingData (profFileName ++ ".rprof")
         '';
       in nixpkgs.runCommand "ob-run" {

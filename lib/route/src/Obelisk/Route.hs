@@ -199,6 +199,7 @@ import qualified Data.Map as Map
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Semigroupoid
 import Data.Some (Some(Some))
 import Data.Tabulation
 import Data.Text (Text)
@@ -387,9 +388,12 @@ checkEncoder :: (Applicative check', Functor check)
   -> check (Encoder check' parse decoded encoded)
 checkEncoder = fmap unsafeMkEncoder . unEncoder
 
+instance (Applicative check, Monad parse) => Semigroupoid (Encoder check parse) where
+  Encoder f `o` Encoder g = Encoder $ liftA2 (.) f g
+
 instance (Applicative check, Monad parse) => Category (Encoder check parse) where
   id = Encoder $ pure id
-  Encoder f . Encoder g = Encoder $ liftA2 (.) f g
+  (.) = o
 
 instance Monad parse => Category (EncoderImpl parse) where
   id = EncoderImpl

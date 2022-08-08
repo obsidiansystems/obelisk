@@ -19,12 +19,13 @@ module Obelisk.Run where
 
 import Prelude hiding ((.), id)
 
-import Control.Monad.IO.Class
+import Control.Applicative
 import Control.Category
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Exception
-import Control.Lens ((%~), (^?), _Just, _Right)
+import Control.Lens ((%~), (^?), (?~), _Just, _Right)
+import Control.Monad.IO.Class
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -83,19 +84,61 @@ import Data.GADT.Compare
 import qualified System.Which
 #endif
 
-run
-  :: forall route. (Universe (SomeDomain route), GCompare route)
-  => Int -- ^ Port to run the backend
-  -> Maybe FilePath -- ^ Optional directory in which to find "cert.pem", "chain.pem" and "privkey.pem" to be used for TLS.
-                    -- If this is Nothing and TLS is enabled, we'll generate a self-signed cert.
-  -> ([Text] -> Snap ()) -- ^ Static asset handler
-  -> Backend route -- ^ Backend
-  -> IO ()
-run port certDir serveStaticAsset backend = do
+-- | The arguments to 'run', specifying the configuration and
+-- implementation of an Obelisk application.
+data RunApp domainRoute
+  = RunApp
+    { _runApp_backendPort      :: Int
+      -- ^ What port should we serve the backend on? This is used for
+      -- internal communication.
+    , _runApp_backendHost      :: ByteString
+      -- ^ The hostname on which the backend is running. By default,
+      -- this is @127.0.0.1@, i.e., the local machine. Routes not
+      -- handled by the frontend will be redirected to this host.
+    , _runApp_forceFrontendPort :: Maybe Int
+      -- ^ If set, overrides the port on which the frontend will be
+      -- served. If unset, the port will be parsed from the configured
+      -- route.
+    , _runApp_tlsCertDirectory :: Maybe FilePath
+      -- ^ Optional directory in which to find "cert.pem", "chain.pem"
+      -- and "privkey.pem" to be used for TLS.
+      -- If this is 'Nothing' and TLS is enabled, we'll generate a
+      -- self-signed cert.
+    , _runApp_staticHandler    :: [Text] -> Snap ()
+      -- ^ How to serve static assets.
+    , _runApp_backend          :: Backend domainRoute
+      -- ^ The backend.
+    }
+
+-- | Construct a 'RunApp' with sane defaults. The TLS certificate
+-- directory will be set to 'Nothing', the backend host will be the
+-- local machine (@127.0.0.1@), the backend port will be set to @3001@,
+-- the frontend port will be fetched from the route configuration.
+defaultRunApp
+  :: Backend route                      -- ^ The backend to use
+  -> ([Text] -> Snap ())                -- ^ How to serve static assets
+  -> RunApp route
+defaultRunApp be static = RunApp
+  { _runApp_backendPort = 3001
+  , _runApp_backendHost = "127.0.0.1"
+  , _runApp_forceFrontendPort = Nothing
+  , _runApp_tlsCertDirectory = Nothing
+  , _runApp_staticHandler = static
+  , _runApp_backend = be
+  }
+
+-- | Run an Obelisk application, including the frontend and backend. The
+-- backend routes are served on the port given by '_runApp_backendPort',
+-- but are also accessible through the frontend.
+run :: forall route. (GCompare route, Universe (SomeDomain route)) => RunApp route -> IO ()
+run toRun = do
   prettifyOutput
   publicConfigs <- getPublicConfigs
-  let routeConfig = getCheckedRouteConfig publicConfigs
-      handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
+  let
+    backend = _runApp_backend toRun
+    routeConfig = getCheckedRouteConfig publicConfigs
+    handleBackendErr (e :: IOException) =
+        hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
   case checkAllEncoders $ _backend_routeEncoder backend of
     Left e -> hPutStrLn stderr $ "backend error:\n" <> T.unpack e
@@ -106,8 +149,13 @@ run port certDir serveStaticAsset backend = do
             parseDomain (Domain d) = case URI.mkURI d of
               Nothing -> error $ "parseDomain: invalid URI: " <> T.unpack d
               Just uri -> decode domainEncoder uri
-        backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $
-          _backend_run backend $ \(serveRoute :: forall b f. route (R (FullRoute b f)) -> R b -> Snap ()) ->
+
+        -- We start the backend server listening on the
+        -- '_runApp_backendPort'. The backend and frontend run in
+        -- different servers: The frontend server will pass any routes it
+        -- can't handle to this process.
+        backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show (_runApp_backendPort toRun)] $
+          _backend_run (_runApp_backend toRun) $ \(serveRoute :: forall b f. route (R (FullRoute b f)) -> R b -> Snap ()) ->
             runSnapWithCommandLineArgs $ getRouteWith parseDomain mkValidEncoder $ \domainPart -> \case
               Identity (r :: R (FullRoute b f)) -> case r of
                 FullRoute_Backend backendRoute :/ a -> do
@@ -117,7 +165,7 @@ run port certDir serveStaticAsset backend = do
                   serveDefaultObeliskApp
                     appRouteToUrl
                     (($ allJsUrl) <$> defaultGhcjsWidgets)
-                    serveStaticAsset
+                    (_runApp_staticHandler toRun)
                     (_backend_frontend backend domainPart)
                     (_backend_frontendName backend domainPart) -- Not actually used in this case
                     publicConfigs
@@ -125,8 +173,7 @@ run port certDir serveStaticAsset backend = do
                   where
                     appRouteToUrl (k :/ v) = renderObeliskRoute (mkValidEncoder domainPart) (FullRoute_Frontend (ObeliskRoute_App k) :/ v)
                     allJsUrl = renderAllJsPath (mkValidEncoder domainPart)
-        let conf = defRunConfig { _runConfig_redirectPort = port, _runConfig_certDir = certDir }
-        runWidget conf publicConfigs backend mkValidEncoder domainEncoder `finally` killThread backendTid
+        runWidget toRun publicConfigs mkValidEncoder domainEncoder `finally` killThread backendTid
 
 --run
 --  :: forall route. (Has C route, GEq route, Universe (SomeDomain route))
@@ -170,7 +217,7 @@ run port certDir serveStaticAsset backend = do
 --                    allJsUrl = renderAllJsPath validFullEncoder outerRoute
 
 --      let conf = defRunConfig { _runConfig_redirectPort = port }
---      runWidget conf publicConfigs backend validFullEncoder `finally` killThread backendTid
+--      runWidget toRun publicConfigs validFullEncoder `finally` killThread backendTid
 
 -- Convenience wrapper to handle path segments for 'Snap.serveAsset'
 runServeAsset :: FilePath -> [Text] -> Snap ()
@@ -186,30 +233,50 @@ getConfigRoute configs = case Map.lookup "common/route" configs of
           Nothing -> Left $ "Couldn't parse route as URI; value read was: " <> T.pack (show stripped)
     Nothing -> Left $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> T.pack (show $ Map.keys configs)
 
+-- | Start the frontend (given in the 'RunApp' record), with the given
+-- configuration and the given 'FullRoute' encoder, which must be valid.
 runWidget
   :: forall route. (Universe (SomeDomain route))
-  => RunConfig
+  => RunApp route
   -> Map Text ByteString
-  -> Backend route
   -- -> Encoder Identity Identity (R route) DomainPageName
   -> (forall b f. route (R (FullRoute b f)) -> Encoder Identity Identity (R (FullRoute b f)) PageName)
   -> Encoder Identity Identity (SomeDomain route) URI
   -> IO ()
-runWidget conf configs backend mkValidFullEncoder domainEncoder = do
+runWidget toRun configs mkValidFullEncoder domainEncoder = do
   threads <- for universe $ \(SomeDomain baseRoute :: SomeDomain route) -> async $ do
+    let
+      uri = encode domainEncoder (SomeDomain baseRoute)
+
+      -- Before we can do anything, we need to pick a port to serve the
+      -- backend on. If the user has asked to override it, then we use that:
+      -- they know what they're doing. Otherwise, we'll use the port
+      -- specified in the route.
+      port = fromMaybe 80 $ (_runApp_forceFrontendPort toRun)
+                        <|> (fmap fromIntegral $ uri ^? uriAuthority . _Right . authPort . _Just)
+      -- This is the *actual* URI on which the frontend is served, i.e.
+      -- the URI from the route configuration but, possibly, with the
+      -- port we picked above. We need to compute this for two reasons:
+      --
+      --   1. The log. Self-explanatory.
+      --   2. JSaddle needs to know where the frontend is served.
+      actualUri = uri & uriAuthority . _Right . authPort ?~ fromInteger (fromIntegral port)
+
+      -- This is the server that will handle the backend requests. We
+      -- support shuttling them off to any host:port pair.
+      redirectHost = _runApp_backendHost toRun
+      redirectPort = _runApp_backendPort toRun
+
     --let thisEncoder = reverseEncoder validFullEncoder baseRoute
     let thisEncoder = mkValidFullEncoder baseRoute
-        uri = encode domainEncoder (SomeDomain baseRoute)
-        port = fromIntegral $ fromMaybe 80 $ uri ^? uriAuthority . _Right . authPort . _Just
-        redirectHost = _runConfig_redirectHost conf
-        redirectPort = _runConfig_redirectPort conf
+
         beforeMainLoop = do
-          putStrLn $ "Frontend running on " <> T.unpack (URI.render uri)
+          putStrLn $ "Frontend running on " <> T.unpack (URI.render actualUri)
         settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
         -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
         prepareRunner = case uri ^? uriScheme . _Just . unRText of
           Just "https" -> do
-            case _runConfig_certDir conf of
+            case _runApp_tlsCertDirectory toRun of
               Nothing -> do
                 -- Generate a private key and self-signed certificate for TLS
                 privateKey <- RSA.generateRSAKey' 2048 3
@@ -231,11 +298,11 @@ runWidget conf configs backend mkValidFullEncoder domainEncoder = do
           _ -> return runSettingsSocket
     runner <- prepareRunner
     bracket
-      (bindPortTCPRetry settings (logPortBindErr port) (_runConfig_retryTimeout conf))
+      (bindPortTCPRetry settings (logPortBindErr port) 1)
       close
       (\skt -> do
           man <- newManager defaultManagerSettings
-          app <- obeliskApp configs defaultConnectionOptions (_backend_frontend backend baseRoute) thisEncoder uri $ fallbackProxy redirectHost redirectPort man
+          app <- obeliskApp configs defaultConnectionOptions (_backend_frontend (_runApp_backend toRun) baseRoute) thisEncoder actualUri $ fallbackProxy redirectHost redirectPort man
           runner settings skt app)
   traverse_ wait threads `finally` traverse_ cancel threads
 
@@ -243,14 +310,21 @@ requestDomainWai :: W.Request -> Domain
 requestDomainWai req = Domain $ "//" <> hostName
   where hostName = maybe "" T.decodeUtf8 $ W.requestHeaderHost req
 
+-- | Build a WAI 'Application' to serve the given Obelisk 'Frontend',
+-- using the specified 'Encoder' to parse routes. Any requests whose
+-- route does not result in a 'FullRoute_Frontend' parse will be
+-- redirected to the backend.
 obeliskApp
   :: forall frontendRoute backendRoute
-  .  Map Text ByteString
-  -> ConnectionOptions
-  -> Frontend (R frontendRoute)
+  .  Map Text ByteString -- ^ The parsed configuration
+  -> ConnectionOptions   -- ^ Connection options for the JSaddle websocket
+  -> Frontend (R frontendRoute) -- ^ The Obelisk frontend
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
+     -- ^ An encoder for parsing frontend routes.
   -> URI
-  -> Application
+    -- ^ The 'URI' on which the 'Frontend' will be served. Used for
+    -- establishing the JSaddle websocket connection.
+  -> Application -- ^ A WAI 'Application' which handles backend requests.
   -> IO Application
 obeliskApp configs opts frontend validFullEncoder uri backend = do
   let mode = FrontendMode
@@ -331,20 +405,3 @@ parseSsPid = do
 fallbackProxy :: ByteString -> Int -> Manager -> Application
 fallbackProxy host port = RP.waiProxyTo handleRequest RP.defaultOnExc
   where handleRequest _req = return $ RP.WPRProxyDest $ RP.ProxyDest host port
-
-data RunConfig = RunConfig
-  { _runConfig_port :: Int
-  , _runConfig_redirectHost :: ByteString
-  , _runConfig_redirectPort :: Int
-  , _runConfig_retryTimeout :: Int -- seconds
-  , _runConfig_certDir :: Maybe FilePath
-  }
-
-defRunConfig :: RunConfig
-defRunConfig = RunConfig
-  { _runConfig_port = 8000
-  , _runConfig_redirectHost = "127.0.0.1"
-  , _runConfig_redirectPort = 3001
-  , _runConfig_retryTimeout = 1
-  , _runConfig_certDir = Nothing
-  }
