@@ -7,6 +7,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Obelisk.Backend
@@ -30,6 +31,8 @@ module Obelisk.Backend
   -- * Re-exports
   , Default (def)
   , getPageName
+  , requestDomain
+  , requestPageName
   , getRouteWith
   , runSnapWithCommandLineArgs
   , runSnapWithConfig
@@ -37,6 +40,9 @@ module Obelisk.Backend
   , prettifyOutput
   , staticRenderContentType
   , getPublicConfigs
+  , SomeDomain(..)
+  , CheckedEncoders(..)
+  , checkAllEncoders
   ) where
 
 import Control.Monad
@@ -46,34 +52,44 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
 import Data.Dependent.Sum
+import qualified Data.Dependent.Map as DMap
 import Data.Functor.Identity
+import Data.GADT.Compare
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import Data.Universe
 import GHC.Generics (Generic)
 import Obelisk.Asset.Serve.Snap (serveAsset)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
 import Obelisk.Route
 import Obelisk.Snap.Extras (doNotCache, serveFileIfExistsAs)
-import Reflex.Dom.Core
-import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, modifyResponse
-            , rqPathInfo, rqQueryString, setContentType, writeBS, writeText
+import Reflex.Dom.Core hiding (Request)
+import Snap (MonadSnap, Snap, Request, commandLineConfig, defaultConfig, getsRequest, httpServe, modifyResponse
+            , getRequest, rqHostName, rqPathInfo, rqQueryString, setContentType, writeBS, writeText
             , rqCookies, Cookie(..) , setHeader)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
+import Text.URI (URI)
+import qualified Text.URI as URI
 
-data Backend backendRoute frontendRoute = Backend
-  { _backend_routeEncoder :: Encoder (Either Text) Identity (R (FullRoute backendRoute frontendRoute)) PageName
-  , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
-  } deriving (Generic)
+data Backend domainRoute = Backend
+  --{ _backend_routeEncoder :: RouteConfig -> Encoder (Either Text) Identity (R domainRoute) DomainPageName
+  { _backend_routeEncoder :: forall b f. domainRoute (R (FullRoute b f)) -> Encoder (Either Text) Identity (R (FullRoute b f)) PageName
+  , _backend_domainEncoder :: RouteConfig -> Encoder (Either Text) Identity (SomeDomain domainRoute) URI
+  , _backend_run :: ((forall b f. domainRoute (R (FullRoute b f)) -> R b -> Snap ()) -> IO ()) -> IO ()
+  , _backend_frontend :: forall b f. domainRoute (R (FullRoute b f)) -> Frontend (R f)
+  , _backend_frontendName :: forall a. domainRoute a -> String -- Name of the frontend library, for finding GHCJS assets
+  }
 
-data BackendConfig frontendRoute = BackendConfig
+data BackendConfig = BackendConfig
   { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
   , _backendConfig_staticAssets :: !StaticAssets -- ^ Static assets
-  , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ()))
+  , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetTInner ()))
     -- ^ Given the URL of all.js, return the widgets which are responsible for
     -- loading the script.
   } deriving (Generic)
@@ -95,7 +111,7 @@ data GhcjsWidgets a = GhcjsWidgets
 
 -- | Given the URL of all.js, return the widgets which are responsible for
 -- loading the script. Defaults to 'preloadGhcjs' and 'deferredGhcjsScript'.
-defaultGhcjsWidgets :: GhcjsWidgets (Text -> FrontendWidgetT r ())
+defaultGhcjsWidgets :: GhcjsWidgets (Text -> FrontendWidgetTInner ())
 defaultGhcjsWidgets = GhcjsWidgets
   { _ghcjsWidgets_preload = preloadGhcjs
   , _ghcjsWidgets_script = deferredGhcjsScript
@@ -106,16 +122,18 @@ defaultGhcjsWidgets = GhcjsWidgets
 serveDefaultObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute -> Text)
-  -> GhcjsWidgets (FrontendWidgetT (R appRoute) ())
+  -> GhcjsWidgets (FrontendWidgetTInner ())
   -> ([Text] -> m ())
   -> Frontend (R appRoute)
+  -> String
+  -- ^ Name of the frontend executable
   -> Map Text ByteString
   -> R (ObeliskRoute appRoute)
   -> m ()
-serveDefaultObeliskApp urlEnc ghcjsWidgets serveStaticAsset frontend =
+serveDefaultObeliskApp urlEnc ghcjsWidgets serveStaticAsset frontend frontendName =
   serveObeliskApp urlEnc ghcjsWidgets serveStaticAsset frontendApp
   where frontendApp = GhcjsApp
-          { _ghcjsApp_compiled = defaultFrontendGhcjsAssets
+          { _ghcjsApp_compiled = mkFrontendGhcjsAssets frontendName
           , _ghcjsApp_value = frontend
           }
 
@@ -132,10 +150,10 @@ defaultStaticAssets = StaticAssets
   , _staticAssets_unprocessed = "static"
   }
 
-defaultFrontendGhcjsAssets :: StaticAssets
-defaultFrontendGhcjsAssets = StaticAssets
-  { _staticAssets_processed = "frontend.jsexe.assets"
-  , _staticAssets_unprocessed = "frontend.jsexe"
+mkFrontendGhcjsAssets :: String -> StaticAssets
+mkFrontendGhcjsAssets frontendName = StaticAssets
+  { _staticAssets_processed = frontendName <> ".jsexe.assets"
+  , _staticAssets_unprocessed = frontendName <> ".jsexe"
   }
 
 runSnapWithConfig :: MonadIO m => Config Snap a -> Snap () -> m ()
@@ -154,14 +172,52 @@ runSnapWithCommandLineArgs s = liftIO (commandLineConfig defaultConfig) >>= \c -
 
 getPageName :: (MonadSnap m) => m PageName
 getPageName = do
-  p <- getsRequest rqPathInfo
-  q <- getsRequest rqQueryString
-  return $ byteStringsToPageName p q
+  r <- getRequest
+  pure $ requestPageName r
 
-getRouteWith :: (MonadSnap m) => Encoder Identity parse route PageName -> m (parse route)
-getRouteWith e = do
-  pageName <- getPageName
-  return $ tryDecode e pageName
+getDomainPageName :: (MonadSnap m) => m DomainPageName
+getDomainPageName = do
+  r <- getRequest
+  pure (requestDomain r, requestPageName r)
+
+requestPageName :: Request -> PageName
+requestPageName r = byteStringsToPageName p q
+  where
+    p = rqPathInfo r
+    q = rqQueryString r
+
+-- | Turn a request into a protocol relative domain
+requestDomain :: Request -> Domain
+requestDomain req = Domain $ "//" <> T.decodeUtf8 (rqHostName req)
+
+--getRouteWith
+--  :: Has C route
+--  => MonadSnap m
+--  => Encoder Identity Identity (R route) DomainPageName
+--  -> (forall b f. route (R (FullRoute b f)) -> R (FullRoute b f) -> m x)
+--  -> m x
+--getRouteWith fullEncoder handler = do
+--  req <- getRequest
+--  let domain = requestDomain req
+--      pageName = requestPageName req
+--  case decode fullEncoder (domain, pageName) of
+--    p :/ r -> has @C p $ handler p r
+
+getRouteWith
+  :: MonadSnap m
+  => (Domain -> SomeDomain p)
+  -- -> (forall b f. p (R (FullRoute b f)) -> DomainResult Identity parse (R (FullRoute b f)))
+  -> (forall b f. p (R (FullRoute b f)) -> Encoder Identity parse (R (FullRoute b f)) PageName)
+  -> (forall b f. p (R (FullRoute b f)) -> parse (R (FullRoute b f)) -> m x)
+  -> m x
+getRouteWith parseDomain mkEncoder handler = do
+  (domain, pageName) <- getDomainPageName
+  case parseDomain domain of
+    SomeDomain p -> handler p $ tryDecode (mkEncoder p) pageName
+
+--renderAllJsPath :: Encoder Identity Identity (R route) DomainPageName -> route (R (FullRoute a b)) -> Text
+--renderAllJsPath validFullEncoder r =
+--  renderFullObeliskRoute validFullEncoder $ r :/ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ ["all.js"]
 
 renderAllJsPath :: Encoder Identity Identity (R (FullRoute a b)) PageName -> Text
 renderAllJsPath validFullEncoder =
@@ -170,7 +226,7 @@ renderAllJsPath validFullEncoder =
 serveObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRoute -> Text)
-  -> GhcjsWidgets (FrontendWidgetT (R appRoute) ())
+  -> GhcjsWidgets (FrontendWidgetTInner ())
   -> ([Text] -> m ())
   -> GhcjsApp (R appRoute)
   -> Map Text ByteString
@@ -207,7 +263,7 @@ staticRenderContentType = "text/html; charset=utf-8"
 serveGhcjsApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
   => (R appRouteComponent -> Text)
-  -> GhcjsWidgets (FrontendWidgetT (R appRouteComponent) ())
+  -> GhcjsWidgets (FrontendWidgetTInner ())
   -> GhcjsApp (R appRouteComponent)
   -> Map Text ByteString
   -> R (GhcjsAppRoute appRouteComponent)
@@ -220,55 +276,118 @@ serveGhcjsApp urlEnc ghcjsWidgets app config = \case
   GhcjsAppRoute_Resource :=> Identity pathSegments -> serveStaticAssets (_ghcjsApp_compiled app) pathSegments
 
 -- | Default obelisk backend configuration.
-defaultBackendConfig :: BackendConfig frontendRoute
+defaultBackendConfig :: BackendConfig
 defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets
 
 -- | Run an obelisk backend with the default configuration.
-runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
+runBackend :: (GCompare route, Universe (SomeDomain route)) => Backend route -> IO ()
 runBackend = runBackendWith defaultBackendConfig
 
 -- | Run an obelisk backend with the given configuration.
+-- Full encoder implementation. Falls down proving route a ~ route (R (FullRoute b f)), I couldn't figure out how to make it work with ArgDict.
+--runBackendWith
+--  :: BackendConfig
+--  -> Backend route
+--  -> IO ()
+--runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend = do
+--  publicConfigs <- getPublicConfigs
+--  let routeConfig = getCheckedRouteConfig publicConfigs
+--  case checkEncoder $ _backend_routeEncoder backend routeConfig of
+--    Left e -> fail $ "backend error:\n" <> T.unpack e
+--    Right (validFullEncoder :: Encoder Identity Identity (R route) DomainPageName) -> do
+--      _backend_run backend $ \serveRoute -> do
+--        runSnap $
+--          getRouteWith validFullEncoder $ \outerRoute -> \case
+--            (innerRoute :: R (FullRoute b f)) -> case innerRoute of
+--              FullRoute_Backend backendRoute :/ a -> do
+--                liftIO $ putStrLn "backendRoute"
+--                serveRoute outerRoute $ backendRoute :/ a
+--              FullRoute_Frontend obeliskRoute :/ a ->
+--                serveDefaultObeliskApp
+--                  routeToUrl
+--                  (($ allJsUrl) <$> ghcjsWidgets)
+--                  (serveStaticAssets staticAssets)
+--                  (_backend_frontend backend outerRoute)
+--                  publicConfigs
+--                  (obeliskRoute :/ a)
+--                where
+--                  routeToUrl (k :/ v) = renderFullObeliskRoute validFullEncoder $ outerRoute :/ FullRoute_Frontend (ObeliskRoute_App k) :/ v
+--                  allJsUrl = renderAllJsPath validFullEncoder outerRoute
+
+-- Essentially 'Flip'
+newtype Enc a = Enc (Encoder Identity Identity a PageName)
+newtype CheckedEncoders route = CheckedEncoders (forall b f. route (R (FullRoute b f)) -> Encoder Identity Identity (R (FullRoute b f)) PageName)
+
+checkAllEncoders
+  :: (Universe (SomeDomain route), GCompare route)
+  => (forall b f. route (R (FullRoute b f)) -> Encoder (Either Text) Identity (R (FullRoute b f)) PageName)
+  -> Either Text (CheckedEncoders route)
+checkAllEncoders mkEncoder = do
+  encs <- traverse (\(SomeDomain r) -> (\a -> r :=> Enc a) <$> checkEncoder (mkEncoder r)) universe
+  let encMap = DMap.fromList encs
+  pure $ CheckedEncoders $ \r -> case DMap.lookup r encMap of
+    Nothing -> error "checkAllEncoders: couldn't find encoder in map, should be impossible. The universe instance must not be a true universe instance"
+    Just (Enc e) -> e
+
+-- | Run an obelisk backend with the given configuration.
 runBackendWith
-  :: BackendConfig frontendRoute
-  -> Backend backendRoute frontendRoute
-  -> Frontend (R frontendRoute)
+  :: forall route. (GCompare route, Universe (SomeDomain route))
+  => BackendConfig
+  -> Backend route
   -> IO ()
-runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
-  Left e -> fail $ "backend error:\n" <> T.unpack e
-  Right validFullEncoder -> do
-    publicConfigs <- getPublicConfigs
-    _backend_run backend $ \serveRoute ->
-      runSnap $
-        getRouteWith validFullEncoder >>= \case
-          Identity r -> case r of
-            FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
-            FullRoute_Frontend obeliskRoute :/ a ->
-              serveDefaultObeliskApp routeToUrl (($ allJsUrl) <$> ghcjsWidgets) (serveStaticAssets staticAssets) frontend publicConfigs $
-                obeliskRoute :/ a
-              where
-                routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
-                allJsUrl = renderAllJsPath validFullEncoder
+runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend = do
+  publicConfigs <- getPublicConfigs
+  let routeConfig = getCheckedRouteConfig publicConfigs
+  case checkAllEncoders $ _backend_routeEncoder backend of
+    Left e -> fail $ "backend error:\n" <> T.unpack e
+    Right (CheckedEncoders mkValidEncoder) -> case checkEncoder $ _backend_domainEncoder backend routeConfig of
+      Left e -> fail $ "fail to check domain encoder:\n" <> T.unpack e
+      Right domainEncoder -> do
+        let parseDomain :: Domain -> SomeDomain route
+            parseDomain (Domain d) = case URI.mkURI d of
+              Nothing -> error $ "parseDomain: invalid URI: " <> T.unpack d
+              Just uri -> decode domainEncoder uri
+        _backend_run backend $ \serveRoute -> runSnap $
+          getRouteWith parseDomain mkValidEncoder $ \domainPart -> \case
+            Identity (r :: R (FullRoute b f)) -> case r of
+              FullRoute_Backend backendRoute :/ a -> do
+                liftIO $ putStrLn "backendRoute"
+                serveRoute domainPart $ backendRoute :/ a
+              FullRoute_Frontend obeliskRoute :/ a ->
+                serveDefaultObeliskApp
+                  routeToUrl
+                  (($ allJsUrl) <$> ghcjsWidgets)
+                  (serveStaticAssets staticAssets)
+                  (_backend_frontend backend domainPart)
+                  (_backend_frontendName backend domainPart)
+                  publicConfigs
+                  (obeliskRoute :/ a)
+                where
+                  routeToUrl (k :/ v) = renderObeliskRoute (mkValidEncoder domainPart) $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
+                  allJsUrl = renderAllJsPath (mkValidEncoder domainPart)
 
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
   => (route -> Text)
-  -> GhcjsWidgets (FrontendWidgetT route ())
+  -> GhcjsWidgets (FrontendWidgetTInner ())
   -> route
   -> Map Text ByteString
   -> Frontend route
   -> m ByteString
 renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
   cookies <- askCookies
-  renderFrontendHtml configs cookies urlEnc route f (_ghcjsWidgets_preload ghcjsWidgets) (_ghcjsWidgets_script ghcjsWidgets)
+  renderFrontendHtml configs cookies urlEnc route f
+    (lift $ lift $ lift $ _ghcjsWidgets_preload ghcjsWidgets)
+    (lift $ lift $ lift $ _ghcjsWidgets_script ghcjsWidgets)
 
 -- | Preload all.js in a link tag.
 -- This is the default preload method.
-preloadGhcjs :: Text -> FrontendWidgetT r ()
+preloadGhcjs :: DomBuilder t m => Text -> m ()
 preloadGhcjs allJsUrl = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
-deferredGhcjsScript :: Text -> FrontendWidgetT r ()
+deferredGhcjsScript :: DomBuilder t m => Text -> m ()
 deferredGhcjsScript allJsUrl = elAttr "script" ("type" =: "text/javascript" <> "src" =: allJsUrl <> "defer" =: "defer") blank
 
 -- | An all.js script which is loaded after waiting for some time to pass. This

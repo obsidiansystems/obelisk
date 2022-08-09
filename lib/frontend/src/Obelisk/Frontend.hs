@@ -21,13 +21,15 @@ module Obelisk.Frontend
   , removeHTMLConfigs
   , FrontendMode (..)
   , FrontendWidgetT
+  , FrontendWidgetTInner
   , module Obelisk.Frontend.Cookie
+  , getCheckedRouteConfig
   ) where
 
 import Prelude hiding ((.))
 
-import Control.Category
-import Control.Lens
+import Control.Category hiding (id)
+import Control.Lens hiding (universe)
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Control.Monad.Primitive
@@ -37,6 +39,7 @@ import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.ByteString (ByteString)
 import Data.Foldable (for_)
 import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -175,6 +178,16 @@ runFrontend validFullEncoder frontend = do
     setInitialRoute $ _frontendMode_adjustRoute mode
   runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
 
+getCheckedRouteConfig :: Map Text ByteString -> RouteConfig
+getCheckedRouteConfig configs = case Map.lookup "common/route" configs of
+  Nothing -> error $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> show (Map.keys configs)
+  Just r -> RouteConfig r
+
+--getCheckedDomainConfig :: (GCompare route, GShow route, Universe (Some route)) => Map Text ByteString -> RouteConfig route
+--getCheckedDomainConfig configs = case Map.lookup "common/route" configs of
+--  Nothing -> error $ "Couldn't find config file common/route; it should contain the site's canonical root URI" <> show (Map.keys configs)
+--  Just r -> either (error . T.unpack) id $ decodeRouteConfig r
+
 runFrontendWithConfigsAndCurrentRoute
   :: forall backendRoute frontendRoute
   .  FrontendMode
@@ -228,7 +241,8 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
     then runHydrationWidgetWithHeadAndBody (pure ()) w
     else runImmediateWidgetWithHeadAndBody w
 
-type FrontendWidgetT r = RoutedT DomTimeline r (SetRouteT DomTimeline r (RouteToUrlT r (ConfigsT (CookiesT (HydratableT (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost))))))))
+type FrontendWidgetT r = RoutedT DomTimeline r (SetRouteT DomTimeline r (RouteToUrlT r FrontendWidgetTInner))
+type FrontendWidgetTInner = ConfigsT (CookiesT (HydratableT (PostBuildT DomTimeline (StaticDomBuilderT DomTimeline (PerformEventT DomTimeline DomHost)))))
 
 renderFrontendHtml
   :: MonadIO m

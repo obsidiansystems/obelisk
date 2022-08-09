@@ -19,8 +19,8 @@ library
     Frontend
   ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -fno-show-valid-hole-fits
 
-executable frontend
-  main-is: main.hs
+executable frontend-a
+  main-is: frontend-a.hs
   hs-source-dirs: src-bin
   build-depends: base
                , common
@@ -29,6 +29,25 @@ executable frontend
                , reflex-dom
                , obelisk-generated-static
                , frontend
+               , obelisk-executable-config-lookup
+  ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -fno-show-valid-hole-fits
+  if impl(ghcjs)
+    ghc-options: -dedupe
+    cpp-options: -DGHCJS_BROWSER
+  if os(darwin)
+    ghc-options: -dynamic
+
+executable frontend-b
+  main-is: frontend-b.hs
+  hs-source-dirs: src-bin
+  build-depends: base
+               , common
+               , obelisk-frontend
+               , obelisk-route
+               , reflex-dom
+               , obelisk-generated-static
+               , frontend
+               , obelisk-executable-config-lookup
   ghc-options: -threaded -O -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -fno-show-valid-hole-fits
   if impl(ghcjs)
     ghc-options: -dedupe

@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -12,7 +14,7 @@ import Language.Javascript.JSaddle (liftJSM, js, js1, jsg)
 
 import Obelisk.Frontend
 import Obelisk.Configs
-import Obelisk.Route
+import Obelisk.Route.Frontend
 import Obelisk.Generated.Static
 
 import Reflex.Dom.Core
@@ -20,38 +22,63 @@ import Reflex.Dom.Core
 import Common.Api
 import Common.Route
 
+frontendHead :: DomBuilder t m => m ()
+frontendHead = do
+  el "title" $ text "Obelisk Minimal Example"
+  elAttr "script" ("type" =: "application/javascript" <> "src" =: $(static "lib.js")) blank
+  elAttr "link" ("href" =: $(static "main.css") <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
 
 -- This runs in a monad that can be run on the client or the server.
 -- To run code in a pure client or pure server context, use one of the
 -- `prerender` functions.
-frontend :: Frontend (R FrontendRoute)
-frontend = Frontend
-  { _frontend_head = do
-      el "title" $ text "Obelisk Minimal Example"
-      elAttr "script" ("type" =: "application/javascript" <> "src" =: $(static "lib.js")) blank
-      elAttr "link" ("href" =: $(static "main.css") <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
-  , _frontend_body = do
-      el "h1" $ text "Welcome to Obelisk!"
-      el "p" $ text $ T.pack commonStuff
+-- !(forall t m.
+frontendBody :: ObeliskWidget t route m => RoutedT t route m () -> RoutedT t route m ()
+frontendBody routesWidget = do
+  el "h1" $ text "Welcome to Obelisk!"
+  el "p" $ text $ T.pack commonStuff
 
-      -- `prerender` and `prerender_` let you choose a widget to run on the server
-      -- during prerendering and a different widget to run on the client with
-      -- JavaScript. The following will generate a `blank` widget on the server and
-      -- print "Hello, World!" on the client.
-      prerender_ blank $ liftJSM $ void
-        $ jsg ("window" :: T.Text)
-        ^. js ("skeleton_lib" :: T.Text)
-        ^. js1 ("log" :: T.Text) ("Hello, World!" :: T.Text)
+  -- `prerender` and `prerender_` let you choose a widget to run on the server
+  -- during prerendering and a different widget to run on the client with
+  -- JavaScript. The following will generate a `blank` widget on the server and
+  -- print "Hello, World!" on the client.
+  prerender_ blank $ liftJSM $ void
+    $ jsg ("window" :: T.Text)
+    ^. js ("skeleton_lib" :: T.Text)
+    ^. js1 ("log" :: T.Text) ("Hello, World!" :: T.Text)
 
-      elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
-      el "div" $ do
-        let
-          cfg = "common/example"
-          path = "config/" <> cfg
-        getConfig cfg >>= \case
-          Nothing -> text $ "No config file found in " <> path
-          Just bytes -> case T.decodeUtf8' bytes of
-            Left ue -> text $ "Couldn't decode " <> path <> " : " <> T.pack (show ue)
-            Right s -> text s
-      return ()
+  routesWidget
+
+  let example = elAttr "div" ("style" =: "background-color: #CCF; padding: 0.5rem;")
+  example $ text $ $(static "obelisk.jpg")
+  elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
+  el "div" $ do
+    let
+      cfg = "common/example"
+      path = "config/" <> cfg
+    getConfig cfg >>= \case
+      Nothing -> text $ "No config file found in " <> path
+      Just bytes -> case T.decodeUtf8' bytes of
+        Left ue -> text $ "Couldn't decode " <> path <> " : " <> T.pack (show ue)
+        Right s -> text s
+  return ()
+
+frontendA :: Frontend (R FrontendRouteA)
+frontendA = Frontend
+  { _frontend_head = frontendHead
+  , _frontend_body = frontendBody $ do
+      el "h2" $ display =<< askRoute
+      el "ul" $ do
+        el "li" $ routeLink (FrontendRouteA_Main :/ ()) $ text "Frontend A Main"
+        el "br" blank
+        el "li" $ routeLink (FrontendRouteA_Int :/ 1) $ text "Frontend A Int"
+  }
+frontendB :: Frontend (R FrontendRouteB)
+frontendB = Frontend
+  { _frontend_head = frontendHead
+  , _frontend_body = frontendBody $ do
+      el "h2" $ display =<< askRoute
+      el "ul" $ do
+        el "li" $ routeLink (FrontendRouteB_Main :/ ()) $ text "Frontend B Main"
+        el "br" blank
+        el "li" $ routeLink (FrontendRouteB_Text :/ "AAA") $ text "Frontend B Text"
   }

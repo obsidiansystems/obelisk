@@ -202,7 +202,6 @@ run certDir portOverride root interpretPaths = do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
       [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
       , "Backend.backend"
-      , "Frontend.frontend"
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
       , ") { Obelisk.Run._runApp_backendPort =", show freePort
       ,   ", Obelisk.Run._runApp_forceFrontendPort =", show portOverride

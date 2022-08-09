@@ -8,6 +8,7 @@ library
   hs-source-dirs: src
   build-depends:
       attoparsec
+    , async
     , base
     , bytestring
     , containers
