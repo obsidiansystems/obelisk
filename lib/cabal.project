@@ -1,0 +1,26 @@
+-- cabal.project purely for local development.
+-- Nix ignores this file.
+--
+-- Allows HLS to load this Haskell project.
+
+packages:
+    ./asset/manifest
+    ./asset/serve-snap
+    ./backend
+    ./command
+    ./executable-config/inject
+    ./executable-config/lookup
+    ./frontend
+    ./route
+    ./run
+    ./selftest
+    ./snap-extras
+    ./tabulation
+
+-- Disable '-Werror', otherwise compiling with newer GHC versions fails,
+-- because we might have unneeded imports, etc...
+--
+-- For the IDE, that's not what we want.
+
+package *
+  ghc-options: -Wwarn
