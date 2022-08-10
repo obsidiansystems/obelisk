@@ -15,7 +15,6 @@ in
   obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (obeliskCleanSource ../lib/asset/manifest) {};
   obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (obeliskCleanSource ../lib/asset/serve-snap) {};
   obelisk-backend = self.callCabal2nix "obelisk-backend" (obeliskCleanSource ../lib/backend) {};
-  obelisk-cliapp = self.callCabal2nix "obelisk-cliapp" (obeliskCleanSource ../lib/cliapp) {};
   obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (obeliskCleanSource ../lib/command) {}) {
     librarySystemDepends = [
       pkgs.jre

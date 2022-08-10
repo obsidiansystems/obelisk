@@ -28,7 +28,7 @@ import Text.Megaparsec as MP
 import Text.Megaparsec.Char as MP
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp
+import Cli.Extras
 
 cp :: FilePath
 cp = $(staticWhich "cp")

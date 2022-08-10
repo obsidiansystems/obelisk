@@ -20,8 +20,8 @@ import System.FilePath ((<.>), (</>))
 import qualified System.Info
 
 import Obelisk.App (MonadObelisk, getObeliskUserStateDir)
-import Obelisk.CliApp
 import Obelisk.Command.Utils (rmPath, whichPath, sshKeygenPath, nixBuildExePath, dockerPath)
+import Cli.Extras
 
 -- | Generate the `--builders` argument string to enable the VM builder after ensuring it is available.
 getNixBuildersArg :: MonadObelisk m => m String
