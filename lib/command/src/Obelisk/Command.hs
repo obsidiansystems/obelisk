@@ -327,7 +327,7 @@ mkObeliskConfig = do
   let logLevel = toLogLevel $ any (`elem` ["-v", "--verbose"]) cliArgs
   notInteractive <- not <$> isInteractiveTerm
   cliConf <- newCliConfig logLevel notInteractive notInteractive $ \case
-    ObeliskError_ProcessError (ProcessFailure p code) ann ->
+    ObeliskError_ProcessError ObeliskProcessError{_obeliskProcessError_failure = ProcessFailure p code, _obeliskProcessError_mComment = ann } ->
       ( "Process exited with code " <> T.pack (show code) <> "; " <> reconstructCommand p
         <> maybe "" ("\n" <>) ann
       , ExitFailure 2

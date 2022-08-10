@@ -38,13 +38,26 @@ import Cli.Extras
   , runCli
   )
 
-data ObeliskError
-  = ObeliskError_ProcessError
-    { obeliskError_err :: ProcessFailure
-    , obeliskError_mAnn :: Maybe Text
+-- | An error thrown by one of the child processes invoked during
+-- execution of Obelisk.
+data ObeliskProcessError
+  = ObeliskProcessError
+    { _obeliskProcessError_failure :: ProcessFailure
+      -- ^ The 'ProcessFailure' indicating both how the process was
+      -- created and its eventual exit code.
+    , _obeliskProcessError_mComment :: Maybe Text
+      -- ^ Optionally, a comment can be attached to the 'ProcessFailure'
+      -- to give the user more details.
     }
+
+-- | An error thrown by the Obelisk app.
+data ObeliskError
+  = ObeliskError_ProcessError ObeliskProcessError
+    -- ^ Indicates an error in one of our child processes.
   | ObeliskError_NixThunkError NixThunkError
+    -- ^ Propagated errors from @nix-thunk@
   | ObeliskError_Unstructured Text
+    -- ^ An ad-hoc error.
 
 makePrisms ''ObeliskError
 
@@ -53,10 +66,10 @@ instance AsUnstructuredError ObeliskError where
 
 -- Only project when the other field is null, otherwise we are not law abiding.
 instance AsProcessFailure ObeliskError where
-  asProcessFailure = _ObeliskError_ProcessError . prism (, Nothing) f
+  asProcessFailure = _ObeliskError_ProcessError . prism (flip ObeliskProcessError Nothing) f
     where f = \case
-            (pf, Nothing) -> Right pf
-            pann@(_, Just _) -> Left pann
+            ObeliskProcessError pf Nothing -> Right pf
+            pann@(ObeliskProcessError _ (Just _)) -> Left pann
 
 newtype Obelisk = Obelisk
   { _obelisk_cliConfig :: CliConfig ObeliskError
