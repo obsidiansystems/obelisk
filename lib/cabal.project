@@ -1,0 +1,15 @@
+packages:
+    ./asset/manifest
+    ./asset/serve-snap
+    ./backend
+    ./cliapp
+    ./command
+    ./executable-config/inject
+    ./executable-config/lookup
+    ./frontend
+    ./route
+    ./run
+    ./selftest
+    ./snap-extras
+    ./tabulation
+
