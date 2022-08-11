@@ -33,8 +33,6 @@ staticPrefix :: FilePath
 staticPrefix = "/static"
 
 -- | Location of the symbolic link to static assets and resources.
---
--- We shouldn't be defining it here, but apparently this is just hard-coded where needed.
 staticOutPath :: FilePath
 staticOutPath = "static.out"
 
@@ -55,7 +53,12 @@ staticAssetHashed root fp = do
 --
 -- If the filepath can not be found in the static output directory,
 -- this will throw a compile-time error.
-staticAssetFilePathRaw :: FilePath -> FilePath -> Q Exp
+staticAssetFilePathRaw
+  :: FilePath
+  -- ^ Add this prefix directory to the embedded filepath @fp@.
+  -> FilePath
+  -- ^ Filepath you want to embed.
+  -> Q Exp
 staticAssetFilePathRaw root = staticAssetWorker root staticOutPath
 
 staticAssetFilePath :: FilePath -> FilePath -> Q Exp
@@ -68,7 +71,15 @@ staticAssetFilePath root fp = do
 -- to 'staticOutPath' and produces a compilation error otherwise.
 -- This helps finding typos in filepaths, etc... at compile-time instead of
 -- run-time.
-staticAssetWorker :: FilePath -> FilePath -> FilePath -> Q Exp
+staticAssetWorker
+  :: FilePath
+  -- ^ Add this prefix directory to the embedded filepath @fp@.
+  -> FilePath
+  -- ^ Directory to which the filepath must have been copied.
+  -- If @fp@ does not exist within this directory, this function will fail.
+  -> FilePath
+  -- ^ Filepath you want to embed.
+  -> Q Exp
 staticAssetWorker root staticOut fp = do
   exists <- runIO $ doesFileExist $ staticOut </> fp
   when (not exists) $
