@@ -1,0 +1,5 @@
+# See https://github.com/haskell/hie-bios#cabal for documentation
+#
+# Requires cabal >= 3.4
+cradle:
+  cabal:
