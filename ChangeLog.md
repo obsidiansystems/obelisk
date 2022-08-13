@@ -10,8 +10,9 @@ This project's release branch is `master`. This log is written from the perspect
   * [#931](https://github.com/obsidiansystems/obelisk/pull/931): For `ob deploy init`, command-line option `--check-known-host` corrected in readme, caveat added for multiple matching host-keypairs.
 * building
   * [#956](https://github.com/obsidiansystems/obelisk/pull/956): Squelch closure-compiler warnings. They are not very helpful and can cause issues (see: [closure-compiler#3720](https://github.com/google/closure-compiler/issues/3720))
-* nixpkgs-overlays
+* nix
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
+  * [#964](https://github.com/obsidiansystems/obelisk/pull/964): Take a step toward pure evaluation of Obelisk, by removing uses of `<nixpkgs>` (except in tests for legacy thunks), and bumping `gitignore.nix`.
 * CLI
   * [#784](https://github.com/obsidiansystems/obelisk/pull/784): hint for users to take advantage of ob shell --no-interpret option for thunks
   * [#916](https://github.com/obsidiansystems/obelisk/pull/916): Add `check-known-hosts` option in `ob deploy init`.
