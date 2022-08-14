@@ -11,6 +11,9 @@ let
   obelisk-everywhere = (import ./all-builds.nix { inherit supportedSystems; }).x86_64-linux.cache;
   snakeOilPrivateKey = sshKeys.snakeOilPrivateKey.text;
   snakeOilPublicKey = sshKeys.snakeOilPublicKey;
+  # used to avoid <nixpkgs> impurity in tests; may as well keep up with reflex-platform's nixpkgs
+  nix-thunk = import ./dep/nix-thunk {};
+  pinnedNixpkgs = nix-thunk.thunkSource "${nix-thunk.thunkSource ./dep/reflex-platform}/nixpkgs";
 in
   make-test ({...}: {
     name  = "obelisk";
@@ -28,9 +31,9 @@ in
         ];
       };
 
-      client = {
+      client = { modulesPath, ...}: {
         imports = [
-          (pkgs.path + /nixos/modules/installer/cd-dvd/channel.nix)
+          (modulesPath + "/installer/cd-dvd/channel.nix")
         ];
         nix.useSandbox = false;
         nix.binaryCaches = [];
@@ -47,10 +50,10 @@ in
       let
         privateKeyFile = pkgs.writeText "id_rsa" ''${snakeOilPrivateKey}'';
         thunkableSample = pkgs.writeText "default.nix" ''
-          let pkgs = import <nixpkgs> {}; in pkgs.git
+          let pkgs = import ${pinnedNixpkgs} {}; in pkgs.git
         '';
         invalidThunkableSample = pkgs.writeText "default.nix" ''
-          let pkgs = import <nixpkgs> {}; in pkgtypo.git
+          let pkgs = import ${pinnedNixpkgs} {}; in pkgtypo.git
         '';
         sshConfigFile = pkgs.writeText "ssh_config" ''
           Host *
