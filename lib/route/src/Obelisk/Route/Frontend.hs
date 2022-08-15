@@ -90,7 +90,7 @@ import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
 import GHCJS.DOM.EventTarget (addEventListener)
-import GHCJS.DOM.MouseEvent (getAltKey, getCtrlKey, getMetaKey, getShiftKey)
+import GHCJS.DOM.MouseEvent (getAltKey, getCtrlKey, getMetaKey, getShiftKey, getButton)
 import qualified GHCJS.DOM.Event as E
 import Language.Javascript.JSaddle (MonadJSM, function, jsNull, liftJSM, toJSVal) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
@@ -504,26 +504,36 @@ runRouteViewT routeEncoder switchover useHash a = do
           setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
 
--- | This function returns a Reflex event containing a [MouseEvent](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent) for an element.
+-- | This function returns a Reflex event containing a <MouseEvent
+-- https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent> for an
+-- element.
 --
--- This funcion is needed because the default Reflex click event is lacking. As can be seen
--- from the aforementioned link, click events have a lot of metadata. Reflex does not have a way of
--- providing the user with this metadata. If a user wanted to know whether Ctrl/Alt keys were pressed
--- while the element was being clicked, Reflex doesn't have a way of providing this information.
--- There are events for keypress, but they only seem to work with input elements.
+-- This funcion is needed because the default Reflex click event is
+-- lacking. As can be seen from the aforementioned link, click events
+-- have a lot of metadata. Reflex does not have a way of providing the
+-- user with this metadata. If a user wanted to know whether Ctrl/Alt
+-- keys were pressed while the element was being clicked, Reflex doesn't
+-- have a way of providing this information.  There are events for
+-- keypress, but they only seem to work with input elements.
 --
--- Another thing that this function provides is the capability to conditionally handle events.
--- For example, consider a situation where clicks should not be propagated if Alt key was pressed during the click.
--- We would treat the event normally when Alt key was NOT pressed (ie allow propagation), and stop propagation whenever
--- Alt key was pressed. Reflex doesn't have a way to deal with this situation. It has mechanisms to stop event propagation,
--- but they are not conditional, ie either they will ALWAYS stop event propagation, or ALWAYS allow event propagation.
--- The same argument holds for preventing default event behavior. This function allows it, Reflex doesn't.
+-- Another thing that this function provides is the capability to
+-- conditionally handle events.  For example, consider a situation where
+-- clicks should not be propagated if Alt key was pressed during the
+-- click.  We would treat the event normally when Alt key was NOT
+-- pressed (ie allow propagation), and stop propagation whenever Alt key
+-- was pressed. Reflex doesn't have a way to deal with this situation.
+-- It has mechanisms to stop event propagation, but they are not
+-- conditional, ie either they will ALWAYS stop event propagation, or
+-- ALWAYS allow event propagation.  The same argument holds for
+-- preventing default event behavior. This function allows it, Reflex
+-- doesn't.
 getClickEvent
   :: (MonadJSM m, TriggerEvent t m, DOM.IsEventTarget (RawElement d))
   => Element er d t
   -- ^ The element for which click event is needed
   -> (DOM.MouseEvent -> DOM.DOM ())
-  -- ^ DOM action, to be run immediately after event the event handler. Can be used to stop propagation/prevent default behavior.
+  -- ^ DOM action, to be run immediately after event the event handler.
+  -- Can be used to stop propagation/prevent default behavior.
   -> m (Event t DOM.MouseEvent)
 getClickEvent elm onComplete = do
   (sendEv, sendFn) <- newTriggerEvent
@@ -544,36 +554,46 @@ getClickEvent elm onComplete = do
 
   pure sendEv
 
--- This function takes a [MouseEvent](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent),
--- and checks if it should be handled by us. To be specific, it checks for:
+-- This function takes a <MouseEvent
+-- https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent>, and
+-- checks if it should be handled by us. To be specific, it checks for:
+--
 --  1. Whether the Alt key was pressed
 --  2. Whether the Ctrl key was pressed
 --  3. Whether the Shift key was pressed
 --  4. Whether the Meta key was pressed
--- If any of the above keys were pressed, this mouse click should be left to be handled by the browser,
--- hence this function will return `False`. Otherwise, it returns `True`.
+--  5. Whether the middle mouse button was clicked
+--
+-- If any of the above conditions are met, this mouse event should be
+-- left to be handled by the browser, hence this function will return
+-- `False`. Otherwise, it returns `True`.
 shouldMouseClickBeHandled :: (DOM.MonadDOM m) => DOM.MouseEvent -> m Bool
 shouldMouseClickBeHandled mouseClick = not . or <$> sequence
   [ getAltKey mouseClick
   , getCtrlKey mouseClick
   , getShiftKey mouseClick
   , getMetaKey mouseClick
+  , (== 1) <$> getButton mouseClick
   ]
 
 -- | DOM action for preventing the default behavior of a mouse click,
--- only when we should handle the click. If we should not handle the click
--- (ie browser should take the default action), no action will be taken.
--- This function can be passed as an argument to `getClickEvent`.
+-- only when we should handle the click. If we should not handle the
+-- click (ie browser should take the default action), no action will be
+-- taken.  This function can be passed as an argument to
+-- `getClickEvent`.
 preventDefaultAction :: Bool -> DOM.MouseEvent -> DOM.DOM ()
 preventDefaultAction isTargetBlank mouseClick = do
   b <- shouldMouseClickBeHandled mouseClick
   when (b && not isTargetBlank) $
     E.preventDefault mouseClick
 
--- | This function samples a given `Dynamic` based on a event containing a [MouseEvent](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent).
+-- | This function samples a given `Dynamic` based on a event containing
+-- a <MouseEvent
+-- https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent>.
 --
--- Whenever the input event triggers, we sample the input dynamic if we should handle the click.
--- If we should not handle the event (ie leave it to the default action by the browser), the event is discarded.
+-- Whenever the input event triggers, we sample the input dynamic if we
+-- should handle the click.  If we should not handle the event (ie leave
+-- it to the default action by the browser), the event is discarded.
 removeDefaultHandledClicks :: (PerformEvent t m, MonadJSM (Performable m)) => Bool -> Event t DOM.MouseEvent -> Dynamic t a -> m (Event t a)
 removeDefaultHandledClicks isTargetBlank clickEv xDyn = do
   xEv <- performEvent $ (,) <$> current xDyn <@> clickEv <&> \(x, mouseClick) -> do
@@ -583,14 +603,21 @@ removeDefaultHandledClicks isTargetBlank clickEv xDyn = do
       else Nothing
   pure $ fmapMaybe id xEv
 
--- | This function sets the route as per the input dynamic, whenever the input element is clicked,
--- provided that we should handle the click. It will also prevent the default action for the click event in this case.
+-- | This function sets the route as per the input dynamic, whenever the
+-- input element is clicked, provided that we should handle the click.
+-- It will also prevent the default action for the click event in this
+-- case.
 --
--- In case we should not handle the click, ie browser should take the default action, the function will not do anything.
+-- In case we should not handle the click, ie browser should take the
+-- default action, the function will not do anything.
 --
--- This is required so that `routeLink` functions perform similarly to <a> tag, in cases where a modifier key is pressed (Alt/Ctrl/Shift/Meta).
--- In such cases, we let the browser handle the mouse click and do nothing. If not, we prevent the default behavior
--- and handle the click ourselves. This stays in line with the client side routing that Obelisk has.
+-- This is required so that @routeLink@ functions perform similarly to
+-- @<a>@ tags, for non-standard click events (held modifier keys, or
+-- middle mouse). In such cases, we let the browser handle the mouse
+-- click and do nothing.
+-- If not, we prevent the default behavior and handle the click
+-- ourselves. This stays in line with the client side routing that
+-- Obelisk has.
 setRouteUnlessDefaultHandled
   :: ( SetRoute t route m
      , MonadJSM m
@@ -608,8 +635,9 @@ setRouteUnlessDefaultHandled e isTargetBlank routeDyn = do
   routeEv <- removeDefaultHandledClicks isTargetBlank clickEv routeDyn
   setRoute routeEv
 
--- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
--- contexts, this widget falls back to using @href@s to control navigation
+-- | A link widget that, when clicked, sets the route to the provided
+-- route. In non-javascript contexts, this widget falls back to using
+-- @href@s to control navigation
 routeLink
   :: forall t m a route.
      ( DomBuilder t m
