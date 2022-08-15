@@ -205,16 +205,26 @@ in rec {
   inherit mkAssets;
 
   serverExe = backend: frontend: assets: optimizationLevel: externjs: version:
-    pkgs.runCommand "serverExe" {} ''
+    let
+      exeBackend = if profiling then backend else haskellLib.justStaticExecutables backend;
+      exeFrontend = compressedJs frontend optimizationLevel externjs;
+      exeFrontendAssets = mkAssets exeFrontend;
+      exeAssets = mkAssets assets;
+    in pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
-      ln -s '${mkAssets assets}' $out/static.assets
-      for d in '${mkAssets (compressedJs frontend optimizationLevel externjs)}'/*/; do
+      ln -s '${exeBackend}'/bin/* $out/
+      ln -s '${exeAssets}' $out/static.assets
+      for d in '${exeFrontendAssets}'/*/; do
         ln -s "$d" "$out"/"$(basename "$d").assets"
       done
       echo ${version} > $out/version
-    '';
+    '' // {
+      backend = exeBackend;
+      frontend = exeFrontend;
+      frontend-assets = exeFrontendAssets;
+      static-assets = exeAssets;
+    };
 
   server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }@args:
     let
@@ -355,13 +365,13 @@ in rec {
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
       mainProjectOut = projectOut { inherit system; };
-      serverOn = projectInst: version: serverExe
-        projectInst.ghc.backend
-        mainProjectOut.ghcjs.frontend
-        projectInst.passthru.staticFiles
-        projectInst.passthru.__closureCompilerOptimizationLevel
-        projectInst.passthru.externjs
-        version;
+      serverOn = projectInst: version:
+        let backend = projectInst.ghc.backend;
+            frontend = mainProjectOut.ghcjs.frontend;
+            staticFiles = projectInst.passthru.staticFiles;
+            ccOptLevel = projectInst.passthru.__closureCompilerOptimizationLevel;
+            externJs = projectInst.passthru.externjs;
+        in serverExe backend frontend staticFiles ccOptLevel externJs version;
       linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
     in mainProjectOut // {
