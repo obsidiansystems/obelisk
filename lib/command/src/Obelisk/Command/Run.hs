@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE PackageImports #-}
 module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
@@ -76,22 +77,11 @@ import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
 
 import Obelisk.App (MonadObelisk, getObelisk, runObelisk)
-import Obelisk.CliApp (
-    Severity (..),
-    failWith,
-    proc,
-    putLog,
-    readCreateProcessWithExitCode,
-    readProcessAndLogStderr,
-    runProcess_,
-    setCwd,
-    setDelegateCtlc,
-    withSpinner,
-    )
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
-import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
+import "nix-thunk" Nix.Thunk
+import Cli.Extras
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -230,9 +220,9 @@ exportGhciConfig root interpretPaths = do
   getGhciSessionSettings pkgs root
 
 nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
-nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
+nixShellForInterpretPaths isPure shell' root interpretPaths cmd = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  nixShellWithoutPkgs root isPure False (packageInfoToNamePathMap pkgs) shell cmd
+  nixShellWithoutPkgs root isPure False (packageInfoToNamePathMap pkgs) shell' cmd
 
 -- | Like 'getLocalPkgs' but also parses them and fails if any of them can't be parsed.
 getParsedLocalPkgs :: MonadObelisk m => FilePath -> PathTree Interpret -> m (NonEmpty CabalPackageInfo)

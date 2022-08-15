@@ -1,14 +1,25 @@
-# Contribution Guide
+# Contribution Guide <!-- omit in toc -->
 
 Contributions and issue reports are encouraged and appreciated!
 
 - [Opening Issues](#opening-issues)
 - [Submitting Changes](#submitting-changes)
   - [Guidelines for Commit Messages](#guidelines-for-commit-messages)
+    - [Summary Line](#summary-line)
+      - [Note on bumping dependencies](#note-on-bumping-dependencies)
+    - [Body](#body)
   - [Guidelines for Pull Requests](#guidelines-for-pull-requests)
   - [Code Quality](#code-quality)
+    - [Warnings](#warnings)
+    - [Build and Test](#build-and-test)
   - [Documentation](#documentation)
+    - [In the code](#in-the-code)
+    - [In the Changelog](#in-the-changelog)
+    - [In the Readme](#in-the-readme)
 - [Development Environment](#development-environment)
+  - [Building `ob` for testing](#building-ob-for-testing)
+  - [Testing features from an unmerged branch](#testing-features-from-an-unmerged-branch)
+  - [Hacking on Obelisk from within an Obelisk project](#hacking-on-obelisk-from-within-an-obelisk-project)
 
 ## Opening Issues
 
@@ -95,6 +106,8 @@ For other libraries like `obelisk-command` you can use `ghcid`. To launch `ghcid
 ```bash
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid"
 ```
+
+[Haskell-Language-Server](https://haskell-language-server.readthedocs.io/en/latest/)(HLS) can be used on the Haskell libraries in `lib`. Simply launch your lsp-client of choice in the `lib` subdirectory.
 
 ### Building `ob` for testing
 

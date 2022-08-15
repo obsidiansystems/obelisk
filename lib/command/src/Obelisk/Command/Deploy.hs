@@ -5,6 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE ViewPatterns #-}
 {-|
    Description:
@@ -46,14 +47,13 @@ import qualified Nix.Expr.Shorthands as Nix
 import Prettyprinter (layoutCompact)
 import Prettyprinter.Render.String (renderString)
 
-import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp (
-  Severity (..), callProcessAndLogOutput, failWith, proc, putLog,
-  setCwd, setDelegateCtlc, setEnvOverride, withSpinner, readCreateProcessWithExitCode)
+import Obelisk.App (MonadObelisk, wrapNixThunkError)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
-import Obelisk.Command.Thunk
 import Obelisk.Command.Utils
+
+import "nix-thunk" Nix.Thunk
+import Cli.Extras
 
 -- | Options passed to the `init` verb
 data DeployInitOpts = DeployInitOpts
@@ -86,9 +86,9 @@ deployInit deployOpts root = do
   rootEqualsTarget <- liftIO $ liftA2 equalFilePath (canonicalizePath root) (canonicalizePath deployDir)
   when rootEqualsTarget $
     failWith [i|Deploy directory ${deployDir} should not be the same as project root.|]
-  thunkPtr <- readThunk root >>= \case
+  thunkPtr <- wrapNixThunkError (readThunk root) >>= \case
     Right (ThunkData_Packed _ ptr) -> return ptr
-    _ -> getThunkPtr CheckClean_NotIgnored root Nothing
+    _ -> wrapNixThunkError (getThunkPtr CheckClean_NotIgnored root Nothing)
   deployInit' thunkPtr deployOpts
 
 -- | The preamble in 'deployInit' provides deployInit' with a 'ThunkPtr' that it can install in
@@ -130,7 +130,7 @@ deployInit' thunkPtr (DeployInitOpts deployDir sshKeyPath hostnames route adminE
 
   let srcDir = deployDir </> "src"
   withSpinner ("Creating source thunk (" <> T.pack (makeRelative deployDir srcDir) <> ")") $ do
-    createThunk srcDir $ Right thunkPtr
+    wrapNixThunkError . createThunk srcDir $ Right thunkPtr
     setupObeliskImpl deployDir
 
   withSpinner "Writing deployment configuration" $ do
@@ -172,11 +172,11 @@ deployPush deployPath builders = do
     True -> Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "redirect_hosts"
     False -> pure mempty
   let srcPath = deployPath </> "src"
-  thunkPtr <- readThunk srcPath >>= \case
+  thunkPtr <- wrapNixThunkError (readThunk srcPath) >>= \case
     Right (ThunkData_Packed _ ptr) -> return ptr
     Right ThunkData_Checkout -> do
       checkGitCleanStatus srcPath True >>= \case
-        True -> packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
+        True -> wrapNixThunkError $ packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
     Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
@@ -224,10 +224,8 @@ deployPush deployPath builders = do
       proc sshPath $ sshOpts <>
         [ "root@" <> host
         , unwords
-            -- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
-            [ "nix-env -p /nix/var/nix/profiles/system --set " <> outputPath
-            , "&&"
-            , "/nix/var/nix/profiles/system/bin/switch-to-configuration switch"
+            [ "bash -c"
+            , bashEscape (deployActivationScript outputPath)
             ]
         ]
   isClean <- checkGitCleanStatus deployPath True
@@ -243,9 +241,34 @@ deployPush deployPath builders = do
       let p = setEnvOverride (envMap <>) $ setDelegateCtlc True $ proc cmd args
       callProcessAndLogOutput (Notice, Notice) p
 
+-- | Bash command that will be run on the deployed machine to actually switch the NixOS configuration
+-- This has some more involved logic than merely activating the right profile. It also determines
+-- whether the kernel parameters have changed so that the deployed NixOS instance should be restarted.
+deployActivationScript
+  :: String
+  -- ^ The out path of the configuration to activate
+  -> String
+deployActivationScript outPath =
+-- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
+-- This logic follows the nixos auto-upgrade module as of writing.
+-- If the workflow is added to switch-to-configuration proper, we can simplify this:
+-- https://github.com/obsidiansystems/obelisk/issues/958
+  [i|set -euxo pipefail
+nix-env -p /nix/var/nix/profiles/system --set "${bashEscape outPath}"
+/nix/var/nix/profiles/system/bin/switch-to-configuration boot
+booted="$(readlink /run/booted-system/{initrd,kernel,kernel-modules})"
+built="$(readlink /nix/var/nix/profiles/system/{initrd,kernel,kernel-modules})"
+if [ "$booted" = "$built" ]; then
+  /nix/var/nix/profiles/system/bin/switch-to-configuration switch
+else
+  /run/current-system/sw/bin/shutdown -r +1
+fi
+|]
+
 -- | Update the source thunk in the staging directory to the HEAD of the branch.
 deployUpdate :: MonadObelisk m => FilePath -> m ()
-deployUpdate deployPath = updateThunkToLatest (ThunkUpdateConfig Nothing (ThunkConfig Nothing)) (deployPath </> "src")
+deployUpdate deployPath = wrapNixThunkError $
+  updateThunkToLatest (ThunkUpdateConfig Nothing (ThunkConfig Nothing)) (deployPath </> "src")
 
 -- | Platforms that we deploy obelisk artefacts to.
 data PlatformDeployment = Android | IOS
