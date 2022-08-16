@@ -226,7 +226,7 @@ in rec {
       static-assets = exeAssets;
     };
 
-  serverModule = { exe, hostName, adminEmail, routeHost, enableHttps, version, ... }@args: {...}: {
+  serverModule = { exe, hostName, adminEmail, routeHost, enableHttps, version, redirectHosts ? [], configHash ? "", ... }@args: {...}: {
     imports = [
       ((args.module or (serverModules.mkBaseEc2)) { inherit (args) exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
       (serverModules.mkDefaultNetworking args)
@@ -415,13 +415,13 @@ in rec {
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
       # the "classic flavor", as a "deployable" module
-      deployLinuxServerModule = {version, buildConfigs}: serverModule ({
-        inherit version;
+      deployLinuxServerModule = {version, buildConfigs, redirectHosts ? [], configHash ? ""}: serverModule ({
+        inherit version redirectHosts configHash;
         exe = linuxExe version;
       } // buildConfigs);
 
       # the "classic flavor", as a module
-      linuxServerModule = args@{ hostName, adminEmail, routeHost, enableHttps, version, ...}:
+      linuxServerModule = args@{ hostName, adminEmail, routeHost, enableHttps, version, redirectHosts ? [], configHash ? "", ...}:
         serverModule ({ module = serverModules.mkBaseEc2; exe = linuxExe version; } // args);
       # the "classic flavor", as a full nixos configuration
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }:
