@@ -107,7 +107,7 @@ For other libraries like `obelisk-command` you can use `ghcid`. To launch `ghcid
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid"
 ```
 
-[Haskell-Language-Server](https://haskell-language-server.readthedocs.io/en/latest/)(HLS) can be used on the Haskell libraries in `lib`. Simply launch your lsp-client of choice in the `lib` subdirectory.
+[Haskell-Language-Server](https://haskell-language-server.readthedocs.io/en/latest/)(HLS) can be used on the Haskell libraries in `lib`. Simply launch your lsp-client of choice in the `lib` subdirectory. Set up the appropriate environment by running `./lib/setupHls.sh up` and tear it down again with `./lib/setupHls.sh down`
 
 ### Building `ob` for testing
 

@@ -12,3 +12,7 @@ dist-newstyle
 cabal.project.local
 .ghc.environment.*
 **/ghcid-output.txt
+
+# HLS specific files
+lib/cabal.project
+lib/cabal.project.local
