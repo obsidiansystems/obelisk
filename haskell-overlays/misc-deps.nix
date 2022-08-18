@@ -15,7 +15,6 @@ rec {
 
   # hpack requires cabal >= 3.0 but the ghc865 package set builds it with 2.4 by default
   hpack = super.hpack.overrideScope (self: super: { Cabal = self.Cabal_3_2_0_0; });
-  cabal-install = null;
   # These versions work with both the ghc865 and ghc8107 package sets
   git = self.callCabal2nix "git" (hackGet ../dep/hs-git) { };
   # hdevtools = haskellLib.markUnbroken super.hdevtools;
