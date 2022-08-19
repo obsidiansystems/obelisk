@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -13,7 +14,7 @@ module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
-import Control.Lens (ifor, (.~), (&))
+import Control.Lens (ifor, (.~), (&), view)
 import Control.Concurrent (forkIO)
 import Control.Monad (filterM, void)
 import Control.Monad.Except (runExceptT, throwError)
@@ -43,9 +44,17 @@ import Data.Time.Clock (getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
+#if MIN_VERSION_Cabal(3,2,1)
+import Distribution.Compiler (CompilerFlavor(..), perCompilerFlavorToList, PerCompilerFlavor)
+#else
 import Distribution.Compiler (CompilerFlavor(..), PerCompilerFlavor)
+#endif
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
+#if MIN_VERSION_Cabal(3,2,1)
+import Distribution.Fields.ParseResult (runParseResult)
+#else
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription, runParseResult)
-import Distribution.Parsec.Warning (PWarning)
+#endif
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple.Compiler (PackageDB (GlobalPackageDB))
 import Distribution.Simple.Configure (configCompilerEx, getInstalledPackages)
@@ -54,15 +63,26 @@ import Distribution.Simple.Program.Db (defaultProgramDb)
 import qualified Distribution.System as Dist
 import Distribution.Types.BuildInfo (buildable, cppOptions, defaultExtensions, defaultLanguage, hsSourceDirs, options, targetBuildDepends)
 import Distribution.Types.CondTree (simplifyCondTree)
-import Distribution.Types.ConfVar (ConfVar (Arch, Impl, OS))
-import Distribution.Types.Dependency (Dependency (..), depPkgName, depVerRange)
+import Distribution.Types.Dependency (Dependency (..), depPkgName)
+import Distribution.Parsec.Warning (PWarning)
+#if MIN_VERSION_Cabal(3,2,1)
+import Distribution.Types.GenericPackageDescription.Lens (ConfVar (Arch, Impl, OS), condLibrary)
+#else
 import Distribution.Types.GenericPackageDescription (condLibrary)
+import Distribution.Types.ConfVar (ConfVar (Arch, Impl, OS))
+#endif
 import Distribution.Types.InstalledPackageInfo (compatPackageKey)
 import Distribution.Types.Library (libBuildInfo)
 import Distribution.Types.LibraryName (LibraryName(..))
 import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Types.VersionRange (anyVersion)
 import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
+#if MIN_VERSION_Cabal(3,2,1)
+import qualified Distribution.Parsec.Warning as Dist
+#else
+import qualified Distribution.System as Dist
+#endif
+import Distribution.Types.Dependency (Dependency (..), depPkgName, depVerRange)
 import qualified Distribution.Verbosity as Verbosity (silent)
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
@@ -377,7 +397,11 @@ parseCabalPackage' pkg = runExceptT $ do
       Arch archVar -> Just archVar == archConfVar
       Impl GHC _ -> True -- TODO: Actually check version range
       _ -> False
+#if MIN_VERSION_Cabal(3,2,1)
+  case (view condLibrary) <$> result of
+#else
   case condLibrary <$> result of
+#endif
     Right (Just condLib) -> do
       let (_, lib) = simplifyCondTree evalConfVar condLib
       pure $ Just $ (warnings,) $ CabalPackageInfo
@@ -391,7 +415,8 @@ parseCabalPackage' pkg = runExceptT $ do
             defaultExtensions $ libBuildInfo lib
         , _cabalPackageInfo_defaultLanguage =
             defaultLanguage $ libBuildInfo lib
-        , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
+        , _cabalPackageInfo_compilerOptions =
+            options $ libBuildInfo lib
         , _cabalPackageInfo_cppOptions = cppOptions $ libBuildInfo lib
         , _cabalPackageInfo_buildDepends = targetBuildDepends $ libBuildInfo lib
         }
@@ -516,6 +541,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
         ((_version,installedPackageInfo:_) :_) ->
           compatPackageKey installedPackageInfo
         _ -> error $ "Couldn't resolve dependency for " <> prettyShow dep
+
 
 -- Load the package index used by the GHC in this path's nix project
 loadPackageIndex :: MonadObelisk m => [CabalPackageInfo] -> FilePath -> m InstalledPackageIndex

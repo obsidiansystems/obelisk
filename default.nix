@@ -6,6 +6,7 @@
     security.acme.acceptTerms = false;
   }
 , reflex-platform-func ? import ./dep/reflex-platform
+, useGHC810 ? false #true if one wants to use ghc 8.10.7
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -17,12 +18,14 @@ let
   getReflexPlatform = { system, enableLibraryProfiling ? profiling }: reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
 
+    __useNewerCompiler = useGHC810;
+
     nixpkgsOverlays = [
       (import ./nixpkgs-overlays)
     ];
 
     haskellOverlays = [
-      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; })
+      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; __useNewerCompiler = useGHC810; })
       pkgs.obeliskExecutableConfig.haskellOverlay
       (import ./haskell-overlays/obelisk.nix)
       (import ./haskell-overlays/tighten-ob-exes.nix)
@@ -87,7 +90,7 @@ in rec {
       ${if optimizationLevel == null then ''
         ln -s "$dir/all.unminified.js" "$dir/all.js"
       '' else ''
-        '${pkgs.closurecompiler}/bin/closure-compiler' ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        '${pkgs.closurecompiler}/bin/closure-compiler' ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
         echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
       ''}
     done
@@ -205,16 +208,26 @@ in rec {
   inherit mkAssets;
 
   serverExe = backend: frontend: assets: optimizationLevel: externjs: version:
-    pkgs.runCommand "serverExe" {} ''
+    let
+      exeBackend = if profiling then backend else haskellLib.justStaticExecutables backend;
+      exeFrontend = compressedJs frontend optimizationLevel externjs;
+      exeFrontendAssets = mkAssets exeFrontend;
+      exeAssets = mkAssets assets;
+    in pkgs.runCommand "serverExe" {} ''
       mkdir $out
       set -eux
-      ln -s '${if profiling then backend else haskellLib.justStaticExecutables backend}'/bin/* $out/
-      ln -s '${mkAssets assets}' $out/static.assets
-      for d in '${mkAssets (compressedJs frontend optimizationLevel externjs)}'/*/; do
+      ln -s '${exeBackend}'/bin/* $out/
+      ln -s '${exeAssets}' $out/static.assets
+      for d in '${exeFrontendAssets}'/*/; do
         ln -s "$d" "$out"/"$(basename "$d").assets"
       done
       echo ${version} > $out/version
-    '';
+    '' // {
+      backend = exeBackend;
+      frontend = exeFrontend;
+      frontend-assets = exeFrontendAssets;
+      static-assets = exeAssets;
+    };
 
   server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }@args:
     let
@@ -355,13 +368,13 @@ in rec {
             in allConfig;
         in (mkProject (projectDefinition args)).projectConfig);
       mainProjectOut = projectOut { inherit system; };
-      serverOn = projectInst: version: serverExe
-        projectInst.ghc.backend
-        mainProjectOut.ghcjs.frontend
-        projectInst.passthru.staticFiles
-        projectInst.passthru.__closureCompilerOptimizationLevel
-        projectInst.passthru.externjs
-        version;
+      serverOn = projectInst: version:
+        let backend = projectInst.ghc.backend;
+            frontend = mainProjectOut.ghcjs.frontend;
+            staticFiles = projectInst.passthru.staticFiles;
+            ccOptLevel = projectInst.passthru.__closureCompilerOptimizationLevel;
+            externJs = projectInst.passthru.externjs;
+        in serverExe backend frontend staticFiles ccOptLevel externJs version;
       linuxExe = serverOn (projectOut { system = "x86_64-linux"; });
       dummyVersion = "Version number is only available for deployments";
     in mainProjectOut // {

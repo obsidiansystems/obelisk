@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -36,7 +37,9 @@ module Obelisk.CliApp.Process
 import Control.Monad ((<=<), join, void)
 import Control.Monad.Catch (MonadMask, bracketOnError)
 import Control.Monad.Except (throwError)
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail
+#endif
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Lens (Prism', review)
 import qualified Data.ByteString as BS
@@ -45,7 +48,9 @@ import qualified Data.ByteString.UTF8 as BSU
 import Data.Function (fix)
 import Data.Map (Map)
 import qualified Data.Map as Map
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T

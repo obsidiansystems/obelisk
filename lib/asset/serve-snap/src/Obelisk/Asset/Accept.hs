@@ -21,6 +21,8 @@ module Obelisk.Asset.Accept
 #if __GLASGOW_HASKELL__ < 710
 import Prelude hiding (takeWhile, sequence)
 import Data.Traversable (sequence)
+#elif __GLASGOW_HASKELL__ < 810
+import Data.Monoid ((<>))
 #else
 import Prelude hiding (takeWhile)
 #endif
@@ -41,7 +43,6 @@ import Data.List (sort)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes, fromMaybe, listToMaybe)
-import Data.Monoid ((<>))
 import Data.Ord (Down(..))
 import Data.Proxy (Proxy(..))
 import Data.String (IsString)

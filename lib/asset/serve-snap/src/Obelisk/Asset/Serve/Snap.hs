@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 -- | Serve preprocessed assets using Snap.
 module Obelisk.Asset.Serve.Snap
@@ -19,13 +20,17 @@ import Snap.Internal.Util.FileServe (checkRangeReq)
 import Control.Applicative ((<|>))
 import Control.Exception (handleJust, try, throwIO)
 import Control.Monad (forM, liftM, unless)
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail
+#endif
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Fail (MonadFail)
 import Data.Attoparsec.ByteString (parseOnly, endOfInput)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.List (isSuffixOf, sort)
+#if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
+#endif
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import System.Directory (getDirectoryContents)
