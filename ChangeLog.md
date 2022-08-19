@@ -4,7 +4,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
-* Update reflex-platform to yet unreleased version with GHC 8.10.
+* Update reflex-platform to yet unreleased version with GHC 8.10 and nixpkgs 21.05
   \[Update note once release is cut.\]
   
 * Documentation
