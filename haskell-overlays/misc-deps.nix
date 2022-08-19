@@ -92,4 +92,6 @@ rec {
       nix nix-prefetch-git
     ];
   };
+
+  haddock-library = haskellLib.doJailbreak (self.callHackage "haddock-library" "1.10.0" {});
 }
