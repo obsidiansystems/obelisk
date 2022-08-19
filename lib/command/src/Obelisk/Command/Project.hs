@@ -71,7 +71,7 @@ import GitHub.Data.Name (Name)
 import Obelisk.App (MonadObelisk, runObelisk, getObelisk, wrapNixThunkError)
 import Obelisk.Command.Nix
 import Cli.Extras
-import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath, runProc)
+import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath)
 
 --TODO: Make this module resilient to random exceptions
 
@@ -368,12 +368,12 @@ nixShellWithoutPkgs
   -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
   -> m ()
 nixShellWithoutPkgs root isPure chdirToRoot packageNamesAndPaths shellAttr command = do
-  runProc =<< mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command
+  runProcess_ =<< mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command
 
 nixShellWithHoogle :: MonadObelisk m => FilePath -> Bool -> String -> Maybe String -> m ()
 nixShellWithHoogle root isPure shell' command = do
   defShellConfig <- nixShellRunConfig root isPure command
-  runProc $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
+  runProcess_ $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
         "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
           \userSettings = super.userSettings // { withHoogle = true; };\
