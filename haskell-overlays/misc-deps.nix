@@ -31,17 +31,17 @@ rec {
   universe-810 = self.callHackage "universe" "1.2.2" {};
   universe-instances-extended-810 = self.callHackage "universe-instances-extended" "1.1.3" {};
   universe-reverse-instances-810 = self.callHackage "universe-reverse-instances" "1.1.1" {};
-       
+
   hnix = haskellLib.overrideCabal super.hnix (drv: {
         jailbreak = true;
         preBuild = ''
         substituteInPlace src/Nix/Expr/Types.hs --replace "instance Hashable1 NonEmpty" ""
   '';});
-      
+
   universe-86 = haskellLib.dontCheck (self.callHackage "universe" "1.2" {});
   universe-instances-extended-86 = self.callHackage "universe-instances-extended" "1.1.1" {};
   hnix-86 = haskellLib.dontCheck super.hnix;
-    
+
   universe = mkVersionset __useNewerCompiler universe-86 universe-810;
   universe-instances-extended = mkVersionset __useNewerCompiler universe-instances-extended-86 universe-instances-extended-810;
   universe-reverse-instances = mkVersionset __useNewerCompiler super.universe-reverse-instances universe-reverse-instances-810;
@@ -50,7 +50,7 @@ rec {
   universe-dependent-sum = mkVersionset __useNewerCompiler super.universe-dependent-sum universe-dependent-sum-810;
   universe-some-86 = self.callHackage "universe-some" "1.2" {};
   universe-some = mkVersionset __useNewerCompiler universe-some-86 universe-some-810;
-  
+
   #th-abstraction-86 = self.callHackage "th-abstraction" "0.3.0.0" {};
   #th-abstraction-810 = self.callHackage "th-abstraction" "0.4.3.0" {};
   #th-abstraction = mkVersionset version th-abstraction-86 th-abstraction-810;
@@ -60,10 +60,10 @@ rec {
   regex-posix = self.callHackage "regex-posix" "0.96.0.0" { };
   regex-tdfa = self.callHackage "regex-tdfa" "1.3.1.0" { };
   test-framework = haskellLib.dontCheck (self.callHackage "test-framework" "0.8.2.0" { });
-  
+
   hnix-store-core = haskellLib.dontCheck super.hnix-store-core;
   hnix-store = haskellLib.dontCheck super.hnix-store;
-  
+
   # https://github.com/haskell/hackage-security/issues/247
   hackage-security = haskellLib.dontCheck super.hackage-security; # only tests use aeson and are not compat with 1.5;
   heist = haskellLib.dontCheck (haskellLib.doJailbreak super.heist); # aeson 1.5 bump
@@ -83,4 +83,26 @@ rec {
   unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" { };
   shelly = self.callHackage "shelly" "1.9.0" { };
   monad-logger = self.callHackage "monad-logger" "0.3.36" { };
+  nix-thunk = (import ../dep/nix-thunk { }).makeRunnableNixThunk (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { });
+  cli-extras = self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) { };
+  cli-git = haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) { }) {
+    buildDepends = with pkgs; [
+      git
+    ];
+    libraryToolDepends = with pkgs; [
+      git
+    ];
+    librarySystemDepends = with pkgs; [
+      git
+    ];
+  };
+  cli-nix = haskellLib.overrideCabal (self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) { }) {
+    buildDepends = with pkgs; [
+      git nix-prefetch-git
+    ];
+    libraryToolDepends = with pkgs; [
+      git nix-prefetch-git
+    ];
+
+  };
 }

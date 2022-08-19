@@ -28,7 +28,7 @@ import Text.Megaparsec as MP
 import Text.Megaparsec.Char as MP
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp
+import Cli.Extras
 
 cp :: FilePath
 cp = $(staticWhich "cp")
@@ -160,14 +160,6 @@ readGitProcessNoRepo = readProcessAndLogOutput (Debug, Notice) . gitProcNoRepo
 processToShellString :: FilePath -> [String] -> String
 processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
   where quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
-
--- | A simpler wrapper for CliApp's most used process function with sensible defaults.
-runProc :: MonadObelisk m => ProcessSpec -> m ()
-runProc = callProcessAndLogOutput (Notice, Error)
-
--- | Like runProc, but all output goes to Debug logging level
-runProcSilently :: MonadObelisk m => ProcessSpec -> m ()
-runProcSilently = callProcessAndLogOutput (Debug, Debug)
 
 -- | A simpler wrapper for CliApp's readProcessAndLogStderr with sensible defaults.
 readProc :: MonadObelisk m => ProcessSpec -> m Text

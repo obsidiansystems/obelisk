@@ -36,7 +36,6 @@ library
     , mtl
     , network
     , network-uri
-    , obelisk-cliapp
     , optparse-applicative
     , placeholders
     , prettyprinter
@@ -54,6 +53,9 @@ library
     , utf8-string
     , which
     , yaml
+    , nix-thunk
+    , cli-extras
+    
   exposed-modules:
     Obelisk.App
     Obelisk.Command
@@ -61,7 +63,6 @@ library
     Obelisk.Command.Nix
     Obelisk.Command.Project
     Obelisk.Command.Run
-    Obelisk.Command.Thunk
     Obelisk.Command.Utils
     Obelisk.Command.VmBuilder
     Obelisk.Command.Preprocessor
