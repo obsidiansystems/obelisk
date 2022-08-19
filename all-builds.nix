@@ -21,7 +21,6 @@ let
     "obelisk-asset-manifest"
     "obelisk-asset-serve-snap"
     "obelisk-backend"
-    "obelisk-cliapp"
     "obelisk-command"
     "obelisk-executable-config-inject"
     "obelisk-frontend"

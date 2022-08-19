@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE PackageImports #-}
 
 module Obelisk.Command.Project
   ( InitSource (..)
@@ -46,6 +47,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Traversable (for)
+import "nix-thunk" Nix.Thunk
 import Reflex
 import Reflex.FSNotify
 import Reflex.Host.Headless
@@ -66,10 +68,9 @@ import Text.ShellEscape (sh, bash, bytes)
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
-import Obelisk.App (MonadObelisk, runObelisk, getObelisk)
-import Obelisk.CliApp
+import Obelisk.App (MonadObelisk, runObelisk, getObelisk, wrapNixThunkError)
 import Obelisk.Command.Nix
-import Obelisk.Command.Thunk
+import Cli.Extras
 import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath)
 
 --TODO: Make this module resilient to random exceptions
@@ -106,7 +107,7 @@ toImplDir :: FilePath -> FilePath
 toImplDir p = toObeliskDir p </> "impl"
 
 -- | Create a new project rooted in the current directory
-initProject :: MonadObelisk m => InitSource -> Bool -> m ()
+initProject :: forall m. MonadObelisk m => InitSource -> Bool -> m ()
 initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
   let implDir = toImplDir tmpDir
       obDir   = toObeliskDir tmpDir
@@ -118,10 +119,11 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     liftIO $ createDirectory obDir
     -- Clone the git source and repack it with the init source obelisk
     -- The purpose of this is to ensure we use the correct thunk spec.
-    let cloneAndRepack src = do
+    let cloneAndRepack :: ThunkSource -> m ()
+        cloneAndRepack src = do
           putLog Debug $ "Cloning obelisk into " <> T.pack implDir <> " and repacking using itself"
-          commit <- getLatestRev src
-          gitCloneForThunkUnpack (thunkSourceToGitSource src) (_thunkRev_commit commit) implDir
+          commit <- wrapNixThunkError $ getLatestRev src
+          wrapNixThunkError $ gitCloneForThunkUnpack (thunkSourceToGitSource src) (_thunkRev_commit commit) implDir
           callHandoffOb implDir ["thunk", "pack", implDir]
     case source of
       InitSource_Default -> cloneAndRepack obeliskSource
@@ -131,8 +133,8 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
               then path
               else ".." </> path
         liftIO $ createSymbolicLink symlinkPath implDir
-    _ <- nixBuildAttrWithCache implDir "command"
-    skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
+    _ <- wrapNixThunkError $ nixBuildAttrWithCache implDir "command"
+    skel <- wrapNixThunkError $ nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
 
     callProcessAndLogOutput (Notice, Error) $
       proc cp
@@ -199,7 +201,7 @@ findProjectObeliskCommand target = do
         return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
-      obeliskCommandPkg <- nixBuildAttrWithCache (toImplDir projDir) "command"
+      obeliskCommandPkg <- wrapNixThunkError $ nixBuildAttrWithCache (toImplDir projDir) "command"
       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do

@@ -13,7 +13,8 @@ This project's release branch is `master`. This log is written from the perspect
   * [#931](https://github.com/obsidiansystems/obelisk/pull/931): For `ob deploy init`, command-line option `--check-known-host` corrected in readme, caveat added for multiple matching host-keypairs.
 * building
   * [#956](https://github.com/obsidiansystems/obelisk/pull/956): Squelch closure-compiler warnings. They are not very helpful and can cause issues (see: [closure-compiler#3720](https://github.com/google/closure-compiler/issues/3720))
-* nixpkgs-overlays
+* nix
+  * [#968](https://github.com/obsidiansystems/obelisk/pull/968): Expose parts of the server derivation as subattributes. For example, the un-assetified frontend can be built alone with `nix-build -A exe.frontend`.
   * Remove override of acme module that pinned it to the version in nixpkgs-20.03. This is used for automatic https certificate provisioning.
 * CLI
   * [#784](https://github.com/obsidiansystems/obelisk/pull/784): hint for users to take advantage of ob shell --no-interpret option for thunks
@@ -36,6 +37,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#922](https://github.com/obsidiansystems/obelisk/pull/922): Serve .wasm files with the correct MIME type
   * [#930](https://github.com/obsidiansystems/obelisk/pull/930): Add an error to ob run when `static` is called with a path to a file that doesn't exist
   * [#940](https://github.com/obsidiansystems/obelisk/pull/940): Instant, auto update to new configs on ob deploy push
+  * [#959](https://github.com/obsidiansystems/obelisk/pull/930): Add an error to ob run when `staticFilePath` is called with a path to a file that doesn't exist
 
 ## v1.0.0.0 - 2022-01-04
 

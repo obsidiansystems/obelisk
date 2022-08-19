@@ -93,4 +93,18 @@ rec {
 
   modern-uri = haskellLib.doJailbreak super.modern-uri;
   neat-interpolation = self.callHackage "neat-interpolation" "0.5.1" {};
+
+  nix-thunk = (import ../dep/nix-thunk {}).makeRunnableNixThunk (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) {});
+  cli-extras = self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) {};
+  cli-git = haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) {}) {
+    librarySystemDepends = with pkgs; [
+      git
+    ];
+  };
+  cli-nix = haskellLib.overrideCabal (self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) {}) {
+    librarySystemDepends = with pkgs; [
+      nix nix-prefetch-git
+    ];
+  };
+
 }

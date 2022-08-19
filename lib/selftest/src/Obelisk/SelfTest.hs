@@ -89,6 +89,12 @@ rmPath = $(staticWhich "rm")
 rsyncPath :: FilePath
 rsyncPath = $(staticWhich "rsync")
 
+mvPath :: FilePath
+mvPath = $(staticWhich "mv")
+
+sedPath :: FilePath
+sedPath = $(staticWhich "sed")
+
 gitUserConfig :: [Text]
 gitUserConfig = ["-c", "user.name=Obelisk Selftest", "-c", "user.email=noreply@example.com"]
 
@@ -209,6 +215,10 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
     it "can read external TLS certificates in sub directory" $ inTmpObInit $ \testDir -> testObRunCert' testDir (Just "frontend")
     it "complains when static files are missing in root directory" $ inTmpObInit $ const $ testObRunInDirWithMissingStaticFile' Nothing
     it "complains when static files are missing in sub directory" $ inTmpObInit $ const $ testObRunInDirWithMissingStaticFile' (Just "frontend")
+    it "complains when static filepaths are missing in root directory" $ do
+      inTmpObInit $ const $ testObRunInDirWithMissingStaticFilePath' Nothing
+    it "complains when static filepaths are missing in sub directory" $ do
+      inTmpObInit $ const $ testObRunInDirWithMissingStaticFilePath' (Just "frontend")
 
     it "respects the port given on the command line" $ inTmpObInit $ \testDir -> do
       [port] <- liftIO $ getFreePorts 1
@@ -366,6 +376,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
     testObRunInDir' = augmentWithVerbosity testObRunInDir ob isVerbose ["run"]
     testObRunCert' = augmentWithVerbosity testObRunCert ob isVerbose ["run", "-c", "."]
     testObRunInDirWithMissingStaticFile' = augmentWithVerbosity testObRunInDirWithMissingStaticFile ob isVerbose ["run"]
+    testObRunInDirWithMissingStaticFilePath' = augmentWithVerbosity testObRunInDirWithMissingStaticFilePath ob isVerbose ["run"]
     testThunkPack' = augmentWithVerbosity testThunkPack ob isVerbose []
 
     withObeliskImplClean f =
@@ -474,11 +485,48 @@ testObRunCert executable extraArgs testDir mdir = maskExitSuccess $ do
       | "Frontend running on" `T.isPrefixOf` line = errorExit "Obelisk did not read the certificates provided via -c option"
       | otherwise = parseObOutput h
 
-testObRunInDirWithMissingStaticFile :: String -> [Text] -> Maybe FilePath -> Sh ()
-testObRunInDirWithMissingStaticFile executable extraArgs mdir = maskExitSuccess $ do
-  -- Rename a static file, so that `ob run` will fail with a specific error
-  run_ "mv" ["static/obelisk.jpg", "static/obelisk2.jpg"]
-
+-- | Check whether embedding a non-existent filepath into an obelisk
+-- project is detected correctly and generates a compile-time error.
+--
+-- @'testObRunInDirWithMissingStaticFileWorker' exe args mdir act checkErrorMessage@.
+--
+-- @checkErrorMessage line1 line2@ is invoked on a compile-time error message of the following form:
+--     frontend/src/Frontend.hs:40:32: error:
+--        • Static file obelisk.jpg was not found in static.out
+--        • In the untyped splice: $(static "obelisk.jpg")
+--       |
+--    40 |       elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
+--       |
+--
+-- the arguments to @line1@ and @line2@ contain:
+--
+-- @    • Static file obelisk.jpg was not found in static.out@
+--
+-- and
+--
+-- @    • In the untyped splice: $(static "obelisk.jpg")@
+--
+-- respectively.
+testObRunInDirWithMissingStaticFileWorker
+  :: String
+  -- ^ Path to the @ob@ executable
+  -> [Text]
+  -- ^ Arguments that are passed to @ob@
+  -> Maybe FilePath
+  -- ^ Change the working directory of the @ob@ invocation.
+  -> Sh ()
+  -- ^ Run this action before running @ob run@.
+  -- Gives you the opportunity to modify the project to trigger events.
+  -- In particular, make sure static files do not exist, s.t. a compilation
+  -- error is thrown.
+  -> (Text -> Text -> Sh ())
+  -- ^ Assertion function for error messages.
+  -- Since this function is used for asserting error message contents,
+  -- this function specifies what contents two consecutive non-empty lines
+  -- are supposed to have.
+  -> Sh ()
+testObRunInDirWithMissingStaticFileWorker executable extraArgs mdir act checkErrorMessage = maskExitSuccess $ do
+  act
   -- Now run `ob run` and read the error
   maybe id chdir mdir $ runHandles executable extraArgs [] $ \_stdin stdout stderr -> do
     parseObOutput stdout
@@ -498,9 +546,24 @@ testObRunInDirWithMissingStaticFile executable extraArgs mdir = maskExitSuccess 
       | "error:" `T.isSuffixOf` line = do
         line1 <- liftIO $ hGetLineSkipBlanks h
         line2 <- liftIO $ hGetLineSkipBlanks h
-        checkStaticError line1 line2
+        checkErrorMessage line1 line2
       | otherwise = parseObOutput h
 
+-- | Run an obelisk test-case, where @static@ is embedding an non-existent
+-- filepath.
+testObRunInDirWithMissingStaticFile
+  :: String
+  -- ^ Path to the @ob@ executable
+  -> [Text]
+  -- ^ Arguments that are passed to @ob@
+  -> Maybe FilePath
+  -- ^ Change the working directory of the @ob@ invocation.
+  -> Sh ()
+testObRunInDirWithMissingStaticFile executable extraArgs mdir =
+  testObRunInDirWithMissingStaticFileWorker executable extraArgs mdir act checkStaticError
+  where
+    -- | Rename a static file, so that `ob run` will fail with a specific error
+    act = run_ mvPath ["static/obelisk.jpg", "static/obelisk2.jpg"]
     -- We are looking for an error of the following type:
     --  frontend/src/Frontend.hs:40:32: error:
     --     • Static file obelisk.jpg was not found in static.out
@@ -515,6 +578,38 @@ testObRunInDirWithMissingStaticFile executable extraArgs mdir = maskExitSuccess 
       where
         name1 = T.stripPrefix "• The file " (T.stripStart line1) >>= T.stripSuffix " was not found in static.out"
         name2 = T.stripPrefix "• In the untyped splice: $(static \"" (T.stripStart line2) >>= T.stripSuffix "\")"
+
+-- | Run an obelisk test-case, where @staticFilePath@ is embedding an
+-- non-existent filepath.
+testObRunInDirWithMissingStaticFilePath
+  :: String
+  -- ^ Path to the @ob@ executable
+  -> [Text]
+  -- ^ Arguments that are passed to @ob@
+  -> Maybe FilePath
+  -- ^ Change the working directory of the @ob@ invocation.
+  -> Sh ()
+testObRunInDirWithMissingStaticFilePath executable extraArgs mdir =
+  testObRunInDirWithMissingStaticFileWorker executable extraArgs mdir act checkStaticError
+  where
+    -- | Rename a static file, so that `ob run` will fail with a specific error
+    act = do
+      run_ sedPath ["-e", "s/\\$(static /\\$(staticFilePath /", "-i", "frontend/src/Frontend.hs"]
+      run_ mvPath ["static/obelisk.jpg", "static/obelisk2.jpg"]
+    -- We are looking for an error of the following type:
+    --  frontend/src/Frontend.hs:40:32: error:
+    --     • Static file obelisk.jpg was not found in static.out
+    --     • In the untyped splice: $(staticFilePath "obelisk.jpg")
+    --    |
+    -- 40 |       elAttr "img" ("src" =: $(staticFilePath "obelisk.jpg")) blank
+    --    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    checkStaticError line1 line2 =
+      if name1 == Just "obelisk.jpg" && name2 == Just "obelisk.jpg"
+        then exit 0
+        else errorExit $ "Expected a different error:\n" <> line1 <> "\n" <> line2
+      where
+        name1 = T.stripPrefix "• The file " (T.stripStart line1) >>= T.stripSuffix " was not found in static.out"
+        name2 = T.stripPrefix "• In the untyped splice: $(staticFilePath \"" (T.stripStart line2) >>= T.stripSuffix "\")"
 
 testThunkPack :: String -> [Text] -> FilePath -> Sh ()
 testThunkPack executable args path' = withTempFile repoDir "test-file" $ \file handle -> do
