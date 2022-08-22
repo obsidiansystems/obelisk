@@ -15,6 +15,7 @@ import Language.Haskell.Extension (Extension (..), Language(..))
 import System.Directory (canonicalizePath)
 import System.IO (IOMode (..), hPutStrLn, stderr, withFile)
 import System.FilePath (hasTrailingPathSeparator, joinPath, splitPath)
+import Control.Lens ((<&>))
 
 import Obelisk.Command.Run (CabalPackageInfo (..), parseCabalPackage')
 
@@ -54,31 +55,62 @@ applyPackages origPath inPath outPath packagePaths' = do
 
 writeOutput :: Maybe CabalPackageInfo -> FilePath -> FilePath -> IO ()
 writeOutput packageInfo' origPath outPath = withFile outPath WriteMode $ \hOut -> do
-  for_ packageInfo' $ \packageInfo -> hPutTextBuilder hOut (generateHeader origPath packageInfo)
+  for_ packageInfo' $ \packageInfo ->
+    case generateHeader origPath packageInfo of
+      Left e -> hPutStrLn stderr (prettyGenHeaderError origPath e)
+      Right header -> hPutTextBuilder hOut header
   BL.readFile origPath >>= BL.hPut hOut
   where
     hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
 
---NOTE: We cannot restrict the package set by adding '-package' flags to OPTIONS_GHC, because GHC rejects them there.  It seems that we won't be able to properly handle that situation until GHC itself supports loading multiple packages officially in GHCi
-generateHeader :: FilePath -> CabalPackageInfo -> TL.Builder
+-- | Represents an error which may happen when turning a
+-- 'CabalPackageInfo' into a set of GHC pragmas.
+data GenHeaderError
+  = GenHeaderError_UnknownLanguage String
+  -- ^ An invalid @default-language@ field was specified.
+  | GenHeaderError_UnknownExtension String
+  -- ^ An invalid value was present in the @default-extensions@ field.
+
+-- | Turn a 'GenHeaderError' to a string suitable for display to the user.
+prettyGenHeaderError :: String -> GenHeaderError -> String
+prettyGenHeaderError origPath =
+  \case
+    GenHeaderError_UnknownExtension e -> "Error: Unknown default-extension " <> e <> "; Skipping preprocessor on " <> origPath <> "."
+    GenHeaderError_UnknownLanguage e -> "Error: Unknown default-language " <> e <> "; Skipping preprocessor on " <> origPath <> "."
+
+-- | Turn a parsed 'CabalPackageInfo' into a set of GHC pragmas which
+-- reproduce the same settings.
+--
+-- NOTE: We cannot restrict the package set by adding '-package' flags
+-- to OPTIONS_GHC, because GHC rejects them there.  It seems that we
+-- won't be able to properly handle that situation until GHC itself
+-- supports loading multiple packages officially in GHCi
+generateHeader :: FilePath -> CabalPackageInfo -> Either GenHeaderError TL.Builder
 generateHeader origPath packageInfo =
-    hsExtensions <> ghcOptions <> lineNumberPragma origPath
+    fmap (\e -> e <> ghcOptions <> lineNumberPragma origPath) hsExtensions
   where
-    hsExtensions =
-      if null extList
+    hsExtensions :: Either GenHeaderError TL.Builder
+    hsExtensions = extList <&> \exts ->
+      if null exts
         then mempty
-        else pragma $ TL.fromText "LANGUAGE " <> mconcat (intersperse (TL.fromText ", ") extList)
-    extList = addDefaultLanguage $ concatMap showExt $ _cabalPackageInfo_defaultExtensions packageInfo
-    addDefaultLanguage =
+        else pragma $ TL.fromText "LANGUAGE " <> mconcat (intersperse (TL.fromText ", ") exts)
+
+    extList :: Either GenHeaderError [TL.Builder]
+    extList = addDefaultLanguage =<< traverse showExt (_cabalPackageInfo_defaultExtensions packageInfo)
+
+    addDefaultLanguage :: [TL.Builder] -> Either GenHeaderError [TL.Builder]
+    addDefaultLanguage exts =
       case _cabalPackageInfo_defaultLanguage packageInfo of
-        Nothing -> id
+        Nothing -> pure exts
         Just x -> case x of
-          UnknownLanguage ext -> (TL.fromString ext :)
-          ext -> (TL.fromString (show ext) :)
+          UnknownLanguage ext -> Left (GenHeaderError_UnknownExtension ext)
+          ext -> pure $ TL.fromString (show ext):exts
+
+    showExt :: Extension -> Either GenHeaderError TL.Builder
     showExt = \case
-      EnableExtension ext -> [TL.fromString (show ext)]
-      DisableExtension ext -> ["No" <> TL.fromString (show ext)]
-      UnknownExtension ext -> [TL.fromString ext]
+      EnableExtension ext -> pure $ TL.fromString (show ext)
+      DisableExtension ext -> pure $ "No" <> TL.fromString (show ext)
+      UnknownExtension ext -> Left (GenHeaderError_UnknownExtension ext)
 
     ghcOptions =
       if null optList
