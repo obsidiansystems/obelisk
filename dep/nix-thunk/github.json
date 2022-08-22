@@ -1,8 +1,8 @@
 {
   "owner": "obsidiansystems",
   "repo": "nix-thunk",
-  "branch": "aliao/i-hate-nixpkgs",
+  "branch": "master",
   "private": false,
-  "rev": "a1f9be1801fa39f6bb1877f3e012fe5eadf90c43",
-  "sha256": "1gilkshh3h6dhd8y5mvsi0d5dikslgdm8dhijjyvqcq9bm7sha0k"
+  "rev": "2b65d2cbf83e77a90b4103418d037ba5b0b32e77",
+  "sha256": "07pr014iifyy1xaiqamkx78xfszr67g8kzysmzgzms0a4470k1i9"
 }
