@@ -86,23 +86,15 @@ rec {
   nix-thunk = (import ../dep/nix-thunk { }).makeRunnableNixThunk (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { });
   cli-extras = self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) { };
   cli-git = haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) { }) {
-    buildDepends = with pkgs; [
-      git
-    ];
-    libraryToolDepends = with pkgs; [
-      git
-    ];
     librarySystemDepends = with pkgs; [
-      git
+      gitMinimal
     ];
   };
   cli-nix = haskellLib.overrideCabal (self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) { }) {
-    buildDepends = with pkgs; [
-      git nix-prefetch-git
+    librarySystemDepends = with pkgs; [
+      gitMinimal
+      nix
+      nix-prefetch-git
     ];
-    libraryToolDepends = with pkgs; [
-      git nix-prefetch-git
-    ];
-
   };
 }
