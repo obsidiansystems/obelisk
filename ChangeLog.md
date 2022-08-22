@@ -24,6 +24,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#951](https://github.com/obsidiansystems/obelisk/pull/951): Add `ob run --port` which allows the user to override the port on which the app is served, rather than always using the port configured in the route.
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
+  * [#912](https://github.com/obsidiansystems/obelisk/pull/912): Fix a bug in `Obelisk.Route.Frontend` where `routeLink`, `routeLinkDynAttr`, and `dynRouteLink` would not behave like `<a href="...">` when Alt/Ctrl/Shift/Meta was pressed while the element was being clicked. Now, these functions leave the click to be handled by the browser whenever these keys are pressed along with the click.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`
   * [#952](https://github.com/obsidiansystems/obelisk/pull/952): Add a `Semigroupoid` instance for the `Encoder` type, compatible with its existing `Category` instance.
   * [#957](https://github.com/obsidiansystems/obelisk/pull/957): ob deploy will now detect when the target machine needs to be rebooted after deployment and automatically do so. This is necessary, for example, when the kernel has been updated.

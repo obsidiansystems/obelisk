@@ -89,7 +89,10 @@ import Data.Type.Coercion
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
 import qualified GHCJS.DOM.Window as Window
-import Language.Javascript.JSaddle (MonadJSM, jsNull, liftJSM) --TODO: Get rid of this - other platforms can also be routed
+import GHCJS.DOM.EventTarget (addEventListener)
+import GHCJS.DOM.MouseEvent (getAltKey, getCtrlKey, getMetaKey, getShiftKey, getButton)
+import qualified GHCJS.DOM.Event as E
+import Language.Javascript.JSaddle (MonadJSM, function, jsNull, liftJSM, toJSVal) --TODO: Get rid of this - other platforms can also be routed
 import Network.URI
 import Reflex.Class
 import Reflex.Dom.Builder.Class
@@ -501,14 +504,151 @@ runRouteViewT routeEncoder switchover useHash a = do
           setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
 
--- | A link widget that, when clicked, sets the route to the provided route. In non-javascript
--- contexts, this widget falls back to using @href@s to control navigation
+-- | This function returns a Reflex event containing a <MouseEvent
+-- https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent> for an
+-- element.
+--
+-- This funcion is needed because the default Reflex click event is
+-- lacking. As can be seen from the aforementioned link, click events
+-- have a lot of metadata. Reflex does not have a way of providing the
+-- user with this metadata. If a user wanted to know whether Ctrl/Alt
+-- keys were pressed while the element was being clicked, Reflex doesn't
+-- have a way of providing this information.  There are events for
+-- keypress, but they only seem to work with input elements.
+--
+-- Another thing that this function provides is the capability to
+-- conditionally handle events.  For example, consider a situation where
+-- clicks should not be propagated if Alt key was pressed during the
+-- click.  We would treat the event normally when Alt key was NOT
+-- pressed (ie allow propagation), and stop propagation whenever Alt key
+-- was pressed. Reflex doesn't have a way to deal with this situation.
+-- It has mechanisms to stop event propagation, but they are not
+-- conditional, ie either they will ALWAYS stop event propagation, or
+-- ALWAYS allow event propagation.  The same argument holds for
+-- preventing default event behavior. This function allows it, Reflex
+-- doesn't.
+getClickEvent
+  :: (MonadJSM m, TriggerEvent t m, DOM.IsEventTarget (RawElement d))
+  => Element er d t
+  -- ^ The element for which click event is needed
+  -> (DOM.MouseEvent -> DOM.DOM ())
+  -- ^ DOM action, to be run immediately after event the event handler.
+  -- Can be used to stop propagation/prevent default behavior.
+  -> m (Event t DOM.MouseEvent)
+getClickEvent elm onComplete = do
+  (sendEv, sendFn) <- newTriggerEvent
+
+  liftJSM $ do
+    ctx <- DOM.askDOM
+
+    let
+      haskellHandler _ _ [res] = do
+        let
+          mouseEv = DOM.MouseEvent res
+        liftIO $ sendFn mouseEv
+        DOM.runDOM (onComplete mouseEv) ctx
+      haskellHandler _ _ _ = pure ()
+
+    jsHandler <- function haskellHandler >>= toJSVal
+    addEventListener (_element_raw elm) (T.pack "click") (Just $ DOM.EventListener jsHandler) False
+
+  pure sendEv
+
+-- This function takes a <MouseEvent
+-- https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent>, and
+-- checks if it should be handled by us. To be specific, it checks for:
+--
+--  1. Whether the Alt key was pressed
+--  2. Whether the Ctrl key was pressed
+--  3. Whether the Shift key was pressed
+--  4. Whether the Meta key was pressed
+--  5. Whether the middle mouse button was clicked
+--
+-- If any of the above conditions are met, this mouse event should be
+-- left to be handled by the browser, hence this function will return
+-- `False`. Otherwise, it returns `True`.
+shouldMouseClickBeHandled :: (DOM.MonadDOM m) => DOM.MouseEvent -> m Bool
+shouldMouseClickBeHandled mouseClick = not . or <$> sequence
+  [ getAltKey mouseClick
+  , getCtrlKey mouseClick
+  , getShiftKey mouseClick
+  , getMetaKey mouseClick
+  , (== 1) <$> getButton mouseClick
+  ]
+
+-- | DOM action for preventing the default behavior of a mouse click,
+-- only when we should handle the click. If we should not handle the
+-- click (ie browser should take the default action), no action will be
+-- taken.  This function can be passed as an argument to
+-- `getClickEvent`.
+preventDefaultAction :: Bool -> DOM.MouseEvent -> DOM.DOM ()
+preventDefaultAction isTargetBlank mouseClick = do
+  b <- shouldMouseClickBeHandled mouseClick
+  when (b && not isTargetBlank) $
+    E.preventDefault mouseClick
+
+-- | This function samples a given `Dynamic` based on a event containing
+-- a <MouseEvent
+-- https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent>.
+--
+-- Whenever the input event triggers, we sample the input dynamic if we
+-- should handle the click.  If we should not handle the event (ie leave
+-- it to the default action by the browser), the event is discarded.
+removeDefaultHandledClicks :: (PerformEvent t m, MonadJSM (Performable m)) => Bool -> Event t DOM.MouseEvent -> Dynamic t a -> m (Event t a)
+removeDefaultHandledClicks isTargetBlank clickEv xDyn = do
+  xEv <- performEvent $ (,) <$> current xDyn <@> clickEv <&> \(x, mouseClick) -> do
+    b <- shouldMouseClickBeHandled mouseClick
+    pure $ if b && not isTargetBlank
+      then Just x
+      else Nothing
+  pure $ fmapMaybe id xEv
+
+-- | This function sets the route as per the input dynamic, whenever the
+-- input element is clicked, provided that we should handle the click.
+-- It will also prevent the default action for the click event in this
+-- case.
+--
+-- In case we should not handle the click, ie browser should take the
+-- default action, the function will not do anything.
+--
+-- This is required so that @routeLink@ functions perform similarly to
+-- @<a>@ tags, for non-standard click events (held modifier keys, or
+-- middle mouse). In such cases, we let the browser handle the mouse
+-- click and do nothing.
+-- If not, we prevent the default behavior and handle the click
+-- ourselves. This stays in line with the client side routing that
+-- Obelisk has.
+setRouteUnlessDefaultHandled
+  :: ( SetRoute t route m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
+     )
+  => Element er (DomBuilderSpace m) t
+  -> Bool
+  -> Dynamic t route
+  -> m ()
+setRouteUnlessDefaultHandled e isTargetBlank routeDyn = do
+  clickEv <- getClickEvent e $ preventDefaultAction isTargetBlank
+  routeEv <- removeDefaultHandledClicks isTargetBlank clickEv routeDyn
+  setRoute routeEv
+
+-- | A link widget that, when clicked, sets the route to the provided
+-- route. In non-javascript contexts, this widget falls back to using
+-- @href@s to control navigation
 routeLink
   :: forall t m a route.
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
      , Prerender t m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => route -- ^ Target route
   -> m a -- ^ Child widget
@@ -526,6 +666,11 @@ routeLinkAttr
      , RouteToUrl route m
      , SetRoute t route m
      , Prerender t m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Map AttributeName Text -- ^ Additional attributes
   -> route -- ^ Target route
@@ -544,6 +689,11 @@ routeLinkImpl
      ( DomBuilder t m
      , RouteToUrl route m
      , SetRoute t route m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Map AttributeName Text
   -> route -- ^ Target route
@@ -558,11 +708,8 @@ routeLinkImpl attrs r w = do
     targetBlank = Map.lookup "target" attrs == Just "_blank"
     cfg = (def :: ElementConfig EventResult t (DomBuilderSpace m))
         & elementConfig_initialAttributes .~ ("href" =: enc r <> attrs)
-        & (if targetBlank
-           then id
-           else elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault))
   (e, a) <- element "a" cfg w
-  when (not targetBlank) $ setRoute $ r <$ domEvent Click e
+  setRouteUnlessDefaultHandled e targetBlank $ constDyn r
   return (domEvent Click e, a)
 
 scrollToTop :: forall m t. (Prerender t m, Monad m) => Event t () -> m ()
@@ -578,6 +725,11 @@ dynRouteLink
      , RouteToUrl route m
      , SetRoute t route m
      , Prerender t m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -594,6 +746,11 @@ dynRouteLinkImpl
      , PostBuild t m
      , RouteToUrl route m
      , SetRoute t route m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t route -- ^ Target route
   -> m a -- ^ Child widget
@@ -605,9 +762,8 @@ dynRouteLinkImpl dr w = do
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  let clk = domEvent Click e
-  setRoute $ tag (current dr) clk
-  return (clk, a)
+  setRouteUnlessDefaultHandled e False dr
+  return (domEvent Click e, a)
 
 -- | An @a@-tag link widget that, when clicked, sets the route to current value of the
 -- provided dynamic route. In non-JavaScript contexts the value of the dynamic post
@@ -619,6 +775,11 @@ routeLinkDynAttr
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
      , Prerender t m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route
@@ -636,6 +797,11 @@ routeLinkDynAttrImpl
      , PostBuild t m
      , RouteToUrl (R route) m
      , SetRoute t (R route) m
+     , MonadJSM m
+     , TriggerEvent t m
+     , PerformEvent t m
+     , MonadJSM (Performable m)
+     , DOM.IsEventTarget (RawElement (DomBuilderSpace m))
      )
   => Dynamic t (Map AttributeName Text) -- ^ Attributes for @a@ element. Note that if @href@ is present it will be ignored
   -> Dynamic t (R route) -- ^ Target route
@@ -648,9 +814,8 @@ routeLinkDynAttrImpl dAttr dr w = do
         & elementConfig_eventSpec %~ addEventSpecFlags (Proxy :: Proxy (DomBuilderSpace m)) Click (const preventDefault)
         & elementConfig_modifyAttributes .~ er
   (e, a) <- element "a" cfg w
-  let clk = domEvent Click e
-  setRoute $ tag (current dr) clk
-  return (clk, a)
+  setRouteUnlessDefaultHandled e False dr
+  return (domEvent Click e, a)
 
 -- On ios due to sandboxing when loading the page from a file adapt the
 -- path to be based on the hash.
