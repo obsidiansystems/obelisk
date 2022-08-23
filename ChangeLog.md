@@ -4,6 +4,9 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* Update reflex-platform to yet unreleased version with GHC 8.10.
+  \[Update note once release is cut.\]
+  
 * Documentation
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing obelisk branches to CONTRIBUTING.md
   * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to Obelisk.Command.Deploy
