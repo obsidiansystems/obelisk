@@ -16,6 +16,7 @@ import System.Directory (canonicalizePath)
 import System.IO (IOMode (..), hPutStrLn, stderr, withFile)
 import System.FilePath (hasTrailingPathSeparator, joinPath, splitPath)
 import Control.Lens ((<&>))
+import System.Exit
 
 import Obelisk.Command.Run (CabalPackageInfo (..), parseCabalPackage')
 
@@ -37,17 +38,18 @@ applyPackages origPath inPath outPath packagePaths' = do
     packageDirs = sortOn (negate . length . takeDirs) $ map splitPath packagePaths
     origDir = splitPath origPathCanonical
     matches = [ joinPath d | d <- packageDirs, takeDirs d `isPrefixOf` origDir ]
+    giveUp = exitWith (ExitFailure 1)
 
   -- The first element of matches is going to be the deepest path to a package spec that contains
   -- our file as a subdirectory.
   packageInfo' <- case matches of
     [] -> do
       hPutStrLn stderr $ "Error: Unable to find cabal information for " <> origPath <> "; Skipping preprocessor."
-      pure Nothing
+      giveUp
     packagePath:_ -> parseCabalPackage' packagePath >>= \case
       Left err -> do
         hPutStrLn stderr $ "Error: Unable to parse cabal package " <> packagePath <> "; Skipping preprocessor on " <> origPath <> ". Error: " <> show err
-        pure Nothing
+        giveUp
       Right (Just (_, packageInfo)) -> pure $ Just packageInfo
       Right Nothing -> pure Nothing
 
@@ -57,11 +59,14 @@ writeOutput :: Maybe CabalPackageInfo -> FilePath -> FilePath -> IO ()
 writeOutput packageInfo' origPath outPath = withFile outPath WriteMode $ \hOut -> do
   for_ packageInfo' $ \packageInfo ->
     case generateHeader origPath packageInfo of
-      Left e -> hPutStrLn stderr (prettyGenHeaderError origPath e)
+      Left e -> do
+        hPutStrLn stderr (prettyGenHeaderError origPath e)
+        giveUp
       Right header -> hPutTextBuilder hOut header
   BL.readFile origPath >>= BL.hPut hOut
   where
     hPutTextBuilder h = BU.hPutBuilder h . TL.encodeUtf8Builder . TL.toLazyText
+    giveUp = exitWith (ExitFailure 1)
 
 -- | Represents an error which may happen when turning a
 -- 'CabalPackageInfo' into a set of GHC pragmas.

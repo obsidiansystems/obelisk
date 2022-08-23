@@ -219,6 +219,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       inTmpObInit $ const $ testObRunInDirWithMissingStaticFilePath' Nothing
     it "complains when static filepaths are missing in sub directory" $ do
       inTmpObInit $ const $ testObRunInDirWithMissingStaticFilePath' (Just "frontend")
+    it "fails when given an invalid Cabal file" $ inTmpObInit $ testObRunWithInvalidCabalFile ob
 
     it "respects the port given on the command line" $ inTmpObInit $ \testDir -> do
       [port] <- liftIO $ getFreePorts 1
@@ -484,6 +485,22 @@ testObRunCert executable extraArgs testDir mdir = maskExitSuccess $ do
           else errorExit $ "Ran into error: " <> next
       | "Frontend running on" `T.isPrefixOf` line = errorExit "Obelisk did not read the certificates provided via -c option"
       | otherwise = parseObOutput h
+
+-- | Mess up the Cabal file in the given directory, then make sure that
+-- @ob run@ fails.
+testObRunWithInvalidCabalFile
+  :: FilePath  -- ^ Obelisk path
+  -> FilePath  -- ^ Directory path (will be made invalid)
+  -> Sh ()
+testObRunWithInvalidCabalFile executable fp = do
+  let commonCabal :: String
+      commonCabal = "common/common.cabal"
+  liftIO $ writeFile (fp </> commonCabal) "This is not a valid Cabal file."
+  errExit False $ do
+    runHandles executable ["run"] [] $ \_ _ _ -> pure ()
+    lastExitCode >>= \case
+      0 -> pure ()
+      _ -> errorExit "ob run succeeded even with an invalid Cabal file"
 
 -- | Check whether embedding a non-existent filepath into an obelisk
 -- project is detected correctly and generates a compile-time error.
