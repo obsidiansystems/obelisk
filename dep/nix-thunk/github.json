@@ -1,7 +1,8 @@
 {
   "owner": "obsidiansystems",
   "repo": "nix-thunk",
+  "branch": "master",
   "private": false,
-  "rev": "8fe6f2de2579ea3f17df2127f6b9f49db1be189f",
-  "sha256": "14l2k6wipam33696v3dr3chysxhqcy0j7hxfr10c0bxd1pxv7s8b"
+  "rev": "2b65d2cbf83e77a90b4103418d037ba5b0b32e77",
+  "sha256": "07pr014iifyy1xaiqamkx78xfszr67g8kzysmzgzms0a4470k1i9"
 }
