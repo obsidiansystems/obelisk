@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -39,9 +40,15 @@ module Obelisk.Backend
   , getPublicConfigs
   ) where
 
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ < 810
+import Control.Monad.Fail (MonadFail)
+import Data.Monoid ((<>))
+#endif
+#endif
+
 import Control.Monad
 import Control.Monad.Except
-import Control.Monad.Fail (MonadFail)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
@@ -49,7 +56,6 @@ import Data.Dependent.Sum
 import Data.Functor.Identity
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import GHC.Generics (Generic)
