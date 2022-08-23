@@ -6,6 +6,7 @@
     security.acme.acceptTerms = false;
   }
 , reflex-platform-func ? import ./dep/reflex-platform
+, useGHC810 ? false #true if one wants to use ghc 8.10.7
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -17,12 +18,14 @@ let
   getReflexPlatform = { system, enableLibraryProfiling ? profiling }: reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
 
+    __useNewerCompiler = useGHC810;
+
     nixpkgsOverlays = [
       (import ./nixpkgs-overlays)
     ];
 
     haskellOverlays = [
-      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; })
+      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; __useNewerCompiler = useGHC810; })
       pkgs.obeliskExecutableConfig.haskellOverlay
       (import ./haskell-overlays/obelisk.nix)
       (import ./haskell-overlays/tighten-ob-exes.nix)
