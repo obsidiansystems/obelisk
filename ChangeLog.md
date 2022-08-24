@@ -25,6 +25,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#948](https://github.com/obsidiansystems/obelisk/pull/948): obelisk now always invokes bash instead of the system-wide shell when it can. Some sub-programs, like ghcid, will still use the system-wide shell, which can cause subtle problems due to impurities.
   * [#949](https://github.com/obsidiansystems/obelisk/pull/949): obelisk now configures its output and error streams to transliterate unsupported to a known-good replacement character.
   * [#951](https://github.com/obsidiansystems/obelisk/pull/951): Add `ob run --port` which allows the user to override the port on which the app is served, rather than always using the port configured in the route.
+  * [#974](https://github.com/obsidiansystems/obelisk/pull/951): Warn the user when invalid fields are present in `default-extensions`/`default-language`.
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add routeLinkAttr to Obelisk.Route.Frontend. This allows the creation of route links with additional, user-specified attributes.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`

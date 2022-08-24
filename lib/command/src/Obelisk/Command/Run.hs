@@ -96,7 +96,7 @@ import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
 
-import Obelisk.App (MonadObelisk, getObelisk, runObelisk)
+import Obelisk.App (MonadObelisk, ObeliskError(..), getObelisk, runObelisk)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
@@ -352,7 +352,7 @@ parseCabalPackage
   => FilePath -- ^ Package directory
   -> m (Maybe CabalPackageInfo)
 parseCabalPackage dir = parseCabalPackage' dir >>= \case
-  Left err -> Nothing <$ putLog Error err
+  Left err -> throwError (ObeliskError_Unstructured err)
   Right (Just (warnings, pkgInfo)) -> do
     for_ warnings $ putLog Warning . T.pack . show
     pure $ Just pkgInfo
