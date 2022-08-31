@@ -199,7 +199,7 @@ runWidget toRun configs validFullEncoder = do
       redirectPort = _runApp_backendPort toRun
 
       beforeMainLoop = do
-        putStrLn $ "Frontend running on http://localhost:" ++ show port
+        putStrLn $ "Frontend running on http://localhost:" ++ show port ++ "/"
         when (routeIsTLS && isJust (_runApp_forceFrontendPort toRun)) $ do
           putStrLn "Warning: Since a specific frontend port was requested, TLS will not be used for this session"
           putStrLn "Please make sure that the public route is behind a reverse proxy to terminate TLS connections."

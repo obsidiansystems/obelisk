@@ -225,8 +225,15 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       [port] <- liftIO $ getFreePorts 1
       maskExitSuccess $ runHandles ob ["run", "-p", T.pack (show port)] [] $ \_stdin stdout stderr -> do
         uri <- handleObRunStdout httpManager stdout stderr
+        -- Make sure obelisk logs the right thing
         unless (T.pack (show port ++ "/") `T.isSuffixOf` T.strip uri) $
           error $ "Expected the URI to end in " ++ show port ++ " but it ended in " ++ T.unpack uri
+        -- But also verify that we can actually reach the server in the
+        -- given path, rather than just listening for the log URL
+        let req = liftIO $ try @HTTP.HttpException $ HTTP.parseRequest (T.unpack uri) >>= flip HTTP.httpLbs httpManager
+        req >>= \case
+          Right r | HTTP.responseStatus r == HTTP.ok200 -> exit 0
+          e -> errorExit $ "Request to ob run failed: " <> T.pack (show e)
         exit 0
 
   describe "ob repl" $ do
