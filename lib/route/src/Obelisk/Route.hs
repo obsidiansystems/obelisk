@@ -188,7 +188,7 @@ import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Semigroupoid
-import Data.Some (Some(Some))
+import Data.Some (Some(Some), mapSome)
 import Data.Tabulation
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -254,9 +254,6 @@ infixr 5 :/
 (?/) :: f (Maybe a) -> a -> R f
 r ?/ a = r :/ Just a
 infixr 5 ?/
-
-mapSome :: (forall a. f a -> g a) -> Some f -> Some g
-mapSome f (Some a) = Some $ f a
 
 hoistR :: (forall x. f x -> g x) -> R f -> R g
 hoistR f (x :=> Identity y) = f x :/ y
