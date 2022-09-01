@@ -111,6 +111,7 @@ module Obelisk.Route
   , obeliskRouteEncoder
   , obeliskRouteSegment
   , pageNameEncoder
+  , pathQueryEncoder
   , handleEncoder
   , someSumEncoder
   , Void1
@@ -181,6 +182,7 @@ import Data.Functor.Sum
 import Data.GADT.Compare
 import Data.GADT.Compare.TH
 import Data.GADT.Show
+import Data.List (stripPrefix)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -197,6 +199,7 @@ import Data.Text.Lens (IsText, packed, unpacked)
 import Data.Type.Equality
 import Data.Universe
 import Data.Universe.Some
+import Network.URI (URI (..))
 import Network.HTTP.Types.URI
 import qualified Numeric.Lens
 import Obelisk.Route.TH
@@ -929,6 +932,34 @@ pageNameEncoder :: (Applicative check, MonadError Text parse) => Encoder check p
 pageNameEncoder = bimap
   (unpackTextEncoder . prefixTextEncoder "/" . pathSegmentsTextEncoder . listToNonEmptyEncoder)
   (unpackTextEncoder . prefixNonemptyTextEncoder "?" . queryParametersTextEncoder . toListMapEncoder)
+
+-- | Encode a PathQuery into a URI based on a given base URI
+--
+-- WARNING: We don't deal with query or fragment components here at all.  If
+-- the supplied base URI has either one, they will be silently ignored in both
+-- encoding and decoding.
+pathQueryEncoder
+  :: ( Applicative check
+     , MonadError Text parse
+     )
+  => URI
+  -> Encoder check parse PathQuery URI
+pathQueryEncoder baseUri =
+  let -- basePath has trailing slashes removed
+      basePath = reverse $ dropWhile (== '/') $ reverse $ uriPath baseUri
+  in unsafeMkEncoder $ EncoderImpl
+       { _encoderImpl_encode = \(path, query) -> URI
+         { uriScheme = uriScheme baseUri
+         , uriAuthority = uriAuthority baseUri
+         , uriPath = basePath <> path
+         , uriQuery = query
+         , uriFragment = ""
+         }
+       , _encoderImpl_decode = \uri ->
+           case (uriScheme uri /= uriScheme baseUri, uriAuthority uri /= uriAuthority baseUri, Data.List.stripPrefix basePath (uriPath uri)) of
+             (True, True, Just remainingPath) -> pure (remainingPath, uriQuery uri)
+             _ -> throwError $ "pathQueryEncodering: wrong base uri; expected " <> T.pack (show baseUri) <> " got " <> T.pack (show uri)
+       }
 
 -- | Handle an error in parsing, for example, in order to redirect to a 404 page.
 handleEncoder
