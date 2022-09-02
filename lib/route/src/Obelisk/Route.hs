@@ -115,6 +115,7 @@ module Obelisk.Route
   , pathQueryEncoder
   , handleEncoder
   , someSumEncoder
+  , voidEncoder
   , Void1
   , void1Encoder
   , pathSegmentsTextEncoder
@@ -201,6 +202,7 @@ import Data.Text.Lens (IsText, packed, unpacked)
 import Data.Type.Equality
 import Data.Universe
 import Data.Universe.Some
+import Data.Void (Void, absurd)
 import Network.URI (URI (..))
 import Network.HTTP.Types.URI
 import qualified Numeric.Lens
@@ -1122,6 +1124,12 @@ someSumEncoder = Encoder $ pure $ EncoderImpl
   , _encoderImpl_decode = pure . \case
       Left (Some l) -> Some (InL l)
       Right (Some r) -> Some (InR r)
+  }
+
+voidEncoder :: Encoder (Either Text) (Either Text) Void b
+voidEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = absurd
+  , _encoderImpl_decode = \_ -> throwError "voidEncoder: can't decode anything"
   }
 
 data Void1 :: * -> * where {}
