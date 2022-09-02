@@ -198,20 +198,33 @@ runWidget toRun configs validFullEncoder = do
       redirectHost = _runApp_backendHost toRun
       redirectPort = _runApp_backendPort toRun
 
+      -- TLS toggle logic: 'routeIsTLS' indicates whether the
+      -- configuration would have mandated TLS (at the moment this is
+      -- only because the route is https://...).
+      -- 'portDisabledTLS' indicates whether the user forced us to use a
+      -- port different than that of the route, and thus TLS was
+      -- disabled.
+      routeIsTLS = (Just "https" == uri ^? uriScheme . _Just . unRText)
+      portDisabledTLS = isJust (_runApp_forceFrontendPort toRun)
+
       beforeMainLoop = do
         putStrLn $ "Frontend running on http://localhost:" ++ show port ++ "/"
-        when (routeIsTLS && isJust (_runApp_forceFrontendPort toRun)) $ do
+        putStrLn $ "Publicly accessible route: " ++ T.unpack (URI.render uri)
+        -- TLS toggle logic: If the --port option was given, warn the
+        -- user that TLS is being skipped.
+        when (routeIsTLS && portDisabledTLS) $ do
           putStrLn "Warning: Since a specific frontend port was requested, TLS will not be used for this session"
           putStrLn "Please make sure that the public route is behind a reverse proxy to terminate TLS connections."
 
-      routeIsTLS = (Just "https" == uri ^? uriScheme . _Just . unRText)
 
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
 
       -- Providing TLS here will also incidentally provide it to proxied
       -- requests to the backend.
       prepareRunner =
-        if routeIsTLS && isNothing (_runApp_forceFrontendPort toRun) then
+        -- TLS toggle logic: If the port option was NOT given, then use
+        -- TLS iff the route has it.
+        if not portDisabledTLS && routeIsTLS then
           case _runApp_tlsCertDirectory toRun of
             Nothing -> do
               -- Generate a private key and self-signed certificate for TLS
