@@ -552,6 +552,7 @@ baseGhciOptions =
   , "-no-user-package-db"
   , "-hide-all-packages"
   , "-package-env", "-"
+  , "-pgmL", "markdown-unlit"
   ]
 
 -- | Run ghci repl
