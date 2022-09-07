@@ -184,18 +184,18 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
     ] <> rtsFlags
       <> [ "-RTS" ]
 
-run
+-- | Run a command in ghcid using ob run's package and asset environment
+runWithOb
   :: MonadObelisk m
-  => Maybe FilePath
-  -- ^ Certificate Directory path (optional)
-  -> Maybe Socket.PortNumber
-  -- ^ override the route's port number?
-  -> FilePath
+  => FilePath
   -- ^ root folder
   -> PathTree Interpret
   -- ^ interpreted paths
+  -> (Text -> Socket.PortNumber -> String)
+  -- ^ Command to run. The command receives the path to the static assets and
+  -- the port number
   -> m ()
-run certDir portOverride root interpretPaths = do
+runWithOb root interpretPaths cmd = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -209,7 +209,23 @@ run certDir portOverride root interpretPaths = do
   ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
-    runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
+    runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ cmd assets freePort
+
+-- | The default ob run command
+run
+  :: MonadObelisk m
+  => Maybe FilePath
+  -- ^ Certificate Directory path (optional)
+  -> Maybe Socket.PortNumber
+  -- ^ override the route's port number?
+  -> FilePath
+  -- ^ root folder
+  -> PathTree Interpret
+  -- ^ interpreted paths
+  -> m ()
+run certDir portOverride root interpretPaths =
+  runWithOb root interpretPaths $ \assets freePort ->
+    unwords
       [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
       , "Backend.backend"
       , "Frontend.frontend"
