@@ -4,6 +4,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
+* obelisk-command: add `Obelisk.Command.Run.runWithOb` to make it easier to construct a custom `ob run` function
 * Update reflex-platform to yet unreleased version with GHC 8.10.
   \[Update note once release is cut.\]
 
