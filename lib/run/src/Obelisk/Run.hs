@@ -20,10 +20,11 @@ module Obelisk.Run where
 import Prelude hiding ((.), id)
 
 import Control.Category
+import Control.Monad
 import Control.Concurrent
 import Control.Applicative
 import Control.Exception
-import Control.Lens ((%~), (^?), (?~), _Just, _Right)
+import Control.Lens ((%~), (^?), _Just, _Right)
 import qualified Data.Attoparsec.ByteString.Char8 as A
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -191,26 +192,39 @@ runWidget toRun configs validFullEncoder = do
       -- specified in the route.
       port = fromMaybe 80 $ (_runApp_forceFrontendPort toRun)
                         <|> (fmap fromIntegral $ uri ^? uriAuthority . _Right . authPort . _Just)
-      -- This is the *actual* URI on which the frontend is served, i.e.
-      -- the URI from the route configuration but, possibly, with the
-      -- port we picked above. We need to compute this for two reasons:
-      --
-      --   1. The log. Self-explanatory.
-      --   2. JSaddle needs to know where the frontend is served.
-      actualUri = uri & uriAuthority . _Right . authPort ?~ fromInteger (fromIntegral port)
 
       -- This is the server that will handle the backend requests. We
       -- support shuttling them off to any host:port pair.
       redirectHost = _runApp_backendHost toRun
       redirectPort = _runApp_backendPort toRun
 
+      -- TLS toggle logic: 'routeIsTLS' indicates whether the
+      -- configuration would have mandated TLS (at the moment this is
+      -- only because the route is https://...).
+      -- 'portDisabledTLS' indicates whether the user forced us to use a
+      -- port different than that of the route, and thus TLS was
+      -- disabled.
+      routeIsTLS = (Just "https" == uri ^? uriScheme . _Just . unRText)
+      portDisabledTLS = isJust (_runApp_forceFrontendPort toRun)
+
       beforeMainLoop = do
-        putStrLn $ "Frontend running on " ++ T.unpack (URI.render actualUri)
+        putStrLn $ "Frontend running on http://localhost:" ++ show port ++ "/"
+        putStrLn $ "Publicly accessible route: " ++ T.unpack (URI.render uri)
+        -- TLS toggle logic: If the --port option was given, warn the
+        -- user that TLS is being skipped.
+        when (routeIsTLS && portDisabledTLS) $ do
+          putStrLn "Warning: Since a specific frontend port was requested, TLS will not be used for this session"
+          putStrLn "Please make sure that the public route is behind a reverse proxy to terminate TLS connections."
+
+
       settings = setBeforeMainLoop beforeMainLoop (setPort port (setTimeout 3600 defaultSettings))
 
-      -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
-      prepareRunner = case uri ^? uriScheme . _Just . unRText of
-        Just "https" -> do
+      -- Providing TLS here will also incidentally provide it to proxied
+      -- requests to the backend.
+      prepareRunner =
+        -- TLS toggle logic: If the port option was NOT given, then use
+        -- TLS iff the route has it.
+        if not portDisabledTLS && routeIsTLS then
           case _runApp_tlsCertDirectory toRun of
             Nothing -> do
               -- Generate a private key and self-signed certificate for TLS
@@ -234,7 +248,7 @@ runWidget toRun configs validFullEncoder = do
             Just certDir -> do
               putStrLn $ "Using certificate information from: " ++ certDir
               return $ runTLSSocket (tlsSettingsChain (certDir </> "cert.pem") [certDir </> "chain.pem"] (certDir </> "key.pem"))
-        _ -> return runSettingsSocket
+        else return runSettingsSocket
 
   runner <- prepareRunner
   bracket
@@ -242,7 +256,7 @@ runWidget toRun configs validFullEncoder = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp configs defaultConnectionOptions (_runApp_frontend toRun) validFullEncoder actualUri $ fallbackProxy redirectHost redirectPort man
+        app <- obeliskApp configs defaultConnectionOptions (_runApp_frontend toRun) validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
         runner settings skt app)
 
 

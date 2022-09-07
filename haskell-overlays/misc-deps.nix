@@ -28,14 +28,14 @@ rec {
   universe-810 = self.callHackage "universe" "1.2.2" {};
   universe-instances-extended-810 = self.callHackage "universe-instances-extended" "1.1.3" {};
   universe-reverse-instances-810 = self.callHackage "universe-reverse-instances" "1.1.1" {};
-       
+
   # We use our fork of hnix which has some compatibility patches on top of 0.12 from hackage
   hnix = haskellLib.dontHaddock (haskellLib.dontCheck (self.callCabal2nix "hnix" (hackGet ../dep/hnix) {}));
 
   universe-86 = haskellLib.dontCheck (self.callHackage "universe" "1.2" {});
   universe-instances-extended-86 = self.callHackage "universe-instances-extended" "1.1.1" {};
   hnix-86 = haskellLib.dontCheck super.hnix;
-    
+
   universe = mkVersionset __useNewerCompiler universe-86 universe-810;
   universe-instances-extended = mkVersionset __useNewerCompiler universe-instances-extended-86 universe-instances-extended-810;
   universe-reverse-instances = mkVersionset __useNewerCompiler super.universe-reverse-instances universe-reverse-instances-810;
@@ -43,15 +43,15 @@ rec {
   universe-dependent-sum = mkVersionset __useNewerCompiler super.universe-dependent-sum universe-dependent-sum-810;
   universe-some-86 = self.callHackage "universe-some" "1.2" {};
   universe-some = mkVersionset __useNewerCompiler universe-some-86 universe-some-810;
-  
+
   regex-base = self.callHackage "regex-base" "0.94.0.0" { };
   regex-posix = self.callHackage "regex-posix" "0.96.0.0" { };
   regex-tdfa = self.callHackage "regex-tdfa" "1.3.1.0" { };
   test-framework = haskellLib.dontCheck (self.callHackage "test-framework" "0.8.2.0" { });
-  
+
   hnix-store-core = haskellLib.dontCheck super.hnix-store-core;
   hnix-store = haskellLib.dontCheck super.hnix-store;
-  
+
   # https://github.com/haskell/hackage-security/issues/247
   hackage-security = haskellLib.dontCheck super.hackage-security; # only tests use aeson and are not compat with 1.5;
   heist = haskellLib.dontCheck (haskellLib.doJailbreak super.heist); # aeson 1.5 bump
@@ -65,31 +65,23 @@ rec {
   # Exports more internals
   snap-core = haskellLib.dontCheck (self.callCabal2nix "snap-core" (hackGet ../dep/snap-core) { });
 
-  logging-effect = self.callCabal2nix "logging-effect" (hackGet ../dep/logging-effect) {};
-  resourcet = self.callHackage "resourcet" "1.2.4.2" {};
-  unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" {};
-  shelly = self.callHackage "shelly" "1.9.0" {};
-  monad-logger = self.callHackage "monad-logger" "0.3.36" {};
-
-  vector-binary-instances = haskellLib.overrideCabal super.vector-binary-instances (old: {
-    preConfigure = ''
-      ${pkgs.gnused}/bin/sed -i "s/Cabal-version:\s*3.0/Cabal-version: 2.0/g" *.cabal
-    '';
-  });
-
-  modern-uri = haskellLib.doJailbreak super.modern-uri;
-  neat-interpolation = self.callHackage "neat-interpolation" "0.5.1.3" {};
-
-  nix-thunk = (import ../dep/nix-thunk {}).makeRunnableNixThunk (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) {});
-  cli-extras = self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) {};
-  cli-git = haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) {}) {
+  logging-effect = self.callCabal2nix "logging-effect" (hackGet ../dep/logging-effect) { };
+  resourcet = self.callHackage "resourcet" "1.2.4.2" { };
+  unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" { };
+  shelly = self.callHackage "shelly" "1.9.0" { };
+  monad-logger = self.callHackage "monad-logger" "0.3.36" { };
+  nix-thunk = (import ../dep/nix-thunk { }).makeRunnableNixThunk (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { });
+  cli-extras = self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) { };
+  cli-git = haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) { }) {
     librarySystemDepends = with pkgs; [
       gitMinimal
     ];
   };
-  cli-nix = haskellLib.overrideCabal (self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) {}) {
+  cli-nix = haskellLib.overrideCabal (self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) { }) {
     librarySystemDepends = with pkgs; [
-      nix nix-prefetch-git
+      gitMinimal
+      nix
+      nix-prefetch-git
     ];
   };
 
