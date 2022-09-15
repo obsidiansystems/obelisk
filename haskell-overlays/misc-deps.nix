@@ -15,6 +15,10 @@ rec {
 
   # hpack requires cabal >= 3.0 but the ghc865 package set builds it with 2.4 by default
   hpack = super.hpack.overrideScope (self: super: { Cabal = self.Cabal_3_2_1_0; });
+  # overrideScope doesn't have an effect so this pins to a release that supports Cabal 2.x.
+  vector-binary-instances = mkVersionset __useNewerCompiler (self.callHackage "vector-binary-instances" "0.2.5.1" {}) super.vector-binary-instances;
+
+  modern-uri = mkVersionset __useNewerCompiler (haskellLib.doJailbreak super.modern-uri) super.modern-uri;
 
   # These versions work with both the ghc865 and ghc8107 package sets
   git = self.callCabal2nix "git" (hackGet ../dep/hs-git) { };
@@ -31,6 +35,7 @@ rec {
 
   # We use our fork of hnix which has some compatibility patches on top of 0.12 from hackage
   hnix = haskellLib.dontHaddock (haskellLib.dontCheck (self.callCabal2nix "hnix" (hackGet ../dep/hnix) {}));
+  neat-interpolation = haskellLib.doJailbreak super.neat-interpolation;
 
   universe-86 = haskellLib.dontCheck (self.callHackage "universe" "1.2" {});
   universe-instances-extended-86 = self.callHackage "universe-instances-extended" "1.1.1" {};
