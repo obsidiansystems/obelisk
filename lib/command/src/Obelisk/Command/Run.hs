@@ -184,18 +184,18 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
     ] <> rtsFlags
       <> [ "-RTS" ]
 
-run
+-- | Run a command in ghcid using ob run's package and asset environment
+runWithOb
   :: MonadObelisk m
-  => Maybe FilePath
-  -- ^ Certificate Directory path (optional)
-  -> Maybe Socket.PortNumber
-  -- ^ override the route's port number?
-  -> FilePath
+  => FilePath
   -- ^ root folder
   -> PathTree Interpret
   -- ^ interpreted paths
+  -> (Text -> Socket.PortNumber -> String)
+  -- ^ Command to run. The command receives the path to the static assets and
+  -- the port number
   -> m ()
-run certDir portOverride root interpretPaths = do
+runWithOb root interpretPaths cmd = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -209,10 +209,35 @@ run certDir portOverride root interpretPaths = do
   ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
-    runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
+    runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ cmd assets freePort
+
+-- | The default ob run command
+run
+  :: MonadObelisk m
+  => Maybe FilePath
+  -- ^ Certificate Directory path (optional)
+  -> Maybe Socket.PortNumber
+  -- ^ override the route's port number?
+  -> FrontendFunction
+  -- ^ Fully qualified function path (e.g. contains module name) to the
+  -- obelisk frontend function. Usually, `Frontend.frontend`. Module path is
+  -- relative to the `frontend` package's source directories.
+  -> BackendFunction
+  -- ^ Fully qualified function path (e.g. contains module name) to the
+  -- obelisk backend function. Usually, `Backend.backend`. The module path is
+  -- relative to the `backend` package's source directories.
+  -> FilePath
+  -- ^ root folder
+  -> PathTree Interpret
+  -- ^ interpreted paths
+  -> m ()
+run certDir portOverride frontend backend root interpretPaths =
+  runWithOb root interpretPaths $ \assets freePort ->
+    -- for the exact order of arguments, take a look at 'defaultRunApp'
+    unwords
       [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
-      , "Backend.backend"
-      , "Frontend.frontend"
+      , unBackendFunction backend
+      , unFrontendFunction frontend
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
       , ") { Obelisk.Run._runApp_backendPort =", show freePort
       ,   ", Obelisk.Run._runApp_forceFrontendPort =", show portOverride
