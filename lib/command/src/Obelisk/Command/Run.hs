@@ -218,17 +218,19 @@ run
   -- ^ Certificate Directory path (optional)
   -> Maybe Socket.PortNumber
   -- ^ override the route's port number?
+  -> String
+  -> String
   -> FilePath
   -- ^ root folder
   -> PathTree Interpret
   -- ^ interpreted paths
   -> m ()
-run certDir portOverride root interpretPaths =
+run certDir portOverride frontend backend root interpretPaths =
   runWithOb root interpretPaths $ \assets freePort ->
     unwords
       [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
-      , "Backend.backend"
-      , "Frontend.frontend"
+      , backend
+      , frontend
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
       , ") { Obelisk.Run._runApp_backendPort =", show freePort
       ,   ", Obelisk.Run._runApp_forceFrontendPort =", show portOverride

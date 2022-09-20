@@ -88,7 +88,7 @@ initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run [(FilePath, Interpret)] (Maybe FilePath) (Maybe PortNumber)
+   | ObCommand_Run [(FilePath, Interpret)] (Maybe FilePath) (Maybe PortNumber) String String
    | ObCommand_Profile String [String]
    | ObCommand_Thunk ThunkOption
    | ObCommand_Repl [(FilePath, Interpret)]
@@ -116,7 +116,9 @@ obCommand cfg = hsubparser
       (   ObCommand_Run
       <$> interpretOpts
       <*> certDirOpts
-      <*> (Just <$> option auto (long "port" <> short 'p' <> help "Port number for server; overrides common/config/route" <> metavar "INT") <|> pure Nothing))
+      <*> (Just <$> option auto (long "port" <> short 'p' <> help "Port number for server; overrides common/config/route" <> metavar "INT") <|> pure Nothing)
+      <*> (strOption (long "frontend" <> help "WIP: frontend module" <> value "Frontend.frontend"))
+      <*> (strOption (long "backend" <> help "WIP: backend module" <> value "Backend.backend")))
       $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
@@ -432,7 +434,7 @@ ob = \case
       deployPush deployPath deployBuilders
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
-  ObCommand_Run interpretPathsList certDir servePort -> withInterpretPaths interpretPathsList (run certDir servePort)
+  ObCommand_Run interpretPathsList certDir servePort frontend backend -> withInterpretPaths interpretPathsList (run certDir servePort frontend backend)
   ObCommand_Profile basePath rtsFlags -> profile basePath rtsFlags
   ObCommand_Thunk to -> wrapNixThunkError $ case _thunkOption_command to of
     ThunkCommand_Update config -> for_ thunks (updateThunkToLatest config)
