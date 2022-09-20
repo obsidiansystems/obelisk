@@ -235,7 +235,28 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
           Right r | HTTP.responseStatus r == HTTP.ok200 -> exit 0
           e -> errorExit $ "Request to ob run failed: " <> T.pack (show e)
         exit 0
-
+    it "specify frontend action" $ inTmpObInit $ \_ -> do
+      testObRunInDirWithArgs' ["--frontend", "Frontend.frontend"] Nothing httpManager
+    it "specify backend action" $ inTmpObInit $ \_ -> do
+      testObRunInDirWithArgs' ["--backend", "Backend.backend"] Nothing httpManager
+    it "specify frontend and backend actions" $ inTmpObInit $ \_ -> do
+      testObRunInDirWithArgs' ["--frontend", "Frontend.frontend", "--backend", "Backend.backend"] Nothing httpManager
+    it "specify alternative frontend action" $ inTmpObInit $ \_ -> do
+      -- make sure original function does not exist
+      run_ sedPath ["-e", "s/^frontend/frontendAlt/", "-i", "frontend/src/Frontend.hs"]
+      testObRunInDirWithArgs' ["--frontend", "Frontend.frontendAlt"] Nothing httpManager
+    it "specify alternative backend action" $ inTmpObInit $ \_ -> do
+      run_ sedPath ["-e", "s/^backend/backendAlt/", "-i", "backend/src/Backend.hs"]
+      testObRunInDirWithArgs' ["--backend", "Backend.backendAlt"] Nothing httpManager
+    it "specify alternative frontend and backend actions" $ inTmpObInit $ \_ -> do
+      run_ sedPath ["-e", "s/^frontend/frontendAlt/", "-i", "frontend/src/Frontend.hs"]
+      run_ sedPath ["-e", "s/^backend/backendAlt/", "-i", "backend/src/Backend.hs"]
+      testObRunInDirWithArgs' ["--frontend", "Frontend.frontendAlt", "--backend", "Backend.backendAlt"] Nothing httpManager
+    it "works in sub-directory with alternative frontend and backend actions" $ inTmpObInit $ \_ -> do
+      run_ sedPath ["-e", "s/^frontend/frontendAlt/", "-i", "frontend/src/Frontend.hs"]
+      run_ sedPath ["-e", "s/^backend/backendAlt/", "-i", "backend/src/Backend.hs"]
+      testObRunInDirWithArgs' ["--frontend", "Frontend.frontendAlt", "--backend", "Backend.backendAlt"] (Just "frontend") httpManager
+      
   describe "ob repl" $ do
     it "accepts stdin commands" $ inTmpObInit $ \_ -> do
       setStdin "print 3\n:q"
@@ -382,6 +403,7 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
     runOb_ = augmentWithVerbosity run_ ob isVerbose
     runOb = augmentWithVerbosity run ob isVerbose
     testObRunInDir' = augmentWithVerbosity testObRunInDir ob isVerbose ["run"]
+    testObRunInDirWithArgs' args = augmentWithVerbosity testObRunInDir ob isVerbose (["run"] ++ args)
     testObRunCert' = augmentWithVerbosity testObRunCert ob isVerbose ["run", "-c", "."]
     testObRunInDirWithMissingStaticFile' = augmentWithVerbosity testObRunInDirWithMissingStaticFile ob isVerbose ["run"]
     testObRunInDirWithMissingStaticFilePath' = augmentWithVerbosity testObRunInDirWithMissingStaticFilePath ob isVerbose ["run"]
