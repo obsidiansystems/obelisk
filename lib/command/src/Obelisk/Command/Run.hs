@@ -218,8 +218,14 @@ run
   -- ^ Certificate Directory path (optional)
   -> Maybe Socket.PortNumber
   -- ^ override the route's port number?
-  -> String
-  -> String
+  -> FrontendFunction
+  -- ^ Fully qualified function path (e.g. contains module name) to the
+  -- obelisk frontend function. Usually, `Frontend.frontend`. Module path is
+  -- relative to the `frontend` package's source directories.
+  -> BackendFunction
+  -- ^ Fully qualified function path (e.g. contains module name) to the
+  -- obelisk backend function. Usually, `Backend.backend`. The module path is
+  -- relative to the `backend` package's source directories.
   -> FilePath
   -- ^ root folder
   -> PathTree Interpret
@@ -227,10 +233,11 @@ run
   -> m ()
 run certDir portOverride frontend backend root interpretPaths =
   runWithOb root interpretPaths $ \assets freePort ->
+    -- for the exact order of arguments, take a look at 'defaultRunApp'
     unwords
       [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
-      , backend
-      , frontend
+      , unBackendFunction backend
+      , unFrontendFunction frontend
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
       , ") { Obelisk.Run._runApp_backendPort =", show freePort
       ,   ", Obelisk.Run._runApp_forceFrontendPort =", show portOverride

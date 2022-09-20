@@ -85,10 +85,27 @@ initSource = foldl1 (<|>)
 initForce :: Parser Bool
 initForce = switch (long "force" <> help "Allow ob init to overwrite files")
 
+
+-- | Fully qualified function path (e.g. contains module name) to the
+-- obelisk frontend function. Usually, `Frontend.frontend`. Module path is
+-- relative to the `frontend` package's source directories.
+newtype FrontendFunction = FrontendFunction
+  { unFrontendFunction :: String
+  }
+  deriving (Show, Eq, Ord)
+
+-- | Fully qualified function path (e.g. contains module name) to the
+-- obelisk backend function. For example, `Backend.backend`. The module path is
+-- relative to the `backend` package's source directories.
+newtype BackendFunction = BackendFunction
+  { unBackendFunction :: String
+  }
+  deriving (Show, Eq, Ord)
+
 data ObCommand
    = ObCommand_Init InitSource Bool
    | ObCommand_Deploy DeployCommand
-   | ObCommand_Run [(FilePath, Interpret)] (Maybe FilePath) (Maybe PortNumber) String String
+   | ObCommand_Run [(FilePath, Interpret)] (Maybe FilePath) (Maybe PortNumber) FrontendFunction BackendFunction
    | ObCommand_Profile String [String]
    | ObCommand_Thunk ThunkOption
    | ObCommand_Repl [(FilePath, Interpret)]
@@ -117,8 +134,8 @@ obCommand cfg = hsubparser
       <$> interpretOpts
       <*> certDirOpts
       <*> (Just <$> option auto (long "port" <> short 'p' <> help "Port number for server; overrides common/config/route" <> metavar "INT") <|> pure Nothing)
-      <*> (strOption (long "frontend" <> help "WIP: frontend module" <> value "Frontend.frontend"))
-      <*> (strOption (long "backend" <> help "WIP: backend module" <> value "Backend.backend")))
+      <*> (FrontendFunction <$> strOption (long "frontend" <> help "Fully qualified entry point for the frontend." <> value "Frontend.frontend"))
+      <*> (BackendFunction <$> strOption (long "backend" <> help "Fully qualified entry point for the backend." <> value "Backend.backend")))
       $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
