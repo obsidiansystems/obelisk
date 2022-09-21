@@ -69,7 +69,11 @@ rec {
   resourcet = self.callHackage "resourcet" "1.2.4.2" { };
   unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" { };
   shelly = self.callHackage "shelly" "1.9.0" { };
+  # version >= 0.2.5.2 has a Cabal version of 3.0, which nix doesn't like
+  vector-binary-instances = self.callHackage "vector-binary-instances" "0.2.5.1" {};
+  modern-uri = haskellLib.doJailbreak super.modern-uri;
   monad-logger = self.callHackage "monad-logger" "0.3.36" { };
+  neat-interpolation = haskellLib.doJailbreak super.neat-interpolation;
   nix-thunk = (import ../dep/nix-thunk { }).makeRunnableNixThunk (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { });
   cli-extras = self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) { };
   cli-git = haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) { }) {
