@@ -106,6 +106,8 @@ module Obelisk.Route
   , joinPairTextEncoder
   , toListMapEncoder
   , shadowEncoder
+  , unsafeSumEncoder
+  , exhaustiveOverlapCheck
   , prismEncoder
   , reviewEncoder
   , obeliskRouteEncoder
@@ -525,7 +527,7 @@ maybeEncoder
   => Encoder check parse () b
   -> Encoder check parse a b
   -> Encoder check parse (Maybe a) b
-maybeEncoder f g = shadowEncoder f g . maybeToEitherEncoder
+maybeEncoder f g = unsafeSumEncoder exhaustiveOverlapCheck f g . maybeToEitherEncoder
 
 -- | Encode a value by simply applying 'Just'
 justEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a (Maybe a)
@@ -665,6 +667,59 @@ consEncoder = unsafeMkEncoder $ EncoderImpl
 tshow :: Show a => a -> Text
 tshow = T.pack . show
 
+exhaustiveOverlapCheck
+  :: ( Universe a
+     , Eq c
+     , MonadError Text check
+     , Show a
+     , Show b
+     , Show c
+     , check ~ parse
+     )
+  => EncoderImpl parse a c -- ^ should have a small number of possible routes
+  -> EncoderImpl parse b c
+  -> check ()
+exhaustiveOverlapCheck vf vg = do
+  let gCanParse c = catchError (Just <$> _encoderImpl_decode vg c) (\_ -> pure Nothing)
+  overlaps <- fmap catMaybes $ forM universe $ \a -> do
+    let c = _encoderImpl_encode vf a
+    mb <- gCanParse c
+    pure $ mb >>= \b -> do
+      guard $ _encoderImpl_encode vg b == c
+      pure (a, b, c)
+  case overlaps of
+    [] -> pure ()
+    _ -> throwError $ "exhaustiveOverlapCheck: overlap detected: " <> T.unlines
+      (flip fmap overlaps $ \(a, b, c) -> "first encoder encodes " <> tshow a <> " as " <> tshow c <> ", which second encoder decodes as " <> tshow b)
+
+unsafeSumEncoder
+  :: (Eq c, Monad check, MonadError e parse)
+  => (EncoderImpl parse a c -> EncoderImpl parse b c -> check ())
+     -- ^ Checks for overlaps.
+     -- Required law for @checker@ argument:
+     -- @
+     --     catchError (checker f g) h = checker f g
+     -- `<=>` forall a. let c = _encoderImpl_encode f a in c /= _encoderImpl_encode g (_encoderImpl_decode g c)
+     -- @
+  -> Encoder check parse a c
+  -> Encoder check parse b c
+  -> Encoder check parse (Either a b) c
+unsafeSumEncoder checker f g = Encoder $ do
+  vf <- unEncoder f
+  vg <- unEncoder g
+  checker vf vg
+  pure $ EncoderImpl
+    { _encoderImpl_encode = either (_encoderImpl_encode vf) (_encoderImpl_encode vg)
+    , _encoderImpl_decode = \c ->
+        let mb = Right <$> _encoderImpl_decode vg c
+        in flip catchError (\_ -> mb) $ do
+          a <- _encoderImpl_decode vf c
+          case c == _encoderImpl_encode vf a of
+            False -> mb
+            True -> pure $ Left a
+    }
+
+{-# DEPRECATED shadowEncoder "This function will be removed in a future release since shadowing leads to incorrect behavior. Use 'sumEncoder' 'exhaustiveOverlapCheck' instead." #-}
 shadowEncoder
   :: ( Universe a
      , Eq c
