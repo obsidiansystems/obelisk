@@ -58,6 +58,7 @@ module Obelisk.Route
   , SegmentResult (..)
   , pathComponentEncoder
   , pathComponentEncoderIgnoringQuery
+  , pathComponentEncoderSharingQuery
 
   , FullRoute (..)
   , _FullRoute_Frontend
@@ -598,10 +599,11 @@ pathComponentEncoderIgnoringQuery
      )
   => (forall a. p a -> SegmentResult check parse a ())
   -> Encoder check parse (R p) PageName
-pathComponentEncoderIgnoringQuery = pathComponentEncoder' $ \case
-  PathEnd e -> first (unitEncoder []) . coidl . unitEncoderLenient mempty .  e
-  PathSegment _ e -> pathOnlyEncoderIgnoringQuery . idr . e
+pathComponentEncoderIgnoringQuery f = pathComponentEncoderSharingQuery (unitEncoderLenient mempty) f . coidr
 
+-- | Encode a dependent sum of type `(R p)` into a PageName (i.e. the path and query part of a URL) by using the
+-- supplied function to decide how to encode the constructors of p using the SegmentResult type. It is important
+-- that the number of values of type `(Some p)` be relatively small in order for checking to complete quickly.
 pathComponentEncoder
   :: ( Universe (Some p)
      , GShow p
@@ -611,29 +613,35 @@ pathComponentEncoder
      )
   => (forall a. p a -> SegmentResult check parse a (Map Text (Maybe Text)))
   -> Encoder check parse (R p) PageName
-pathComponentEncoder = pathComponentEncoder' $ \case
-  PathEnd e -> first (unitEncoder []) . coidl . e
-  PathSegment _ e -> e
+pathComponentEncoder f = Encoder $ do
+  let extractEncoder = \case
+        PathEnd e -> first (unitEncoder []) . coidl . e
+        PathSegment _ e -> e
+      extractPathSegment = \case
+        PathEnd _ -> Nothing
+        PathSegment t _ -> Just t
+  EncoderFunc f' <- checkEnum1EncoderFunc (extractEncoder . f)
+  unEncoder (pathComponentEncoderImpl (enum1Encoder (extractPathSegment . f)) f')
 
--- | Encode a dependent sum of type `(R p)` into a PageName (i.e. the path and query part of a URL) by using the
--- supplied function to decide how to encode the constructors of p using the SegmentResult type. It is important
--- that the number of values of type `(Some p)` be relatively small in order for checking to complete quickly.
-pathComponentEncoder'
+pathComponentEncoderSharingQuery
   :: ( Universe (Some p)
      , GShow p
      , GCompare p
      , MonadError Text check
      , MonadError Text parse
      )
-  => (forall a. SegmentResult check parse a b -> Encoder check parse a PageName)
-  -> (forall a. p a -> SegmentResult check parse a b)
-  -> Encoder check parse (R p) PageName
-pathComponentEncoder' extractEncoder f = Encoder $ do
-  let extractPathSegment = \case
+  => Encoder check parse q (Map Text (Maybe Text))
+  -> (forall a. p a -> SegmentResult check parse a ())
+  -> Encoder check parse (R p, q) PageName
+pathComponentEncoderSharingQuery params f = Encoder $ do
+  let extractEncoder = \case
+        PathEnd e -> unitEncoder [] . e
+        PathSegment _ e -> idr . e
+      extractPathSegment = \case
         PathEnd _ -> Nothing
         PathSegment t _ -> Just t
   EncoderFunc f' <- checkEnum1EncoderFunc (extractEncoder . f)
-  unEncoder (pathComponentEncoderImpl (enum1Encoder (extractPathSegment . f)) f')
+  unEncoder (pathComponentEncoderSharingQueryImpl (enum1Encoder (extractPathSegment . f)) f' params)
 
 pathComponentEncoderImpl :: forall check parse p. (Monad check, Monad parse)
   => Encoder check parse (Some p) (Maybe Text)
@@ -641,6 +649,14 @@ pathComponentEncoderImpl :: forall check parse p. (Monad check, Monad parse)
   -> Encoder check parse (R p) PageName
 pathComponentEncoderImpl =
   chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consEncoder)
+
+pathComponentEncoderSharingQueryImpl
+  :: (Monad check, Monad parse)
+  => Encoder check parse (Some p) (Maybe Text)
+  -> (forall a. p a -> Encoder Identity parse a [Text])
+  -> Encoder check parse q (Map Text (Maybe Text))
+  -> Encoder check parse (R p, q) PageName
+pathComponentEncoderSharingQueryImpl this rest = bimap $ chainEncoder consEncoder this rest
 
 --NOTE: Naming convention in this module is to always talk about things in the *encoding* direction, never in the *decoding* direction
 
