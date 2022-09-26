@@ -592,11 +592,11 @@ checkEnum1EncoderFunc f = do
 
 -- | This type is used by pathComponentEncoder to allow the user to indicate how to treat
 -- various cases when encoding a dependent sum of type `(R p)`.
-data SegmentResult check parse a =
-    PathEnd (Encoder check parse a (Map Text (Maybe Text)))
+data SegmentResult check parse a b =
+    PathEnd (Encoder check parse a b)
     -- ^ Indicate that the path is finished, with an Encoder that translates the
     -- corresponding value into query parameters
-  | PathSegment Text (Encoder check parse a PageName)
+  | PathSegment Text (Encoder check parse a ([Text], b))
     -- ^ Indicate that the key should be represented by an additional path segment with
     -- the given 'Text', and give an Encoder for translating the corresponding value into
     -- the remainder of the route.
@@ -605,14 +605,14 @@ data SegmentResult check parse a =
 -- supplied function to decide how to encode the constructors of p using the SegmentResult type. It is important
 -- that the number of values of type `(Some p)` be relatively small in order for checking to complete quickly.
 pathComponentEncoder
-  :: forall check parse p.
+  :: forall check parse p q.
      ( Universe (Some p)
      , GShow p
      , GCompare p
      , MonadError Text check
      , MonadError Text parse )
-  => (forall a. p a -> SegmentResult check parse a)
-  -> Encoder check parse (R p) PageName
+  => (forall a. p a -> SegmentResult check parse a q)
+  -> Encoder check parse (R p) ([Text], q)
 pathComponentEncoder f = Encoder $ do
   let extractEncoder = \case
         PathEnd e -> first (unitEncoder []) . coidl . e
@@ -623,10 +623,10 @@ pathComponentEncoder f = Encoder $ do
   EncoderFunc f' <- checkEnum1EncoderFunc (extractEncoder . f)
   unEncoder (pathComponentEncoderImpl (enum1Encoder (extractPathSegment . f)) f')
 
-pathComponentEncoderImpl :: forall check parse p. (Monad check, Monad parse)
+pathComponentEncoderImpl :: forall check parse p q. (Monad check, Monad parse)
   => Encoder check parse (Some p) (Maybe Text)
-  -> (forall a. p a -> Encoder Identity parse a PageName)
-  -> Encoder check parse (R p) PageName
+  -> (forall a. p a -> Encoder Identity parse a ([Text], q))
+  -> Encoder check parse (R p) ([Text], q)
 pathComponentEncoderImpl =
   chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consEncoder)
 
@@ -1020,8 +1020,8 @@ instance  (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) w
 mkFullRouteEncoder
   :: (GCompare br, GCompare fr, GShow br, GShow fr, UniverseSome br, UniverseSome fr)
   => R (FullRoute br fr) -- ^ 404 handler
-  -> (forall a. br a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single backend route segment
-  -> (forall a. fr a -> SegmentResult (Either Text) (Either Text) a) -- ^ How to encode a single frontend route segment
+  -> (forall a. br a -> SegmentResult (Either Text) (Either Text) a (Map Text (Maybe Text))) -- ^ How to encode a single backend route segment
+  -> (forall a. fr a -> SegmentResult (Either Text) (Either Text) a (Map Text (Maybe Text))) -- ^ How to encode a single frontend route segment
   -> Encoder (Either Text) Identity (R (FullRoute br fr)) PageName
 mkFullRouteEncoder missing backendSegment frontendSegment = handleEncoder (const missing) $
   pathComponentEncoder $ \case
@@ -1056,7 +1056,7 @@ obeliskRouteEncoder :: forall check parse appRoute.
      , MonadError Text check
      , check ~ parse --TODO: Get rid of this
      )
-  => (forall a. appRoute a -> SegmentResult check parse a)
+  => (forall a. appRoute a -> SegmentResult check parse a (Map Text (Maybe Text)))
   -> Encoder check parse (R (ObeliskRoute appRoute)) PageName
 obeliskRouteEncoder appRouteSegment = pathComponentEncoder $ \r ->
   obeliskRouteSegment r appRouteSegment
@@ -1067,15 +1067,15 @@ obeliskRouteEncoder appRouteSegment = pathComponentEncoder $ \r ->
 obeliskRouteSegment :: forall check parse appRoute a.
      (MonadError Text check, MonadError Text parse)
   => ObeliskRoute appRoute a
-  -> (forall b. appRoute b -> SegmentResult check parse b)
-  -> SegmentResult check parse a
+  -> (forall b. appRoute b -> SegmentResult check parse b (Map Text (Maybe Text)))
+  -> SegmentResult check parse a (Map Text (Maybe Text))
 obeliskRouteSegment r appRouteSegment = case r of
   ObeliskRoute_App appRoute -> appRouteSegment appRoute
   ObeliskRoute_Resource resourceRoute -> resourceRouteSegment resourceRoute
 
 -- | A function which gives a sane default for how to encode Obelisk resource routes. It's given in this form, because it will
 -- be combined with other such segment encoders before 'pathComponentEncoder' turns it into a proper 'Encoder'.
-resourceRouteSegment :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> SegmentResult check parse a
+resourceRouteSegment :: (MonadError Text check, MonadError Text parse) => ResourceRoute a -> SegmentResult check parse a (Map Text (Maybe Text))
 resourceRouteSegment = \case
   ResourceRoute_Static -> PathSegment "static" pathOnlyEncoderIgnoringQuery
   ResourceRoute_Ghcjs -> PathSegment "ghcjs" pathOnlyEncoder
@@ -1096,7 +1096,7 @@ instance GShow appRoute => GShow (ObeliskRoute appRoute) where
       showString "ObeliskRoute_Resource " . gshowsPrec 11 appRoute
 
 
-indexOnlyRouteSegment :: (Applicative check, MonadError Text parse) => IndexOnlyRoute a -> SegmentResult check parse a
+indexOnlyRouteSegment :: (Applicative check, MonadError Text parse, Eq b, Monoid b, Show b) => IndexOnlyRoute a -> SegmentResult check parse a b
 indexOnlyRouteSegment = \case
   IndexOnlyRoute -> PathEnd $ unitEncoder mempty
 
