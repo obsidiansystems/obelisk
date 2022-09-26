@@ -366,7 +366,7 @@ hoistCheck f (Encoder x) = Encoder (f x)
 -- | Transform the parse monad of an 'Encoder' by applying a natural transformation.
 hoistParse :: (Functor check)
   => (forall t. parse t -> parse' t) -> Encoder check parse a b -> Encoder check parse' a b
-hoistParse f (Encoder x) = Encoder (fmap (\(EncoderImpl dec enc) -> EncoderImpl (f . dec) enc) x)
+hoistParse f = unsafeWrapDecoding (f.)
 
 -- | Check an 'Encoder', transforming it into one whose check monad is anything we want (usually Identity).
 checkEncoder :: (Applicative check', Functor check)
