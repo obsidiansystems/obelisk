@@ -57,6 +57,7 @@ module Obelisk.Route
   -- * Collating Routes
   , SegmentResult (..)
   , pathComponentEncoder
+  , pathComponentEncoderIgnoringQuery
 
   , FullRoute (..)
   , _FullRoute_Frontend
@@ -80,6 +81,7 @@ module Obelisk.Route
   , enum1Encoder
   , checkEnum1EncoderFunc
   , unitEncoder
+  , unitEncoderLenient
   , pathOnlyEncoder
   , addPathSegmentEncoder
   , pathParamEncoder
@@ -119,6 +121,7 @@ module Obelisk.Route
   , queryParametersTextEncoder
   , integralEncoder
   , pathSegmentEncoder
+  , pathOnlyEncoderIgnoringQuery
   , queryOnlyEncoder
   , Decoder(..)
   , dmapEncoder
@@ -586,23 +589,47 @@ data SegmentResult check parse a b =
     -- the given 'Text', and give an Encoder for translating the corresponding value into
     -- the remainder of the route.
 
--- | Encode a dependent sum of type `(R p)` into a PageName (i.e. the path and query part of a URL) by using the
--- supplied function to decide how to encode the constructors of p using the SegmentResult type. It is important
--- that the number of values of type `(Some p)` be relatively small in order for checking to complete quickly.
-pathComponentEncoder
-  :: forall check parse p.
-     ( Universe (Some p)
+pathComponentEncoderIgnoringQuery
+  :: ( Universe (Some p)
      , GShow p
      , GCompare p
      , MonadError Text check
-     , MonadError Text parse )
+     , MonadError Text parse
+     )
+  => (forall a. p a -> SegmentResult check parse a ())
+  -> Encoder check parse (R p) PageName
+pathComponentEncoderIgnoringQuery = pathComponentEncoder' $ \case
+  PathEnd e -> first (unitEncoder []) . coidl . unitEncoderLenient mempty .  e
+  PathSegment _ e -> pathOnlyEncoderIgnoringQuery . idr . e
+
+pathComponentEncoder
+  :: ( Universe (Some p)
+     , GShow p
+     , GCompare p
+     , MonadError Text check
+     , MonadError Text parse
+     )
   => (forall a. p a -> SegmentResult check parse a (Map Text (Maybe Text)))
   -> Encoder check parse (R p) PageName
-pathComponentEncoder f = Encoder $ do
-  let extractEncoder = \case
-        PathEnd e -> first (unitEncoder []) . coidl . e
-        PathSegment _ e -> e
-      extractPathSegment = \case
+pathComponentEncoder = pathComponentEncoder' $ \case
+  PathEnd e -> first (unitEncoder []) . coidl . e
+  PathSegment _ e -> e
+
+-- | Encode a dependent sum of type `(R p)` into a PageName (i.e. the path and query part of a URL) by using the
+-- supplied function to decide how to encode the constructors of p using the SegmentResult type. It is important
+-- that the number of values of type `(Some p)` be relatively small in order for checking to complete quickly.
+pathComponentEncoder'
+  :: ( Universe (Some p)
+     , GShow p
+     , GCompare p
+     , MonadError Text check
+     , MonadError Text parse
+     )
+  => (forall a. SegmentResult check parse a b -> Encoder check parse a PageName)
+  -> (forall a. p a -> SegmentResult check parse a b)
+  -> Encoder check parse (R p) PageName
+pathComponentEncoder' extractEncoder f = Encoder $ do
+  let extractPathSegment = \case
         PathEnd _ -> Nothing
         PathSegment t _ -> Just t
   EncoderFunc f' <- checkEnum1EncoderFunc (extractEncoder . f)
@@ -734,6 +761,12 @@ unitEncoder expected = unsafeMkEncoder $ EncoderImpl
       if obtained == expected
       then pure ()
       else throwError $ "endEncoderImpl: expected " <> tshow expected <> ", got " <> tshow obtained
+  , _encoderImpl_encode = \_ -> expected
+  }
+
+unitEncoderLenient :: (Applicative check, Applicative parse) => r -> Encoder check parse () r
+unitEncoderLenient expected = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_decode = \_ -> pure ()
   , _encoderImpl_encode = \_ -> expected
   }
 
