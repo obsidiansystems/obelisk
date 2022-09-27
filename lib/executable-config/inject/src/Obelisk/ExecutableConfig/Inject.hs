@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
+
 module Obelisk.ExecutableConfig.Inject where
 
 #ifdef __GLASGOW_HASKELL__
@@ -22,7 +23,7 @@ import Reflex.Dom.Core hiding (value)
 injectPure :: DomBuilder t m => Text -> ByteString -> m ()
 injectPure key value =
   let attrs = ("type" =: "text/plain" <> "data-obelisk-executable-config-inject-key" =: key <> "data-hydration-skip" =: "")
-  in elAttr "script" attrs $ text (T.decodeUtf8 (B64.encode value))
+   in elAttr "script" attrs $ text (T.decodeUtf8 (B64.encode value))
 
 -- | Produces injectable @<script>@ tags containing the configuration keys
 -- (filepaths) and values.
