@@ -1,13 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Obelisk.ExecutableConfig.Inject where
 
-import Control.Monad (mapM_)
 import Control.Monad.IO.Class (MonadIO)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base64 as B64
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import Reflex.Dom.Core hiding (value)
