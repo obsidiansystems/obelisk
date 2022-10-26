@@ -21,6 +21,7 @@ Functional reactive web and mobile applications, with batteries included. Obelis
   - [Default EC2 Deployment](#default-ec2-deployment)
   - [Custom Non-EC2 Deployment](#custom-non-ec2-deployment)
     - [VirtualBox Deployment](#virtualbox-deployment)
+    - [DigitalOcean Deployment](#digitalocean-deployment)
   - [Locally](#locally)
   - [From macOS](#from-macos)
   - [Deploying an updated version](#deploying-an-updated-version)
@@ -254,7 +255,48 @@ By default Obelisk deployments are configured for NixOS machines running on AWS 
 
 `module.nix` must contain a Nix *function* that produces a [NixOS module function](https://nixos.org/nixos/manual/index.html#sec-writing-modules). The top-level function takes deployment configuration as arguments: `hostName`, `adminEmail`, `routeHost`, `enableHttps`, `version`, `exe`, `nixosPkgs`. Most of these are the values you specified during `ob deploy init` and are stored in the deployment repository. `version` is a `git` hash for the app that you're deploying. `exe` is the Linux build of the app (as seen in [Deploying Locally](#locally)). `nixosPkgs` is the package set used to construct the NixOS VM.
 
-The [VirtualBox Deployment](#virtualbox-deployment) section provides an example.
+The [VirtualBox Deployment](#virtualbox-deployment) and [DigitalOcean Deployment](#digitalocean-deployment) section provides an example.
+
+#### DigitalOcean Deployment
+First we need to create a DigitalOcean compatible "image":
+
+Step 1: Create a file called image.nix, within this file place
+```nix
+{ pkgs ? import <nixpkgs> { } }: let
+  config = {
+    imports = [ "${pkgs.path}/nixos/modules/virtualisation/digital-ocean-image.nix" ];
+  };
+in (pkgs.nixos config).digitalOceanImage
+```
+Step 2: Then build the image via `nix-build ./image.nix`
+Step 3: Upload outputted image to DigitalOcean, and start a droplet
+
+Initialize your obelisk app the same way as EC2:
+```bash
+cd ~/code/myapp
+SERVER=<digitalocean-provided-ip>
+ROUTE=https://myapp.com # Accessable app
+EMAIL=myname@myapp.com
+ob deploy init \
+  --ssh-key ~/path/to/ssh/key (ssh keys are managed by digitalocean) \
+  --hostname $SERVER \
+  --route $ROUTE \
+  --admin-email $EMAIL \
+  ~/code/myapp-deploy
+```
+
+Next run `cd ~/code/myapp-deploy` to access your newly created depolyment directory, replace the default module.nix in the directory with
+
+```nix
+{ nixosPkgs, ... }: { config, lib, ... }: {
+  imports = [ "${nixosPkgs.path}/nixos/modules/virtualisation/digital-ocean-image.nix" ];
+
+  # You'll probably need to override the host name in some way
+  networking.hostName = lib.mkForce "<yourhostnamehere>";
+}
+```
+
+Now you can run `ob deploy push` and watch your app be built (locally) and transferred to the DigitalOcean droplet
 
 #### VirtualBox Deployment
 
