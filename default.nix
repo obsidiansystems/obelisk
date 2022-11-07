@@ -213,21 +213,21 @@ in rec {
       exeFrontend = compressedJs frontend optimizationLevel externjs;
       exeFrontendAssets = mkAssets exeFrontend;
       exeAssets = mkAssets assets;
-    in pkgs.runCommand "serverExe" {} ''
+    in pkgs.runCommand "serverExe" {
+          backend = exeBackend;
+          frontend = exeFrontend;
+          frontend-assets = exeFrontendAssets;
+          static-assets = exeAssets;
+    } ''
       mkdir $out
       set -eux
-      ln -s '${exeBackend}'/bin/* $out/
-      ln -s '${exeAssets}' $out/static.assets
-      for d in '${exeFrontendAssets}'/*/; do
+      ln -s $backend/bin/* $out/
+      ln -s $static-assets $out/static.assets
+      for d in $frontend-assets/*/; do
         ln -s "$d" "$out"/"$(basename "$d").assets"
       done
       echo ${version} > $out/version
-    '' // {
-      backend = exeBackend;
-      frontend = exeFrontend;
-      frontend-assets = exeFrontendAssets;
-      static-assets = exeAssets;
-    };
+    '';
 
   server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }@args:
     let
