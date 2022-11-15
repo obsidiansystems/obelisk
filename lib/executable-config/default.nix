@@ -29,15 +29,8 @@ in
     let
       pkgs = self.callPackage ({pkgs}: pkgs) {};
     in {
-      obelisk-executable-config-lookup = pkgs.haskell.lib.overrideCabal
-        (self.callCabal2nix "obelisk-executable-config-lookup" (obeliskCleanSource ./lookup) {})
-        (drv: {
-          # Hack until https://github.com/NixOS/cabal2nix/pull/432 lands
-          libraryHaskellDepends = (drv.libraryHaskellDepends or [])
-            ++ pkgs.stdenv.lib.optionals (with pkgs.stdenv.hostPlatform; isAndroid && is32bit) [
-              self.android-activity
-            ];
-        });
+      obelisk-executable-config-lookup =
+        self.callCabal2nix "obelisk-executable-config-lookup" (obeliskCleanSource ./lookup) {};
   };
 
   platforms = {
