@@ -19,15 +19,15 @@ rec {
   # These versions work with both the ghc865 and ghc8107 package sets
   git = self.callCabal2nix "git" (hackGet ../dep/hs-git) { };
   http-link-header = haskellLib.doJailbreak super.http-link-header;
-  universe-base-810 = haskellLib.doJailbreak (self.callHackage "universe-base" "1.1.3" {});
+  universe-base-810 = haskellLib.doJailbreak (self.callHackage "universe-base" "1.1" {});
   universe-dependent-sum-810 = self.callHackage "universe-dependent-sum" "1.3" {};
-  universe-some-810 = haskellLib.dontHaddock (haskellLib.appendBuildFlags (haskellLib.doJailbreak (self.callHackage "universe-some" "1.2.1" { })) [ "--ghc-option=-Wno-inferred-safe-imports" "--ghc-option=-Wno-missing-safe-haskell-mode" ]);
+  universe-some-810 = haskellLib.dontHaddock (haskellLib.appendBuildFlags (haskellLib.doJailbreak (self.callHackage "universe-some" "1.2" { })) [ "--ghc-option=-Wno-inferred-safe-imports" "--ghc-option=-Wno-missing-safe-haskell-mode" ]);
 
   stylish-haskell = null; # FIXME
 
-  universe-810 = self.callHackage "universe" "1.2.2" {};
-  universe-instances-extended-810 = self.callHackage "universe-instances-extended" "1.1.3" {};
-  universe-reverse-instances-810 = self.callHackage "universe-reverse-instances" "1.1.1" {};
+  universe-810 = self.callHackage "universe" "1.2" {};
+  universe-instances-extended-810 = self.callHackage "universe-instances-extended" "1.1.1" {};
+  universe-reverse-instances-810 = self.callHackage "universe-reverse-instances" "1.1" {};
 
   # We use our fork of hnix which has some compatibility patches on top of 0.12 from hackage
   hnix = haskellLib.dontHaddock (haskellLib.dontCheck (self.callCabal2nix "hnix" (hackGet ../dep/hnix) {}));
