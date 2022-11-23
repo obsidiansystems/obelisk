@@ -12,6 +12,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing Obelisk branches to CONTRIBUTING.md
   * [#931](https://github.com/obsidiansystems/obelisk/pull/931): For `ob deploy init`, command-line option `--check-known-host` corrected in readme, caveat added for multiple matching host-keypairs.
 * building
+  * [#1004](https://github.com/obsidiansystems/obelisk/pull/1004): Fix closure compiler sometimes crashing. Similar to #956, but for when it tries to report errors. (see: [closure-compiler#3720](https://github.com/google/closure-compiler/issues/3720))
   * [#956](https://github.com/obsidiansystems/obelisk/pull/956): Squelch closure-compiler warnings. They are not very helpful and can cause issues (see: [closure-compiler#3720](https://github.com/google/closure-compiler/issues/3720))
 * nix
   * [#889](https://github.com/obsidiansystems/obelisk/pull/889): Remove override of `acme` module that pinned it to the version in `nixpkgs-20.03`. This is used for automatic https certificate provisioning.
