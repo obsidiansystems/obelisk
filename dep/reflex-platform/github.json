@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "develop",
+  "branch": "is/fix-ghcjs-base",
   "private": false,
-  "rev": "9ebc4aa483e94ea52a20ce3641e72b43328d40ae",
-  "sha256": "1fynvarxlcbcszawcipc1137rz1r9nv96jjb8vgpdkjg9rwk0pas"
+  "rev": "c8af52464d4eb1bc049d571b21cbc86639fc13de",
+  "sha256": "12hk5hkl6dh3f147j9mxan72m41wc2ld4g4z9gk578xg5wdbn5v0"
 }
