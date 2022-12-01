@@ -333,10 +333,7 @@ in rec {
 
                 shellToolOverrides = lib.composeExtensions
                   self.userSettings.shellToolOverrides
-                  (if self.userSettings.__withGhcide
-                    then (import ./haskell-overlays/ghcide.nix)
-                    else (_: _: {})
-                  );
+                  (_: _: {});
 
                 project = reflexPlatformProject ({...}: self.projectConfig);
                 projectConfig = {
