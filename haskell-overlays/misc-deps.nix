@@ -24,6 +24,11 @@ rec {
   universe-some-810 = haskellLib.dontHaddock (haskellLib.appendBuildFlags (haskellLib.doJailbreak (self.callHackage "universe-some" "1.2" { })) [ "--ghc-option=-Wno-inferred-safe-imports" "--ghc-option=-Wno-missing-safe-haskell-mode" ]);
 
   stylish-haskell = null; # FIXME
+  beam-migrate = self.callHackageDirect {
+    pkg = "beam-migrate";
+    ver = "0.5.1.2";
+    sha256 = "sha256-vEv/6DCvuEq6cmxoPKxZNIm5g6YUgrdvAK4YAoZQr/E=";
+  } {};
 
   universe-810 = self.callHackage "universe" "1.2" {};
   universe-instances-extended-810 = self.callHackage "universe-instances-extended" "1.1.1" {};
