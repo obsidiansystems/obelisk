@@ -22,6 +22,7 @@ Types and functions for defining routes and 'Encoder's.
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route
   ( -- * Primary Types
