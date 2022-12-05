@@ -285,7 +285,7 @@ ob deploy init \
   ~/code/myapp-deploy
 ```
 
-Next run `cd ~/code/myapp-deploy` to access your newly created depolyment directory, replace the default module.nix in the directory with
+Next run `cd ~/code/myapp-deploy` to access your newly created deployment directory, replace the default module.nix in the directory with
 
 ```nix
 { nixosPkgs, ... }: { config, lib, ... }: {
