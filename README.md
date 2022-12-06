@@ -212,6 +212,18 @@ At this stage your instance should be booting and become accessible shortly. Not
 Now go to your Obelisk project directory (`~/code/myapp`), and initialize a deployment config (`~/code/myapp-deploy`):
 Your project directory must be "thunkable", i.e. something on which `ob thunk pack` can be called. Usually it will be a git repository whose current revision has been pushed upstream.
 
+An example set of git commands to do this is as follows (Github):
+```bash
+git init
+git add .
+git commit -m "First Commit!"
+git remote add origin git@github.com:username/repo.git
+git push
+```
+
+This will make a "thunkable" project that allows deployment to continue
+
+Continuing with deployment commands:
 ```bash
 cd ~/code/myapp
 SERVER=ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
