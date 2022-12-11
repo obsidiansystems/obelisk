@@ -13,7 +13,7 @@ in
   git = haskellLib.markUnbroken super.git;
 
   # hpack requires cabal >= 3.0 but the ghc865 package set builds it with 2.4 by default
-  hpack = super.hpack.overrideScope (self: super: { Cabal = self.Cabal_3_2_0_0; });
+  hpack = super.hpack.overrideScope (self: super: { Cabal = self.Cabal_3_2_1_0; });
 
 
   regex-base = self.callHackage "regex-base" "0.94.0.0" {};
