@@ -42,7 +42,6 @@ import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
 import qualified Data.Foldable as F (toList)
 import Data.Function ((&), on)
-import Data.List (isPrefixOf)
 import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Text (Text)
@@ -429,8 +428,9 @@ getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debu
     , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
     ]
 
--- | Watch the project directory for file changes and check whether those file changes
--- cause changes in the static files nix derivation. If so, rebuild it.
+-- | Watch the common, backend, frontend, and static directories for file
+-- changes and check whether those file changes cause changes in the static
+-- files nix derivation. If so, rebuild it.
 watchStaticFilesDerivation
   :: (MonadIO m, MonadObelisk m)
   => FilePath
@@ -439,29 +439,13 @@ watchStaticFilesDerivation root = do
   ob <- getObelisk
   liftIO $ runHeadlessApp $ do
     pb <- getPostBuild
-    -- TODO: Instead of filtering like this, we should figure out what the derivation
-    -- actually relies on, or at least use the gitignore
+    -- TODO: Instead of filtering like this, we should figure out what the
+    -- derivation actually relies on, or at least use the gitignore
     let filterEvents x =
           let fn = takeFileName x
               dirs = Set.fromList $ splitDirectories x
               ignoredFilenames = Set.fromList
-                [ "ghcid-output.txt"
-                , ".cabal-sandbox"
-                , "cabal.sandbox.config"
-                , ".attr-cache"
-                , "result"
-                , "ctags"
-                , "tags"
-                , "TAGS"
-                , "cabal.project.local"
-                , "4913" -- Vim temporary file
-                ]
-              ignoredDirectories = Set.fromList
-                [ ".git"
-                , "dist"
-                , "dist-newstyle"
-                , "profile"
-                , "db"
+                [ "4913" -- Vim temporary file
                 ]
               ignoredExtensions = Set.fromList
                 [ ".hi"
@@ -470,26 +454,34 @@ watchStaticFilesDerivation root = do
                 , ".swp"
                 ]
           in not $
-              "static.out" `isPrefixOf` fn ||
-              "result-" `isPrefixOf` fn ||
               fn `Set.member` ignoredFilenames ||
-              takeExtension fn `Set.member` ignoredExtensions ||
-              not (Set.null  $ Set.intersection ignoredDirectories dirs)
-    checkForChanges <- batchOccurrences 0.25 =<< watchDirectoryTree
-      -- On macOS, use the polling backend due to https://github.com/luite/hfsevents/issues/13
-      (defaultConfig { confUsePolling = SysInfo.os == "darwin", confPollInterval = 250000 })
-      (root <$ pb)
-      (filterEvents . eventPath)
+              takeExtension fn `Set.member` ignoredExtensions
+        cfg = defaultConfig
+          -- On macOS, use the polling backend due to
+          -- https://github.com/luite/hfsevents/issues/13
+          { confUsePolling = SysInfo.os == "darwin"
+          , confPollInterval = 250000
+          }
+        watch' pkg = fmap (:[]) <$> watchDirectoryTree cfg (root </> pkg <$ pb) (filterEvents . eventPath)
+    rebuild <- batchOccurrences 0.25 =<< mergeWith (<>) <$> mapM watch'
+      [ "frontend"
+      , "backend"
+      , "common"
+      , "static"
+      ]
     performEvent_
       $ liftIO
       . runObelisk ob
       . putLog Debug
       . ("Regenerating static.out due to file changes: "<>)
       . T.intercalate ", "
+      . Set.toList
+      . Set.fromList
       . fmap (T.pack . eventPath)
+      . concat
       . F.toList
-      <$> checkForChanges
-    void $ flip throttleBatchWithLag checkForChanges $ \e ->
+      <$> rebuild
+    void $ flip throttleBatchWithLag rebuild $ \e ->
       performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $ do
         putLog Notice "Static assets being built..."
         buildStaticCatchErrors >>= \case

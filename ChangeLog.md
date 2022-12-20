@@ -40,6 +40,10 @@ This project's release branch is `master`. This log is written from the perspect
   * [#930](https://github.com/obsidiansystems/obelisk/pull/930): Add an error to `ob run` when `static` is called with a path to a file that doesn't exist
   * [#940](https://github.com/obsidiansystems/obelisk/pull/940): Automatically restart the server when configuration is updated via `ob deploy push`.
   * [#959](https://github.com/obsidiansystems/obelisk/pull/959): Add an error to `ob run` when `staticFilePath` is called with a path to a file that doesn't exist
+  * [#835](https://github.com/obsidiansystems/obelisk/pull/835): Rebuild static assets in fewer circumstances:
+    * Watch `frontend`, `backend`, `common`, and `static` instead of the project root to avoid spurious rebuilds when other files change
+    * Don't call `nix show-derivation` to decide whether to rebuild since it seems to do about as much work as a no-op nix-build
+    * Add a debug message indicating which file changes triggered the static file rebuild
 
 ## v1.0.0.0 - 2022-01-04
 
@@ -69,7 +73,7 @@ This project's release branch is `master`. This log is written from the perspect
 * Use TemplateHaskell to determine asset file paths
   * Migration: All uses of `static @"some/path"` become `$(static "some/path")`. Instead of requiring `TypeApplications` and `DataKinds`, modules calling `static` must now enable `TemplateHaskell`.
   * Deprecation: Deprecate static asset modules generated via 'obelisk-asset-manifest-generate' in favor of modules generated via 'obelisk-asset-th-generate'. The new executable takes the same arguments as the old and should be a drop-in replacement. To preserve the old behavior, set `__deprecated.useObeliskAssetManifestGenerate = true;` in your obelisk project configuration.
-* Feature: Files added to the static directory while `ob run` is active no longer require `ob run` to be restarted
+  * Feature: Files added to the static directory while `ob run` is active no longer require `ob run` to be restarted
 * Feature: When `staticFiles` is a derivation, as opposed to a regular directory, produce a symlink to the result of that derivation at `static.out` and have `ob run` serve static assets from that symlink. This makes it possible for the static asset derivation to be rebuilt and the new results served without restarting `ob run`.
 * Feature: Rebuild static asset derivations while `ob run` is active as long as the change to the derivation is within the project folder. `ob run` now displays a message ("Static assets rebuilt and symlinked to static.out") whenever static assets have been rebuilt and the new static assets are being served.
 * Feature: Add `staticFilePath` to `Obelisk.Generated.Static`. Like `static`, this uses TH to generate a reference to a file. Unlike `static`, this `staticFilePath` generates a path on the filesystem instead of URL path.
