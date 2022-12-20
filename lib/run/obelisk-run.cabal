@@ -14,6 +14,7 @@ library
     , cookie
     , dependent-sum
     , dependent-sum-template
+    , filepath
     , ghcjs-dom
     , HsOpenSSL
     , http-client

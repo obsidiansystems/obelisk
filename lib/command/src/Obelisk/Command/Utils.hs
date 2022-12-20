@@ -28,7 +28,7 @@ import Text.Megaparsec as MP
 import Text.Megaparsec.Char as MP
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp
+import Cli.Extras
 
 cp :: FilePath
 cp = $(staticWhich "cp")
@@ -161,14 +161,6 @@ processToShellString :: FilePath -> [String] -> String
 processToShellString cmd args = unwords $ map quoteAndEscape (cmd : args)
   where quoteAndEscape x = T.unpack $ "'" <> T.replace "'" "'\''" (T.pack x) <> "'"
 
--- | A simpler wrapper for CliApp's most used process function with sensible defaults.
-runProc :: MonadObelisk m => ProcessSpec -> m ()
-runProc = callProcessAndLogOutput (Notice, Error)
-
--- | Like runProc, but all output goes to Debug logging level
-runProcSilently :: MonadObelisk m => ProcessSpec -> m ()
-runProcSilently = callProcessAndLogOutput (Debug, Debug)
-
 -- | A simpler wrapper for CliApp's readProcessAndLogStderr with sensible defaults.
 readProc :: MonadObelisk m => ProcessSpec -> m Text
 readProc = readProcessAndLogOutput (Debug, Error)
@@ -258,6 +250,24 @@ toGitRef = \case
     | Just s <- "refs/heads/" `T.stripPrefix` r -> GitRef_Branch s
     | Just s <- "refs/tags/" `T.stripPrefix` r -> GitRef_Tag s
     | otherwise -> GitRef_Other r
+
+
+-- | A Git hash. Can represent a specific commit, or a file within a
+-- commit.
+newtype GitHash = GitHash { _gitHash_text :: T.Text }
+
+-- | Ask @git@ for the hash of a specific tree (file, directory) within
+-- the given repository. The hash of the given path is always computed
+-- with respect to the @HEAD@ revision.
+getGitHash
+  :: MonadObelisk m
+  => FilePath -- ^ The repository to call @git@ in
+  -> FilePath -- ^ The tree to hash
+  -> m GitHash
+getGitHash repo pathWithinRepo = do
+  let git = readProcessAndLogOutput (Debug, Debug) . gitProc repo
+  GitHash <$> git ["rev-parse", "HEAD:" <> pathWithinRepo]
+
 
 type CommitId = Text
 

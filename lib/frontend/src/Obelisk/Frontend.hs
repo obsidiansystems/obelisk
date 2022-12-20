@@ -24,6 +24,13 @@ module Obelisk.Frontend
   , module Obelisk.Frontend.Cookie
   ) where
 
+
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ < 810
+import Data.Monoid ((<>))
+#endif
+#endif
+
 import Prelude hiding ((.))
 
 import Control.Category
@@ -36,10 +43,8 @@ import Control.Monad.Ref
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.ByteString (ByteString)
 import Data.Foldable (for_)
-import Data.Functor.Sum
 import Data.Map (Map)
 import Data.Maybe (catMaybes)
-import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
@@ -62,8 +67,6 @@ import System.Info (os)
 import Web.Cookie
 
 import Debug.Trace
-
-makePrisms ''Sum
 
 type ObeliskWidget t route m =
   ( DomBuilder t m

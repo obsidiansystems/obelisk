@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE PackageImports #-}
 
 module Obelisk.Command.Project
   ( InitSource (..)
@@ -20,6 +21,7 @@ module Obelisk.Command.Project
   , toObeliskDir
   , withProjectRoot
   , bashEscape
+  , shEscape
   , getHaskellManifestProjectPath
   , AssetSource(..)
   , describeImpureAssetSource
@@ -47,6 +49,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Traversable (for)
+import "nix-thunk" Nix.Thunk
 import Reflex
 import Reflex.FSNotify
 import Reflex.Host.Headless
@@ -62,15 +65,14 @@ import System.PosixCompat.Files
 import System.PosixCompat.Types
 import System.PosixCompat.User
 import qualified System.Process as Proc
-import Text.ShellEscape (bash, bytes)
+import Text.ShellEscape (sh, bash, bytes)
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
 
-import Obelisk.App (MonadObelisk, runObelisk, getObelisk)
-import Obelisk.CliApp
+import Obelisk.App (MonadObelisk, runObelisk, getObelisk, wrapNixThunkError)
 import Obelisk.Command.Nix
-import Obelisk.Command.Thunk
+import Cli.Extras
 import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath)
 
 --TODO: Make this module resilient to random exceptions
@@ -107,7 +109,7 @@ toImplDir :: FilePath -> FilePath
 toImplDir p = toObeliskDir p </> "impl"
 
 -- | Create a new project rooted in the current directory
-initProject :: MonadObelisk m => InitSource -> Bool -> m ()
+initProject :: forall m. MonadObelisk m => InitSource -> Bool -> m ()
 initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
   let implDir = toImplDir tmpDir
       obDir   = toObeliskDir tmpDir
@@ -119,10 +121,11 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
     liftIO $ createDirectory obDir
     -- Clone the git source and repack it with the init source obelisk
     -- The purpose of this is to ensure we use the correct thunk spec.
-    let cloneAndRepack src = do
+    let cloneAndRepack :: ThunkSource -> m ()
+        cloneAndRepack src = do
           putLog Debug $ "Cloning obelisk into " <> T.pack implDir <> " and repacking using itself"
-          commit <- getLatestRev src
-          gitCloneForThunkUnpack (thunkSourceToGitSource src) (_thunkRev_commit commit) implDir
+          commit <- wrapNixThunkError $ getLatestRev src
+          wrapNixThunkError $ gitCloneForThunkUnpack (thunkSourceToGitSource src) (_thunkRev_commit commit) implDir
           callHandoffOb implDir ["thunk", "pack", implDir]
     case source of
       InitSource_Default -> cloneAndRepack obeliskSource
@@ -132,8 +135,8 @@ initProject source force = withSystemTempDirectory "ob-init" $ \tmpDir -> do
               then path
               else ".." </> path
         liftIO $ createSymbolicLink symlinkPath implDir
-    _ <- nixBuildAttrWithCache implDir "command"
-    skel <- nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
+    _ <- wrapNixThunkError $ nixBuildAttrWithCache implDir "command"
+    skel <- wrapNixThunkError $ nixBuildAttrWithCache implDir "skeleton" --TODO: I don't think there's actually any reason to cache this
 
     callProcessAndLogOutput (Notice, Error) $
       proc cp
@@ -200,7 +203,7 @@ findProjectObeliskCommand target = do
         return $ Just projectRoot
   case (result, insecurePaths) of
     (Just projDir, []) -> do
-      obeliskCommandPkg <- nixBuildAttrWithCache (toImplDir projDir) "command"
+      obeliskCommandPkg <- wrapNixThunkError $ nixBuildAttrWithCache (toImplDir projDir) "command"
       return $ Just $ obeliskCommandPkg </> "bin" </> "ob"
     (Nothing, _) -> return Nothing
     (Just projDir, _) -> do
@@ -314,8 +317,21 @@ nixShellRunConfig root isPure command = do
       , [cs]
       ])
 
+-- | Escape using ANSI C-style quotes @$''@
+-- This does not work with all shells! Ideally, we would control exactly which shell is used,
+-- down to its sourced configuration, throughout the obelisk environment. At this time, this
+-- is not feasible.
 bashEscape :: String -> String
 bashEscape = BSU.toString . bytes . bash . BSU.fromString
+
+-- | Escape using Bourne style shell escaping
+-- This is not as robust, but is necessary if we are passing to a shell we don't control.
+-- The most prominent issue is that 'System.Process' executes shell commands by invoking
+-- @\/bin\/sh@ instead of something configurable. While we can avoid this by specifying a shell manually,
+-- we cannot guarantee that our dependencies do the same. In particular, ghcid invokes its
+-- subcommands that way.
+shEscape :: String -> String
+shEscape = BSU.toString . bytes . sh . BSU.fromString
 
 nixShellRunProc :: NixShellConfig -> ProcessSpec
 nixShellRunProc cfg = setDelegateCtlc True $ proc nixShellPath $ runNixShellConfig cfg

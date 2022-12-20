@@ -1,14 +1,25 @@
-# Contribution Guide
+# Contribution Guide <!-- omit in toc -->
 
 Contributions and issue reports are encouraged and appreciated!
 
 - [Opening Issues](#opening-issues)
 - [Submitting Changes](#submitting-changes)
   - [Guidelines for Commit Messages](#guidelines-for-commit-messages)
+    - [Summary Line](#summary-line)
+      - [Note on bumping dependencies](#note-on-bumping-dependencies)
+    - [Body](#body)
   - [Guidelines for Pull Requests](#guidelines-for-pull-requests)
   - [Code Quality](#code-quality)
+    - [Warnings](#warnings)
+    - [Build and Test](#build-and-test)
   - [Documentation](#documentation)
+    - [In the code](#in-the-code)
+    - [In the Changelog](#in-the-changelog)
+    - [In the Readme](#in-the-readme)
 - [Development Environment](#development-environment)
+  - [Building `ob` for testing](#building-ob-for-testing)
+  - [Testing features from an unmerged branch](#testing-features-from-an-unmerged-branch)
+  - [Hacking on Obelisk from within an Obelisk project](#hacking-on-obelisk-from-within-an-obelisk-project)
 
 ## Opening Issues
 
@@ -79,7 +90,6 @@ Add an entry to the changelog when your PR:
 #### In the [Readme](README.md)
 The readme is the first place a lot of people look for information about the repository. Update any parts of the readme that are affected by your PR.
 
-
 ## Development Environment
 
 There are two ways to get live compiler feedback while developing Obelisk libraries. For libraries that are dependencies of the `skeleton` application, the easiest way to get feedback is to
@@ -97,6 +107,8 @@ For other libraries like `obelisk-command` you can use `ghcid`. To launch `ghcid
 nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid"
 ```
 
+[Haskell-Language-Server](https://haskell-language-server.readthedocs.io/en/latest/)(HLS) can be used on the Haskell libraries in `lib`. Simply launch your lsp-client of choice in the `lib` subdirectory. Set up the appropriate environment by running `./lib/setupHls.sh up` and tear it down again with `./lib/setupHls.sh down`
+
 ### Building `ob` for testing
 
 To re-install `ob` from source globally you can do
@@ -109,6 +121,15 @@ You can also open a shell with the local version of `ob` available on your `$PAT
 
 ```bash
 nix run -f /path/to/obelisk command
+```
+
+### Testing features from an unmerged branch
+
+If you'd like to use a branch of Obelisk that hasn't been merged into `develop` or `master` (usually to investigate an open PR):
+
+```bash
+cd /your/project/root
+ob thunk update --branch <target-branch> .obelisk/impl
 ```
 
 ### Hacking on Obelisk from within an Obelisk project
