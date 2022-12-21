@@ -24,6 +24,13 @@ module Obelisk.Frontend
   , module Obelisk.Frontend.Cookie
   ) where
 
+
+#ifdef __GLASGOW_HASKELL__
+#if __GLASGOW_HASKELL__ < 810
+import Data.Monoid ((<>))
+#endif
+#endif
+
 import Prelude hiding ((.))
 
 import Control.Category

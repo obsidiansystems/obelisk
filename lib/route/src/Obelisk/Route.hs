@@ -22,6 +22,7 @@ Types and functions for defining routes and 'Encoder's.
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route
   ( -- * Primary Types
@@ -191,7 +192,7 @@ import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Semigroupoid
-import Data.Some (Some(Some))
+import Data.Some (Some(Some), mapSome)
 import Data.Tabulation
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -259,9 +260,6 @@ infixr 5 :/
 (?/) :: f (Maybe a) -> a -> R f
 r ?/ a = r :/ Just a
 infixr 5 ?/
-
-mapSome :: (forall a. f a -> g a) -> Some f -> Some g
-mapSome f (Some a) = Some $ f a
 
 hoistR :: (forall x. f x -> g x) -> R f -> R g
 hoistR f (x :=> Identity y) = f x :/ y
@@ -1003,7 +1001,7 @@ instance (GCompare br, GCompare fr) => GCompare (FullRoute br fr) where
   gcompare (FullRoute_Backend x) (FullRoute_Backend y) = gcompare x y
   gcompare (FullRoute_Frontend x) (FullRoute_Frontend y) = gcompare x y
 
-instance (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) where
+instance  (UniverseSome br, UniverseSome fr) => UniverseSome (FullRoute br fr) where
   universeSome = [Some (FullRoute_Backend x) | Some x <- universeSome]
               ++ [Some (FullRoute_Frontend x) | Some x <- universeSome]
 
@@ -1030,7 +1028,7 @@ data ObeliskRoute :: (* -> *) -> * -> * where
 instance UniverseSome f => UniverseSome (ObeliskRoute f) where
   universeSome = concat
     [ (\(Some x) -> Some (ObeliskRoute_App x)) <$> universe
-    , (\(Some x) -> Some (ObeliskRoute_Resource x)) <$> universe
+    , (\(Some x) -> Some (ObeliskRoute_Resource x)) <$> (universe @(Some ResourceRoute))
     ]
 
 instance GEq f => GEq (ObeliskRoute f) where

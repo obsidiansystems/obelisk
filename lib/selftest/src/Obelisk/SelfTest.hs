@@ -219,13 +219,21 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
       inTmpObInit $ const $ testObRunInDirWithMissingStaticFilePath' Nothing
     it "complains when static filepaths are missing in sub directory" $ do
       inTmpObInit $ const $ testObRunInDirWithMissingStaticFilePath' (Just "frontend")
+    it "fails when given an invalid Cabal file" $ inTmpObInit $ testObRunWithInvalidCabalFile ob
 
     it "respects the port given on the command line" $ inTmpObInit $ \testDir -> do
       [port] <- liftIO $ getFreePorts 1
       maskExitSuccess $ runHandles ob ["run", "-p", T.pack (show port)] [] $ \_stdin stdout stderr -> do
         uri <- handleObRunStdout httpManager stdout stderr
+        -- Make sure obelisk logs the right thing
         unless (T.pack (show port ++ "/") `T.isSuffixOf` T.strip uri) $
           error $ "Expected the URI to end in " ++ show port ++ " but it ended in " ++ T.unpack uri
+        -- But also verify that we can actually reach the server in the
+        -- given path, rather than just listening for the log URL
+        let req = liftIO $ try @HTTP.HttpException $ HTTP.parseRequest (T.unpack uri) >>= flip HTTP.httpLbs httpManager
+        req >>= \case
+          Right r | HTTP.responseStatus r == HTTP.ok200 -> exit 0
+          e -> errorExit $ "Request to ob run failed: " <> T.pack (show e)
         exit 0
 
   describe "ob repl" $ do
@@ -484,6 +492,22 @@ testObRunCert executable extraArgs testDir mdir = maskExitSuccess $ do
           else errorExit $ "Ran into error: " <> next
       | "Frontend running on" `T.isPrefixOf` line = errorExit "Obelisk did not read the certificates provided via -c option"
       | otherwise = parseObOutput h
+
+-- | Mess up the Cabal file in the given directory, then make sure that
+-- @ob run@ fails.
+testObRunWithInvalidCabalFile
+  :: FilePath  -- ^ Obelisk path
+  -> FilePath  -- ^ Directory path (will be made invalid)
+  -> Sh ()
+testObRunWithInvalidCabalFile executable fp = do
+  let commonCabal :: String
+      commonCabal = "common/common.cabal"
+  liftIO $ writeFile (fp </> commonCabal) "This is not a valid Cabal file."
+  errExit False $ do
+    runHandles executable ["run"] [] $ \_ _ _ -> pure ()
+    lastExitCode >>= \case
+      0 -> pure ()
+      _ -> errorExit "ob run succeeded even with an invalid Cabal file"
 
 -- | Check whether embedding a non-existent filepath into an obelisk
 -- project is detected correctly and generates a compile-time error.
