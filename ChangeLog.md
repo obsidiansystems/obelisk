@@ -40,6 +40,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#930](https://github.com/obsidiansystems/obelisk/pull/930): Add an error to `ob run` when `static` is called with a path to a file that doesn't exist
   * [#940](https://github.com/obsidiansystems/obelisk/pull/940): Automatically restart the server when configuration is updated via `ob deploy push`.
   * [#959](https://github.com/obsidiansystems/obelisk/pull/959): Add an error to `ob run` when `staticFilePath` is called with a path to a file that doesn't exist
+  * [#1011](https://github.com/obsidiansystems/obelisk/pull/1011): Update default iOS SDK to 15.0
 
 ## v1.0.0.0 - 2022-01-04
 
