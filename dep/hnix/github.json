@@ -1,7 +1,9 @@
 {
   "owner": "haskell-nix",
   "repo": "hnix",
-  "branch": "master",
-  "rev": "6c9c7c310c54372b3db0fdf5a0137b395cde1bdb",
-  "sha256": "1i5903b7lxqn2s3jarb14h6wdq8bxiik1hp0xy43w5w1hgvvq0g5"
+  "branch": "hackage-0.12.0.1",
+  "private": false,
+  "rev": "0f23778ffe64fe24c2119866437cc53735262856",
+  "sha256": "sha256-yAR3cIVI/DwuBSlvAt1nKG5a0QcsJlGpsr9ndpZBc0U=",
+  "fetchSubmodules": true
 }

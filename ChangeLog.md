@@ -4,7 +4,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
-* Update reflex-platform to yet unreleased version with GHC 8.10.
+* Update reflex-platform to yet unreleased version with GHC 8.10 and nixpkgs 21.05
   \[Update note once release is cut.\]
 
 * Documentation
@@ -12,6 +12,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing Obelisk branches to CONTRIBUTING.md
   * [#931](https://github.com/obsidiansystems/obelisk/pull/931): For `ob deploy init`, command-line option `--check-known-host` corrected in readme, caveat added for multiple matching host-keypairs.
 * building
+  * [#1004](https://github.com/obsidiansystems/obelisk/pull/1004): Fix closure compiler sometimes crashing. Similar to #956, but for when it tries to report errors. (see: [closure-compiler#3720](https://github.com/google/closure-compiler/issues/3720))
   * [#956](https://github.com/obsidiansystems/obelisk/pull/956): Squelch closure-compiler warnings. They are not very helpful and can cause issues (see: [closure-compiler#3720](https://github.com/google/closure-compiler/issues/3720))
 * nix
   * [#889](https://github.com/obsidiansystems/obelisk/pull/889): Remove override of `acme` module that pinned it to the version in `nixpkgs-20.03`. This is used for automatic https certificate provisioning.
@@ -39,6 +40,11 @@ This project's release branch is `master`. This log is written from the perspect
   * [#930](https://github.com/obsidiansystems/obelisk/pull/930): Add an error to `ob run` when `static` is called with a path to a file that doesn't exist
   * [#940](https://github.com/obsidiansystems/obelisk/pull/940): Automatically restart the server when configuration is updated via `ob deploy push`.
   * [#959](https://github.com/obsidiansystems/obelisk/pull/959): Add an error to `ob run` when `staticFilePath` is called with a path to a file that doesn't exist
+  * [#1011](https://github.com/obsidiansystems/obelisk/pull/1011): Update default iOS SDK to 15.0
+  * [#835](https://github.com/obsidiansystems/obelisk/pull/835): Rebuild static assets in fewer circumstances:
+    * Watch `frontend`, `backend`, `common`, and `static` instead of the project root to avoid spurious rebuilds when other files change
+    * Don't call `nix show-derivation` to decide whether to rebuild since it seems to do about as much work as a no-op nix-build
+    * Add a debug message indicating which file changes triggered the static file rebuild
 
 ## v1.0.0.0 - 2022-01-04
 

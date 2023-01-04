@@ -62,8 +62,10 @@ staticAssetFilePathRaw
 staticAssetFilePathRaw root = staticAssetWorker root staticOutPath
 
 staticAssetFilePath :: FilePath -> FilePath -> Q Exp
-staticAssetFilePath root fp = do
-  LitE . StringL . (root </>) <$> hashedAssetFilePath root fp
+staticAssetFilePath root relativePath = do
+  let fullPath = root </> relativePath
+  qAddDependentFile fullPath
+  pure $ LitE $ StringL fullPath
 
 -- | @'staticAssetWorker' root staticOut fp@.
 --

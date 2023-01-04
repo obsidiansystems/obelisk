@@ -34,7 +34,7 @@ in
         (drv: {
           # Hack until https://github.com/NixOS/cabal2nix/pull/432 lands
           libraryHaskellDepends = (drv.libraryHaskellDepends or [])
-            ++ pkgs.stdenv.lib.optionals (with pkgs.stdenv.hostPlatform; isAndroid && is32bit) [
+            ++ pkgs.lib.optionals (with pkgs.stdenv.hostPlatform; isAndroid && is32bit) [
               self.android-activity
             ];
         });
