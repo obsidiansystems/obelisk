@@ -217,14 +217,14 @@ in rec {
     in pkgs.runCommand "serverExe" {
           backend = exeBackend;
           frontend = exeFrontend;
-          frontend-assets = exeFrontendAssets;
-          static-assets = exeAssets;
+          frontendassets = exeFrontendAssets;
+          staticassets = exeAssets;
     } ''
       mkdir $out
       set -eux
-      ln -s '$backend'/bin/* $out/
-      ln -s '$static-assets' $out/static.assets
-      for d in '$frontend-assets'/*/; do
+      ln -s "$backend"/bin/* $out/
+      ln -s "$staticassets" $out/static.assets
+      for d in "$frontendassets"/*/; do
         ln -s "$d" "$out"/"$(basename "$d").assets"
       done
       echo ${version} > $out/version
