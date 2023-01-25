@@ -7,7 +7,6 @@ library
   hs-source-dirs: src
   build-depends: base
                , obelisk-route
-               , mtl
                , text
   exposed-modules:
     Common.Api
