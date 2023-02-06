@@ -33,7 +33,7 @@ let
   };
 
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
-  ghcObelisk = reflex-platform.ghc;
+  ghcObelisk = if useGHC810 then reflex-platform.ghc8_10 else reflex-platform.ghc8_6;
 
   # Development environments for obelisk packages.
   ghcObeliskEnvs = pkgs.lib.mapAttrs (n: v: reflex-platform.workOn ghcObelisk v) ghcObelisk;
