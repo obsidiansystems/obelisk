@@ -1,9 +1,9 @@
 {
-  "owner": "haskell-nix",
+  "owner": "obsidiansystems",
   "repo": "hnix",
   "branch": "hackage-0.12.0.1",
   "private": false,
-  "rev": "0f23778ffe64fe24c2119866437cc53735262856",
-  "sha256": "sha256-yAR3cIVI/DwuBSlvAt1nKG5a0QcsJlGpsr9ndpZBc0U=",
+  "rev": "61863c73b54db00aace51fe103d316b4e19dcd9d",
+  "sha256": "sha256-WebNMei/do+ZXDhBoxzEGjq000PVWdNvdikgSsRS+SM=",
   "fetchSubmodules": true
 }
