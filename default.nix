@@ -7,6 +7,7 @@
   }
 , reflex-platform-func ? import ./dep/reflex-platform
 , useGHC810 ? false #true if one wants to use ghc 8.10.7
+, nixpkgsOverlays ? []
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -22,7 +23,7 @@ let
 
     nixpkgsOverlays = [
       (import ./nixpkgs-overlays)
-    ];
+    ] ++ nixpkgsOverlays;
 
     haskellOverlays = [
       (import ./haskell-overlays/misc-deps.nix { inherit hackGet; __useNewerCompiler = useGHC810; })
@@ -413,8 +414,8 @@ in rec {
       exe = serverOn mainProjectOut dummyVersion;
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }:
         server (args // { exe = linuxExe version; });
-      obelisk = import (base' + "/.obelisk/impl") {};
-    };
+      obelisk = import (base' + "/.obelisk/impl") { inherit system profiling iosSdkVersion config terms reflex-platform-func useGHC810 nixpkgsOverlays ; };
+  };
   haskellPackageSets = {
     inherit (reflex-platform) ghc ghcjs;
   };
