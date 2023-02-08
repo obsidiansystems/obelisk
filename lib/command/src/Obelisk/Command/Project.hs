@@ -52,7 +52,7 @@ import Reflex
 import Reflex.FSNotify
 import Reflex.Host.Headless
 import System.Directory
-import System.Environment (lookupEnv)
+import System.Environment (setEnv, lookupEnv)
 import System.Exit (ExitCode(..))
 import System.FilePath
 import System.FSNotify (defaultConfig, eventPath, WatchConfig(..))
@@ -305,6 +305,7 @@ nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m Nix
 nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+  liftIO $ setEnv "NIX_PATH" ("nixpkgs=" ++ (BSU.toString (encodeUtf8 nixpkgsPath)))
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   pure $ def
     & nixShellConfig_pure .~ isPure
