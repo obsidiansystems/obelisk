@@ -64,6 +64,7 @@ import System.PosixCompat.Types
 import System.PosixCompat.User
 import qualified System.Process as Proc
 import Text.ShellEscape (sh, bash, bytes)
+import qualified Data.Map as Map
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -310,10 +311,10 @@ nixShellRunConfig root isPure command = do
     & nixShellConfig_pure .~ isPure
     & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
     & nixShellConfig_run .~ (command <&> \cs -> unwords $ concat
-      [ ["export", BSU.toString . bytes . bash $ "NIX_PATH=nixpkgs=" <> encodeUtf8 nixpkgsPath, ";"]
-      , maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
+      [ maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
       , [cs]
       ])
+    & nixShellConfig_env .~ [( "NIX_PATH", ("nixpkgs=" ++ (BSU.toString (encodeUtf8 nixpkgsPath))) )]
 
 -- | Escape using ANSI C-style quotes @$''@
 -- This does not work with all shells! Ideally, we would control exactly which shell is used,
@@ -332,8 +333,8 @@ shEscape :: String -> String
 shEscape = BSU.toString . bytes . sh . BSU.fromString
 
 nixShellRunProc :: NixShellConfig -> ProcessSpec
-nixShellRunProc cfg = setDelegateCtlc True $ proc nixShellPath $ runNixShellConfig cfg
-
+nixShellRunProc cfg = let p = setDelegateCtlc True $ proc nixShellPath $ runNixShellConfig cfg
+                      in setEnvOverride (\oldMap -> (Map.union (Map.fromList (_nixShellConfig_env cfg)) oldMap)) p
 mkObNixShellProc
   :: MonadObelisk m
   => FilePath -- ^ Path to project root
