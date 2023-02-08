@@ -24,6 +24,7 @@ module Obelisk.Command.Nix
   , nixShellConfig_common
   , nixShellConfig_pure
   , nixShellConfig_run
+  , nixShellConfig_env
   , OutLink (..)
   , Target (..)
   , target_attr
@@ -165,7 +166,8 @@ data NixShellConfig = NixShellConfig
   { _nixShellConfig_common :: NixCommonConfig
   , _nixShellConfig_pure :: Bool
   , _nixShellConfig_run :: Maybe String
-  }
+  , _nixShellConfig_env :: [( String, String )]
+ }
 
 makeLenses ''NixShellConfig
 
@@ -173,7 +175,7 @@ instance HasNixCommonConfig NixShellConfig where
   nixCommonConfig = nixShellConfig_common
 
 instance Default NixShellConfig where
-  def = NixShellConfig def False Nothing
+  def = NixShellConfig def False Nothing [("","")]
 
 data NixCmd
   = NixCmd_Build NixBuildConfig
