@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "expose-requester-internals2",
+  "branch": "dylang/fix-ghcjs-profiling",
   "private": false,
-  "rev": "606d663a8142e55e01cbfa91fe58593141f07d55",
-  "sha256": "14h3nv0plz8x8s632f7y791786g4pn60xchjqdjg4gmj7kskm5by"
+  "rev": "06d778cdba3483be4d9064f1e56aa190ad5f7c72",
+  "sha256": "08gh07738hgd4zjqyfv98qcvp9if5xcxd9kid06ryfwb2d4w4fmi"
 }
