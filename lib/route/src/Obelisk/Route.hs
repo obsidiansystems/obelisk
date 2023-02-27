@@ -22,6 +22,7 @@ Types and functions for defining routes and 'Encoder's.
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route
   ( -- * Primary Types
@@ -185,6 +186,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Monoid (Ap(..))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Semigroupoid
@@ -1211,16 +1213,6 @@ fieldMapEncoder = unsafeEncoder $ do
         Nothing -> throwError $ "fieldMapEncoder: Couldn't find key for `" <> T.pack (gshow f) <> "' in DMap."
         Just (Identity v) -> return v
     }
-
--- this is in base 4.12 (GHC 8.6);
-newtype Ap f a = Ap {getAp :: f a}
-
-instance (Applicative f, Semigroup a) => Semigroup (Ap f a) where
-  Ap x <> Ap y = Ap (liftA2 (<>) x y)
-
-instance (Applicative f, Monoid a) => Monoid (Ap f a) where
-  mappend = (<>)
-  mempty = Ap (pure mempty)
 
 pathFieldEncoder :: forall a p check parse . (HasFields a, Monad check, MonadError Text parse, GCompare (Field a)) => (forall x. Field a x -> Encoder check parse x p) -> Encoder check parse (a, [p]) [p]
 pathFieldEncoder fieldEncoder = unsafeEncoder $ do

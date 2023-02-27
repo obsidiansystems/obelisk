@@ -60,7 +60,6 @@ let
       rawSkeleton = import ./skeleton { inherit obelisk; };
       skeleton = withSkeletonOptions rawSkeleton {
         withHoogle = true;  # cache the Hoogle database for the skeleton
-        __withGhcide = true; # cache the ghcide build for the skeleton
       };
 
       serverSkeletonExe = rawSkeleton.exe;
