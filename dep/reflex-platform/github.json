@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "dylang/fix-macos",
+  "branch": "develop",
   "private": false,
-  "rev": "ddf014ec612078353dc1520c659515937cc683fe",
-  "sha256": "sha256:1v21x8ngcbxdvb2c22j3mwpbwh983gskx6dm9jka5fhmg4ybqzig"
+  "rev": "ae415044d5ef35d947f0689a66f349ae9e2b7aee",
+  "sha256": "0mpipci4mxpaqfn2iqc6gwh0n11rvp1l2fz7g703gp12djr8srfd"
 }
