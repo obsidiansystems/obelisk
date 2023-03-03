@@ -117,7 +117,6 @@ in rec {
         "${routeHost}".email = adminEmail;
       } else {};
 
-      security.acme.${if enableHttps && (terms.security.acme.acceptTerms or false) then "acceptTerms" else null} = true;
     };
 
     mkObeliskApp =
