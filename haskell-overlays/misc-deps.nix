@@ -34,20 +34,18 @@ rec {
   universe-instances-extended-810 = self.callHackage "universe-instances-extended" "1.1.1" {};
   universe-reverse-instances-810 = self.callHackage "universe-reverse-instances" "1.1" {};
 
-  # We use our fork of hnix which has some compatibility patches on top of 0.12 from hackage
-  hnix = haskellLib.dontHaddock (haskellLib.dontCheck (self.callCabal2nix "hnix" (hackGet ../dep/hnix) {}));
-
   universe-86 = haskellLib.dontCheck (self.callHackage "universe" "1.2" {});
   universe-instances-extended-86 = self.callHackage "universe-instances-extended" "1.1.1" {};
+  hnix = haskellLib.doJailbreak (haskellLib.dontHaddock (haskellLib.dontCheck super.hnix));
   hnix-86 = haskellLib.dontCheck super.hnix;
 
-  universe = mkVersionset __useNewerCompiler universe-86 universe-810;
-  universe-instances-extended = mkVersionset __useNewerCompiler universe-instances-extended-86 universe-instances-extended-810;
+  universe = haskellLib.doJailbreak (mkVersionset __useNewerCompiler universe-86 universe-810);
+  universe-instances-extended = haskellLib.doJailbreak (mkVersionset __useNewerCompiler universe-instances-extended-86 universe-instances-extended-810);
   universe-reverse-instances = mkVersionset __useNewerCompiler super.universe-reverse-instances universe-reverse-instances-810;
   universe-base = haskellLib.dontCheck (mkVersionset __useNewerCompiler super.universe-base universe-base-810);
   universe-dependent-sum = mkVersionset __useNewerCompiler super.universe-dependent-sum universe-dependent-sum-810;
   universe-some-86 = self.callHackage "universe-some" "1.2" {};
-  universe-some = mkVersionset __useNewerCompiler universe-some-86 universe-some-810;
+  universe-some = haskellLib.doJailbreak (mkVersionset __useNewerCompiler universe-some-86 universe-some-810);
 
   regex-base = self.callHackage "regex-base" "0.94.0.0" { };
   regex-posix = self.callHackage "regex-posix" "0.96.0.0" { };
@@ -93,6 +91,4 @@ rec {
       nix-prefetch-git
     ];
   };
-
-  haddock-library = haskellLib.doJailbreak (self.callHackage "haddock-library" "1.10.0" {});
 }
