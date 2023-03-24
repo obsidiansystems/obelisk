@@ -24,8 +24,6 @@ in
   hnix-store-core = haskellLib.dontCheck super.hnix-store-core;
   hnix-store = haskellLib.dontCheck super.hnix-store;
 
-  aeson-gadt-th = self.callHackage "aeson-gadt-th" "0.2.4" {};
-
   ghcid = self.callCabal2nix "ghcid" (hackGet ../dep/ghcid) {};
   # Exports more internals
   snap-core = haskellLib.dontCheck (self.callCabal2nix "snap-core" (hackGet ../dep/snap-core) {});
