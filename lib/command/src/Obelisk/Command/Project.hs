@@ -305,7 +305,7 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
 nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
 nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
-    proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+    proc nixExePath ["eval", "--impure", "--expr", "(import .obelisk/impl {}).nixpkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   pure $ def
     & nixShellConfig_pure .~ isPure
@@ -400,8 +400,12 @@ findProjectAssets root = do
   isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath
       [ "eval"
+      , "--impure"
+      , "--expr"
       , "(let a = import ./. {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
       , "--raw"
+      -- `--expr` and `--impure` are a side-effect of a newer nix version
+      -- `nix eval` is no longer the same as 2.3
       -- `--raw` is not available with old nix-instantiate. It drops quotation
       -- marks and trailing newline, so is very convenient for shelling out.
       ]
