@@ -11,7 +11,7 @@ Functional reactive web and mobile applications, with batteries included. Obelis
   - [Who should consider using it?](#who-should-consider-using-it)
 - [Installing Obelisk](#installing-obelisk)
 - [Developing an Obelisk project](#developing-an-obelisk-project)
-    [Local Hoogle](#local-hoogle)
+  - [Local Hoogle](#local-hoogle)
   - [Adding Packages](#adding-packages)
   - [Adding Package Overrides](#adding-package-overrides)
   - [Running tests](#running-tests)
@@ -62,6 +62,10 @@ Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Refl
           ```nix
           sandbox = true
           ```
+          then restart the nix daemon
+          ```bash
+          sudo systemctl restart nix-daemon
+          ```
         * If you're on MacOS, disable sandboxing (there are still some impure dependencies for now) by adding the following:
           ```nix
           sandbox = false
@@ -71,7 +75,7 @@ Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Refl
           sudo launchctl stop org.nixos.nix-daemon
           sudo launchctl start org.nixos.nix-daemon
           ```
-1. Install obelisk: 
+1. Install obelisk:
    ```bash
    nix-env -f https://github.com/obsidiansystems/obelisk/archive/master.tar.gz -iA command
    ```
@@ -175,15 +179,30 @@ Since Obelisk generates a self-signed certificate for running HTTPS, the browser
 
 Obelisk officially supports terminal-based feedback (akin to [`ghcid`](https://github.com/ndmitchell/ghcid)) in `ob run` and `ob watch`.
 
+### Using GHC 8.10
+
+Obelisk currently uses GHC 8.6 for projects by default, since this is the version on which Obelisk (and reflex-platform more generally) have been most thoroughly tested. However, we understand that this version is significantly behind GHC releases, and thus have experimental support for building with GHC 8.10 instead. To build with GHC 8.10, add the following to your project's `default.nix`:
+
+```diff
+  { system ? builtins.currentSystem
+  , obelisk ? import ./.obelisk/impl {
+      inherit system;
++     useGHC810 = true;
+```
+
+If the `useGHC810` argument is set to false, or not given, then GHC 8.6 will be used.
+
 ## Deploying
 
 ### Default EC2 Deployment
 
 In this section we will demonstrate how to deploy your Obelisk app to an Amazon EC2 instance. Obelisk deployments are configured for EC2 by default (see [Custom Non-EC2 Deployment](#custom-non-ec2-deployment)).
 
+Note: Most NixOS EC2 instances should just *work* regardless of obelisk version
+
 First create a new EC2 instance:
 
-1. Launch a NixOS 19.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-00a8eeaf232a74f84))
+1. Launch a NixOS 22.05 EC2 instance (we recommend [this AMI](https://us-east-1.console.aws.amazon.com/ec2/home?region=us-east-1#LaunchInstances:ami=ami-0223db08811f6fb2d))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
 1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and HTTPS port 443.
@@ -208,7 +227,17 @@ ob deploy init \
 
 HTTPS is enabled by default; to disable HTTPS pass `--disable-https` to the `ob deploy init` command above.
 
-This step will also require that you manually verify the authenticity of the host `$SERVER`. Obelisk will save the fingerprint in a deployment-specific configuration. **Obelisk deployments do *not* rely on the `known_hosts` of your local machine.** This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before. Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning. (Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised. In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.) When you run `ob deploy` later it will rely on the saved verification in this step.
+This step will also require that you manually verify the authenticity of the host `$SERVER`.
+You can specify that you want `ob deploy init` to check your `~/.ssh/known_hosts` file and save any fingerprints matching the host to the deployment-specific configuration by passing the `--check-known-hosts` option to the `deploy init` command.
+Note that `--check-known-hosts` only works when there is a single keypair associated with a given host.
+
+
+**REMARK (Security): Obelisk deployments do *not* rely on the `known_hosts` of your local machine during deployment, only potentially during the ob deploy init, as previously mentioned.**
+This is because, in the event that you need to switch from one deploy machine / bastion host to another, you want to be absolutely sure that you're still connecting to the machines you think you are, even if that deploy machine / bastion host has never connected to them before.
+Obelisk explicitly avoids a workflow that encourages people to accept host keys without checking them, since that could result in leaking production secrets to anyone who manages to MITM you, e.g. via DNS spoofing or cache poisoning.
+Note that an active attack is a circumstance where you may need to quickly switch bastion hosts, e.g. because the attacker has taken one down or you have taken it down in case it was compromised.
+In this circumstance you might need to deploy to production to fix an exploit or rotate keys, etc.
+When you run `ob deploy` later it will rely on the saved verification in this step.
 
 Next, go to the deployment directory that you just initialized and deploy!
 
@@ -277,6 +306,44 @@ If you'd like to deploy an updated version (with new commits) of your Obelisk ap
 cd ~/code/myapp-deploy
 ob deploy update
 ob deploy push
+```
+
+### Host Redirection
+
+A `redirect_hosts` file can be added in the deployment directory (`~/code/myapp-deploy` in the example above), allowing you to specify alternative domain names that will redirect to the deployment domain.
+This feature assumes the apropriate CNAME records have been added with a domain registration service.
+
+Add one domain per line in `redirect_hosts`.
+All listed domains will redirect to the publicly accessible domain specified by `ob deploy init`.
+For clarity, this is the `$ROUTE` variable in the EC2 deployment example shown earlier.
+The following is an example of a `~/code/myapp-deploy/redirect_hosts` file:
+
+```
+www.foo.com
+www.bar.com
+```
+
+*Caveat*: Your https certificates will cover all your domains automatically, although you may need to force a recertification manually.
+We assume you have root access to the deployment EC2 instance.
+Continuing from the `ob init deploy` example above:
+
+```bash
+ssh root@ec2-35-183-22-197.ca-central-1.compute.amazonaws.com
+
+EMAIL=myname@myapp.com
+ROUTE_TO=myapp.com
+ROUTE_FROM=foo.com
+ROUTE_FROM_2=bar.com
+/nix/store/`ls /nix/store | grep lego`/bin/lego \
+  -d $ROUTE_TO \
+  --email $EMAIL \
+  --path . \
+  --key-type ec256 \
+  --accept-tos \
+  -d $ROUTE_FROM \
+  -d $ROUTE_FROM_2 \
+  --http \
+  --http.webroot /var/lib/acme/acme-challenge run
 ```
 
 ## Mobile

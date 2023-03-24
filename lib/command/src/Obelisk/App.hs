@@ -8,6 +8,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE PackageImports #-}
 module Obelisk.App where
 
 import Control.Lens
@@ -21,8 +22,10 @@ import Control.Monad.Trans.Class (MonadTrans, lift)
 import Data.Text (Text)
 import System.Directory (XdgDirectory (XdgData), getXdgDirectory)
 import Control.Monad.Log (MonadLog)
+import Cli.Extras.Types
+import "nix-thunk" Nix.Thunk (NixThunkError)
 
-import Obelisk.CliApp
+import Cli.Extras
   ( CliConfig
   , CliLog
   , CliThrow
@@ -35,12 +38,26 @@ import Obelisk.CliApp
   , runCli
   )
 
-data ObeliskError
-  = ObeliskError_ProcessError
-    { obeliskError_err :: ProcessFailure
-    , obeliskError_mAnn :: Maybe Text
+-- | An error thrown by one of the child processes invoked during
+-- execution of Obelisk.
+data ObeliskProcessError
+  = ObeliskProcessError
+    { _obeliskProcessError_failure :: ProcessFailure
+      -- ^ The 'ProcessFailure' indicating both how the process was
+      -- created and its eventual exit code.
+    , _obeliskProcessError_mComment :: Maybe Text
+      -- ^ Optionally, a comment can be attached to the 'ProcessFailure'
+      -- to give the user more details.
     }
+
+-- | An error thrown by the Obelisk app.
+data ObeliskError
+  = ObeliskError_ProcessError ObeliskProcessError
+    -- ^ Indicates an error in one of our child processes.
+  | ObeliskError_NixThunkError NixThunkError
+    -- ^ Propagated errors from @nix-thunk@
   | ObeliskError_Unstructured Text
+    -- ^ An ad-hoc error.
 
 makePrisms ''ObeliskError
 
@@ -49,10 +66,10 @@ instance AsUnstructuredError ObeliskError where
 
 -- Only project when the other field is null, otherwise we are not law abiding.
 instance AsProcessFailure ObeliskError where
-  asProcessFailure = _ObeliskError_ProcessError . prism (, Nothing) f
+  asProcessFailure = _ObeliskError_ProcessError . prism (flip ObeliskProcessError Nothing) f
     where f = \case
-            (pf, Nothing) -> Right pf
-            pann@(_, Just _) -> Left pann
+            ObeliskProcessError pf Nothing -> Right pf
+            pann@(ObeliskProcessError _ (Just _)) -> Left pann
 
 newtype Obelisk = Obelisk
   { _obelisk_cliConfig :: CliConfig ObeliskError
@@ -94,6 +111,18 @@ runObelisk c =
     runCli (_obelisk_cliConfig c)
   . flip runReaderT c
   . unObeliskT
+
+-- | Wrap an action which may throw 'NixThunkError' (e.g.
+-- 'nixBuildAttrWithCache') in a 'MonadError' which supports throwing
+-- 'ObeliskError'.
+wrapNixThunkError
+  :: (MonadError ObeliskError m, HasCliConfig ObeliskError m, MonadIO m)
+  => CliT NixThunkError m a
+  -> m a
+wrapNixThunkError k = do
+  cfg <- getCliConfig
+  let cfg' = cfg { _cliConfig_errorLogExitCode = _cliConfig_errorLogExitCode cfg . ObeliskError_NixThunkError }
+  runCli cfg' k
 
 type MonadInfallibleObelisk m =
   ( CliLog m

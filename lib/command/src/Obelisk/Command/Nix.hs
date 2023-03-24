@@ -50,7 +50,7 @@ import Data.Monoid ((<>))
 import qualified Data.Text as T
 
 import Obelisk.App (MonadObelisk)
-import Obelisk.CliApp
+import Cli.Extras
 
 -- | What to build
 data Target = Target

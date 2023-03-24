@@ -1,5 +1,6 @@
 # Frequently Asked Questions
 
+1. [Why does `ob run` hang in firefox?](#why-does-ob-run-hang-in-firefox)
 1. [How do I declare a new Haskell dependency?](#how-do-i-declare-a-new-haskell-dependency)
 1. [How do I add or override Haskell dependencies in the package set?](#how-do-i-add-or-override-haskell-dependencies-in-the-package-set)
 1. [How do I extend my Obelisk application with more local packages?](#how-do-i-extend-my-obelisk-application-with-more-local-packages)
@@ -8,6 +9,9 @@
 1. [`ob thunk update` or `ob deploy update` fails](#ob-thunk-update-or-ob-deploy-update-fails)
 1. [How do I fix `Ambiguous module name` errors?](#how-do-i-fix-ambiguous-module-name-errors)
 1. [How do I fix `no C compiler provided for this platform` errors?](#how-do-i-fix-no-c-compiler-provided-for-this-platform-errors)
+1. [Names of some variables in all.js (produced by GHCJS) collide with already existing static JS files in my project](#names-of-some-variables-in-all.js-(produced-by-ghcjs)-collide-with-already-existing-static-JS-files-in-my-project)
+1. [How do I fix systemd-timesyncd causing my deployment to fail?](#how-do-i-fix-systemd-timesyncd-causing-my-deployment-to-fail)
+1. [How do I cache individual build components with Nix?](#how-do-i-cache-individual-build-components-with-nix)
 
 ### How do I declare a new Haskell dependency?
 
@@ -122,3 +126,51 @@ then specify the package you want in the import, e.g:
 This can show up when when doing nix-build (ie for deployment). 
 
 This is probably because you have a package that needs a C compiler (like `snap-core`) in your `common` or `frontend` modules which need to be built for `ghcjs` which does not in fact have a C compiler. You'll need to remove those packages from your cabal files and rework your app to not need them in the frontend.
+
+### Names of some variables in all.js (produced by GHCJS) collide with already existing static JS files in my project
+Obelisk now allows the addition of a file to resolve such name collision errors. The file's path can be passed in the configuration via the **externjs** key, as shown below:
+```nix
+project ./. ({ pkgs, hackGet, ... }: with pkgs.haskell.lib; {
+  staticFiles = ...
+  externjs = path/to/file
+})
+```
+
+This file should have declarations for the global variables that are needed by your static JS files, for example:
+```haskell
+var require = false;
+var lib = false;
+```
+
+Any variables defined in this file will not be used in the minification process.
+
+### Why does ob run hang in firefox?
+
+`ob run` runs the project frontend through the jsaddle library, instead of compiling it to javascript. There is an issue with the way that jsaddle interfaces with the browser which causes `ob run` to fail to operate on some browsers. For more information, see [this issue](https://github.com/ghcjs/jsaddle/issues/64).
+
+### How do I fix systemd-timesyncd causing my deployment to fail?
+
+This is an upstream issue that can be resolved by deleting `/var/lib/systemd/timesync` and `/var/lib/private` on the machine targeted for deployment, as per [issue #670](https://github.com/obsidiansystems/obelisk/issues/670).
+
+### How do I cache individual build components with Nix?
+
+> I can do `nix-build -A exe` and the result will come completely from cache. But if I follow that up with `nix-build -A ghc.backend` or `nix-build -A ghc.frontend` and the result is not cached. Shouldn't the former have already built the latter?
+
+The succinct answer is that `ghc.backend` is not statically linked and `ghc.frontend` is not a GHCJS build. Additionally `ghcjs.frontend` is not closure compiled, so the derivations are not the same and will result in a new build being triggered.
+
+Our recommendation is to have a nix file in your project, such as `release.nix`, that lists all of the attributes you'd like to cache.
+
+For example, you could do something like:
+```nix
+{ }:
+let
+  myProject = import ./. {};
+in {
+  android = myProject.android.frontend; # Android application
+  exe = myProject.exe;                  # Compiled backend and ghcjs frontend
+  shell = myProject.shells.ghc;         # Project shell
+}
+```
+This gives you direct control over what's built and cached.
+
+To see what else can be added to this list, run `nix repl` in your project directory and type: `a = import ./. {}` then look at the value of `a` via TAB completion to see the components of your obelisk project.

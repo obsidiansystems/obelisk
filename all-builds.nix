@@ -4,6 +4,7 @@
   }
 , local-self ? import ./. self-args
 , supportedSystems ? [ builtins.currentSystem ]
+, __useNewerCompiler  ? false #true if one wants to use ghc 8.10.7
 }:
 
 let
@@ -20,7 +21,6 @@ let
     "obelisk-asset-manifest"
     "obelisk-asset-serve-snap"
     "obelisk-backend"
-    "obelisk-cliapp"
     "obelisk-command"
     "obelisk-executable-config-inject"
     "obelisk-frontend"
@@ -42,7 +42,7 @@ let
     else [];
 
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
-    reflex-platform = import ./dep/reflex-platform { inherit system; };
+    reflex-platform = import ./dep/reflex-platform { inherit system __useNewerCompiler; };
 
     mkPerProfiling = profiling: let
       obelisk = import ./. (self-args // { inherit system profiling; });
@@ -60,7 +60,6 @@ let
       rawSkeleton = import ./skeleton { inherit obelisk; };
       skeleton = withSkeletonOptions rawSkeleton {
         withHoogle = true;  # cache the Hoogle database for the skeleton
-        __withGhcide = true; # cache the ghcide build for the skeleton
       };
 
       serverSkeletonExe = rawSkeleton.exe;

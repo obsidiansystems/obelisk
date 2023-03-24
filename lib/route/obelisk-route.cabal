@@ -29,14 +29,15 @@ library
                  ref-tf,
                  reflex,
                  reflex-dom-core,
+                 semigroupoids,
                  template-haskell,
                  tabulation,
                  text,
                  th-extras,
                  transformers,
                  universe,
-                 universe-dependent-sum
+                 universe-some
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend
-  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+  ghc-options: -Wall -Werror -fprint-potential-instances -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O

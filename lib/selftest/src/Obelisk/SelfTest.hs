@@ -89,6 +89,12 @@ rmPath = $(staticWhich "rm")
 rsyncPath :: FilePath
 rsyncPath = $(staticWhich "rsync")
 
+mvPath :: FilePath
+mvPath = $(staticWhich "mv")
+
+sedPath :: FilePath
+sedPath = $(staticWhich "sed")
+
 gitUserConfig :: [Text]
 gitUserConfig = ["-c", "user.name=Obelisk Selftest", "-c", "user.email=noreply@example.com"]
 
@@ -205,6 +211,30 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
   describe "ob run" $ {- NOT parallel $ -} do
     it "works in root directory" $ inTmpObInit $ \_ -> testObRunInDir' Nothing httpManager
     it "works in sub directory" $ inTmpObInit $ \_ -> testObRunInDir' (Just "frontend") httpManager
+    it "can read external TLS certificates in root directory" $ inTmpObInit $ \testDir -> testObRunCert' testDir Nothing
+    it "can read external TLS certificates in sub directory" $ inTmpObInit $ \testDir -> testObRunCert' testDir (Just "frontend")
+    it "complains when static files are missing in root directory" $ inTmpObInit $ const $ testObRunInDirWithMissingStaticFile' Nothing
+    it "complains when static files are missing in sub directory" $ inTmpObInit $ const $ testObRunInDirWithMissingStaticFile' (Just "frontend")
+    it "complains when static filepaths are missing in root directory" $ do
+      inTmpObInit $ const $ testObRunInDirWithMissingStaticFilePath' Nothing
+    it "complains when static filepaths are missing in sub directory" $ do
+      inTmpObInit $ const $ testObRunInDirWithMissingStaticFilePath' (Just "frontend")
+    it "fails when given an invalid Cabal file" $ inTmpObInit $ testObRunWithInvalidCabalFile ob
+
+    it "respects the port given on the command line" $ inTmpObInit $ \testDir -> do
+      [port] <- liftIO $ getFreePorts 1
+      maskExitSuccess $ runHandles ob ["run", "-p", T.pack (show port)] [] $ \_stdin stdout stderr -> do
+        uri <- handleObRunStdout httpManager stdout stderr
+        -- Make sure obelisk logs the right thing
+        unless (T.pack (show port ++ "/") `T.isSuffixOf` T.strip uri) $
+          error $ "Expected the URI to end in " ++ show port ++ " but it ended in " ++ T.unpack uri
+        -- But also verify that we can actually reach the server in the
+        -- given path, rather than just listening for the log URL
+        let req = liftIO $ try @HTTP.HttpException $ HTTP.parseRequest (T.unpack uri) >>= flip HTTP.httpLbs httpManager
+        req >>= \case
+          Right r | HTTP.responseStatus r == HTTP.ok200 -> exit 0
+          e -> errorExit $ "Request to ob run failed: " <> T.pack (show e)
+        exit 0
 
   describe "ob repl" $ do
     it "accepts stdin commands" $ inTmpObInit $ \_ -> do
@@ -352,6 +382,9 @@ main' isVerbose httpManager obeliskRepoReadOnly = withInitCache $ \initCache -> 
     runOb_ = augmentWithVerbosity run_ ob isVerbose
     runOb = augmentWithVerbosity run ob isVerbose
     testObRunInDir' = augmentWithVerbosity testObRunInDir ob isVerbose ["run"]
+    testObRunCert' = augmentWithVerbosity testObRunCert ob isVerbose ["run", "-c", "."]
+    testObRunInDirWithMissingStaticFile' = augmentWithVerbosity testObRunInDirWithMissingStaticFile ob isVerbose ["run"]
+    testObRunInDirWithMissingStaticFilePath' = augmentWithVerbosity testObRunInDirWithMissingStaticFilePath ob isVerbose ["run"]
     testThunkPack' = augmentWithVerbosity testThunkPack ob isVerbose []
 
     withObeliskImplClean f =
@@ -419,6 +452,188 @@ testObRunInDir executable extraArgs mdir httpManager = maskExitSuccess $ do
     if runningUri /= newUri
       then errorExit $ "Reloading failed: expected " <> newUri <> " but got " <> runningUri
       else exit 0
+
+testObRunCert :: String -> [Text] -> FilePath -> Maybe FilePath -> Sh ()
+testObRunCert executable extraArgs testDir mdir = maskExitSuccess $ do
+  -- Generate a TLS key, and then a self-signed certificate using that key
+  mapM_ (\cmd -> run_ "nix-shell" ["-p", "openssl", "--command", cmd])
+    [ "openssl genrsa -out key.pem 2048"
+    , "openssl req -new -key key.pem -out certificate.csr -subj \"/C=US/ST=New York/L=New York/O=Development/OU=IT Department/CN=obsidian.com\""
+    , "openssl x509 -req -in certificate.csr -signkey key.pem -out cert.pem"
+    ]
+
+  -- One more command is required, for generating the chain.pem file.
+  -- For testing purposes, we'll keep it the same as the cert.pem file.
+  run_ "cp" ["cert.pem", "chain.pem"]
+
+  -- Also need to change the route inside config/common/route to https
+  -- in order to trigger the certificates option (the -c option is not honored for http)
+  writefile "config/common/route" "https://localhost:8000"
+
+  maybe id chdir mdir $ runHandles executable extraArgs [] $ \_ stdout _ -> do
+    parseObOutput stdout
+  where
+    parseObOutput h = do
+      isEOF <- liftIO $ hIsEOF h
+      if isEOF
+        then errorExit "Obelisk exited somehow"
+        else do
+          line <- liftIO $ hGetLineSkipBlanks h
+          check line h
+
+    -- Here we check that the certificates are read properly by Obelisk
+    -- In case the server is started without reading the certificates, show an error.
+    check line h
+      | "Using certificate information from:" `T.isPrefixOf` line = do
+        -- Should be followed by a `Frontend running on <url>` line
+        next <- liftIO $ hGetLineSkipBlanks h
+        if "Frontend running on" `T.isPrefixOf` next
+          then exit 0
+          else errorExit $ "Ran into error: " <> next
+      | "Frontend running on" `T.isPrefixOf` line = errorExit "Obelisk did not read the certificates provided via -c option"
+      | otherwise = parseObOutput h
+
+-- | Mess up the Cabal file in the given directory, then make sure that
+-- @ob run@ fails.
+testObRunWithInvalidCabalFile
+  :: FilePath  -- ^ Obelisk path
+  -> FilePath  -- ^ Directory path (will be made invalid)
+  -> Sh ()
+testObRunWithInvalidCabalFile executable fp = do
+  let commonCabal :: String
+      commonCabal = "common/common.cabal"
+  liftIO $ writeFile (fp </> commonCabal) "This is not a valid Cabal file."
+  errExit False $ do
+    runHandles executable ["run"] [] $ \_ _ _ -> pure ()
+    lastExitCode >>= \case
+      0 -> pure ()
+      _ -> errorExit "ob run succeeded even with an invalid Cabal file"
+
+-- | Check whether embedding a non-existent filepath into an obelisk
+-- project is detected correctly and generates a compile-time error.
+--
+-- @'testObRunInDirWithMissingStaticFileWorker' exe args mdir act checkErrorMessage@.
+--
+-- @checkErrorMessage line1 line2@ is invoked on a compile-time error message of the following form:
+--     frontend/src/Frontend.hs:40:32: error:
+--        • Static file obelisk.jpg was not found in static.out
+--        • In the untyped splice: $(static "obelisk.jpg")
+--       |
+--    40 |       elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
+--       |
+--
+-- the arguments to @line1@ and @line2@ contain:
+--
+-- @    • Static file obelisk.jpg was not found in static.out@
+--
+-- and
+--
+-- @    • In the untyped splice: $(static "obelisk.jpg")@
+--
+-- respectively.
+testObRunInDirWithMissingStaticFileWorker
+  :: String
+  -- ^ Path to the @ob@ executable
+  -> [Text]
+  -- ^ Arguments that are passed to @ob@
+  -> Maybe FilePath
+  -- ^ Change the working directory of the @ob@ invocation.
+  -> Sh ()
+  -- ^ Run this action before running @ob run@.
+  -- Gives you the opportunity to modify the project to trigger events.
+  -- In particular, make sure static files do not exist, s.t. a compilation
+  -- error is thrown.
+  -> (Text -> Text -> Sh ())
+  -- ^ Assertion function for error messages.
+  -- Since this function is used for asserting error message contents,
+  -- this function specifies what contents two consecutive non-empty lines
+  -- are supposed to have.
+  -> Sh ()
+testObRunInDirWithMissingStaticFileWorker executable extraArgs mdir act checkErrorMessage = maskExitSuccess $ do
+  act
+  -- Now run `ob run` and read the error
+  maybe id chdir mdir $ runHandles executable extraArgs [] $ \_stdin stdout stderr -> do
+    parseObOutput stdout
+  where
+    parseObOutput h = do
+      line <- liftIO $ hGetLineSkipBlanks h
+      -- This means that everything was successful, this should not be the case
+      if line == "Running test..."
+        then errorExit "Could not find any error related to static files"
+        else checkForErrors line h
+
+    -- As can be seen in the example below, we can parse a lot of data.
+    -- For simplicity, we parse the two lines after the `error:` line.
+    -- We also ensure that the file name is same, as the file that we changed ie `obelisk.jpg`
+    checkForErrors line h
+      -- Found an error, check if it is due to static.out
+      | "error:" `T.isSuffixOf` line = do
+        line1 <- liftIO $ hGetLineSkipBlanks h
+        line2 <- liftIO $ hGetLineSkipBlanks h
+        checkErrorMessage line1 line2
+      | otherwise = parseObOutput h
+
+-- | Run an obelisk test-case, where @static@ is embedding an non-existent
+-- filepath.
+testObRunInDirWithMissingStaticFile
+  :: String
+  -- ^ Path to the @ob@ executable
+  -> [Text]
+  -- ^ Arguments that are passed to @ob@
+  -> Maybe FilePath
+  -- ^ Change the working directory of the @ob@ invocation.
+  -> Sh ()
+testObRunInDirWithMissingStaticFile executable extraArgs mdir =
+  testObRunInDirWithMissingStaticFileWorker executable extraArgs mdir act checkStaticError
+  where
+    -- | Rename a static file, so that `ob run` will fail with a specific error
+    act = run_ mvPath ["static/obelisk.jpg", "static/obelisk2.jpg"]
+    -- We are looking for an error of the following type:
+    --  frontend/src/Frontend.hs:40:32: error:
+    --     • Static file obelisk.jpg was not found in static.out
+    --     • In the untyped splice: $(static "obelisk.jpg")
+    --    |
+    -- 40 |       elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
+    --    |                                ^^^^^^^^^^^^^^^^^^^^
+    checkStaticError line1 line2 =
+      if name1 == Just "obelisk.jpg" && name2 == Just "obelisk.jpg"
+        then exit 0
+        else errorExit $ "Expected a different error:\n" <> line1 <> "\n" <> line2
+      where
+        name1 = T.stripPrefix "• The file " (T.stripStart line1) >>= T.stripSuffix " was not found in static.out"
+        name2 = T.stripPrefix "• In the untyped splice: $(static \"" (T.stripStart line2) >>= T.stripSuffix "\")"
+
+-- | Run an obelisk test-case, where @staticFilePath@ is embedding an
+-- non-existent filepath.
+testObRunInDirWithMissingStaticFilePath
+  :: String
+  -- ^ Path to the @ob@ executable
+  -> [Text]
+  -- ^ Arguments that are passed to @ob@
+  -> Maybe FilePath
+  -- ^ Change the working directory of the @ob@ invocation.
+  -> Sh ()
+testObRunInDirWithMissingStaticFilePath executable extraArgs mdir =
+  testObRunInDirWithMissingStaticFileWorker executable extraArgs mdir act checkStaticError
+  where
+    -- | Rename a static file, so that `ob run` will fail with a specific error
+    act = do
+      run_ sedPath ["-e", "s/\\$(static /\\$(staticFilePath /", "-i", "frontend/src/Frontend.hs"]
+      run_ mvPath ["static/obelisk.jpg", "static/obelisk2.jpg"]
+    -- We are looking for an error of the following type:
+    --  frontend/src/Frontend.hs:40:32: error:
+    --     • Static file obelisk.jpg was not found in static.out
+    --     • In the untyped splice: $(staticFilePath "obelisk.jpg")
+    --    |
+    -- 40 |       elAttr "img" ("src" =: $(staticFilePath "obelisk.jpg")) blank
+    --    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    checkStaticError line1 line2 =
+      if name1 == Just "obelisk.jpg" && name2 == Just "obelisk.jpg"
+        then exit 0
+        else errorExit $ "Expected a different error:\n" <> line1 <> "\n" <> line2
+      where
+        name1 = T.stripPrefix "• The file " (T.stripStart line1) >>= T.stripSuffix " was not found in static.out"
+        name2 = T.stripPrefix "• In the untyped splice: $(staticFilePath \"" (T.stripStart line2) >>= T.stripSuffix "\")"
 
 testThunkPack :: String -> [Text] -> FilePath -> Sh ()
 testThunkPack executable args path' = withTempFile repoDir "test-file" $ \file handle -> do

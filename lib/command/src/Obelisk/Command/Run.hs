@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -9,11 +10,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE PackageImports #-}
 module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
-import Control.Lens (ifor, (.~), (&))
+import Control.Lens (ifor, (.~), (&), view)
 import Control.Concurrent (forkIO)
 import Control.Monad (filterM, void)
 import Control.Monad.Except (runExceptT, throwError)
@@ -23,11 +25,11 @@ import Data.Bifoldable (bifoldr1)
 import Data.Bifunctor (bimap)
 import Data.Coerce (coerce)
 import Data.Default (def)
-import Data.Either (partitionEithers)
 import Data.Foldable (fold, for_, toList)
 import Data.Functor.Identity (runIdentity)
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
+import Data.Either
 import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -43,9 +45,17 @@ import Data.Time.Clock (getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
+#if MIN_VERSION_Cabal(3,2,1)
+import Distribution.Compiler (CompilerFlavor(..), perCompilerFlavorToList, PerCompilerFlavor)
+#else
 import Distribution.Compiler (CompilerFlavor(..), PerCompilerFlavor)
+#endif
+import Distribution.PackageDescription.Parsec (parseGenericPackageDescription)
+#if MIN_VERSION_Cabal(3,2,1)
+import Distribution.Fields.ParseResult (runParseResult)
+#else
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription, runParseResult)
-import Distribution.Parsec.Warning (PWarning)
+#endif
 import Distribution.Pretty (prettyShow)
 import Distribution.Simple.Compiler (PackageDB (GlobalPackageDB))
 import Distribution.Simple.Configure (configCompilerEx, getInstalledPackages)
@@ -54,15 +64,26 @@ import Distribution.Simple.Program.Db (defaultProgramDb)
 import qualified Distribution.System as Dist
 import Distribution.Types.BuildInfo (buildable, cppOptions, defaultExtensions, defaultLanguage, hsSourceDirs, options, targetBuildDepends)
 import Distribution.Types.CondTree (simplifyCondTree)
-import Distribution.Types.ConfVar (ConfVar (Arch, Impl, OS))
-import Distribution.Types.Dependency (Dependency (..), depPkgName, depVerRange)
+import Distribution.Types.Dependency (Dependency (..), depPkgName)
+import Distribution.Parsec.Warning (PWarning)
+#if MIN_VERSION_Cabal(3,2,1)
+import Distribution.Types.GenericPackageDescription.Lens (ConfVar (Arch, Impl, OS), condLibrary)
+#else
 import Distribution.Types.GenericPackageDescription (condLibrary)
+import Distribution.Types.ConfVar (ConfVar (Arch, Impl, OS))
+#endif
 import Distribution.Types.InstalledPackageInfo (compatPackageKey)
 import Distribution.Types.Library (libBuildInfo)
 import Distribution.Types.LibraryName (LibraryName(..))
 import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Types.VersionRange (anyVersion)
 import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
+#if MIN_VERSION_Cabal(3,2,1)
+import qualified Distribution.Parsec.Warning as Dist
+#else
+import qualified Distribution.System as Dist
+#endif
+import Distribution.Types.Dependency (Dependency (..), depPkgName, depVerRange)
 import qualified Distribution.Verbosity as Verbosity (silent)
 import qualified Hpack.Config as Hpack
 import qualified Hpack.Render as Hpack
@@ -75,23 +96,12 @@ import System.FilePath
 import qualified System.Info
 import System.IO.Temp (withSystemTempDirectory)
 
-import Obelisk.App (MonadObelisk, getObelisk, runObelisk)
-import Obelisk.CliApp (
-    Severity (..),
-    failWith,
-    proc,
-    putLog,
-    readCreateProcessWithExitCode,
-    readProcessAndLogStderr,
-    runProcess_,
-    setCwd,
-    setDelegateCtlc,
-    withSpinner,
-  )
+import Obelisk.App (MonadObelisk, ObeliskError(..), getObelisk, runObelisk)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
-import Obelisk.Command.Thunk (attrCacheFileName)
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
+import "nix-thunk" Nix.Thunk
+import Cli.Extras
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -174,8 +184,18 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
     ] <> rtsFlags
       <> [ "-RTS" ]
 
-run :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
-run root interpretPaths = do
+run
+  :: MonadObelisk m
+  => Maybe FilePath
+  -- ^ Certificate Directory path (optional)
+  -> Maybe Socket.PortNumber
+  -- ^ override the route's port number?
+  -> FilePath
+  -- ^ root folder
+  -> PathTree Interpret
+  -- ^ interpreted paths
+  -> m ()
+run certDir portOverride root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   (assetType, assets) <- findProjectAssets root
   manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
@@ -186,40 +206,43 @@ run root interpretPaths = do
       putLog Debug "Starting static file derivation watcher..."
       void $ liftIO $ forkIO $ runObelisk ob $ watchStaticFilesDerivation root
     _ -> pure ()
-  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root True
+  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root
   freePort <- getFreePort
   withGhciScriptArgs pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
-      [ "Obelisk.Run.run"
-      , show freePort
-      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
       , "Backend.backend"
       , "Frontend.frontend"
+      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      , ") { Obelisk.Run._runApp_backendPort =", show freePort
+      ,   ", Obelisk.Run._runApp_forceFrontendPort =", show portOverride
+      ,   ", Obelisk.Run._runApp_tlsCertDirectory =", show certDir
+      , "}"
       ]
 
 runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runRepl root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs "." True
+  ghciArgs <- getGhciSessionSettings pkgs root
   withGhciScriptArgs pkgs $ \dotGhciArgs ->
     runGhciRepl root pkgs (ghciArgs <> dotGhciArgs)
 
 runWatch :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runWatch root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  ghciArgs <- getGhciSessionSettings pkgs root True
+  ghciArgs <- getGhciSessionSettings pkgs root
   withGhciScriptArgs pkgs $ \dotGhciArgs ->
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs Nothing
 
-exportGhciConfig :: MonadObelisk m => Bool -> FilePath -> PathTree Interpret -> m [String]
-exportGhciConfig useRelativePaths root interpretPaths = do
+exportGhciConfig :: MonadObelisk m => FilePath -> PathTree Interpret -> m [String]
+exportGhciConfig root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  getGhciSessionSettings pkgs "." useRelativePaths
+  getGhciSessionSettings pkgs root
 
 nixShellForInterpretPaths :: MonadObelisk m => Bool -> String -> FilePath -> PathTree Interpret -> Maybe String -> m ()
-nixShellForInterpretPaths isPure shell root interpretPaths cmd = do
+nixShellForInterpretPaths isPure shell' root interpretPaths cmd = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  nixShellWithoutPkgs root isPure False (packageInfoToNamePathMap pkgs) shell cmd
+  nixShellWithoutPkgs root isPure False (packageInfoToNamePathMap pkgs) shell' cmd
 
 -- | Like 'getLocalPkgs' but also parses them and fails if any of them can't be parsed.
 getParsedLocalPkgs :: MonadObelisk m => FilePath -> PathTree Interpret -> m (NonEmpty CabalPackageInfo)
@@ -329,7 +352,7 @@ parseCabalPackage
   => FilePath -- ^ Package directory
   -> m (Maybe CabalPackageInfo)
 parseCabalPackage dir = parseCabalPackage' dir >>= \case
-  Left err -> Nothing <$ putLog Error err
+  Left err -> throwError (ObeliskError_Unstructured err)
   Right (Just (warnings, pkgInfo)) -> do
     for_ warnings $ putLog Warning . T.pack . show
     pure $ Just pkgInfo
@@ -364,7 +387,11 @@ parseCabalPackage' pkg = runExceptT $ do
       Arch archVar -> Just archVar == archConfVar
       Impl GHC _ -> True -- TODO: Actually check version range
       _ -> False
+#if MIN_VERSION_Cabal(3,2,1)
+  case (view condLibrary) <$> result of
+#else
   case condLibrary <$> result of
+#endif
     Right (Just condLib) -> do
       let (_, lib) = simplifyCondTree evalConfVar condLib
       pure $ Just $ (warnings,) $ CabalPackageInfo
@@ -378,7 +405,8 @@ parseCabalPackage' pkg = runExceptT $ do
             defaultExtensions $ libBuildInfo lib
         , _cabalPackageInfo_defaultLanguage =
             defaultLanguage $ libBuildInfo lib
-        , _cabalPackageInfo_compilerOptions = options $ libBuildInfo lib
+        , _cabalPackageInfo_compilerOptions =
+            options $ libBuildInfo lib
         , _cabalPackageInfo_cppOptions = cppOptions $ libBuildInfo lib
         , _cabalPackageInfo_buildDepends = targetBuildDepends $ libBuildInfo lib
         }
@@ -470,36 +498,30 @@ getGhciSessionSettings
   :: (MonadObelisk m, Foldable f)
   => f CabalPackageInfo -- ^ List of packages to load into ghci
   -> FilePath -- ^ All paths will be relative to this path
-  -> Bool -- ^ Use relative paths
   -> m [String]
-getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
-  -- N.B. ghci settings do NOT support escaping in any way. To minimize the likelihood that
-  -- paths-with-spaces ruin our day, we first canonicalize everything, and then relativize
-  -- all paths to 'pathBase'.
+getGhciSessionSettings (toList -> packageInfos) pathBase = do
   selfExe <- liftIO $ canonicalizePath =<< getExecutablePath
-  canonicalPathBase <- liftIO $ canonicalizePath pathBase
   installedPackageIndex <- loadPackageIndex packageInfos pathBase
 
   (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
     canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
     canonicalPkgFile <- canonicalizePath $ _cabalPackageInfo_packageFile pkg
-    pure (canonicalPkgFile `relativeTo'` canonicalPathBase, (`relativeTo'` canonicalPathBase) <$> canonicalSrcDirs)
+    pure (canonicalPkgFile, canonicalSrcDirs)
 
   pure
     $  baseGhciOptions
     <> ["-DOBELISK_ASSET_PASSTHRU"] -- For passthrough static assets
     <> ["-F", "-pgmF", selfExe, "-optF", preprocessorIdentifier]
     <> concatMap (\p -> ["-optF", p]) pkgFiles
-    <> [ "-i" <> intercalate ":" (concatMap toList pkgSrcPaths) ]
+    <> ["-i" <> intercalate ":" (concatMap toList pkgSrcPaths)]
     <> concatMap (\packageId -> ["-package-id", packageId ])
                  (packageIds installedPackageIndex)
   where
-    relativeTo' = if useRelativePaths then relativeTo else const
     -- Package names we're building and not needed from the package DB
     packageNames =
       map (mkPackageName . T.unpack . _cabalPackageInfo_packageName)
           packageInfos
-    packageIds installedPackageIndex =
+    packageIds installedPackageIndex = Set.toList $ Set.fromList $
       map (dependencyPackageId installedPackageIndex) $
           filter ((`notElem` packageNames) . depPkgName) $
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
@@ -509,6 +531,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase useRelativePaths = do
         ((_version,installedPackageInfo:_) :_) ->
           compatPackageKey installedPackageInfo
         _ -> error $ "Couldn't resolve dependency for " <> prettyShow dep
+
 
 -- Load the package index used by the GHC in this path's nix project
 loadPackageIndex :: MonadObelisk m => [CabalPackageInfo] -> FilePath -> m InstalledPackageIndex
@@ -541,7 +564,7 @@ runGhciRepl
 runGhciRepl root (toList -> packages) ghciArgs =
   -- NOTE: We do *not* want to use $(staticWhich "ghci") here because we need the
   -- ghc that is provided by the shell in the user's project.
-  nixShellWithoutPkgs root True False (packageInfoToNamePathMap packages) "ghc" $
+  nixShellWithoutPkgs root True True (packageInfoToNamePathMap packages) "ghc" $
     Just $ unwords $ fmap bashEscape $ "ghci" : ghciArgs
 
 -- | Run ghcid
@@ -563,7 +586,12 @@ runGhcid root chdirToRoot ghciArgs (toList -> packages) mcmd =
       , map (\x -> "--reload=" <> x) reloadFiles
       , map (\x -> "--restart=" <> x) restartFiles
       , maybe [] (\cmd -> ["--test=" <> cmd]) mcmd
-      , ["--command=" <> unwords ("ghci" : ghciArgs)]
+      -- N.B. the subcommand to ghcid has to be itself escaped.
+      -- We have to use 'shEscape' instead of 'bashEscape' because
+      -- ghcid invokes System.Process with a shell command, which uses @\/bin\/sh@
+      -- instead of the @bash@ we have in scope.
+      -- This is not guaranteed to be bash on non-NixOS systems.
+      , ["--command=" <> unwords (fmap shEscape ("ghci" : ghciArgs))]
       ]
     adjustRoot x = if chdirToRoot then makeRelative root x else x
     reloadFiles = map adjustRoot [root </> "config"]

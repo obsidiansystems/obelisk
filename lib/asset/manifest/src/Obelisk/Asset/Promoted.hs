@@ -10,7 +10,7 @@ module Obelisk.Asset.Promoted
 import Obelisk.Asset.Gather
 
 import Data.Foldable
-import Language.Haskell.TH (runQ, pprint)
+import Language.Haskell.TH (pprint)
 import Language.Haskell.TH.Syntax hiding (lift)
 import GHC.TypeLits
 import Data.Sequence (Seq)
