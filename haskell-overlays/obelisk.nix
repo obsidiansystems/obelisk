@@ -20,7 +20,7 @@ in
     librarySystemDepends = [
       pkgs.jre
       pkgs.git
-      pkgs.nix
+      pkgs.nixpkgs_unstable.nixVersions.nix_2_13
       pkgs.nix-prefetch-git
       pkgs.openssh
       pkgs.rsync
@@ -38,7 +38,7 @@ in
       pkgs.cabal-install
       pkgs.coreutils
       pkgs.git
-      pkgs.nix
+      pkgs.nixpkgs_unstable.nixVersions.nix_2_13
       pkgs.nix-prefetch-git
       pkgs.rsync
     ];

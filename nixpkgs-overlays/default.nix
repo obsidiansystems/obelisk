@@ -12,4 +12,6 @@ in {
     lib.cleanSource (gitignoreSource src);
 
   obeliskExecutableConfig = self.callPackage ../lib/executable-config {};
+
+  nixpkgs_unstable = import ../dep/nixpkgs_unstable { };
 }
