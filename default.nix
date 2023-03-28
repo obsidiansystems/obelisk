@@ -9,11 +9,13 @@
 , useGHC810 ? false #true if one wants to use ghc 8.10.7
 }:
 let
+  inherit (import dep/gitignore.nix { inherit (pkgs) lib; }) gitignoreSource;
+  inherit (reflex-platform) hackGet;
   reflex-platform = getReflexPlatform { inherit system; };
-  inherit (reflex-platform) hackGet nixpkgs;
-  pkgs = nixpkgs;
 
-  inherit (import dep/gitignore.nix { inherit (nixpkgs) lib; }) gitignoreSource;
+  nix-thunk = import ./dep/nix-thunk {};
+  mars = nix-thunk.thunkSource ./dep/mars;
+  marsProject = args: import mars args;
 
   getReflexPlatform = { system, enableLibraryProfiling ? profiling }: reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
@@ -25,33 +27,89 @@ let
     ];
 
     haskellOverlays = [
-      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; __useNewerCompiler = useGHC810; })
+      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; })
       pkgs.obeliskExecutableConfig.haskellOverlay
       (import ./haskell-overlays/obelisk.nix)
       (import ./haskell-overlays/tighten-ob-exes.nix)
     ];
   };
 
-  # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
-  ghcObelisk = reflex-platform.ghc;
+  obeliskProjDef = ({ pkgs, thunkSource, ... }: {
+    name = "obelisk-pkgs";
+    src = ./.;
+    extraArgs = {
+      staticFiles = [ null ];
+    };
+    shellTools = {
+      cabal = "3.2.0.0";
+      haskell-language-server = "1.5.0.0";
+    };
+    shells = ps: with ps; [
+      obelisk-command
+      obelisk-backend
+      obelisk-asset-manifest
+      obelisk-asset-serve-snap
+      obelisk-executable-config-inject
+      obelisk-executable-config-lookup
+      obelisk-frontend
+      obelisk-route
+      obelisk-run
+      obelisk-selftest
+    ];
+    overrides = [
+      ({ config, pkgs, lib, ... }: { packages.git.src = thunkSource ./dep/git; })
+      ({ config, pkgs, lib, ... }: {
+        packages.cli-git.components.library.build-tools = [
+          pkgs.git
+        ];
+        #packages.nix-thunk.src = thunkSource ./dep/nix-thunk;
+        packages.obelisk-command.components.library.build-tools = [
+          config.hsPkgs.ghcid.components.exes.ghcid
+          pkgs.nixVersions.nix_2_12
+          pkgs.nix-prefetch-git
+          pkgs.openssh
+          pkgs.rsync
+          pkgs.which
+          pkgs.jre
+          pkgs.git
+        ];
+        packages.nix-thunk.components.library.build-tools = [
+          (pkgs.writeTextFile {
+            name = "print-nixpkgs-path";
+            text = ''
+              #!/bin/sh
+              echo "${nix-thunk.packedThunkNixpkgs}"
+            '';
+            executable = true;
+            destination = "/bin/print-nixpkgs-path";
+          })
+        ];
+      })
+    ];
+  });
+  marsObelisk = marsProject {} obeliskProjDef;
 
-  # Development environments for obelisk packages.
-  ghcObeliskEnvs = pkgs.lib.mapAttrs (n: v: reflex-platform.workOn ghcObelisk v) ghcObelisk;
+  pkgs = marsObelisk.pkgs;
+  nixpkgs = marsObelisk.pkgs;
 
   inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
 
   haskellLib = pkgs.haskell.lib;
-
 in rec {
+  inherit (reflex-platform) hackGet;
   inherit reflex-platform;
-  inherit (reflex-platform) nixpkgs pinBuildInputs;
+  inherit marsObelisk;
   inherit (nixpkgs) lib;
+  inherit nixpkgs pkgs;
   pathGit = ./.;  # Used in CI by the migration graph hash algorithm to correctly ignore files.
-  path = reflex-platform.filterGit ./.;
-  obelisk = ghcObelisk;
-  obeliskEnvs = pkgs.lib.filterAttrs (k: _: k == "tabulation" || pkgs.lib.strings.hasPrefix "obelisk-" k) ghcObeliskEnvs; #TODO: use thunkSet https://github.com/reflex-frp/reflex-platform/pull/671
-  command = ghcObelisk.obelisk-command;
-  shell = pinBuildInputs "obelisk-shell" ([command] ++ command.commandRuntimeDeps);
+  command = marsObelisk.hsPkgs.obelisk-command.components.exes.ob;
+  shell = nixpkgs.mkShell {
+    name = "obelisk";
+    buildInputs = [
+      command
+    ];
+  };
+
 
   selftest = pkgs.writeScript "selftest" ''
     #!${pkgs.runtimeShell}
@@ -59,7 +117,7 @@ in rec {
 
     PATH="${command}/bin:$PATH"
     cd ${./.}
-    "${ghcObelisk.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
+    "${marsObelisk.hsPkgs.obelisk-selftest.components.obelisk-selftest}/bin/obelisk-selftest" +RTS -N -RTS "$@"
   '';
   skeleton = pkgs.runCommand "skeleton" {
     dir = builtins.filterSource (path: type: builtins.trace path (baseNameOf path != ".obelisk")) ./skeleton;
@@ -68,10 +126,16 @@ in rec {
   '';
   nullIfAbsent = p: if lib.pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
-  processAssets = { src, packageName ? "obelisk-generated-static", moduleName ? "Obelisk.Generated.Static", exe ? "obelisk-asset-th-generate" }: pkgs.runCommand "asset-manifest" {
+  processAssets = { src, 
+                    packageName ? "obelisk-generated-static", 
+                    moduleName ? "Obelisk.Generated.Static", 
+                    exe ? "obelisk-asset-th-generate",
+                    obeliskPkgs ? marsObelisk.hsPkgs
+                  }: 
+  pkgs.runCommand "asset-manifest" {
     inherit src;
     outputs = [ "out" "haskellManifest" "symlinked" ];
-    nativeBuildInputs = [ ghcObelisk.obelisk-asset-manifest ];
+    nativeBuildInputs = [ obeliskPkgs.obelisk-asset-manifest.components.exes.obelisk-asset-th-generate ];
   } ''
     set -euo pipefail
     touch "$out"
@@ -79,6 +143,7 @@ in rec {
     ${exe} "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
+  #reflex-platform.ghcjsExternsJs = "";
   compressedJs = frontend: optimizationLevel: externs: pkgs.runCommand "compressedJs" {} ''
     set -euo pipefail
     cd '${haskellLib.justStaticExecutables frontend}'
@@ -244,8 +309,77 @@ in rec {
       };
     };
 
+  project = args: projectDef: let
+    proj' = (marsProject args projectDef).extend (self: super: let
+      ifHasAttr = b: if super.helpers.mars_args ? b then b else null;
+      ifHasAttrBool = b: if super.helpers.mars_args ? b then true else false;
+      ifHasAttrExtra = b: if self.helpers.mars_args.extraArgs ? b then b else null;
+    in rec {
+      #inherit projectDef;
+        packageNames = {
+          frontendName = "frontend";
+          backendName = "backend";
+          commonName = "common";
+          staticName = "obelisk-generated-static";
+        };
+
+        processedStatic = processAssets { 
+          src = self.userSettings.staticFiles;
+          exe = if lib.attrByPath ["userSettings" "__deprecated" "useObeliskAssetManifestGenerate"] false self
+            then builtins.trace "obelisk-asset-manifest-generate is deprecated. Use obelisk-asset-th-generate instead." "obelisk-asset-manifest-generate"
+            else "obelisk-asset-th-generate";
+          obeliskPkgs = marsObelisk.hsPkgs;
+        };
+
+        extraOverlays = [
+          {
+            name = "obelisk-generated-static";
+            version = "0";
+            src = processedStatic.haskellManifest;
+          }
+        ];
+
+        userSettings = {
+          android = ifHasAttr "android";
+          ios = ifHasAttr "ios";
+          overrides = ifHasAttr "overrides";
+          shellTools = ifHasAttr "shellTools";
+          staticFiles = super.helpers.mars_args.extraArgs.staticFiles;
+        };
+
+        __androidWithConfig = configPath: {
+          ${if self.userSettings.android == null then null else self.frontendName} = {
+            executableName = packageNames.frontendName;
+            ${if builtins.pathExists self.userSettings.staticFiles then "assets" else null} =
+              nixpkgs.obeliskExecutableConfig.platforms.android.inject
+                (self.injectableConfig configPath)
+                self.processedStatic.symlinked;
+            } // self.userSettings.android;
+        };
+        
+        __iosWithConfig = configPath: {
+            ${if self.userSettings.ios == null then null else self.frontendName} = {
+              executableName = packageNames.frontendName;
+              ${if builtins.pathExists self.userSettings.staticFiles then "staticSrc" else null} =
+                nixpkgs.obeliskExecutableConfig.platforms.ios.inject
+                  (self.injectableConfig configPath)
+                  self.processedStatic.symlinked;
+            } // self.userSettings.ios;
+        };
+
+        combinedShell = self.shells.ghc // self.shells.ghcjs;
+
+        passthru = {
+          staticFilesImpure = let fs = self.userSettings.staticFiles; in if lib.isDerivation fs then fs else toString fs;
+          inherit processedStatic;
+        };
+      });
+  in proj';
+
+    
+  test_project = project {} obeliskProjDef;
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
-  project = base': projectDefinition:
+  /*projectV1 = base': projectDefinition:
     let
       projectOut = { system, enableLibraryProfiling ? profiling }: let reflexPlatformProject = (getReflexPlatform { inherit system enableLibraryProfiling; }).project; in reflexPlatformProject (args@{ nixpkgs, ... }:
         let
@@ -407,7 +541,6 @@ in rec {
         mkdir -p $out/bin
         ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
       '';
-
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
@@ -415,7 +548,9 @@ in rec {
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
     };
+    */
   haskellPackageSets = {
-    inherit (reflex-platform) ghc ghcjs;
+    ghc = marsObelisk.hsPkgs;
+    ghcjs = marsObelisk.crossSystems.ghcjs.hsPkgs;
   };
 }

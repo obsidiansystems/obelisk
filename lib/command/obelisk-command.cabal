@@ -7,6 +7,7 @@ library
   hs-source-dirs: src
   build-depends:
       aeson
+    , ghcid
     , aeson-pretty
     , ansi-terminal
     , base
@@ -24,8 +25,8 @@ library
     , git
     , github
     , here
-    , hnix
-    , hpack
+    , hnix >=0.12.0 && <0.13.0
+    , hpack >=0.34.4 && <0.35
     , io-streams
     , lens
     , logging-effect

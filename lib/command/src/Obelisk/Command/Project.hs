@@ -350,9 +350,11 @@ mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command 
   let setCwd_ = if chdirToRoot then setCwd (Just root) else id
   pure $ setCwd_ $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{root, pkgs, shell}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
+        "{root, pkgs, shell}: (import root {}).shells.ghc"
+   {-     passthru.__unstable__.self.extend (_: _: {\
           \shellPackages = builtins.fromJSON pkgs;\
         \})).project.shells.${shell}"
+    -}
     & nixShellConfig_common . nixCmdConfig_args .~
         [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
         , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
@@ -402,7 +404,7 @@ findProjectAssets root = do
       [ "eval"
       , "--impure"
       , "--expr"
-      , "(let a = import ./. {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
+      , "(let a = import ./. {}; in toString (a.pkgs.lib.isDerivation a.passthru.staticFilesImpure))"
       , "--raw"
       -- `--expr` and `--impure` are a side-effect of a newer nix version
       -- `nix eval` is no longer the same as 2.3
