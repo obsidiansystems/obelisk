@@ -12,6 +12,7 @@ library
                , frontend
                , obelisk-backend
                , obelisk-route
+               , obelisk-run
   exposed-modules:
     Backend
   ghc-options: -Wall -O -fno-show-valid-hole-fits

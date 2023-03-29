@@ -268,6 +268,9 @@ getLocalPkgs root interpretPaths = do
   fmap fold $ for (MMap.toAscList rootsAndExclusions) $ \(interpretPathRoot, exclusions) ->
     let allExclusions = obeliskPackageExclusions
           <> exclusions
+          <> Set.singleton ("*" </> ".obelisk" </> "impl" </> "*") -- NOTE(cidkidnix): After switching to haskell.nix we 
+                                                                   -- actually don't want to interpret any paths in ".obelisk/impl" 
+                                                                   -- because we don't have a unified package set, possible FIXME
           <> Set.singleton ("*" </> attrCacheFileName)
           <> Set.singleton ("*" </> "lib/asset/manifest") -- NB: obelisk-asset-manifest is excluded because it generates
                                                           -- a module that in turn imports it. This will cause ob run to
@@ -503,6 +506,10 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
   selfExe <- liftIO $ canonicalizePath =<< getExecutablePath
   installedPackageIndex <- loadPackageIndex packageInfos pathBase
 
+  -- Print out packge paths that we know about
+  for packageInfos $ \pkg_ -> do
+    putLog Debug (T.pack (_cabalPackageInfo_packageFile pkg_)) 
+
   (pkgFiles, pkgSrcPaths :: [NonEmpty FilePath]) <- fmap unzip $ liftIO $ for packageInfos $ \pkg -> do
     canonicalSrcDirs <- traverse canonicalizePath $ (_cabalPackageInfo_packageRoot pkg </>) <$> _cabalPackageInfo_sourceDirs pkg
     canonicalPkgFile <- canonicalizePath $ _cabalPackageInfo_packageFile pkg
@@ -525,7 +532,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
       map (dependencyPackageId installedPackageIndex) $
           filter ((`notElem` packageNames) . depPkgName) $
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
-            [Dependency (mkPackageName "obelisk-run") anyVersion (Set.singleton LMainLibName)]
+          [Dependency (mkPackageName "obelisk-run") anyVersion (Set.singleton LMainLibName)]
     dependencyPackageId installedPackageIndex dep =
       case lookupDependency installedPackageIndex (depPkgName dep) (depVerRange dep) of
         ((_version,installedPackageInfo:_) :_) ->

@@ -34,7 +34,70 @@ let
     ];
   };
 
-  obeliskProjDef = ({ pkgs, thunkSource, ... }: {
+  obeliskHackageOverlays = [
+    {
+      name = "obelisk-asset-serve-snap";
+      version = "0.1";
+      src = ./lib/asset/serve-snap;
+    }
+      {
+      name = "obelisk-asset-manifest";
+      version = "0.1";
+      src = ./lib/asset/manifest;
+    }
+    {
+      name = "obelisk-backend";
+      version = "0.1";
+      src = ./lib/backend;
+    }
+        {
+      name = "obelisk-command";
+      version = "0.1";
+      src = ./lib/command;
+    }
+        {
+      name = "obelisk-executable-config-inject";
+      version = "0.1";
+      src = ./lib/executable-config/inject;
+    }
+        {
+      name = "obelisk-executable-config-lookup";
+      version = "0.1";
+      src = ./lib/executable-config/lookup;
+    }
+    {
+      name = "obelisk-frontend";
+      version = "0.1";
+      src = ./lib/frontend;
+    }
+        {
+      name = "obelisk-route";
+      version = "0.1";
+      src = ./lib/route;
+    }
+    {
+      name = "obelisk-run";
+      version = "0.1";
+      src = ./lib/run;
+    }
+    {
+      name = "obelisk-selftest";
+      version = "0.1";
+      src = ./lib/selftest;
+    }
+    {
+      name = "obelisk-snap-extras";
+      version = "0.1";
+      src = ./lib/snap-extras;
+    }
+    {
+      name = "tabulation";
+      version = "0.1.0.0";
+      src = ./lib/tabulation;
+    }
+  ];
+
+  obeliskProjDef = { enableLibraryProfiling ? false }: ({ pkgs, thunkSource, ... }: {
     name = "obelisk-pkgs";
     src = ./.;
     extraArgs = {
@@ -73,6 +136,19 @@ let
           pkgs.jre
           pkgs.git
         ];
+        packages.obelisk-run.components.library.build-tools = with pkgs; [
+          iproute
+        ];
+        packages.obelisk-selftest.components.library.build-tools = with pkgs; [
+          cabal-install
+          git
+          nixVersions.nix_2_12
+          nix-prefetch-git
+          rsync
+          which
+          jre
+          openssh
+        ];
         packages.nix-thunk.components.library.build-tools = [
           (pkgs.writeTextFile {
             name = "print-nixpkgs-path";
@@ -85,9 +161,13 @@ let
           })
         ];
       })
+    ] ++ pkgs.lib.optionals (enableLibraryProfiling) [
+      ({ pkgs, config, lib, ... }: {
+        config.enableLibraryProfiling = true;
+      })
     ];
   });
-  marsObelisk = marsProject {} obeliskProjDef;
+  marsObelisk = marsProject {} (obeliskProjDef {});
 
   pkgs = marsObelisk.pkgs;
   nixpkgs = marsObelisk.pkgs;
@@ -316,6 +396,7 @@ in rec {
       ifHasAttrExtra = b: if self.helpers.mars_args.extraArgs ? b then b else null;
     in rec {
       #inherit projectDef;
+        inherit marsObelisk;
         packageNames = {
           frontendName = "frontend";
           backendName = "backend";
@@ -337,14 +418,21 @@ in rec {
             version = "0";
             src = processedStatic.haskellManifest;
           }
+        ] ++ obeliskHackageOverlays;
+
+        extraPkgDef = [
+          #(hackage: (import "${marsObelisk.plan-nix}/default.nix").extras hackage)
+          #(hackage: (import "${marsObelisk.plan-nix}/default.nix").pkgs hackage)
         ];
+
+        ghcjs-app = self.crossSystems.ghcjs.hsPkgs.frontend.components.exes.frontend;
 
         userSettings = {
           android = ifHasAttr "android";
           ios = ifHasAttr "ios";
           overrides = ifHasAttr "overrides";
           shellTools = ifHasAttr "shellTools";
-          staticFiles = super.helpers.mars_args.extraArgs.staticFiles;
+          staticFiles = super.helpers.mars_args.extraArgs.staticFiles or (super.args.src + "/static");
         };
 
         __androidWithConfig = configPath: {
@@ -367,13 +455,62 @@ in rec {
             } // self.userSettings.ios;
         };
 
-        combinedShell = self.shells.ghc // self.shells.ghcjs;
+        #combinedShell = self.shells.ghc;
+        combinedShell = self.shellFor {
+          withHoogle = false;
+          packages = ps: with ps; [
+            backend
+          ];
+          additional = ps: with ps; [
+            obelisk-backend
+          ];
+        };
 
-        passthru = {
+        hoogleShell = self.shellFor {
+          withHoogle = true;
+          packages = ps: with ps; [
+            common
+          ];
+        };
+
+        passthru = rec {
           staticFilesImpure = let fs = self.userSettings.staticFiles; in if lib.isDerivation fs then fs else toString fs;
           inherit processedStatic;
+          profiledObelisk = marsProject {} (obeliskProjDef { enableLibraryProfiling = true; });
+          obRunProfileSrc = builtins.toFile "ob-run.hs" ''
+            {-# LANGUAGE NoImplicitPrelude #-}
+            {-# LANGUAGE PackageImports #-}
+            module Main where
+
+            -- Explicitly import Prelude from base lest there be multiple modules called Prelude
+            import "base" Prelude (Maybe(Nothing), IO, (++), read)
+
+            import "base" Control.Exception (finally)
+            import "reflex" Reflex.Profiled (writeProfilingData)
+            import "base" System.Environment (getArgs)
+
+            import qualified "obelisk-run" Obelisk.Run
+            import qualified Frontend
+            import qualified Backend
+
+            main :: IO ()
+            main = do
+              [portStr, assets, profFileName] <- getArgs
+              Obelisk.Run.run (Obelisk.Run.defaultRunApp Backend.backend Frontend.frontend (Obelisk.Run.runServeAsset assets)){ Obelisk.Run._runApp_backendPort = read portStr }
+                `finally` writeProfilingData (profFileName ++ ".rprof")
+          '';
+          profiledObRun = self.pkgs.runCommand "ob-run" rec {
+            shell = (self.shellFor { withHoogle = false; packages = ps: with ps; [ backend ]; });
+            ghc = "${shell}/bin/ghc";
+          } ''
+            cp ${obRunProfileSrc} ob-run.hs
+            mkdir -p $out/bin
+            $ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
+          '';
         };
-      });
+
+        __unstable__.profiledObRun = passthru.profiledObRun;
+    });
   in proj';
 
     

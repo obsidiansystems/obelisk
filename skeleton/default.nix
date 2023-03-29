@@ -1,5 +1,5 @@
 { system ? builtins.currentSystem
-, obelisk ? import ./.obelisk/impl {
+, obelisk ? import ../. {
     inherit system;
     iosSdkVersion = "13.2";
 
@@ -15,9 +15,17 @@
   }
 }:
 with obelisk;
-project ./. ({ ... }: {
-  android.applicationId = "systems.obsidian.obelisk.examples.minimal";
-  android.displayName = "Obelisk Minimal Example";
-  ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";
-  ios.bundleName = "Obelisk Minimal Example";
+project {} ({ ... }: {
+  name = "skeleton";
+  src = ./.;
+  shells = ps: with ps; [
+    backend
+  ];
+  overrides = [
+    ({pkgs, lib, config, ... }: {
+        packages.obelisk-run.components.library.build-tools = with pkgs; [
+          iproute
+        ];
+    })
+  ];
 })

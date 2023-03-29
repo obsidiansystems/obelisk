@@ -32,7 +32,7 @@ frontend = Frontend
       elAttr "script" ("type" =: "application/javascript" <> "src" =: $(static "lib.js")) blank
       elAttr "link" ("href" =: $(static "main.css") <> "type" =: "text/css" <> "rel" =: "stylesheet") blank
   , _frontend_body = do
-      el "h1" $ text "Welcome to Obelisk!"
+      el "h1" $ text "Welcome to Obelisk on mars!"
       el "p" $ text $ T.pack commonStuff
 
       -- `prerender` and `prerender_` let you choose a widget to run on the server

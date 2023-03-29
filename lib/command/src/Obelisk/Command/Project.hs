@@ -305,7 +305,7 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
 nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
 nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
-    proc nixExePath ["eval", "--impure", "--expr", "(import .obelisk/impl {}).nixpkgs.path"]
+    proc nixExePath ["eval", "--impure", "--expr", "(import ./. {}).pkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   pure $ def
     & nixShellConfig_pure .~ isPure
@@ -350,7 +350,7 @@ mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command 
   let setCwd_ = if chdirToRoot then setCwd (Just root) else id
   pure $ setCwd_ $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{root, pkgs, shell}: (import root {}).shells.ghc"
+        "{root, pkgs, shell}: (import root {}).combinedShell"
    {-     passthru.__unstable__.self.extend (_: _: {\
           \shellPackages = builtins.fromJSON pkgs;\
         \})).project.shells.${shell}"
@@ -378,9 +378,7 @@ nixShellWithHoogle root isPure shell' command = do
   defShellConfig <- nixShellRunConfig root isPure command
   runProcess_ $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
-          \userSettings = super.userSettings // { withHoogle = true; };\
-        \})).project.shells.${shell}"
+        "{shell}: (import ./. {}).hoogleShell"
     & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
 
 -- | Describes the provenance of static assets (i.e., are they the result of a derivation

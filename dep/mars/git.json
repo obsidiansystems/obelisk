@@ -1,7 +1,7 @@
 {
   "url": "ssh://git@code.obsidian.systems/dgreen/mars.git",
-  "rev": "20f3829cab274502dee84971523bbdc05f3eb896",
-  "sha256": "0cg7wqfvkvrfb3n2bhv1arxlj87fxfkc9q5303z44xfhjxwd7n6g",
+  "rev": "ed73091c248ea1a1ac63bcb08bb9a71aded71bcc",
+  "sha256": "0cy2yiwffkykddh81a81aif46rhi9axji0apzy770qqxawd6v4c8",
   "private": true,
   "fetchSubmodules": false,
   "branch": "obelisk-work"
