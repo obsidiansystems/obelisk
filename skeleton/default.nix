@@ -1,5 +1,5 @@
 { system ? builtins.currentSystem
-, obelisk ? import ../. {
+, obelisk ? import ./.obelisk/impl {
     inherit system;
     iosSdkVersion = "13.2";
 
