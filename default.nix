@@ -394,6 +394,7 @@ in rec {
       ifHasAttr = b: if super.helpers.mars_args ? b then b else null;
       ifHasAttrBool = b: if super.helpers.mars_args ? b then true else false;
       ifHasAttrExtra = b: if self.helpers.mars_args.extraArgs ? b then b else null;
+      checkForStaticFiles = a: b: if self.userSettings.staticFiles == null then a else b;
     in rec {
       #inherit projectDef;
         inherit marsObelisk;
@@ -412,13 +413,13 @@ in rec {
           obeliskPkgs = marsObelisk.hsPkgs;
         };
 
-        extraOverlays = [
+        extraOverlays = (checkForStaticFiles [] [
           {
             name = "obelisk-generated-static";
             version = "0";
             src = processedStatic.haskellManifest;
           }
-        ] ++ obeliskHackageOverlays;
+        ]) ++ obeliskHackageOverlays;
 
         extraPkgDef = [
           #(hackage: (import "${marsObelisk.plan-nix}/default.nix").extras hackage)
@@ -432,7 +433,7 @@ in rec {
           ios = ifHasAttr "ios";
           overrides = ifHasAttr "overrides";
           shellTools = ifHasAttr "shellTools";
-          staticFiles = super.helpers.mars_args.extraArgs.staticFiles or (super.args.src + "/static");
+          staticFiles = if builtins.pathExists (super.args.src + "/static") then super.helpers.mars_args.extraArgs.staticFiles or (super.args.src + "/static") else null;
         };
 
         __androidWithConfig = configPath: {
