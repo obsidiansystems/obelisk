@@ -202,7 +202,7 @@ run certDir root interpretPaths = do
       , show freePort
       , "(" ++ show certDir ++ ")"
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
-      , "Backend.backend"
+      , "Backend.backend'"
       , "Frontend.frontend"
       ]
 
