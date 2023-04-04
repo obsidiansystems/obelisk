@@ -36,6 +36,7 @@ library
     , reflex
     , reflex-dom-core
     , snap-core
+    , snap-server
     , streaming-commons
     , text
     , time

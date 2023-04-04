@@ -200,9 +200,10 @@ run certDir root interpretPaths = do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
       [ "Obelisk.Run.run"
       , show freePort
+      , "(Obelisk.Backend._backend_updateSnapConfig Backend.backend)"
       , "(" ++ show certDir ++ ")"
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
-      , "Backend.backend'"
+      , "Backend.backend"
       , "Frontend.frontend"
       ]
 

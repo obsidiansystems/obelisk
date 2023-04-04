@@ -64,6 +64,7 @@ import qualified OpenSSL.X509 as X509
 import qualified OpenSSL.X509.Request as X509Request
 import Reflex.Dom.Core
 import Snap.Core (Snap)
+import Snap.Internal.Http.Server.Config (Config)
 import System.Environment
 import System.FilePath ((</>))
 import System.IO
@@ -77,15 +78,17 @@ import Web.Cookie
 import qualified System.Which
 #endif
 
+
 run
   :: Int -- ^ Port to run the backend
+  -> (Config Snap () -> Config Snap ())
   -> Maybe FilePath -- ^ Optional directory in which to find "cert.pem", "chain.pem" and "privkey.pem" to be used for TLS.
                     -- If this is Nothing and TLS is enabled, we'll generate a self-signed cert.
   -> ([Text] -> Snap ()) -- ^ Static asset handler
   -> Backend backendRoute frontendRoute -- ^ Backend
   -> Frontend (R frontendRoute) -- ^ Frontend
   -> IO ()
-run port certDir serveStaticAsset backend frontend = do
+run port updateSnapConfigs certDir serveStaticAsset backend frontend = do
   prettifyOutput
   let handleBackendErr (e :: IOException) = hPutStrLn stderr $ "backend stopped; make a change to your code to reload - error " <> show e
   --TODO: Use Obelisk.Backend.runBackend; this will require separating the checking and running phases
@@ -95,7 +98,7 @@ run port certDir serveStaticAsset backend frontend = do
       publicConfigs <- getPublicConfigs
       backendTid <- forkIO $ handle handleBackendErr $ withArgs ["--quiet", "--port", show port] $
         _backend_run backend $ \serveRoute ->
-          runSnapWithCommandLineArgs $
+          runSnapWithCommandLineArgs updateSnapConfigs $
             getRouteWith validFullEncoder >>= \case
               Identity r -> case r of
                 FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a

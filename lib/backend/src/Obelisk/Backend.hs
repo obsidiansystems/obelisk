@@ -68,10 +68,12 @@ import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 data Backend backendRoute frontendRoute = Backend
   { _backend_routeEncoder :: Encoder (Either Text) Identity (R (FullRoute backendRoute frontendRoute)) PageName
   , _backend_run :: ((R backendRoute -> Snap ()) -> IO ()) -> IO ()
+  , _backend_updateSnapConfig :: Config Snap () -> Config Snap ()
   } deriving (Generic)
 
 data BackendConfig frontendRoute = BackendConfig
-  { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
+  { _backendConfig_runSnap :: !((Config Snap () -> Config Snap ()) -> Snap () -> IO ())
+  -- ^ Function to run the snap server
   , _backendConfig_staticAssets :: !StaticAssets -- ^ Static assets
   , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ()))
     -- ^ Given the URL of all.js, return the widgets which are responsible for
@@ -148,9 +150,9 @@ runSnapWithConfig conf a = do
   liftIO $ httpServe httpConf a
 
 -- Get the web server configuration from the command line
-runSnapWithCommandLineArgs :: MonadIO m => Snap () -> m ()
-runSnapWithCommandLineArgs s = liftIO (commandLineConfig defaultConfig) >>= \c ->
-  runSnapWithConfig c s
+runSnapWithCommandLineArgs :: MonadIO m => (Config Snap () -> Config Snap ()) -> Snap () -> m ()
+runSnapWithCommandLineArgs updateConfig s = liftIO (commandLineConfig defaultConfig) >>= \c ->
+  runSnapWithConfig (updateConfig c) s
 
 getPageName :: (MonadSnap m) => m PageName
 getPageName = do
@@ -233,12 +235,12 @@ runBackendWith
   -> Backend backendRoute frontendRoute
   -> Frontend (R frontendRoute)
   -> IO ()
-runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackendWith (BackendConfig runSnapWithConfigModify staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
     _backend_run backend $ \serveRoute ->
-      runSnap $
+      runSnapWithConfigModify (_backend_updateSnapConfig backend) $
         getRouteWith validFullEncoder >>= \case
           Identity r -> case r of
             FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
