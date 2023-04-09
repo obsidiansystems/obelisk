@@ -56,6 +56,7 @@ import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.Backend
+import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Obelisk.Frontend
 import Obelisk.Route.Frontend
 import qualified OpenSSL.PEM as PEM
@@ -135,22 +136,31 @@ runWidget conf configs frontend validFullEncoder = do
       -- Providing TLS here will also incidentally provide it to proxied requests to the backend.
       prepareRunner = case uri ^? uriScheme . _Just . unRText of
         Just "https" -> do
-          -- Generate a private key and self-signed certificate for TLS
-          privateKey <- RSA.generateRSAKey' 2048 3
+          configs' <- Lookup.getConfigs
+          (certByteString, privateKeyByteString) <- case (Map.lookup "common/ssl_cert" configs, Map.lookup "backend/ssl_private_key" configs') of
+            (Just certByteString, Just privateKeyByteString) -> do
+              putStrLn "Using stable certificate"
+              return $ (certByteString, privateKeyByteString)
+            _ -> do
+              putStrLn "Generating new cert, no key in config"
+              putStrLn $ show configs
+              -- Generate a private key and self-signed certificate for TLS
+              privateKey <- RSA.generateRSAKey' 2048 3
 
-          certRequest <- X509Request.newX509Req
-          _ <- X509Request.setPublicKey certRequest privateKey
-          _ <- X509Request.signX509Req certRequest privateKey Nothing
+              certRequest <- X509Request.newX509Req
+              _ <- X509Request.setPublicKey certRequest privateKey
+              _ <- X509Request.signX509Req certRequest privateKey Nothing
 
-          cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
-          _ <- X509.setPublicKey cert privateKey
-          timenow <- getCurrentTime
-          _ <- X509.setNotBefore cert $ addUTCTime (-1) timenow
-          _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) timenow
-          _ <- X509.signX509 cert privateKey Nothing
+              cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
+              _ <- X509.setPublicKey cert privateKey
+              timenow <- getCurrentTime
+              _ <- X509.setNotBefore cert $ addUTCTime (-1) timenow
+              _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) timenow
+              _ <- X509.signX509 cert privateKey Nothing
 
-          certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
-          privateKeyByteString <- BSUTF8.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
+              certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
+              privateKeyByteString <- BSUTF8.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
+              return (certByteString, privateKeyByteString)
 
           return $ runTLSSocket (tlsSettingsMemory certByteString privateKeyByteString)
         _ -> return runSettingsSocket

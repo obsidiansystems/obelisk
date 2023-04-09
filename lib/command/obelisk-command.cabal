@@ -26,6 +26,7 @@ library
     , here
     , hnix
     , hpack
+    , HsOpenSSL
     , io-streams
     , lens
     , logging-effect

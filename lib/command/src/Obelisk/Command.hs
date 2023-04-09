@@ -102,6 +102,7 @@ data ObInternal
    | ObInternal_ExportGhciConfig
       [(FilePath, Interpret)]
       Bool -- ^ Use relative paths
+   | ObInternal_CreateStableDevCerts
    deriving Show
 
 obCommand :: ArgsConfig -> Parser ObCommand
@@ -128,6 +129,7 @@ internalCommand :: Parser ObInternal
 internalCommand = hsubparser $ mconcat
   [ command "export-ghci-configuration" $ info (ObInternal_ExportGhciConfig <$> interpretOpts <*> useRelativePathsFlag)
       $ progDesc "Export the GHCi configuration used by ob run, etc.; useful for IDE integration"
+  , command "create-stable-dev-certs" $ info (pure ObInternal_CreateStableDevCerts) $ progDesc "Create stable SSL certificates for ob run; useful for testing mobile builds."
   ]
   where
     useRelativePathsFlag = switch (long "use-relative-paths" <> help "Use relative paths")
@@ -412,6 +414,8 @@ ob = \case
       liftIO $ Preprocessor.applyPackages origPath inPath outPath packagePaths
     ObInternal_ExportGhciConfig interpretPathsList useRelativePaths ->
       liftIO . putStrLn . unlines =<< withInterpretPaths interpretPathsList (exportGhciConfig useRelativePaths)
+    ObInternal_CreateStableDevCerts ->
+      withProjectRoot "." $ liftIO . createStableDevCerts
 
 -- | A helper for the common case that the command you want to run needs the project root and a resolved
 -- set of interpret paths.

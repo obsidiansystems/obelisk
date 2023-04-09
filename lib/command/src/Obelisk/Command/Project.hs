@@ -24,6 +24,7 @@ module Obelisk.Command.Project
   , AssetSource(..)
   , describeImpureAssetSource
   , watchStaticFilesDerivation
+  , createStableDevCerts
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
@@ -34,6 +35,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Log
 import Control.Monad.State
 import qualified Data.Aeson as Json
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BSU
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
@@ -44,7 +46,12 @@ import Data.Maybe (isJust)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.Time.Clock (getCurrentTime, addUTCTime)
 import Data.Traversable (for)
+import qualified OpenSSL.PEM as PEM
+import qualified OpenSSL.RSA as RSA
+import qualified OpenSSL.X509 as X509
+import qualified OpenSSL.X509.Request as X509Request
 import Reflex
 import Reflex.FSNotify
 import Reflex.Host.Headless
@@ -482,3 +489,26 @@ buildStaticFilesDerivationAndSymlink f root = f $
         ]
     , _processSpec_overrideEnv = Nothing
     }
+
+createStableDevCerts :: FilePath -> IO ()
+createStableDevCerts root = do
+  -- Generate a private key and self-signed certificate for TLS
+  privateKey <- RSA.generateRSAKey' 2048 3
+
+  certRequest <- X509Request.newX509Req
+  _ <- X509Request.setPublicKey certRequest privateKey
+  _ <- X509Request.signX509Req certRequest privateKey Nothing
+
+  cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
+  _ <- X509.setPublicKey cert privateKey
+  timenow <- getCurrentTime
+  _ <- X509.setNotBefore cert $ addUTCTime (-1) timenow
+  _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) timenow
+  _ <- X509.signX509 cert privateKey Nothing
+
+  certByteString <- BSU.fromString <$> PEM.writeX509 cert
+  privateKeyByteString <- BSU.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
+
+  BS.writeFile (root </> "config" </> "common" </> "ssl_cert") certByteString
+  BS.writeFile (root </> "config" </> "backend" </> "ssl_private_key") privateKeyByteString
+
