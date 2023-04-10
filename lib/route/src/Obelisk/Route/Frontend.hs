@@ -87,7 +87,8 @@ import Language.Javascript.JSaddle (MonadJSM, jsNull, liftJSM) --TODO: Get rid o
 import Network.URI
 import Reflex.Class
 import Reflex.Dom.Builder.Class
-import Reflex.Dom.Core
+import Reflex.Dom.Core hiding (popHistoryState)
+import Reflex.Dom.Location.Platform (popHistoryState)
 import Reflex.Host.Class
 import Unsafe.Coerce
 
@@ -284,7 +285,14 @@ strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   (_, _) <- runWithReplace (f r0) $ f <$> updated r
   pure ()
 
-newtype SetRouteT t r m a = SetRouteT { unSetRouteT :: EventWriterT t (Endo r) m a }
+-- Semigroup.Any but with more helpful names.
+data RouteChangeType = Kept | Elided | Redirect
+instance Semigroup RouteChangeType where
+  Elided <> a = a
+  Redirect <> a = a
+  Kept <> _ = Kept
+
+newtype SetRouteT t r m a = SetRouteT { unSetRouteT :: EventWriterT t (RouteChangeType, Endo r) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadTrans, MonadIO, NotReady t, MonadHold t, MonadSample t, PostBuild t, TriggerEvent t, MonadReflexCreateTrigger t, HasDocument, DomRenderHook t)
 
 instance (MonadFix m, MonadHold t m, DomBuilder t m) => DomBuilder t (SetRouteT t r m) where
@@ -297,7 +305,7 @@ instance (MonadFix m, MonadHold t m, DomBuilder t m) => DomBuilder t (SetRouteT 
 mapSetRouteT :: (forall x. m x -> n x) -> SetRouteT t r m a -> SetRouteT t r n a
 mapSetRouteT f (SetRouteT x) = SetRouteT (mapEventWriterT f x)
 
-runSetRouteT :: (Reflex t, Monad m) => SetRouteT t r m a -> m (a, Event t (Endo r))
+runSetRouteT :: (Reflex t, Monad m) => SetRouteT t r m a -> m (a, Event t (RouteChangeType, Endo r))
 runSetRouteT = runEventWriterT . unSetRouteT
 
 class Reflex t => SetRoute t r m | m -> t r where
@@ -308,8 +316,18 @@ class Reflex t => SetRoute t r m | m -> t r where
 
   setRoute = modifyRoute . fmap const
 
+  replaceRoute :: Event t r -> m ()
+  default replaceRoute :: (Monad m', MonadTrans f, SetRoute t r m', m ~ f m') => Event t r -> m ()
+  replaceRoute = lift . replaceRoute
+
+  redirectRoute :: Event t r -> m ()
+  default redirectRoute :: (Monad m', MonadTrans f, SetRoute t r m', m ~ f m') => Event t r -> m ()
+  redirectRoute = lift . redirectRoute
+
 instance (Reflex t, Monad m) => SetRoute t r (SetRouteT t r m) where
-  modifyRoute = SetRouteT . tellEvent . fmap Endo
+  modifyRoute = SetRouteT . tellEvent . fmap ((,) Kept . Endo)
+  replaceRoute = SetRouteT . tellEvent . fmap ((,) Elided . Endo . const)
+  redirectRoute = SetRouteT . tellEvent . fmap ((,) Redirect . Endo . const)
 
 instance (Monad m, SetRoute t r m) => SetRoute t r (RoutedT t r' m)
 
@@ -461,7 +479,7 @@ runRouteViewT
   -> RoutedT t r (SetRouteT t r (RouteToUrlT r m)) a
   -> m a
 runRouteViewT routeEncoder switchover useHash a = do
-  rec historyState <- manageHistory' switchover $ HistoryCommand_PushState <$> setState
+  rec (historyState, externalUpdates) <- manageHistoryExposingExternalUpdates switchover $ setState
       let theEncoder = pageNameEncoder . hoistParse (pure . runIdentity) routeEncoder
           -- NB: The can only fail if the uriPath doesn't begin with a '/' or if the uriQuery
           -- is nonempty, but begins with a character that isn't '?'. Since we don't expect
@@ -472,26 +490,38 @@ runRouteViewT routeEncoder switchover useHash a = do
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
       (result, changeState) <- runRouteToUrlT (runSetRouteT $ runRoutedT a route) $ (\(p, q) -> T.pack $ p <> q) . encode theEncoder
-      let f (currentHistoryState, oldRoute) change =
+      -- If the current update is a redirect and we landed on this route via the back button, go back again instead.
+      -- This logic could be built in to redirectRoute, but then we'd need to
+      -- distribute lastTransitionWasBackButton through the monad.
+      lastTransitionWasBackButton <- hold False $ leftmost [ False <$ setState, True <$ externalUpdates ]
+      let isRedirect = \case
+            (Redirect, _) -> True
+            _ -> False
+      popHistoryState $ gate lastTransitionWasBackButton $ () <$ ffilter isRedirect changeState
+      let f (currentHistoryState, oldRoute) (elision, change) =
             let newRoute = appEndo change oldRoute
                 (newPath, newQuery) = encode theEncoder newRoute
-            in HistoryStateUpdate
-               { _historyStateUpdate_state = DOM.SerializedScriptValue jsNull
-                 -- We always provide "" as the title.  On Firefox, Chrome, and
-                 -- Edge, this parameter does nothing.  On Safari, "" has the
-                 -- same behavior as other browsers (as far as I can tell), but
-                 -- anything else sets the title for the back button list item
-                 -- the *next* time pushState is called, unless the page title
-                 -- is changed in the interim.  Since the Safari functionality
-                 -- is near-pointless and also confusing, I'm not going to even
-                 -- bother exposing it; if there ends up being a real use case,
-                 -- we can change this function later to accommodate.
-                 -- See: https://github.com/whatwg/html/issues/2174
-               , _historyStateUpdate_title = ""
-               , _historyStateUpdate_uri = Just $ setAdaptedUriPath useHash newPath $ (_historyItem_uri currentHistoryState)
-                 { uriQuery = newQuery
-                 }
-               }
+                historyUpdate = HistoryStateUpdate
+                  { _historyStateUpdate_state = DOM.SerializedScriptValue jsNull
+                    -- We always provide "" as the title.  On Firefox, Chrome, and
+                    -- Edge, this parameter does nothing.  On Safari, "" has the
+                    -- same behavior as other browsers (as far as I can tell), but
+                    -- anything else sets the title for the back button list item
+                    -- the *next* time pushState is called, unless the page title
+                    -- is changed in the interim.  Since the Safari functionality
+                    -- is near-pointless and also confusing, I'm not going to even
+                    -- bother exposing it; if there ends up being a real use case,
+                    -- we can change this function later to accommodate.
+                    -- See: https://github.com/whatwg/html/issues/2174
+                  , _historyStateUpdate_title = ""
+                  , _historyStateUpdate_uri = Just $ setAdaptedUriPath useHash newPath $ (_historyItem_uri currentHistoryState)
+                    { uriQuery = newQuery
+                    }
+                  }
+                in case elision of
+                  Kept -> HistoryCommand_PushState historyUpdate
+                  Elided -> HistoryCommand_ReplaceState historyUpdate
+                  Redirect -> HistoryCommand_ReplaceState historyUpdate
           setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   return result
 
