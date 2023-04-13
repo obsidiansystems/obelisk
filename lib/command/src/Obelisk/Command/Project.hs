@@ -45,6 +45,7 @@ import Data.Function ((&), on)
 import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Text (Text)
+import Data.List as L
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Traversable (for)
@@ -53,7 +54,7 @@ import Reflex
 import Reflex.FSNotify
 import Reflex.Host.Headless
 import System.Directory
-import System.Environment (lookupEnv)
+import System.Environment (lookupEnv, getEnvironment)
 import System.Exit (ExitCode(..))
 import System.FilePath
 import System.FSNotify (defaultConfig, eventPath, WatchConfig(..))
@@ -308,15 +309,22 @@ nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath ["eval", "--impure", "--expr", "(import ./. {}).pkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
+  environment <- liftIO getEnvironment
+  let environmentConf = [( "NIX_PATH", "nixpkgs=" ++ BSU.toString (encodeUtf8 nixpkgsPath))]
+                        <> Prelude.concatMap
+                          (\c -> do
+                            [c | "bindir" `L.isSuffixOf` fst c])
+                            environment
+      environmentExport = flip concatMap environmentConf $ \x -> ["export", fst x <> "=" <> snd x, ";"]
   pure $ def
     & nixShellConfig_pure .~ isPure
     & nixShellConfig_common . nixCmdConfig_target .~ (def & target_path .~ Nothing)
     & nixShellConfig_run .~ (command <&> \cs -> unwords $ concat
       [ maybe [] (\v -> ["export", BSU.toString . bytes . bash $ "NIX_REMOTE=" <> encodeUtf8 (T.pack v), ";"]) nixRemote
+      , environmentExport
       , [cs]
       ])
-    & nixShellConfig_env .~ [( "NIX_PATH", ("nixpkgs=" ++ (BSU.toString (encodeUtf8 nixpkgsPath))) )]
-
+    & nixShellConfig_env .~ environmentConf
 -- | Escape using ANSI C-style quotes @$''@
 -- This does not work with all shells! Ideally, we would control exactly which shell is used,
 -- down to its sourced configuration, throughout the obelisk environment. At this time, this
