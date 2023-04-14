@@ -258,16 +258,19 @@ getLocalPkgs root interpretPaths = do
   putLog Debug $ [i|Finding packages with root ${root} and interpret paths:|] <> "\n" <> drawPathTree textInterpret interpretPaths
   obeliskPackagePaths <- runFind ["-L", root, "-name", ".obelisk", "-type", "d"]
 
+  -- TODO(skylar): I don't think we want this, if the user specified a package from a repo that is an obelisk project
+  -- and that package is unpacked, they are likely specifying it for a reason.
+
   -- We do not want to find packages that are embedded inside other obelisk projects, unless that
   -- obelisk project is our own.
-  obeliskPackageExclusions <- liftIO $ fmap Set.fromList $ traverse canonicalizePath $
-    filter (/= root) $ map takeDirectory obeliskPackagePaths
-  putLog Debug [i|Excluding obelisk packages: ${T.pack $ unwords $ Set.toList obeliskPackageExclusions}|]
+  -- obeliskPackageExclusions <- liftIO $ fmap Set.fromList $ traverse canonicalizePath $
+  --   filter (/= root) $ map takeDirectory obeliskPackagePaths
+  -- putLog Debug [i|Excluding obelisk packages: ${T.pack $ unwords $ Set.toList obeliskPackageExclusions}|]
   let rootsAndExclusions = calcIntepretFinds "" interpretPaths
 
   fmap fold $ for (MMap.toAscList rootsAndExclusions) $ \(interpretPathRoot, exclusions) ->
-    let allExclusions = obeliskPackageExclusions
-          <> exclusions
+    let allExclusions =
+          exclusions
           <> Set.singleton ("*" </> attrCacheFileName)
           <> Set.singleton ("*" </> "lib/asset/manifest") -- NB: obelisk-asset-manifest is excluded because it generates
                                                           -- a module that in turn imports it. This will cause ob run to
