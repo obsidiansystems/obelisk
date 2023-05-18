@@ -33,7 +33,7 @@ let
   };
 
   # The haskell environment used to build Obelisk itself, e.g. the 'ob' command
-  ghcObelisk = reflex-platform.ghc;
+  ghcObelisk = if useGHC810 then reflex-platform.ghc8_10 else reflex-platform.ghc8_6;
 
   # Development environments for obelisk packages.
   ghcObeliskEnvs = pkgs.lib.mapAttrs (n: v: reflex-platform.workOn ghcObelisk v) ghcObelisk;
@@ -344,6 +344,10 @@ in rec {
                   shells = {
                     ${if self.userSettings.android == null && self.userSettings.ios == null then null else "ghcSavedSplices"} =
                       lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
+
+                    ${if self.userSettings.ios == null then null else "ghcIosAarch64"} =
+                      lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcSavedSplices;
+
                     ghc = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghc;
                     ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
                   };
