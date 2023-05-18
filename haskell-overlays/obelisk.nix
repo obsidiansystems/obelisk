@@ -15,7 +15,7 @@ in
   obelisk-asset-manifest = self.callCabal2nix "obelisk-asset-manifest" (obeliskCleanSource ../lib/asset/manifest) {};
   obelisk-asset-serve-snap = self.callCabal2nix "obelisk-asset-serve-snap" (obeliskCleanSource ../lib/asset/serve-snap) {};
   obelisk-backend = self.callCabal2nix "obelisk-backend" (obeliskCleanSource ../lib/backend) {};
-  obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (obeliskCleanSource ../lib/command) {}) {
+  obelisk-command = haskellLib.overrideCabal (self.callCabal2nix "obelisk-command" (obeliskCleanSource ../lib/command) {}) (drv: {
     librarySystemDepends = [
       pkgs.jre
       pkgs.git
@@ -26,7 +26,8 @@ in
       pkgs.which
       (haskellLib.justStaticExecutables self.ghcid)
     ];
-  };
+
+  });
   obelisk-frontend = self.callCabal2nix "obelisk-frontend" (obeliskCleanSource ../lib/frontend) {};
   obelisk-run = onLinux (self.callCabal2nix "obelisk-run" (obeliskCleanSource ../lib/run) {}) (pkg:
     haskellLib.overrideCabal pkg (drv: { librarySystemDepends = [ pkgs.iproute ]; })
