@@ -214,33 +214,37 @@ in rec {
       exeFrontend = compressedJs frontend optimizationLevel externjs;
       exeFrontendAssets = mkAssets exeFrontend;
       exeAssets = mkAssets assets;
-    in pkgs.runCommand "serverExe" {} ''
+    in pkgs.runCommand "serverExe" {
+          backend = exeBackend;
+          frontend = exeFrontend;
+          frontendassets = exeFrontendAssets;
+          staticassets = exeAssets;
+    } ''
       mkdir $out
       set -eux
-      ln -s '${exeBackend}'/bin/* $out/
-      ln -s '${exeAssets}' $out/static.assets
-      for d in '${exeFrontendAssets}'/*/; do
+      ln -s "$backend"/bin/* $out/
+      ln -s "$staticassets" $out/static.assets
+      for d in "$frontendassets"/*/; do
         ln -s "$d" "$out"/"$(basename "$d").assets"
       done
       echo ${version} > $out/version
-    '' // {
-      backend = exeBackend;
-      frontend = exeFrontend;
-      frontend-assets = exeFrontendAssets;
-      static-assets = exeAssets;
-    };
+    '';
 
-  server = { exe, hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }@args:
+  serverModule = { exe, hostName, adminEmail, routeHost, enableHttps, version, redirectHosts ? [], configHash ? "", ... }@args: {...}: {
+    imports = [
+      ((args.module or (serverModules.mkBaseEc2)) { inherit (args) exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
+      (serverModules.mkDefaultNetworking args)
+      (serverModules.mkObeliskApp args)
+    ];
+  };
+
+  server = args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
       system = "x86_64-linux";
       configuration = {
-        imports = [
-          (module { inherit exe hostName adminEmail routeHost enableHttps version; nixosPkgs = pkgs; })
-          (serverModules.mkDefaultNetworking args)
-          (serverModules.mkObeliskApp args)
-        ];
+        imports = [(serverModule args)];
       };
     };
 
@@ -411,6 +415,16 @@ in rec {
       linuxExeConfigurable = linuxExe;
       linuxExe = linuxExe dummyVersion;
       exe = serverOn mainProjectOut dummyVersion;
+      # the "classic flavor", as a "deployable" module
+      deployLinuxServerModule = {version, buildConfigs, redirectHosts ? [], configHash ? ""}: serverModule ({
+        inherit version redirectHosts configHash;
+        exe = linuxExe version;
+      } // buildConfigs);
+
+      # the "classic flavor", as a module
+      linuxServerModule = args@{ hostName, adminEmail, routeHost, enableHttps, version, redirectHosts ? [], configHash ? "", ...}:
+        serverModule ({ module = serverModules.mkBaseEc2; exe = linuxExe version; } // args);
+      # the "classic flavor", as a full nixos configuration
       server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }:
         server (args // { exe = linuxExe version; });
       obelisk = import (base' + "/.obelisk/impl") {};
