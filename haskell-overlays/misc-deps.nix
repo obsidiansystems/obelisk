@@ -95,4 +95,6 @@ rec {
   };
 
   haddock-library = haskellLib.doJailbreak (self.callHackage "haddock-library" "1.10.0" {});
+  io-streams = self.callHackage "io-streams" "1.5.2.1" {};
+  io-streams-haproxy = haskellLib.doJailbreak super.io-streams-haproxy;
 }
