@@ -4,7 +4,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
-* Update reflex-platform to version 1.0.0.0 with GHC 8.10 and updated nixpkgs
+* Update reflex-platform to version 1.0.1.0 with GHC 8.10 and updated nixpkgs
 * Documentation
   * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to `Obelisk.Command.Deploy`
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing Obelisk branches to CONTRIBUTING.md
