@@ -2,6 +2,10 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## v1.1.1.0 - 2023-05-26
+
+* Update reflex-platform. reflex-0.9 and reflex-dom-core-0.8 are now provided by default.
+
 ## v1.1.0.0 - 2023-05-24
 
 * Update reflex-platform to version 1.0.1.0 with GHC 8.10 and updated nixpkgs
