@@ -214,6 +214,7 @@ deployPush deployPath builders = do
     callProcessAndLogOutput (Notice, Warning) $
       proc rsyncPath
         [ "-e " <> sshPath <> " " <> unwords sshOpts
+        , "--chown=backend:backend"
         , "-qarvz"
         , deployPath </> "config"
         , "root@" <> host <> ":/var/lib/backend"
