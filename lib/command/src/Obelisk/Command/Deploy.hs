@@ -258,11 +258,7 @@ nix-env -p /nix/var/nix/profiles/system --set "${bashEscape outPath}"
 /nix/var/nix/profiles/system/bin/switch-to-configuration boot
 booted="$(readlink /run/booted-system/{initrd,kernel,kernel-modules})"
 built="$(readlink /nix/var/nix/profiles/system/{initrd,kernel,kernel-modules})"
-if [ "$booted" = "$built" ]; then
-  /nix/var/nix/profiles/system/bin/switch-to-configuration switch
-else
-  /run/current-system/sw/bin/shutdown -r +1
-fi
+/nix/var/nix/profiles/system/bin/switch-to-configuration switch
 |]
 
 -- | Update the source thunk in the staging directory to the HEAD of the branch.
