@@ -2,9 +2,10 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE PackageImports #-}
+{- ORMOLU_DISABLE -}
 module Obelisk.Command where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -144,7 +145,7 @@ packageNames = some (strArgument (metavar "PACKAGE-NAME..."))
 deployCommand :: ArgsConfig -> Parser DeployCommand
 deployCommand cfg = hsubparser $ mconcat
   [ command "init" $ info (DeployCommand_Init <$> deployInitOpts) $ progDesc "Initialize a deployment configuration directory"
-  , command "push" $ info (DeployCommand_Push <$> remoteBuilderParser) mempty
+  , command "push" $ info (DeployCommand_Push <$> remoteBuilderParser <*> reboot) mempty
   , command "test" $ info (DeployCommand_Test <$> platformP) $ progDesc "Test your obelisk project from a mobile platform."
   , command "update" $ info (pure DeployCommand_Update) $ progDesc "Update the deployment's src thunk to latest"
   ]
@@ -153,6 +154,9 @@ deployCommand cfg = hsubparser $ mconcat
       [ command "android" $ info (pure (Android, [])) mempty
       , command "ios" $ info ((,) <$> pure IOS <*> fmap pure (strArgument (metavar "TEAMID" <> help "Your Team ID - found in the Apple developer portal"))) mempty
       ]
+
+    reboot :: Parser Bool
+    reboot = flag False True (long "reboot")
 
     remoteBuilderParser :: Parser (Maybe RemoteBuilder)
     remoteBuilderParser =
@@ -171,6 +175,7 @@ deployCommand cfg = hsubparser $ mconcat
         flagDesc = "managed Linux virtual machine as a Nix remote builder (requires Docker)"
 
 
+
 deployInitOpts :: Parser DeployInitOpts
 deployInitOpts = DeployInitOpts
   <$> strArgument (action "directory" <> metavar "DEPLOYDIR" <> help "Path to a directory where the deployment repository will be initialized")
@@ -187,7 +192,7 @@ data RemoteBuilder = RemoteBuilder_ObeliskVM
 
 data DeployCommand
   = DeployCommand_Init DeployInitOpts
-  | DeployCommand_Push (Maybe RemoteBuilder)
+  | DeployCommand_Push (Maybe RemoteBuilder) Bool
   | DeployCommand_Test (PlatformDeployment, [String])
   | DeployCommand_Update
   deriving Show
@@ -424,12 +429,12 @@ ob = \case
   ObCommand_Init source force -> initProject source force
   ObCommand_Deploy dc -> case dc of
     DeployCommand_Init deployOpts -> withProjectRoot "." $ \root -> deployInit deployOpts root
-    DeployCommand_Push remoteBuilder -> do
+    DeployCommand_Push remoteBuilder reboot -> do
       deployPath <- liftIO $ canonicalizePath "."
       deployBuilders <- case remoteBuilder of
         Nothing -> pure []
         Just RemoteBuilder_ObeliskVM -> (:[]) <$> VmBuilder.getNixBuildersArg
-      deployPush deployPath deployBuilders
+      deployPush deployPath deployBuilders reboot
     DeployCommand_Update -> deployUpdate "."
     DeployCommand_Test (platform, extraArgs) -> deployMobile platform extraArgs
   ObCommand_Run interpretPathsList certDir servePort -> withInterpretPaths interpretPathsList (run certDir servePort)
