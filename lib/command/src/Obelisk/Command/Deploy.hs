@@ -2,11 +2,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
+{- ORMOLU_DISABLE -}
 {-|
    Description:
    Implementation of the CLI deploy commands. Deployment is done by intializing
@@ -53,6 +54,7 @@ import Obelisk.Command.Project
 import Obelisk.Command.Utils
 
 import "nix-thunk" Nix.Thunk
+import "nix-thunk" Nix.Thunk.Internal
 import Cli.Extras
 
 -- | Options passed to the `init` verb
@@ -178,7 +180,8 @@ deployPush deployPath builders = do
       checkGitCleanStatus srcPath True >>= \case
         True -> wrapNixThunkError $ packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
-    Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
+    Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> prettyReadThunkError err
+
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile
