@@ -7,7 +7,8 @@
   }
 , reflex-platform-func ? import ./dep/reflex-platform
 , useGHC810 ? true # false if one wants to use ghc 8.6.5
-}:
+, ...
+}@args:
 let
   reflex-platform = getReflexPlatform { inherit system; };
   inherit (reflex-platform) hackGet nixpkgs;
@@ -25,7 +26,7 @@ let
     ];
 
     haskellOverlays = [
-      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; __useNewerCompiler = useGHC810; })
+      (import ./haskell-overlays/misc-deps.nix { inherit hackGet system; inherit args; __useNewerCompiler = useGHC810; })
       pkgs.obeliskExecutableConfig.haskellOverlay
       (import ./haskell-overlays/obelisk.nix)
       (import ./haskell-overlays/tighten-ob-exes.nix)
