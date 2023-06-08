@@ -1,4 +1,4 @@
-{ hackGet, __useNewerCompiler ? false }:
+{ hackGet, args, __useNewerCompiler ? false, system ? builtins.currentSystem }:
 
 # Fix misc upstream packages
 self: super:
@@ -66,7 +66,7 @@ rec {
   nix-derivation = haskellLib.doJailbreak super.nix-derivation;
   algebraic-graphs = haskellLib.doJailbreak super.algebraic-graphs;
   snap = haskellLib.doJailbreak super.snap;
-  ghcid = self.callCabal2nix "ghcid" (hackGet ../dep/ghcid) { };
+  ghcid = haskellLib.doJailbreak (self.callCabal2nix "ghcid" (hackGet ../dep/ghcid) { });
 
   snap-core = self.callHackage "snap-core" "1.0.5.0" {};
   snap-server = haskellLib.doJailbreak super.snap-server;
@@ -86,7 +86,10 @@ rec {
   modern-uri = haskellLib.doJailbreak super.modern-uri;
   monad-logger = self.callHackage "monad-logger" "0.3.36" { };
   neat-interpolation = haskellLib.doJailbreak super.neat-interpolation;
-  nix-thunk = (import ../dep/nix-thunk { }).makeRunnableNixThunk (haskellLib.doJailbreak (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { }));
+  nix-thunk = (import ../dep/nix-thunk
+  ({ } // pkgs.lib.optionalAttrs (args ? thunkpkgs) {
+    pkgs = args.thunkpkgs;
+  })).makeRunnableNixThunk (haskellLib.doJailbreak (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { }));
   cli-extras = haskellLib.doJailbreak (self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) { });
   cli-git = haskellLib.doJailbreak (haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) { }) {
     librarySystemDepends = with pkgs; [
