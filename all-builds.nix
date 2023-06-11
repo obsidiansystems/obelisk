@@ -4,7 +4,7 @@
   }
 , local-self ? import ./. self-args
 , supportedSystems ? [ builtins.currentSystem ]
-, __useNewerCompiler  ? false #true if one wants to use ghc 8.10.7
+, __useNewerCompiler  ? true # false if one wants to use ghc 8.6.5
 }:
 
 let

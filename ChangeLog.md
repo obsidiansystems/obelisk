@@ -2,11 +2,10 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
-## Unreleased
+## v1.1.0.0 - 2023-05-24
 
-* Update reflex-platform to yet unreleased version with GHC 8.10 and nixpkgs 21.05
-  \[Update note once release is cut.\]
-
+* Update reflex-platform to version 1.0.1.0 with GHC 8.10 and updated nixpkgs
+  * Make GHC 8.10 the default. To continue using GHC 8.6.5, set the `__useNewerCompiler` flag in default.nix to `false`.
 * Documentation
   * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to `Obelisk.Command.Deploy`
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing Obelisk branches to CONTRIBUTING.md
