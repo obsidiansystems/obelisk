@@ -89,40 +89,6 @@ noEncodings = file:
 # setToList :: AttrSet a -> [{ name :: String, value :: a }]
 setToList = mapAttrsToList (name: value: { inherit name value; });
 
-# Apply some function (chunkDerivations, for example) to the values in a list of name/value pairs then reattach the names.
-#
-# mapSnds :: ([b] -> [b']) -> [{ fst :: a, snd :: b }] -> [{ fst :: a, snd :: b' }]
-mapSnds = f: l: zipLists (map (x: x.fst) l) (f (map (x: x.snd) l));
-
-# Chunk derivations in groups of up to a given size to avoid https://github.com/NixOS/nix/issues/875
-#
-# It works by creating a dependent chain of derivations that must be built to finish evaluation of the overall nix expression, without evaluating too many.
-# Based on the current operation of nix, n should not be greater than 1012, and should probably be substantially less.
-#
-# chunkDerivations :: Int -> [a] -> [a]
-chunkDerivations = n: l:
-  let a = take n l;
-      b = drop n l;
-      go = x: if x == [] then builtins.toFile "emptyList.nix" "[]" else makeChunkDerivation (take n x) (go (drop n x));
-
-      # makeChunkDerivation :: [a] -> ExprFile [a] -> ExprFile [a]
-      makeChunkDerivation = chunk': next:
-        let chunk = map (path: "(import ${builtins.unsafeDiscardOutputDependency path.drvPath}).${path.outputName}") chunk';
-        in builtins.seq (builtins.toPath next) (nixpkgs.stdenv.mkDerivation {
-        name = "chunkDerivations";
-        inherit chunk next;
-        preferLocalBuild = true;
-        builder = builtins.toFile "chunkDerivations.sh" ''
-          source "$stdenv/setup"
-
-          echo $chunk
-
-          echo "[ $chunk ] ++ (import $next)" >"$out"
-        '';
-      });
-
-  in a ++ import (go b);
-
 # Recursively map some function over a @AttrSet DirEntry@, unioning the results of the application at each level.
 #
 # unionMapFilesWithName :: ({name :: String, value :: DirEntry} -> [{name :: String, value :: a}]) -> AttrSet DirEntry -> AttrSet DirEntry
@@ -171,7 +137,7 @@ doubleQuoteString = s: "\"" + builtins.replaceStrings ["\\" "\""] ["\\\\" "\\\""
 # dirToPath :: AttrSet DirEntry -> Derivation
 dirToPath = contents:
   let pairsToBashArray = xs: builtins.concatStringsSep " " (map (np: "[" + doubleQuoteString np.fst + "]=" + doubleQuoteString (toString np.snd)) xs);
-      files = pairsToBashArray (mapSnds (chunkDerivations 128) (mapAttrsToList (fst: entry: { inherit fst; snd = toPath entry; }) contents));
+      files = pairsToBashArray (mapAttrsToList (fst: entry: { inherit fst; snd = toPath entry; }) contents);
       filesIsLarge = builtins.stringLength files > 65536;
   in
     nixpkgs.stdenv.mkDerivation {
