@@ -1,9 +1,30 @@
 # Asset generation pipeline using Nix, which generates a directory structure to be served via obelisk-asset-serve-*
-{ nixpkgs }:
+
+{ nixpkgs
+
+, # Flip to true to debug laziness issues.
+  #
+  # When true, we just return the accumulationg of all the derivations we
+  # want to import, and *don't* import any of their outputs.
+  #
+  # When false, we `builtins.seq . builtins.readFile` to force it to be
+  # built before we import any derivation output. This allows everything
+  # to be built in parallel, and makes sure that is done before we
+  # (sequentially) import any derivation outputs.
+  lazyCheck ? false
+}:
 
 with nixpkgs.lib;
 
 rec {
+
+# When doing a lazy check, throw instead of doing the things we want to
+# do after IFD. This helps us catch mistakes where we were too strict
+# and didn't accum deps first.
+delay = identifier:
+  if lazyCheck
+  then builtins.throw "don't force me ${identifier}"
+  else id;
 
 # Default encoding generation function for this platform; usually zopfliEncodings, but gzipEncodings on darwin due to zopfli not building on darwin.
 #
@@ -91,19 +112,43 @@ setToList = mapAttrsToList (name: value: { inherit name value; });
 
 # Recursively map some function over a @AttrSet DirEntry@, unioning the results of the application at each level.
 #
-# unionMapFilesWithName :: ({name :: String, value :: DirEntry} -> [{name :: String, value :: a}]) -> AttrSet DirEntry -> AttrSet DirEntry
-unionMapFilesWithName = f: d:
-  let go = {name, value}:
-        if value.type == "directory" then [{
+# type Writer b = { toDo :: StringWithContext, res :: b }
+#
+# unionMapFilesWithName
+#   :: ({name :: String, value :: DirEntry} -> Writer {name :: String, value :: a })
+#   -> AttrSet DirEntry
+#   -> Writer (AttrSet DirEntry)
+unionMapFilesWithName = f: d: let
+  go = {name, value}:
+    if value.type == "directory" then
+      let
+        recured = unionMapFilesWithName f value.contents;
+      in {
+        toDo = recured.toDo;
+        res = delay "3" ([{
           inherit name;
           value = {
             inherit (value) type;
-            contents = unionMapFilesWithName f value.contents;
+            contents = recured.res;
           };
-        }] else setToList (f {
-          inherit name value;
-        });
-  in builtins.listToAttrs (builtins.concatLists (map go (setToList d)));
+        }]);
+      }
+    else
+      let
+        applied = f { inherit name value; };
+      in {
+        toDo = applied.toDo;
+        res = delay "4" (setToList applied.res);
+      };
+  appliedGo = map go (setToList d);
+  toDos = map (x: x.toDo) appliedGo;
+  reses = map (x: x.res) appliedGo;
+  in {
+    toDo = nixpkgs.runCommand "todos" {} ''
+      echo ${toString toDos} > $out
+    '';
+    res = delay "5" (builtins.listToAttrs (builtins.concatLists reses));
+  };
 
 # Read a directory structure recursively into an @AttrSet DirEntry@.
 #
@@ -163,8 +208,8 @@ dirToPath = contents:
 toPath = x: if x.type == "directory" then dirToPath x.contents else x.path;
 
 # Given a file path, hash its contents as nix does and return the hash string.
-hashFile = path:
-  builtins.readFile (nixpkgs.runCommand "hashFile" {
+hashFileD = path:
+  nixpkgs.runCommand "hashFile" {
     buildInputs = [
       nixpkgs.nix
     ];
@@ -172,7 +217,7 @@ hashFile = path:
     path = mkPath path;
   } ''
     nix-hash --flat --base32 --type sha256 "$path" | tr -d '\n' >"$out"
-  '');
+  '';
 
 # Build a DirEntry of the shape { type :: String, contents :: {DirEntry} } with type set to directory. Used to create a data model to pass to toPath.
 #
@@ -216,22 +261,32 @@ mkPath = path:
 # Given an encoding generation function and a file entry resulting from readDirRecursive in the form { name :: String, value: { path :: String } },
 # build a DirEntry for dirToPath with the various encodings of the asset for dirToPath to build into a final directory tree.
 mkAsset = encodings: {name, value}:
-  let nameWithHash = "${hashFile value.path}-${name}";
+  let hashD = hashFileD value.path;
+      nameWithHash = "${delay "1" (builtins.trace
+        "importing IFD asset hash"
+        (builtins.readFile hashD))}-${name}";
   in {
-    ${nameWithHash} = dir {
-      type = symlink (builtins.toFile "type" "immutable");
-      encodings = symlink (encodings value.path);
-    };
-    ${name} = dir {
-      type = symlink (builtins.toFile "type" "redirect");
-      target = symlink (builtins.toFile "target" "${nameWithHash}");
+    toDo = hashD;
+    res = delay "2" {
+      ${nameWithHash} = dir {
+        type = symlink (builtins.toFile "type" "immutable");
+        encodings = symlink (encodings value.path);
+      };
+      ${name} = dir {
+        type = symlink (builtins.toFile "type" "redirect");
+        target = symlink (builtins.toFile "target" "${nameWithHash}");
+      };
     };
   };
 
 # Given an encoding generation function to use and a directory containing assets, recursively walk the directory and encode each asset.
 #
 # mkAssetsWith :: (String -> Derivation) -> String -> Derivation
-mkAssetsWith = encodings: d: dirToPath (unionMapFilesWithName (mkAsset encodings) (readDirRecursive d));
+mkAssetsWith = encodings: d: let
+  union = unionMapFilesWithName (mkAsset encodings) (readDirRecursive d);
+  in if lazyCheck
+    then union.toDo
+    else builtins.seq (builtins.readFile union.toDo) (dirToPath union.res);
 
 # Given an input directory containing assets, recursively walk the directory and encode each asset with the default encodings.
 #
