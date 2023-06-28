@@ -6,7 +6,7 @@
     security.acme.acceptTerms = false;
   }
 , reflex-platform-func ? import ./dep/reflex-platform
-, useGHC810 ? false #true if one wants to use ghc 8.10.7
+, useGHC810 ? true # false if one wants to use ghc 8.6.5
 }:
 let
   inherit (import dep/gitignore.nix { inherit (pkgs) lib; }) gitignoreSource;
@@ -40,7 +40,7 @@ let
       version = "0.1";
       src = ./lib/asset/serve-snap;
     }
-      {
+    {
       name = "obelisk-asset-manifest";
       version = "0.1";
       src = ./lib/asset/manifest;
@@ -50,17 +50,17 @@ let
       version = "0.1";
       src = ./lib/backend;
     }
-        {
+    {
       name = "obelisk-command";
       version = "0.1";
       src = ./lib/command;
     }
-        {
+    {
       name = "obelisk-executable-config-inject";
       version = "0.1";
       src = ./lib/executable-config/inject;
     }
-        {
+    {
       name = "obelisk-executable-config-lookup";
       version = "0.1";
       src = ./lib/executable-config/lookup;
@@ -70,7 +70,7 @@ let
       version = "0.1";
       src = ./lib/frontend;
     }
-        {
+    {
       name = "obelisk-route";
       version = "0.1";
       src = ./lib/route;

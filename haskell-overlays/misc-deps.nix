@@ -35,7 +35,7 @@ rec {
   universe-reverse-instances-810 = self.callHackage "universe-reverse-instances" "1.1" {};
 
   # We use our fork of hnix which has some compatibility patches on top of 0.12 from hackage
-  hnix = haskellLib.dontHaddock (haskellLib.dontCheck (self.callCabal2nix "hnix" (hackGet ../dep/hnix) {}));
+  hnix = haskellLib.doJailbreak (haskellLib.dontHaddock (haskellLib.dontCheck (self.callCabal2nix "hnix" (hackGet ../dep/hnix) {})));
 
   universe-86 = haskellLib.dontCheck (self.callHackage "universe" "1.2" {});
   universe-instances-extended-86 = self.callHackage "universe-instances-extended" "1.1.1" {};
@@ -54,12 +54,12 @@ rec {
   regex-tdfa = self.callHackage "regex-tdfa" "1.3.1.0" { };
   test-framework = haskellLib.dontCheck (self.callHackage "test-framework" "0.8.2.0" { });
 
-  hnix-store-core = haskellLib.dontCheck super.hnix-store-core;
-  hnix-store = haskellLib.dontCheck super.hnix-store;
+  hnix-store-core = haskellLib.doJailbreak (haskellLib.dontCheck super.hnix-store-core);
+  hnix-store = haskellLib.doJailbreak (haskellLib.dontCheck super.hnix-store);
 
   # https://github.com/haskell/hackage-security/issues/247
   hackage-security = haskellLib.dontCheck super.hackage-security; # only tests use aeson and are not compat with 1.5;
-  heist = haskellLib.dontCheck (haskellLib.doJailbreak super.heist); # aeson 1.5 bump
+  heist = haskellLib.dontCheck (self.callHackage "heist" "1.1.1.0" {});
   aeson-gadt-th = haskellLib.doJailbreak super.aeson-gadt-th; # requires aeson 1.5 for ghc8.10 support?
   deriving-compat = self.callHackage "deriving-compat" "0.6" { };
   http-api-data = haskellLib.doJailbreak super.http-api-data;
@@ -67,32 +67,46 @@ rec {
   algebraic-graphs = haskellLib.doJailbreak super.algebraic-graphs;
   snap = haskellLib.doJailbreak super.snap;
   ghcid = self.callCabal2nix "ghcid" (hackGet ../dep/ghcid) { };
-  # Exports more internals
-  snap-core = haskellLib.dontCheck (self.callCabal2nix "snap-core" (hackGet ../dep/snap-core) { });
 
-  logging-effect = self.callCabal2nix "logging-effect" (hackGet ../dep/logging-effect) { };
+  snap-core = self.callHackage "snap-core" "1.0.5.0" {};
+  snap-server = haskellLib.doJailbreak super.snap-server;
+
+  logging-effect = self.callHackageDirect {
+    pkg = "logging-effect";
+    ver = "1.4.0";
+    sha256 = "0xxw21h406xybpj04hpx8vjfdbszv5ymli4vll88lssk6jpc3pfg";
+  } {};
+
   resourcet = self.callHackage "resourcet" "1.2.4.2" { };
   unliftio-core = self.callHackage "unliftio-core" "0.2.0.1" { };
   shelly = self.callHackage "shelly" "1.9.0" { };
   # version >= 0.2.5.2 has a Cabal version of 3.0, which nix doesn't like
   vector-binary-instances = self.callHackage "vector-binary-instances" "0.2.5.1" {};
+  binary-instances = self.callHackage "binary-instances" "1.0.2" {};
   modern-uri = haskellLib.doJailbreak super.modern-uri;
   monad-logger = self.callHackage "monad-logger" "0.3.36" { };
   neat-interpolation = haskellLib.doJailbreak super.neat-interpolation;
-  nix-thunk = (import ../dep/nix-thunk { }).makeRunnableNixThunk (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { });
-  cli-extras = self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) { };
-  cli-git = haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) { }) {
+  nix-thunk = (import ../dep/nix-thunk { }).makeRunnableNixThunk (haskellLib.doJailbreak (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { }));
+  cli-extras = haskellLib.doJailbreak (self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) { });
+  cli-git = haskellLib.doJailbreak (haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) { }) {
     librarySystemDepends = with pkgs; [
       gitMinimal
     ];
-  };
-  cli-nix = haskellLib.overrideCabal (self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) { }) {
+  });
+  cli-nix = haskellLib.doJailbreak (haskellLib.overrideCabal (self.callCabal2nix "cli-nix" (hackGet ../dep/cli-nix) { }) {
     librarySystemDepends = with pkgs; [
       gitMinimal
       nix
       nix-prefetch-git
     ];
-  };
+  });
 
   haddock-library = haskellLib.doJailbreak (self.callHackage "haddock-library" "1.10.0" {});
+  io-streams = self.callHackage "io-streams" "1.5.2.1" {};
+  io-streams-haproxy = haskellLib.doJailbreak super.io-streams-haproxy;
+
+  semialign-indexed = haskellLib.doJailbreak super.semialign-indexed;
+  cborg = haskellLib.dontCheck super.cborg;
+  github = self.callHackage "github" "0.28" {};
+  http-streams = haskellLib.dontCheck super.http-streams;
 }
