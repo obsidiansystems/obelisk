@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "mars_obelisk",
+  "branch": "mars",
   "private": false,
-  "rev": "cefc23b914a8015b09e4a925c51b27f9741db47e",
-  "sha256": "1k1s6fmjxz554lsjkxmhyhk82msazzprf3pv8kgz0s6g2hmczkkh"
+  "rev": "1b5f215caf2e92a15f08c1a494d5e9f7b0229b2e",
+  "sha256": "1f4w7623swkw6n14wwvdh33p4xqzspd8xcvblxh7i6fzw6k86wji"
 }
