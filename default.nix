@@ -15,7 +15,7 @@ let
 
   nix-thunk = import ./dep/nix-thunk {};
   mars = nix-thunk.thunkSource ./dep/mars;
-  marsProject = args: import mars args;
+  marsProject = args: (import mars args).project;
 
   getReflexPlatform = { system, enableLibraryProfiling ? profiling }: reflex-platform-func {
     inherit iosSdkVersion config system enableLibraryProfiling;
@@ -391,9 +391,9 @@ in rec {
 
   project = args: projectDef: let
     proj' = (marsProject args projectDef).extend (self: super: let
-      ifHasAttr = b: if super.helpers.mars_args ? b then b else null;
-      ifHasAttrBool = b: if super.helpers.mars_args ? b then true else false;
-      ifHasAttrExtra = b: if self.helpers.mars_args.extraArgs ? b then b else null;
+      reflexHasAttr = b: if super.helpers.bot_args ? b then b else null;
+      reflexHasAttrBool = b: if super.helpers.bot_args ? b then true else false;
+      reflexHasAttrExtra = b: if self.helpers.bot_args.extraArgs ? b then b else null;
       checkForStaticFiles = a: b: if self.userSettings.staticFiles == null then a else b;
     in rec {
       #inherit projectDef;
@@ -429,11 +429,11 @@ in rec {
         ghcjs-app = self.crossSystems.ghcjs.hsPkgs.frontend.components.exes.frontend;
 
         userSettings = {
-          android = ifHasAttr "android";
-          ios = ifHasAttr "ios";
-          overrides = ifHasAttr "overrides";
-          shellTools = ifHasAttr "shellTools";
-          staticFiles = if builtins.pathExists (super.args.src + "/static") then super.helpers.mars_args.extraArgs.staticFiles or (super.args.src + "/static") else null;
+          android = reflexHasAttr "android";
+          ios = reflexHasAttr "ios";
+          overrides = reflexHasAttr "overrides";
+          shellTools = reflexHasAttr "shellTools";
+          staticFiles = if builtins.pathExists (super.args.src + "/static") then super.helpers.bot_args.extraArgs.staticFiles or (super.args.src + "/static") else null;
         };
 
         __androidWithConfig = configPath: {
