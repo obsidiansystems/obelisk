@@ -2,6 +2,10 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## Unreleased
+
+* Update reflex-platform to 1.1.0.0
+
 ## v1.1.0.0 - 2023-05-24
 
 * Update reflex-platform to version 1.0.1.0 with GHC 8.10 and updated nixpkgs
