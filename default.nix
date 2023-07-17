@@ -206,12 +206,12 @@ in rec {
   '';
   nullIfAbsent = p: if lib.pathExists p then p else null;
   #TODO: Avoid copying files within the nix store.  Right now, obelisk-asset-manifest-generate copies files into a big blob so that the android/ios static assets can be imported from there; instead, we should get everything lined up right before turning it into an APK, so that copies, if necessary, only exist temporarily.
-  processAssets = { src, 
-                    packageName ? "obelisk-generated-static", 
-                    moduleName ? "Obelisk.Generated.Static", 
+  processAssets = { src,
+                    packageName ? "obelisk-generated-static",
+                    moduleName ? "Obelisk.Generated.Static",
                     exe ? "obelisk-asset-th-generate",
                     obeliskPkgs ? marsObelisk.hsPkgs
-                  }: 
+                  }:
   pkgs.runCommand "asset-manifest" {
     inherit src;
     outputs = [ "out" "haskellManifest" "symlinked" ];
@@ -409,7 +409,7 @@ in rec {
           staticName = "obelisk-generated-static";
         };
 
-        processedStatic = processAssets { 
+        processedStatic = processAssets {
           src = self.userSettings.staticFiles;
           exe = if lib.attrByPath ["userSettings" "__deprecated" "useObeliskAssetManifestGenerate"] false self
             then builtins.trace "obelisk-asset-manifest-generate is deprecated. Use obelisk-asset-th-generate instead." "obelisk-asset-manifest-generate"
@@ -449,7 +449,7 @@ in rec {
                 self.processedStatic.symlinked;
             } // self.userSettings.android;
         };
-        
+
         __iosWithConfig = configPath: {
             ${if self.userSettings.ios == null then null else self.frontendName} = {
               executableName = packageNames.frontendName;
@@ -468,6 +468,10 @@ in rec {
           ];
           additional = ps: with ps; [
             obelisk-backend
+            obelisk-run
+          ];
+          inputsFrom = [
+            #obeliskProjDef.shells.ghc
           ];
         };
 
@@ -518,7 +522,7 @@ in rec {
     });
   in proj';
 
-    
+
   test_project = project {} obeliskProjDef;
   # An Obelisk project is a reflex-platform project with a predefined layout and role for each component
   /*projectV1 = base': projectDefinition:
