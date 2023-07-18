@@ -394,13 +394,21 @@ in rec {
     };
 
   project = args: projectDef: let
-    proj' = (marsProject args projectDef).extend (self: super: let
+    pDef = ({ pkgs, thunkSource, ... }: let
+      userDef = (projectDef { inherit pkgs thunkSource; });
+    in userDef // {
+        extraArgs = {
+          extraCabalProject = [ "optional-packages: ${./lib/run}" ];
+        } // userDef.extraArgs;
+      });
+
+    proj' = (marsProject args pDef).extend (self: super: let
       reflexHasAttr = b: if super.helpers.bot_args ? b then b else null;
       reflexHasAttrBool = b: if super.helpers.bot_args ? b then true else false;
       reflexHasAttrExtra = b: if self.helpers.bot_args.extraArgs ? b then b else null;
       checkForStaticFiles = a: b: if self.userSettings.staticFiles == null then a else b;
     in rec {
-      #inherit projectDef;
+        inherit pDef;
         inherit marsObelisk;
         packageNames = {
           frontendName = "frontend";
@@ -463,15 +471,16 @@ in rec {
         #combinedShell = self.shells.ghc;
         combinedShell = self.shellFor {
           withHoogle = false;
+          tools = {
+            cabal = "3.2.0.0";
+          };
           packages = ps: with ps; [
             backend
+            common
           ];
           additional = ps: with ps; [
             obelisk-backend
             obelisk-run
-          ];
-          inputsFrom = [
-            #obeliskProjDef.shells.ghc
           ];
         };
 
