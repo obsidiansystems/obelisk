@@ -100,6 +100,7 @@ let
   obeliskProjDef = { enableLibraryProfiling ? false }: ({ pkgs, thunkSource, ... }: {
     name = "obelisk-pkgs";
     src = ./.;
+    index-state = "2023-03-04T00:00:00Z";
     extraArgs = {
       staticFiles = [ null ];
     };
