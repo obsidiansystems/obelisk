@@ -419,6 +419,12 @@ in rec {
           staticName = "obelisk-generated-static";
         };
 
+        deployLinuxServerModule = {version, buildConfigs, redirectHosts ? [], configHash ? ""}: serverModule ({
+          inherit version redirectHosts configHash;
+          exe = exe;
+          #version;
+        } // buildConfigs);
+
         processedStatic = processAssets {
           src = self.userSettings.staticFiles;
           exe = if lib.attrByPath ["userSettings" "__deprecated" "useObeliskAssetManifestGenerate"] false self
