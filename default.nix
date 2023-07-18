@@ -226,7 +226,7 @@ in rec {
   #reflex-platform.ghcjsExternsJs = "";
   compressedJs = frontend: optimizationLevel: externs: pkgs.runCommand "compressedJs" {} ''
     set -euo pipefail
-    cd '${haskellLib.justStaticExecutables frontend}'
+    cd '${frontend}'
     shopt -s globstar
     for f in **/all.js; do
       dir="$out/$(basename "$(dirname "$f")")"
@@ -355,21 +355,22 @@ in rec {
 
   serverExe = backend: frontend: assets: optimizationLevel: externjs: version:
     let
-      exeBackend = if profiling then backend else haskellLib.justStaticExecutables backend;
+      exeBackend = backend;
       exeFrontend = compressedJs frontend optimizationLevel externjs;
       exeFrontendAssets = mkAssets exeFrontend;
       exeAssets = mkAssets assets;
     in pkgs.runCommand "serverExe" {
-          backend = exeBackend;
-          frontend = exeFrontend;
-          frontend-assets = exeFrontendAssets;
-          static-assets = exeAssets;
+          backend = exeBackend.outPath;
+          frontend = exeFrontend.outPath;
+          frontendAssets = exeFrontendAssets.outPath;
+          staticAssets = exeAssets.outPath;
     } ''
       mkdir $out
       set -eux
-      ln -s '$backend'/bin/* $out/
-      ln -s '$static-assets' $out/static.assets
-      for d in '$frontend-assets'/*/; do
+      ln -s ${exeBackend}/bin/backend $out/
+      ln -s ${exeBackend}/bin/.backend-wrapped $out/
+      ln -s $staticAssets $out/static.assets
+      for d in $frontendAssets/*/*; do
         ln -s "$d" "$out"/"$(basename "$d").assets"
       done
       echo ${version} > $out/version
@@ -490,6 +491,16 @@ in rec {
             common
           ];
         };
+
+        exe = let
+          backend = self.hsPkgs.backend.components.exes.backend;
+          frontendExe = self.crossSystems.ghcjs.hsPkgs.frontend.components.exes.frontend;
+          staticFiles = self.helpers.bot_args.extraArgs.staticFiles;
+          ccLevel = "ADVANCED";
+          externjs = null;
+          version = "no_version";
+        in serverExe backend frontendExe staticFiles ccLevel externjs version;
+
 
         passthru = rec {
           staticFilesImpure = let fs = self.userSettings.staticFiles; in if lib.isDerivation fs then fs else toString fs;

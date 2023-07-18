@@ -17,6 +17,9 @@
 with obelisk;
 project {} ({ ... }: {
   name = "skeleton";
+  extraArgs = {
+    staticFiles = ./static;
+  };
   src = ./.;
   shells = ps: with ps; [
     backend
