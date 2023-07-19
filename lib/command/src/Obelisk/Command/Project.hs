@@ -307,7 +307,7 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
 nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
 nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
-    proc nixExePath ["eval", "--impure", "--expr", "(import ./. {}).pkgs.path"]
+    proc nixExePath ["eval", "--extra-experimental-features", "nix-command", "--impure", "--expr", "(import ./. {}).pkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   environment <- liftIO getEnvironment
   let environmentConf = [( "NIX_PATH", "nixpkgs=" ++ BSU.toString (encodeUtf8 nixpkgsPath))]
@@ -409,6 +409,8 @@ findProjectAssets root = do
   isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath
       [ "eval"
+      , "--extra-experimental-features"
+      , "nix-command"
       , "--impure"
       , "--expr"
       , "(let a = import ./. {}; in toString (a.pkgs.lib.isDerivation a.passthru.staticFilesImpure))"
