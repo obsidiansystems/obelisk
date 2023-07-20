@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "develop",
+  "branch": "so/bump-target-sdk-31",
   "private": false,
-  "rev": "6c8830e059a6d2859cb1b65acefed3c2f1d216d3",
-  "sha256": "sha256:06kv45yq8qan0p22wzj5c9mx11ns1wddyqjr1xasjjkf6gaf0080"
+  "rev": "65d050d25e5b324d0278b86d0cd6910d02aa2b17",
+  "sha256": "1c2w1b4aqdb09p6p465slc3cpx0fhdz17ddrak560jv2c4ghqaq0"
 }
