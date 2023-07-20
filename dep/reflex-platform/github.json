@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "release/1.0.1.0",
+  "branch": "dylang/android_sdk_ver",
   "private": false,
-  "rev": "50099ce2bca93ef69cea615ec72152b4a7648de4",
-  "sha256": "1ldzf3qznpysf4drkrvj7ysmdvrv6ddprnniylvcxccpp0f4krb7"
+  "rev": "760cd7215b5d558466d6133d641f02654dbb26d9",
+  "sha256": "1yapfqwsqw5nrry8fk4g16g69yx44f93rs1f8lkgirl1h3zli217"
 }
