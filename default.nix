@@ -371,7 +371,7 @@ in rec {
       ln -s ${exeBackend}/bin/backend $out/
       ln -s ${exeBackend}/bin/.backend-wrapped $out/
       ln -s $staticAssets $out/static.assets
-      for d in $frontendAssets/*/*; do
+      for d in $frontendAssets/*; do
         ln -s "$d" "$out"/"$(basename "$d").assets"
       done
       echo ${version} > $out/version
