@@ -311,6 +311,7 @@ nixShellRunConfig root isPure command = do
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   environment <- liftIO getEnvironment
   let environmentConf = [( "NIX_PATH", "nixpkgs=" ++ BSU.toString (encodeUtf8 nixpkgsPath))]
+                        <> filter (\(x, _) -> x == "LANG" || x == "LC_CTYPE") environment
                         <> Prelude.concatMap
                           (\c -> do
                             [c | "bindir" `L.isSuffixOf` fst c])
