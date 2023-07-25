@@ -310,8 +310,7 @@ nixShellRunConfig root isPure command = do
     proc nixExePath ["eval", "--extra-experimental-features", "nix-command", "--impure", "--expr", "(import ./. {}).pkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   environment <- liftIO getEnvironment
-  let environmentConf = [( "NIX_PATH", "nixpkgs=" ++ BSU.toString (encodeUtf8 nixpkgsPath))]
-                        <> filter (\(x, _) -> x == "LANG" || x == "LC_CTYPE") environment
+  let environmentConf = [( "NIX_PATH", "nixpkgs=" ++ BSU.toString (encodeUtf8 nixpkgsPath)), ("LC_ALL", "C.UTF-8")]
                         <> Prelude.concatMap
                           (\c -> do
                             [c | "bindir" `L.isSuffixOf` fst c])
