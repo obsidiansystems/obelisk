@@ -66,7 +66,6 @@ rec {
   nix-derivation = haskellLib.doJailbreak super.nix-derivation;
   algebraic-graphs = haskellLib.doJailbreak super.algebraic-graphs;
   snap = haskellLib.doJailbreak super.snap;
-  ghcid = self.callCabal2nix "ghcid" (hackGet ../dep/ghcid) { };
 
   snap-core = self.callHackage "snap-core" "1.0.5.0" {};
   snap-server = haskellLib.doJailbreak super.snap-server;
@@ -108,5 +107,6 @@ rec {
   semialign-indexed = haskellLib.doJailbreak super.semialign-indexed;
   cborg = haskellLib.dontCheck super.cborg;
   github = self.callHackage "github" "0.28" {};
+  http2 = haskellLib.dontCheck super.http2;
   http-streams = haskellLib.dontCheck super.http-streams;
 }
