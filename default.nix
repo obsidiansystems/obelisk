@@ -508,6 +508,20 @@ in rec {
           version = "no_version";
         in serverExe backend frontendExe staticFiles ccLevel externjs version;
 
+        serverOn = version:
+          let backend = self.hsPkg.backend.components.exes.backend;
+              frontend = self.crossSystems.ghcjs.hsPkgs.frontend.components.exes.frontend;
+              staticFiles = self.passthru.staticFiles;
+              ccOptLevel = "ADVANCED";
+              externJs = null;
+          in serverExe backend frontend staticFiles ccOptLevel externJs version;
+
+
+        linuxServerModule = args@{ hostName, adminEmail, routeHost, enableHttps, version, redirectHosts ? [], configHash ? "", ...}:
+          serverModule ({ module = serverModules.mkBaseEc2; exe = serverOn version; } // args);
+          # the "classic flavor", as a full nixos configuration
+        server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }:
+          server (args // { exe = serverOn version; });
 
         passthru = rec {
           staticFilesImpure = let fs = self.userSettings.staticFiles; in if lib.isDerivation fs then fs else toString fs;
