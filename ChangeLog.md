@@ -2,7 +2,7 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
-## Unreleased
+## v1.1.1.0 - 2023-08-01
 
 * Update reflex-platform to 1.1.0.0
 
