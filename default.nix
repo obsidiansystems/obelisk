@@ -499,6 +499,7 @@ in rec {
           ];
         };
 
+        obelisk = import (self.helpers.src + "/.obelisk/impl") { };
         exe = let
           backend = self.hsPkgs.backend.components.exes.backend;
           frontendExe = self.crossSystems.ghcjs.hsPkgs.frontend.components.exes.frontend;
