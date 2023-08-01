@@ -385,7 +385,7 @@ in rec {
     ];
   };
 
-  server = args:
+  serverBuild = args:
     let
       nixos = import (pkgs.path + /nixos);
     in nixos {
@@ -522,7 +522,7 @@ in rec {
           serverModule ({ module = serverModules.mkBaseEc2; exe = serverOn version; } // args);
           # the "classic flavor", as a full nixos configuration
         server = args@{ hostName, adminEmail, routeHost, enableHttps, version, module ? serverModules.mkBaseEc2, redirectHosts ? [], configHash ? "" }:
-          server (args // { exe = serverOn version; });
+          serverBuild (args // { exe = serverOn version; });
 
         passthru = rec {
           staticFilesImpure = let fs = self.userSettings.staticFiles; in if lib.isDerivation fs then fs else toString fs;
