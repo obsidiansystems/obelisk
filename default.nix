@@ -510,7 +510,7 @@ in rec {
         in serverExe backend frontendExe staticFiles ccLevel externjs version;
 
         serverOn = version:
-          let backend = self.hsPkg.backend.components.exes.backend;
+          let backend = self.hsPkgs.backend.components.exes.backend;
               frontend = self.crossSystems.ghcjs.hsPkgs.frontend.components.exes.frontend;
               staticFiles = self.passthru.staticFiles;
               ccOptLevel = "ADVANCED";
