@@ -2,6 +2,11 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## Unreleased
+
+* [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
+* During deployment, chown configs after copying them to the server
+
 ## v1.1.1.0 - 2023-08-01
 
 * Update reflex-platform to 1.1.0.0
@@ -30,7 +35,6 @@ This project's release branch is `master`. This log is written from the perspect
   * [#949](https://github.com/obsidiansystems/obelisk/pull/949): Obelisk now configures its output and error streams to transliterate unsupported characters to a known-good replacement character.
   * [#951](https://github.com/obsidiansystems/obelisk/pull/951): Add `ob run --port` which allows the user to override the port on which the app is served, rather than always using the port configured in the route. This is compatible with the use of reverse proxies that do their own TLS termination, e.g. `ngrok`.
   * [#974](https://github.com/obsidiansystems/obelisk/pull/974): Fail `ob run` when invalid fields are present in `default-extensions`/`default-language`, or when Cabal files are otherwise invalid.
-  * [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
 * obelisk-route
   * [#915](https://github.com/obsidiansystems/obelisk/pull/915): Add `routeLinkAttr` to `Obelisk.Route.Frontend`. This allows the creation of route links with additional, user-specified DOM attributes.
   * [#918](https://github.com/obsidiansystems/obelisk/pull/918): Add GHC 8.10.7 support for `obelisk-route`.
