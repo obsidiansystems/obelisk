@@ -4,9 +4,17 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
-* Update reflex-platform to yet unreleased version with GHC 8.10 and nixpkgs 21.05
-  \[Update note once release is cut.\]
+* [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
+* During deployment, chown configs after copying them to the server
 
+## v1.1.1.0 - 2023-08-01
+
+* Update reflex-platform to 1.1.0.0
+
+## v1.1.0.0 - 2023-05-24
+
+* Update reflex-platform to version 1.0.1.0 with GHC 8.10 and updated nixpkgs
+  * Make GHC 8.10 the default. To continue using GHC 8.6.5, set the `__useNewerCompiler` flag in default.nix to `false`.
 * Documentation
   * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to `Obelisk.Command.Deploy`
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing Obelisk branches to CONTRIBUTING.md
@@ -40,6 +48,7 @@ This project's release branch is `master`. This log is written from the perspect
   * [#930](https://github.com/obsidiansystems/obelisk/pull/930): Add an error to `ob run` when `static` is called with a path to a file that doesn't exist
   * [#940](https://github.com/obsidiansystems/obelisk/pull/940): Automatically restart the server when configuration is updated via `ob deploy push`.
   * [#959](https://github.com/obsidiansystems/obelisk/pull/959): Add an error to `ob run` when `staticFilePath` is called with a path to a file that doesn't exist
+  * [#1011](https://github.com/obsidiansystems/obelisk/pull/1011): Update default iOS SDK to 15.0
   * [#835](https://github.com/obsidiansystems/obelisk/pull/835): Rebuild static assets in fewer circumstances:
     * Watch `frontend`, `backend`, `common`, and `static` instead of the project root to avoid spurious rebuilds when other files change
     * Don't call `nix show-derivation` to decide whether to rebuild since it seems to do about as much work as a no-op nix-build

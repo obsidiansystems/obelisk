@@ -7,9 +7,15 @@ library
   hs-source-dirs: src
   build-depends: base
                , obelisk-route
-               , mtl
                , text
   exposed-modules:
     Common.Api
     Common.Route
-  ghc-options: -Wall -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O -fno-show-valid-hole-fits
+  ghc-options: -Wall -O -fno-show-valid-hole-fits
+               -- unsafe code
+               -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields
+               -- unneeded code
+               -Widentities -Wredundant-constraints
+  if impl(ghc >= 8.8)
+    ghc-options:
+               -Wmissing-deriving-strategies
