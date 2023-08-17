@@ -4,9 +4,18 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
-* Update reflex-platform to yet unreleased version with GHC 8.10 and nixpkgs 21.05
-  \[Update note once release is cut.\]
+* [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
+* [#1035](https://github.com/obsidiansystems/obelisk/pull/1035): During deployment, chown configs after copying them to the server
+* [#1040](https://github.com/obsidiansystems/obelisk/pull/1040): Batch hashing of static assets
 
+## v1.1.1.0 - 2023-08-01
+
+* Update reflex-platform to 1.1.0.0
+
+## v1.1.0.0 - 2023-05-24
+
+* Update reflex-platform to version 1.0.1.0 with GHC 8.10 and updated nixpkgs
+  * Make GHC 8.10 the default. To continue using GHC 8.6.5, set the `__useNewerCompiler` flag in default.nix to `false`.
 * Documentation
   * [#913](https://github.com/obsidiansystems/obelisk/pull/913): Add haddocks to `Obelisk.Command.Deploy`
   * [#919](https://github.com/obsidiansystems/obelisk/pull/919): Document useful command for testing Obelisk branches to CONTRIBUTING.md

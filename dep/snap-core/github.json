@@ -1,8 +1,0 @@
-{
-  "owner": "obsidiansystems",
-  "repo": "snap-core",
-  "branch": "ts-expose-fileserve-internals",
-  "private": false,
-  "rev": "e015fc484e38dd9389c58b277b1884395e553bdf",
-  "sha256": "1793x1h4lw9vnrii5akhfxx1x9yrgxf3052jf6bs8f1mhaic6mxx"
-}

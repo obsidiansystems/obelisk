@@ -91,7 +91,7 @@ data ObCommand
    | ObCommand_Run [(FilePath, Interpret)] (Maybe FilePath) (Maybe PortNumber)
    | ObCommand_Profile String [String]
    | ObCommand_Thunk ThunkOption
-   | ObCommand_Repl [(FilePath, Interpret)]
+   | ObCommand_Repl (Maybe FilePath) [(FilePath, Interpret)] -- user @.ghci@ config
    | ObCommand_Watch [(FilePath, Interpret)]
    | ObCommand_Shell ShellOpts
    | ObCommand_Doc String [String] -- shell and list of packages
@@ -120,7 +120,7 @@ obCommand cfg = hsubparser
       $ progDesc "Run current project in development mode"
     , command "profile" $ info (uncurry ObCommand_Profile <$> profileCommand) $ progDesc "Run current project with profiling enabled"
     , command "thunk" $ info (ObCommand_Thunk <$> thunkOption) $ progDesc "Manipulate thunk directories"
-    , command "repl" $ info (ObCommand_Repl <$> interpretOpts) $ progDesc "Open an interactive interpreter"
+    , command "repl" $ info (ObCommand_Repl <$> optional userGhciConfigOpt  <*> interpretOpts) $ progDesc "Open an interactive interpreter"
     , command "watch" $ info (ObCommand_Watch <$> interpretOpts) $ progDesc "Watch current project for errors and warnings"
     , command "shell" $ info (ObCommand_Shell <$> shellOpts) $ progDesc "Enter a shell with project dependencies or run a command in such a shell. E.g. ob shell -- ghc-pkg list"
     , command "doc" $ info (ObCommand_Doc <$> shellFlags <*> packageNames) $
@@ -275,6 +275,14 @@ shellFlags =
   flag' "ghc" (long "ghc" <> help "Enter a shell environment having ghc (default)")
   <|> flag "ghc" "ghcjs" (long "ghcjs" <> help "Enter a shell having ghcjs rather than ghc")
   <|> strOption (short 'A' <> long "argument" <> metavar "NIXARG" <> help "Use the environment specified by the given nix argument of `shells'")
+
+userGhciConfigOpt :: Parser FilePath
+userGhciConfigOpt = strOption $ mconcat
+  [ long "config"
+  , short 'c'
+  , metavar "CONFIG"
+  , help "User .ghci config file (use at your own risk)"
+  ]
 
 interpretOpts :: Parser [(FilePath, Interpret)]
 interpretOpts = many
@@ -440,7 +448,7 @@ ob = \case
     ThunkCommand_Pack config -> for_ thunks (packThunk config)
     where
       thunks = _thunkOption_thunks to
-  ObCommand_Repl interpretPathsList -> withInterpretPaths interpretPathsList runRepl
+  ObCommand_Repl mUserGhciConfig interpretPathsList -> withInterpretPaths interpretPathsList $ runRepl mUserGhciConfig
   ObCommand_Watch interpretPathsList -> withInterpretPaths interpretPathsList runWatch
   ObCommand_Shell (ShellOpts shellAttr interpretPathsList cmd) -> withInterpretPaths interpretPathsList $ \root interpretPaths -> do
     putLog Notice "Hint: use '--no-interpret path/to/dependency' to force building an unpacked dependency and include it in this shell."
