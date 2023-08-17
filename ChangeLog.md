@@ -5,7 +5,8 @@ This project's release branch is `master`. This log is written from the perspect
 ## Unreleased
 
 * [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
-* During deployment, chown configs after copying them to the server
+* [#1035](https://github.com/obsidiansystems/obelisk/pull/1035): During deployment, chown configs after copying them to the server
+* [#1040](https://github.com/obsidiansystems/obelisk/pull/1040): Batch hashing of static assets
 
 ## v1.1.1.0 - 2023-08-01
 
