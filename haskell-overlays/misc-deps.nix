@@ -109,4 +109,5 @@ rec {
   github = self.callHackage "github" "0.28" {};
   http2 = haskellLib.dontCheck super.http2;
   http-streams = haskellLib.dontCheck super.http-streams;
+  aeson-qq = self.callHackage "aeson-qq" "0.8.4" {};
 }
