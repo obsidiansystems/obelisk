@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "release/1.1.0.0",
+  "branch": "aa/aarch64-darwin",
   "private": false,
-  "rev": "4aa4e254d5f6134dcf700a55c4c065376f7061da",
-  "sha256": "1flwgp76j5v1m4fbdnk5psnpzx2m1vika6lylvs9l9x6krwbv7d6"
+  "rev": "25b5d9bd8ca0a8a2f8161a2ec22780d3ab594b82",
+  "sha256": "1nhlgakqdimjvhhc8yhqzjqxq94gn0b754bfx6sf5xrzcwch64z7"
 }
