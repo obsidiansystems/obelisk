@@ -2,6 +2,16 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## Unreleased
+
+* [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
+* During deployment, chown configs after copying them to the server
+* Use reflex-platform "mars"
+
+## v1.1.1.0 - 2023-08-01
+
+* Update reflex-platform to 1.1.0.0
+
 ## v1.1.0.0 - 2023-05-24
 
 * Update reflex-platform to version 1.0.1.0 with GHC 8.10 and updated nixpkgs

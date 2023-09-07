@@ -57,8 +57,8 @@ import System.Directory
 import System.Environment (lookupEnv, getEnvironment)
 import System.Exit (ExitCode(..))
 import System.FilePath
-import System.FSNotify (defaultConfig, eventPath, WatchConfig(..))
-import qualified System.Info as SysInfo
+import System.FSNotify (defaultConfig, eventPath, WatchConfig(..), WatchMode(..))
+import qualified System.Info as Sys
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.PosixCompat.Files
@@ -474,9 +474,11 @@ watchStaticFilesDerivation root = do
         cfg = defaultConfig
           -- On macOS, use the polling backend due to
           -- https://github.com/luite/hfsevents/issues/13
-          { confUsePolling = SysInfo.os == "darwin"
-          , confPollInterval = 250000
-          }
+            { confWatchMode =
+                if Sys.os == "darwin"
+                  then WatchModePoll 250000
+                  else WatchModeOS
+            }
         watch' pkg = fmap (:[]) <$> watchDirectoryTree cfg (root </> pkg <$ pb) (filterEvents . eventPath)
     rebuild <- batchOccurrences 0.25 =<< mergeWith (<>) <$> mapM watch'
       [ "frontend"
