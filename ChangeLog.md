@@ -2,7 +2,7 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
-## Unreleased
+## v1.2.0.0
 
 * [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
 * [#1035](https://github.com/obsidiansystems/obelisk/pull/1035): During deployment, chown configs after copying them to the server
