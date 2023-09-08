@@ -109,4 +109,6 @@ rec {
   github = self.callHackage "github" "0.28" {};
   http2 = haskellLib.dontCheck super.http2;
   http-streams = haskellLib.dontCheck super.http-streams;
+  ghc-lib-parser = super.ghc-lib-parser_8_10_7_20220219;
+  ghc-lib-parser-ex = super.ghc-lib-parser-ex_8_10_0_24;
 }
