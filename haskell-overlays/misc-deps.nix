@@ -11,7 +11,7 @@ in
 
 rec {
   resolv = haskellLib.dontCheck (self.callHackage "resolv" "0.1.2.0" {});
-  cabal-install = haskellLib.doJailbreak ((self.callHackage "cabal-install" "3.4.1.0" {}).overrideScope (self: super: { Cabal = self.Cabal_3_4_0_0; }));
+  cabal-install = haskellLib.doJailbreak ((self.callHackage "cabal-install" "3.4.1.0" {}).overrideScope (self: super: { Cabal = self.Cabal_3_4_1_0; }));
 
   # hpack requires cabal >= 3.0 but the ghc865 package set builds it with 2.4 by default
   hpack = super.hpack.overrideScope (self: super: { Cabal = self.Cabal_3_2_1_0; });
