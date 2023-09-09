@@ -2,10 +2,12 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
-## Unreleased
+## v1.2.0.0
 
 * [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
-* During deployment, chown configs after copying them to the server
+* [#1035](https://github.com/obsidiansystems/obelisk/pull/1035): During deployment, chown configs after copying them to the server
+* [#1040](https://github.com/obsidiansystems/obelisk/pull/1040): Batch hashing of static assets
+* Update reflex-platform to [1.1.2.0](https://github.com/reflex-frp/reflex-platform/releases/tag/v1.1.2.0)
 
 ## v1.1.1.0 - 2023-08-01
 
