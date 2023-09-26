@@ -2,6 +2,10 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## Unreleased
+* [#1047](https://github.com/obsidiansystems/obelisk/pull/1047): Update default ios sdk to 15
+* [#1048](https://github.com/obsidiansystems/obelisk/pull/1048): Expose ghcIosAarch64 to projects 
+
 ## v1.2.0.0
 
 * [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
