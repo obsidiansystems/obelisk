@@ -112,4 +112,5 @@ rec {
   ghc-lib-parser = super.ghc-lib-parser_8_10_7_20220219;
   ghc-lib-parser-ex = super.ghc-lib-parser-ex_8_10_0_24;
   aeson-qq = self.callHackage "aeson-qq" "0.8.4" {};
+  fsnotify = haskellLib.dontCheck super.fsnotify;
 }
