@@ -1,6 +1,6 @@
 { system ? builtins.currentSystem
 , profiling ? false
-, iosSdkVersion ? "15.0"
+, iosSdkVersion ? "16.1"
 , config ? {}
 , terms ? { # Accepted terms, conditions, and licenses
     security.acme.acceptTerms = false;
@@ -405,6 +405,7 @@ in rec {
               `finally` writeProfilingData (profFileName ++ ".rprof")
         '';
       in nixpkgs.runCommand "ob-run" {
+        nativeBuildInputs = if system == "aarch64-darwin" then [ nixpkgs.darwin.cctools nixpkgs.darwin.signingUtils ] else [];
         buildInputs = [ (profiled.ghc.ghcWithPackages (p: [p.backend p.frontend])) ];
       } ''
         cp ${exeSource} ob-run.hs

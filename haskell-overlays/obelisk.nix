@@ -32,7 +32,7 @@ in
     haskellLib.overrideCabal pkg (drv: { librarySystemDepends = [ pkgs.iproute ]; })
   );
   obelisk-route = self.callCabal2nix "obelisk-route" (obeliskCleanSource ../lib/route) {};
-  obelisk-selftest = haskellLib.overrideCabal (self.callCabal2nix "obelisk-selftest" (obeliskCleanSource ../lib/selftest) {}) {
+  obelisk-selftest = haskellLib.dontHaddock (haskellLib.overrideCabal (super.callCabal2nix "obelisk-selftest" (obeliskCleanSource ../lib/selftest) { }) {
     librarySystemDepends = [
       pkgs.cabal-install
       pkgs.coreutils
@@ -41,7 +41,7 @@ in
       pkgs.nix-prefetch-git
       pkgs.rsync
     ];
-  };
+  });
   obelisk-snap-extras = self.callCabal2nix "obelisk-snap-extras" (obeliskCleanSource ../lib/snap-extras) {};
   tabulation = self.callCabal2nix "tabulation" (obeliskCleanSource ../lib/tabulation) {};
 }
