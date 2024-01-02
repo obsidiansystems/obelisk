@@ -6,6 +6,18 @@ This project's release branch is `master`. This log is written from the perspect
 
 * Obelisk.Route: add pathQueryEncoder and generalizeIdentity
 
+## v1.3.0.0
+* [#1047](https://github.com/obsidiansystems/obelisk/pull/1047): Update default ios sdk to 15
+* [#1048](https://github.com/obsidiansystems/obelisk/pull/1048): Expose ghcIosAarch64 to projects 
+* [#1046](https://github.com/obsidiansystems/obelisk/pull/1046): Add support for aarch64-darwin and aarch64-linux (see [supported platforms](https://github.com/reflex-frp/reflex-platform/blob/release/1.2.0.0/docs/platform-support.md)).
+
+## v1.2.0.0
+
+* [#1025](https://github.com/obsidiansystems/obelisk/pull/1025): Add `-c/--config` option to `ob repl`
+* [#1035](https://github.com/obsidiansystems/obelisk/pull/1035): During deployment, chown configs after copying them to the server
+* [#1040](https://github.com/obsidiansystems/obelisk/pull/1040): Batch hashing of static assets
+* Update reflex-platform to [1.1.2.0](https://github.com/reflex-frp/reflex-platform/releases/tag/v1.1.2.0)
+
 ## v1.1.1.0 - 2023-08-01
 
 * Update reflex-platform to 1.1.0.0
