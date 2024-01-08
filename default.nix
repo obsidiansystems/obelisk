@@ -550,13 +550,16 @@ in rec {
               Obelisk.Run.run (Obelisk.Run.defaultRunApp Backend.backend Frontend.frontend (Obelisk.Run.runServeAsset assets)){ Obelisk.Run._runApp_backendPort = read portStr }
                 `finally` writeProfilingData (profFileName ++ ".rprof")
           '';
+          profileShell = (self.shellFor { withHoogle = false; packages = ps: with ps; [ backend obelisk-run ]; });
           profiledObRun = self.pkgs.runCommand "ob-run" rec {
-            shell = (self.shellFor { withHoogle = false; packages = ps: with ps; [ backend ]; });
-            ghc = "${shell}/bin/ghc";
+            shell = (self.shellFor { withHoogle = false; packages = ps: with ps; [ backend ]; additional = ps: with ps; [ backend obelisk-run ]; });
           } ''
+            cat $shell > path.txt
+            export PATH=$PATH:$(sed 's& &/bin:&g' path.txt)
+            echo $PATH
             cp ${obRunProfileSrc} ob-run.hs
             mkdir -p $out/bin
-            $ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
+            ghc -x hs -prof -fno-prof-auto -threaded ob-run.hs -o $out/bin/ob-run
           '';
         };
 
