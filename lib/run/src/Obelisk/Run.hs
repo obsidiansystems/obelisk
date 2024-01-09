@@ -227,22 +227,7 @@ runWidget toRun configs validFullEncoder = do
         if not portDisabledTLS && routeIsTLS then
           case _runApp_tlsCertDirectory toRun of
             Nothing -> do
-              -- Generate a private key and self-signed certificate for TLS
-              privateKey <- RSA.generateRSAKey' 2048 3
-
-              certRequest <- X509Request.newX509Req
-              _ <- X509Request.setPublicKey certRequest privateKey
-              _ <- X509Request.signX509Req certRequest privateKey Nothing
-
-              cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
-              _ <- X509.setPublicKey cert privateKey
-              timenow <- getCurrentTime
-              _ <- X509.setNotBefore cert $ addUTCTime (-1) timenow
-              _ <- X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) timenow
-              _ <- X509.signX509 cert privateKey Nothing
-
-              certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
-              privateKeyByteString <- BSUTF8.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
+              (certByteString, privateKeyByteString) <- generateSelfSignedCertificate
 
               return $ runTLSSocket (tlsSettingsMemory certByteString privateKeyByteString)
             Just certDir -> do
@@ -259,6 +244,24 @@ runWidget toRun configs validFullEncoder = do
         app <- obeliskApp configs defaultConnectionOptions (_runApp_frontend toRun) validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
         runner settings skt app)
 
+generateSelfSignedCertificate :: IO (ByteString {- Certificate -}, ByteString {- Private Key -})
+generateSelfSignedCertificate = do
+  privateKey <- RSA.generateRSAKey' 2048 3
+
+  certRequest <- X509Request.newX509Req
+  X509Request.setPublicKey certRequest privateKey
+  X509Request.signX509Req certRequest privateKey Nothing
+
+  cert <- X509.newX509 >>= X509Request.makeX509FromReq certRequest
+  X509.setPublicKey cert privateKey
+  timenow <- getCurrentTime
+  X509.setNotBefore cert $ addUTCTime (-1) timenow
+  X509.setNotAfter cert $ addUTCTime (365 * 24 * 60 * 60) timenow
+  X509.signX509 cert privateKey Nothing
+
+  certByteString <- BSUTF8.fromString <$> PEM.writeX509 cert
+  privateKeyByteString <- BSUTF8.fromString <$> PEM.writePKCS8PrivateKey privateKey Nothing
+  pure (certByteString, privateKeyByteString)
 
 -- | Build a WAI 'Application' to serve the given Obelisk 'Frontend',
 -- using the specified 'Encoder' to parse routes. Any requests whose
