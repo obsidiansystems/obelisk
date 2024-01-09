@@ -43,7 +43,7 @@ import Data.Streaming.Network (bindPortTCP)
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
+import Data.Text.Encoding
 import Data.Time.Clock (getCurrentTime, addUTCTime)
 import Language.Javascript.JSaddle.Run (syncPoint)
 import Language.Javascript.JSaddle.WebSockets
@@ -56,7 +56,6 @@ import qualified Network.Wai as W
 import Network.Wai.Handler.Warp
 import Network.Wai.Handler.WarpTLS
 import Network.Wai.Handler.Warp.Internal (settingsHost, settingsPort)
-import Network.WebSockets (ConnectionOptions)
 import Network.WebSockets.Connection (defaultConnectionOptions)
 import qualified Obelisk.Asset.Serve.Snap as Snap
 import Obelisk.Backend
@@ -171,7 +170,7 @@ runServeAsset rootPath t =
 getConfigRoute :: Map Text ByteString -> Either Text URI
 getConfigRoute configs = case Map.lookup "common/route" configs of
     Just r ->
-      let stripped = T.strip (T.decodeUtf8 r)
+      let stripped = T.strip (decodeUtf8 r)
       in case URI.mkURI stripped of
           Just route -> Right route
           Nothing -> Left $ "Couldn't parse route as URI; value read was: " <> T.pack (show stripped)
@@ -241,7 +240,7 @@ runWidget toRun configs validFullEncoder = do
     close
     (\skt -> do
         man <- newManager defaultManagerSettings
-        app <- obeliskApp configs defaultConnectionOptions (_runApp_frontend toRun) validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
+        app <- obeliskApp configs (_runApp_frontend toRun) validFullEncoder uri $ fallbackProxy redirectHost redirectPort man
         runner settings skt app)
 
 generateSelfSignedCertificate :: IO (ByteString {- Certificate -}, ByteString {- Private Key -})
@@ -270,16 +269,39 @@ generateSelfSignedCertificate = do
 obeliskApp
   :: forall frontendRoute backendRoute
   .  Map Text ByteString -- ^ The parsed configuration
-  -> ConnectionOptions   -- ^ Connection options for the JSaddle websocket
   -> Frontend (R frontendRoute) -- ^ The Obelisk frontend
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
      -- ^ An encoder for parsing frontend routes.
   -> URI
     -- ^ The 'URI' on which the 'Frontend' will be served. Used for
     -- establishing the JSaddle websocket connection.
-  -> Application -- ^ A WAI 'Application' which handles backend requests.
+  -> Application -- ^ A WAI 'Application' which handles backend and static file requests.
   -> IO Application
-obeliskApp configs opts frontend validFullEncoder uri backend = do
+obeliskApp configs frontend validFullEncoder uri backend = do
+  (serveJsaddleInternals, serveJsaddleHtml) <- serveJsaddleWarpWithHydration configs frontend validFullEncoder uri
+  startupTime <- getCurrentTime
+  return $ \req sendResponse -> case runIdentity $ tryDecode validFullEncoder $ byteStringsToPageName (BS.dropWhile (== (fromIntegral $ fromEnum '/')) $ W.rawPathInfo req) (BS.drop 1 $ W.rawQueryString req) of
+    FullRoute_Frontend frontendRoute :/ frontendRouteRest -> case frontendRoute of
+      ObeliskRoute_Resource resourceType -> case resourceType of
+        ResourceRoute_JSaddleWarp -> serveJsaddleInternals frontendRouteRest req sendResponse
+        ResourceRoute_Static -> backend req sendResponse
+        ResourceRoute_Ghcjs -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: ghcjs files are not present when running with jsaddle warp"
+        ResourceRoute_Version -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "text/plain")] $ "combined jsaddle warp and backend, started at " <> BSLC.fromStrict (encodeUtf8 (T.pack (show startupTime)))
+      ObeliskRoute_App appRouteComponent -> do
+        let cookies = maybe [] parseCookies $ lookup (fromString "Cookie") (W.requestHeaders req)
+        serveJsaddleHtml (appRouteComponent :/ frontendRouteRest) cookies sendResponse
+    FullRoute_Backend _ :/ _ -> backend req sendResponse
+
+serveJsaddleWarpWithHydration
+  :: Map Text ByteString
+  -> Frontend (R frontendRoute)
+  -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
+  -> URI
+  -> IO
+     ( R JSaddleWarpRoute -> Application -- ^ Serve an internal JSaddle route; the request and the route should match
+     , R frontendRoute -> Cookies -> (W.Response -> IO b) -> IO b -- ^ Serve the initial HTML for a page of the application
+     )
+serveJsaddleWarpWithHydration configs frontend validFullEncoder uri = do
   let mode = FrontendMode
         { _frontendMode_hydrate = True
         , _frontendMode_adjustRoute = False
@@ -290,20 +312,17 @@ obeliskApp configs opts frontend validFullEncoder uri backend = do
   jsaddlePath <- URI.mkPathPiece "jsaddle"
   let jsaddleUri = BSLC.fromStrict $ URI.renderBs $ uri & uriPath %~ (<>[jsaddlePath])
   Right (jsaddleWarpRouteValidEncoder :: Encoder Identity (Either Text) (R JSaddleWarpRoute) PageName) <- return $ checkEncoder jsaddleWarpRouteEncoder
-  jsaddle <- jsaddleWithAppOr opts entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "obeliskApp: jsaddle got a bad URL"
-  return $ \req sendResponse -> case tryDecode validFullEncoder $ byteStringsToPageName (BS.dropWhile (== (fromIntegral $ fromEnum '/')) $ W.rawPathInfo req) (BS.drop 1 $ W.rawQueryString req) of
-    Identity r -> case r of
-      FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_JSaddleWarp) :/ jsaddleRoute -> case jsaddleRoute of
+  jsaddle <- jsaddleWithAppOr defaultConnectionOptions entryPoint $ \_ sendResponse -> sendResponse $ W.responseLBS H.status500 [("Content-Type", "text/plain")] "serveJsaddleWarpWithHydration: jsaddle got a bad URL"
+  let serveJsaddleInternals frontendRouteRest req sendResponse = case frontendRouteRest of
         JSaddleWarpRoute_JavaScript :/ () -> sendResponse $ W.responseLBS H.status200 [("Content-Type", "application/javascript")] $ jsaddleJs' (Just jsaddleUri) False
         _ -> flip jsaddle sendResponse $ req
-          { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder jsaddleRoute
+          { W.pathInfo = fst $ encode jsaddleWarpRouteValidEncoder frontendRouteRest
           }
-      FullRoute_Frontend (ObeliskRoute_App appRouteComponent) :/ appRouteRest -> do
-        let cookies = maybe [] parseCookies $ lookup (fromString "Cookie") (W.requestHeaders req)
-            routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
-        html <- renderJsaddleFrontend configs cookies routeToUrl (appRouteComponent :/ appRouteRest) frontend
+      serveJsaddleHtml initialRoute cookies sendResponse = do
+        let routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
+        html <- renderJsaddleFrontend configs cookies routeToUrl initialRoute frontend
         sendResponse $ W.responseLBS H.status200 [("Content-Type", staticRenderContentType)] $ BSLC.fromStrict html
-      _ -> backend req sendResponse
+  pure (serveJsaddleInternals, serveJsaddleHtml)
 
 renderJsaddleFrontend
   :: Map Text ByteString
