@@ -106,7 +106,7 @@ let
     };
     shellTools = {
       cabal = "3.2.0.0";
-      haskell-language-server = "1.5.0.0";
+      # haskell-language-server = "1.5.0.0";
     };
     shells = ps: with ps; [
       obelisk-command
