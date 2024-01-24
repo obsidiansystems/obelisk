@@ -198,9 +198,11 @@ If the `useGHC810` argument is set to false, or not given, then GHC 8.6 will be 
 
 In this section we will demonstrate how to deploy your Obelisk app to an Amazon EC2 instance. Obelisk deployments are configured for EC2 by default (see [Custom Non-EC2 Deployment](#custom-non-ec2-deployment)).
 
+Note: Most NixOS EC2 instances should just *work* regardless of obelisk version
+
 First create a new EC2 instance:
 
-1. Launch a NixOS 19.09 EC2 instance (we recommend [this AMI](https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#LaunchInstanceWizard:ami=ami-00a8eeaf232a74f84))
+1. Launch a NixOS 22.05 EC2 instance (we recommend [this AMI](https://us-east-1.console.aws.amazon.com/ec2/home?region=us-east-1#LaunchInstances:ami=ami-0223db08811f6fb2d))
 1. In the instance configuration wizard ensure that your instance has at least 1GB RAM and 10GB disk space.
 1. When prompted save your AWS private key (`~/myaws.pem`) somewhere safe. We'll need it later during deployment.
 1. Go to "Security Groups", select your instance's security group and under "Inbound" tab add a new rule for HTTP port 80 and HTTPS port 443.
@@ -210,6 +212,21 @@ At this stage your instance should be booting and become accessible shortly. Not
 Now go to your Obelisk project directory (`~/code/myapp`), and initialize a deployment config (`~/code/myapp-deploy`):
 Your project directory must be "thunkable", i.e. something on which `ob thunk pack` can be called. Usually it will be a git repository whose current revision has been pushed upstream.
 
+An example set of git commands to do this is as follows (Github):
+Create a repo using Github's UI (Public or Private)
+then locally use these commands
+```bash
+cd ~/code/myapp
+git init
+git add .
+git commit -m "First Commit!"
+git remote add origin git@github.com:username/repo.git
+git push --set-upstream origin master
+```
+
+This will make a "thunkable" project that allows deployment to continue
+
+Continuing with deployment commands:
 ```bash
 cd ~/code/myapp
 SERVER=ec2-35-183-22-197.ca-central-1.compute.amazonaws.com

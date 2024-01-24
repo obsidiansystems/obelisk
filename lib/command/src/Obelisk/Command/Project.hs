@@ -29,7 +29,7 @@ module Obelisk.Command.Project
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
-import Control.Lens ((.~), (?~), (<&>), (^.), _2, _3)
+import Control.Lens ((.~), (?~), (<&>))
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.IO.Class (liftIO)
@@ -40,9 +40,10 @@ import qualified Data.ByteString.UTF8 as BSU
 import Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
+import qualified Data.Foldable as F (toList)
 import Data.Function ((&), on)
 import Data.Map (Map)
-import Data.Maybe (isJust)
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
@@ -55,8 +56,8 @@ import System.Directory
 import System.Environment (lookupEnv)
 import System.Exit (ExitCode(..))
 import System.FilePath
-import System.FSNotify (defaultConfig, eventPath, WatchConfig(..))
-import qualified System.Info as SysInfo
+import System.FSNotify (defaultConfig, eventPath, WatchConfig(..), WatchMode(..))
+import qualified System.Info as Sys
 import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.PosixCompat.Files
@@ -304,7 +305,7 @@ filePermissionIsSafe s umask = not fileWorldWritable && fileGroupWritable <= uma
 nixShellRunConfig :: MonadObelisk m => FilePath -> Bool -> Maybe String -> m NixShellConfig
 nixShellRunConfig root isPure command = do
   nixpkgsPath <- fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
-    proc nixExePath ["eval", "(import .obelisk/impl {}).nixpkgs.path"]
+    proc nixExePath ["eval", "--impure", "--expr", "(import .obelisk/impl {}).nixpkgs.path"]
   nixRemote <- liftIO $ lookupEnv "NIX_REMOTE"
   pure $ def
     & nixShellConfig_pure .~ isPure
@@ -399,6 +400,8 @@ findProjectAssets root = do
   isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath
       [ "eval"
+      , "--impure"
+      , "--expr"
       , "(let a = import ./. {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
       , "--raw"
       -- `--raw` is not available with old nix-instantiate. It drops quotation
@@ -427,33 +430,69 @@ getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debu
     , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
     ]
 
--- | Watch the project directory for file changes and check whether those file changes
--- cause changes in the static files nix derivation. If so, rebuild it.
+-- | Watch the common, backend, frontend, and static directories for file
+-- changes and check whether those file changes cause changes in the static
+-- files nix derivation. If so, rebuild it.
 watchStaticFilesDerivation
   :: (MonadIO m, MonadObelisk m)
   => FilePath
   -> m ()
 watchStaticFilesDerivation root = do
   ob <- getObelisk
-  drv0 <- showDerivation
   liftIO $ runHeadlessApp $ do
     pb <- getPostBuild
-    checkForChanges <- batchOccurrences 0.25 =<< watchDirectoryTree
-      -- On macOS, use the polling backend due to https://github.com/luite/hfsevents/issues/13
-      (defaultConfig { confUsePolling = SysInfo.os == "darwin", confPollInterval = 250000 })
-      (root <$ pb)
-      ((/="static.out") . takeFileName . eventPath)
-    drv <- performEvent $ ffor checkForChanges $ \_ ->
-      liftIO $ runObelisk ob showDerivation
-    drvs <- foldDyn (\new (_, old, _) -> (old, new, old /= new)) (drv0, drv0, False) drv
-    void $ throttleBatchWithLag
-      (\e -> performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $ do
+    -- TODO: Instead of filtering like this, we should figure out what the
+    -- derivation actually relies on, or at least use the gitignore
+    let filterEvents x =
+          let fn = takeFileName x
+              dirs = Set.fromList $ splitDirectories x
+              ignoredFilenames = Set.fromList
+                [ "4913" -- Vim temporary file
+                ]
+              ignoredExtensions = Set.fromList
+                [ ".hi"
+                , ".o"
+                , ".swo"
+                , ".swp"
+                ]
+          in not $
+              fn `Set.member` ignoredFilenames ||
+              takeExtension fn `Set.member` ignoredExtensions
+        cfg = defaultConfig
+          -- On macOS, use the polling backend due to
+          -- https://github.com/luite/hfsevents/issues/13
+            { confWatchMode =
+                if Sys.os == "darwin"
+                  then WatchModePoll 250000
+                  else WatchModeOS
+            }
+        watch' pkg = fmap (:[]) <$> watchDirectoryTree cfg (root </> pkg <$ pb) (filterEvents . eventPath)
+    rebuild <- batchOccurrences 0.25 =<< mergeWith (<>) <$> mapM watch'
+      [ "frontend"
+      , "backend"
+      , "common"
+      , "static"
+      ]
+    performEvent_
+      $ liftIO
+      . runObelisk ob
+      . putLog Debug
+      . ("Regenerating static.out due to file changes: "<>)
+      . T.intercalate ", "
+      . Set.toList
+      . Set.fromList
+      . fmap (T.pack . eventPath)
+      . concat
+      . F.toList
+      <$> rebuild
+    void $ flip throttleBatchWithLag rebuild $ \e ->
+      performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $ do
         putLog Notice "Static assets being built..."
         buildStaticCatchErrors >>= \case
           Nothing -> pure ()
-          Just _ -> putLog Notice "Static assets built and symlinked to static.out"
-      )
-      ((() <$) . ffilter (\x -> isJust (x ^._2) && x ^._3) $ updated drvs)
+          Just n -> do
+            putLog Notice $ "Static assets built and symlinked to static.out"
+            putLog Debug $ "Generated static asset nix path: " <> n
     pure never
   where
     handleBuildFailure
@@ -461,23 +500,14 @@ watchStaticFilesDerivation root = do
       => (ExitCode, String, String)
       -> m (Maybe Text)
     handleBuildFailure (ex, out, err) = case ex of
-      ExitSuccess -> pure $ Just $ T.pack out
+      ExitSuccess ->
+        let out' = T.strip $ T.pack out
+        in pure $ if T.null out' then Nothing else Just out'
       _ -> do
         putLog Error $
           ("Static assets build failed: " <>) $
-            T.unlines $ reverse $ take 10 $ reverse $ T.lines $ T.pack err
+            T.unlines $ reverse $ take 20 $ reverse $ T.lines $ T.pack err
         pure Nothing
-    showDerivation :: MonadObelisk m => m (Maybe Text)
-    showDerivation =
-      handleBuildFailure <=< readCreateProcessWithExitCode $
-          setCwd (Just root) $ ProcessSpec
-            { _processSpec_createProcess = Proc.proc nixExePath
-              [ "show-derivation"
-              , "-f", "."
-              , "passthru.staticFilesImpure"
-              ]
-            , _processSpec_overrideEnv = Nothing
-            }
     buildStaticCatchErrors :: MonadObelisk m => m (Maybe Text)
     buildStaticCatchErrors = handleBuildFailure =<<
       buildStaticFilesDerivationAndSymlink

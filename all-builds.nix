@@ -1,10 +1,10 @@
 { self-args ? {
     config.android_sdk.accept_license = true;
-    iosSdkVersion = "13.2";
+    iosSdkVersion = "16.1";
   }
 , local-self ? import ./. self-args
 , supportedSystems ? [ builtins.currentSystem ]
-, __useNewerCompiler  ? false #true if one wants to use ghc 8.10.7
+, __useNewerCompiler  ? true # false if one wants to use ghc 8.6.5
 }:
 
 let
@@ -60,7 +60,6 @@ let
       rawSkeleton = import ./skeleton { inherit obelisk; };
       skeleton = withSkeletonOptions rawSkeleton {
         withHoogle = true;  # cache the Hoogle database for the skeleton
-        __withGhcide = true; # cache the ghcide build for the skeleton
       };
 
       serverSkeletonExe = rawSkeleton.exe;

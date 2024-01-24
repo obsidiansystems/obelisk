@@ -22,6 +22,7 @@ Types and functions for defining routes and 'Encoder's.
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 module Obelisk.Route
   ( -- * Primary Types
@@ -46,6 +47,7 @@ module Obelisk.Route
   , tryDecode
   , hoistCheck
   , hoistParse
+  , generalizeIdentity
   , mapSome
   , rPrism
   , _R
@@ -111,6 +113,7 @@ module Obelisk.Route
   , obeliskRouteEncoder
   , obeliskRouteSegment
   , pageNameEncoder
+  , pathQueryEncoder
   , handleEncoder
   , fallbackEncoder
   , retryEncoder
@@ -188,6 +191,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Monoid (Ap(..))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Semigroupoid
@@ -367,6 +371,12 @@ hoistCheck f (Encoder x) = Encoder (f x)
 hoistParse :: (Functor check)
   => (forall t. parse t -> parse' t) -> Encoder check parse a b -> Encoder check parse' a b
 hoistParse f = unsafeWrapDecoding (f.)
+
+generalizeIdentity
+  :: (Functor check, Applicative parse)
+  => Encoder check Identity a b
+  -> Encoder check parse a b
+generalizeIdentity = hoistParse (pure . runIdentity)
 
 -- | Check an 'Encoder', transforming it into one whose check monad is anything we want (usually Identity).
 checkEncoder :: (Applicative check', Functor check)
@@ -1135,6 +1145,14 @@ void1Encoder = Encoder $ pure $ EncoderImpl
 instance GShow Void1 where
   gshowsPrec _ = \case {}
 
+-- | Encode a 'PathQuery' as 'Text'
+pathQueryEncoder :: (Applicative check, Applicative parse) => Encoder check parse PathQuery Text
+pathQueryEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = \(k, v) -> T.pack $ k <> v
+  , _encoderImpl_decode = \r ->
+      pure $ bimap T.unpack T.unpack $ T.breakOn "?" r
+  }
+
 -- | Given a backend route and a checked route encoder, render the route (path
 -- and query string). See 'checkEncoder' for how to produce a checked encoder.
 renderBackendRoute
@@ -1159,9 +1177,9 @@ renderObeliskRoute
   -> R (FullRoute a b)
   -> Text
 renderObeliskRoute e r =
-  let enc :: Encoder Identity (Either Text) (R (FullRoute a b)) PathQuery
-      enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
-  in (T.pack . uncurry (<>)) $ encode enc r
+  let enc :: Encoder Identity (Either Text) (R (FullRoute a b)) Text
+      enc = (pathQueryEncoder . pageNameEncoder . generalizeIdentity e)
+  in encode enc r
 
 -- | As per the 'unsafeTshowEncoder' but does not use the 'Text' type.
 --
@@ -1240,16 +1258,6 @@ fieldMapEncoder = unsafeEncoder $ do
         Nothing -> throwError $ "fieldMapEncoder: Couldn't find key for `" <> T.pack (gshow f) <> "' in DMap."
         Just (Identity v) -> return v
     }
-
--- this is in base 4.12 (GHC 8.6);
-newtype Ap f a = Ap {getAp :: f a}
-
-instance (Applicative f, Semigroup a) => Semigroup (Ap f a) where
-  Ap x <> Ap y = Ap (liftA2 (<>) x y)
-
-instance (Applicative f, Monoid a) => Monoid (Ap f a) where
-  mappend = (<>)
-  mempty = Ap (pure mempty)
 
 pathFieldEncoder :: forall a p check parse . (HasFields a, Monad check, MonadError Text parse, GCompare (Field a)) => (forall x. Field a x -> Encoder check parse x p) -> Encoder check parse (a, [p]) [p]
 pathFieldEncoder fieldEncoder = unsafeEncoder $ do

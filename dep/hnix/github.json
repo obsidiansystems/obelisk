@@ -1,7 +1,8 @@
 {
-  "owner": "haskell-nix",
+  "owner": "obsidiansystems",
   "repo": "hnix",
-  "branch": "master",
-  "rev": "6c9c7c310c54372b3db0fdf5a0137b395cde1bdb",
-  "sha256": "1i5903b7lxqn2s3jarb14h6wdq8bxiik1hp0xy43w5w1hgvvq0g5"
+  "branch": "hackage-0.12.0.1",
+  "private": false,
+  "rev": "356c4ae27be82689f8c58037309db79c31d0ffce",
+  "sha256": "0srs6f5zgs70brx3ri1mlqvclqa10asb4rxlcrpn5yis0bw0mx6g"
 }

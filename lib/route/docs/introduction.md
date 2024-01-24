@@ -466,7 +466,7 @@ instantiation, but a route for the `TopLevel` could be _any_ one of the sub-rout
 To achieve the desired modularity we use the type of the sub-route as an argument to this top-level
 route constructor.
 
-We will build this route in `Common.Route` using a [Generalised Algebraic Data Type](http://dev.stephendiehl.com/hask/#gadts), or 'GADT'. Part of the reason for this is that it more providese more detailed type information for greater type-safety that aid in providing the guarantees that this package is built upon.
+We will build this route in `Common.Route` using a [Generalised Algebraic Data Type](http://dev.stephendiehl.com/hask/#gadts), or 'GADT'. Part of the reason for this is that it provides more detailed type information for greater type-safety that aid in providing the guarantees that this package is built upon.
 
 If you've not encountered GADTs before, or you're a bit rusty, check out the following links for more information:
 * [What I Wish I Knew When Learning Haskell - GADTs](http://dev.stephendiehl.com/hask/#gadts)
