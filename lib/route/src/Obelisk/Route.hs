@@ -115,6 +115,9 @@ module Obelisk.Route
   , pageNameEncoder
   , pathQueryEncoder
   , handleEncoder
+  , fallbackEncoder
+  , retryEncoder
+  , unsafeWrapDecoding
   , someSumEncoder
   , Void1
   , void1Encoder
@@ -367,7 +370,7 @@ hoistCheck f (Encoder x) = Encoder (f x)
 -- | Transform the parse monad of an 'Encoder' by applying a natural transformation.
 hoistParse :: (Functor check)
   => (forall t. parse t -> parse' t) -> Encoder check parse a b -> Encoder check parse' a b
-hoistParse f (Encoder x) = Encoder (fmap (\(EncoderImpl dec enc) -> EncoderImpl (f . dec) enc) x)
+hoistParse f = unsafeWrapDecoding (f.)
 
 generalizeIdentity
   :: (Functor check, Applicative parse)
@@ -937,19 +940,45 @@ pageNameEncoder = bimap
   (unpackTextEncoder . prefixTextEncoder "/" . pathSegmentsTextEncoder . listToNonEmptyEncoder)
   (unpackTextEncoder . prefixNonemptyTextEncoder "?" . queryParametersTextEncoder . toListMapEncoder)
 
+--------------------------------------------------------------------------------
+-- Handle decoding errors
+--------------------------------------------------------------------------------
 -- | Handle an error in parsing, for example, in order to redirect to a 404 page.
 handleEncoder
-  :: (Functor check)
+  :: Functor check
   => (e -> a)
   -> Encoder check (Either e) a b
   -> Encoder check Identity a b
-handleEncoder recover e = Encoder $ do
-  i <- unEncoder e
-  return $ i
-    { _encoderImpl_decode = \a -> pure $ case _encoderImpl_decode i a of
-      Right r -> r
-      Left err -> recover err
-    }
+handleEncoder recover = unsafeWrapDecoding (either (Identity . recover) pure .)
+
+-- | When parsing fails, try to decode as another element.
+-- Useful for canonicalizing on decode, e.g. trimming whitespace, rounding, error margins.
+fallbackEncoder
+  :: (Functor check, MonadError err parse)
+  => (err -> b -> b)
+  -> Encoder check parse a b
+  -> Encoder check parse a b
+fallbackEncoder fallback = retryEncoder $ \e p -> p . fallback e
+
+-- | When parsing fails, try again with the provided function.
+retryEncoder
+  :: (Functor check, MonadError err parse)
+  => (err -> (b -> parse a) -> (b -> parse a))
+  -> Encoder check parse a b
+  -> Encoder check parse a b
+retryEncoder retry = unsafeWrapDecoding $ \p b -> catchError (p b) $ \e -> retry e p b
+
+-- | Completely override the decoding function.
+-- Since the only 'Encoder' law is round-tripping, values that fail to parse are unconstrained.
+-- Thus, to produce a law-abiding encoder, we need only preserve parse success.
+unsafeWrapDecoding
+  :: Functor check
+  => ((b -> parse a) -> (b -> parse' a)) -- ^ Required law for @wrap@ argument: @forall a b. p b = pure a => wrap p b = pure a@
+  -> Encoder check parse a b
+  -> Encoder check parse' a b
+unsafeWrapDecoding wrap e = Encoder $ flip fmap (unEncoder e) $ \i -> i
+  { _encoderImpl_decode = wrap $ _encoderImpl_decode i
+  }
 
 --------------------------------------------------------------------------------
 -- Actual obelisk route info
