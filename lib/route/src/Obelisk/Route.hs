@@ -124,6 +124,7 @@ module Obelisk.Route
   , pathSegmentEncoder
   , queryOnlyEncoder
   , Decoder(..)
+  , dsumEncoder
   , dmapEncoder
   , fieldMapEncoder
   , pathFieldEncoder
@@ -626,30 +627,36 @@ pathComponentEncoderImpl =
   chainEncoder (lensEncoder (\(_, b) a -> (a, b)) Prelude.fst consEncoder)
 
 --NOTE: Naming convention in this module is to always talk about things in the *encoding* direction, never in the *decoding* direction
+dsumEncoder
+  :: forall check parse f g a b.
+     ( Functor check
+     , Monad parse
+     )
+  => Encoder check parse (Some f) a
+  -> (forall x. f x -> Encoder Identity parse (g x) b)
+  -> Encoder check parse (DSum f g) (a, b)
+dsumEncoder this rest = Encoder $ do
+  thisValid <- unEncoder this
+  pure $ EncoderImpl
+    { _encoderImpl_decode = \(here, following) -> do
+        _encoderImpl_decode thisValid here >>= \(Some r) ->
+            (r :=>) <$> _encoderImpl_decode (runIdentity . unEncoder $ rest r) following
+    , _encoderImpl_encode = \(r :=> s) ->
+          ( _encoderImpl_encode thisValid $ Some r
+          , _encoderImpl_encode (runIdentity . unEncoder $ rest r) s
+          )
+    }
 
 chainEncoder
   :: forall check parse p r b.
-     ( Monad check
+     ( Applicative check
      , Monad parse
      )
   => Encoder check parse (b, r) r
   -> Encoder check parse (Some p) b
   -> (forall a. p a -> Encoder Identity parse a r)
   -> Encoder check parse (R p) r
-chainEncoder cons this rest = Encoder $ do
-  consValid <- unEncoder cons
-  thisValid <- unEncoder this
-  pure $ EncoderImpl
-    { _encoderImpl_decode = \v -> do
-        (here, following) <- _encoderImpl_decode consValid v
-        _encoderImpl_decode thisValid here >>= \case
-          Some r ->
-            (r :/) <$> _encoderImpl_decode (runIdentity . unEncoder $ rest r) following
-    , _encoderImpl_encode = \(r :/ s) ->
-        _encoderImpl_encode consValid
-          ( _encoderImpl_encode thisValid $ Some r
-          , _encoderImpl_encode (runIdentity . unEncoder $ rest r) s)
-    }
+chainEncoder cons this rest = cons . dsumEncoder this (\p -> rest p . unwrappedEncoder)
 
 --TODO: Do this in terms of a lens instead
 lensEncoder :: (Applicative check, Monad parse)
