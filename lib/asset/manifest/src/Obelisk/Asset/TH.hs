@@ -2,12 +2,17 @@
 Description:
   Template Haskell for generating asset paths.
 -}
+
+{-# LANGUAGE TemplateHaskellQuotes #-}
+{-# LANGUAGE CPP #-}
+
 module Obelisk.Asset.TH
   ( assetPath
   , staticAssetRaw
   , staticAssetHashed
   , staticAssetFilePath
   , staticAssetFilePathRaw
+  , staticAssetFileContent
   ) where
 
 import Obelisk.Asset.Gather
@@ -17,6 +22,15 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import System.Directory
 import System.FilePath.Posix
+import System.IO.Unsafe (unsafePerformIO)
+import qualified Data.ByteString as BS
+
+#if MIN_VERSION_template_haskell(2, 16, 0)
+import qualified Data.ByteString.Internal as BSI
+#endif
+
+import qualified Data.ByteString.Char8 as Char8
+import Data.ByteString.Unsafe (unsafePackAddressLen)
 
 -- | Produces the hashed path of a file
 hashedAssetFilePath :: FilePath -> FilePath -> Q FilePath
@@ -87,3 +101,28 @@ staticAssetWorker root staticOut fp = do
   when (not exists) $
     fail $ "The file " <> fp <> " was not found in " <> staticOut
   returnQ $ LitE $ StringL $ root </> fp
+
+-- | read  the file contents of a static asset at compile time into 'ByteString'
+-- like 'embedFile' from package @file-embed@
+--
+-- > import qualified Data.ByteString
+-- >
+-- > myFile :: Data.ByteString.ByteString
+-- > myFile = $(staticAssetFileContentRaw "dirName/fileName")
+staticAssetFileContent :: FilePath -> FilePath -> Q Exp
+staticAssetFileContent root fp = do
+  qAddDependentFile $ root </> fp
+  bs <- runIO (BS.readFile $ root </> fp)
+  -- the following is copy-paste from
+  -- https://hackage.haskell.org/package/file-embed-0.0.15.0/docs/src/Data.FileEmbed.html#bsToExp
+  -- assuming template-haskell >= 2.8.0
+  returnQ $ VarE 'unsafePerformIO
+      `AppE` (VarE 'unsafePackAddressLen
+      `AppE` LitE (IntegerL $ fromIntegral $ Char8.length bs)
+#if MIN_VERSION_template_haskell(2, 16, 0)
+      `AppE` LitE (bytesPrimL (
+                let BSI.PS ptr off sz = bs
+                in  mkBytes ptr (fromIntegral off) (fromIntegral sz))))
+#else
+      `AppE` LitE (StringPrimL $ BS.unpack bs))
+#endif
