@@ -404,6 +404,8 @@ findProjectAssets root = do
       , "--expr"
       , "(let a = import ./. {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
       , "--raw"
+      -- `--expr` and `--impure` are a side-effect of a newer nix version
+      -- `nix eval` is no longer the same as 2.3
       -- `--raw` is not available with old nix-instantiate. It drops quotation
       -- marks and trailing newline, so is very convenient for shelling out.
       ]
