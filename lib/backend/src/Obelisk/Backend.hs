@@ -67,9 +67,12 @@ import Obelisk.Snap.Extras (doNotCache, serveFileIfExistsAs)
 import Reflex.Dom.Core
 import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, httpServe, modifyResponse
             , rqPathInfo, rqQueryString, setContentType, writeBS, writeText
-            , rqCookies, Cookie(..) , setHeader)
+            , rqCookies, Cookie(..) , setHeader, addResponseCookie)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
+import Web.Cookie
+    ( SetCookie(setCookieHttpOnly, setCookieSecure, setCookiePath,
+                setCookieDomain, setCookieExpires, setCookieValue, setCookieName) )
 
 data Backend backendRoute frontendRoute = Backend
   { _backend_routeEncoder :: Encoder (Either Text) Identity (R (FullRoute backendRoute frontendRoute)) PageName
@@ -295,6 +298,19 @@ delayedGhcjsScript n allJsUrl = elAttr "script" ("type" =: "text/javascript") $ 
 
 instance HasCookies Snap where
   askCookies = map (\c -> (cookieName c, cookieValue c)) <$> getsRequest rqCookies
+
+instance HasSetCookie Snap where
+  setCookieRaw ck = do
+    let snapCookie = Cookie
+            { cookieName = setCookieName ck,
+              cookieValue = setCookieValue ck,
+              cookieExpires = setCookieExpires ck,
+              cookieDomain = setCookieDomain ck,
+              cookiePath = setCookiePath ck,
+              cookieSecure = setCookieSecure ck,
+              cookieHttpOnly = setCookieHttpOnly ck
+            }
+    modifyResponse (addResponseCookie snapCookie)
 
 -- | Get configs from the canonical "public" locations (i.e., locations that obelisk expects to make available
 -- to frontend applications, and hence visible to end users).

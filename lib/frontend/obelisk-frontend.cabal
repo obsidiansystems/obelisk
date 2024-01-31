@@ -22,7 +22,10 @@ library
                  reflex,
                  reflex-dom-core,
                  text,
-                 transformers
+                 transformers,
+                 base64-bytestring,
+                 either,
+                 time
   exposed-modules:
     Obelisk.Frontend
     Obelisk.Frontend.Cookie
