@@ -192,7 +192,7 @@ import Data.Monoid (Ap(..))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Semigroupoid
-import Data.Some (Some(Some), mapSome)
+import Data.Some (Some(Some), foldSome, mapSome)
 import Data.Tabulation
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -1105,11 +1105,11 @@ data Void1 :: * -> * where {}
 
 instance UniverseSome Void1 where
   universeSome = []
+instance FiniteSome Void1
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder = Encoder $ pure $ EncoderImpl
-  { _encoderImpl_encode = \case
-      Some f -> case f of {}
+  { _encoderImpl_encode = foldSome $ \case
   , _encoderImpl_decode = \_ -> throwError "void1Encoder: can't decode anything"
   }
 
