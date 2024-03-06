@@ -207,7 +207,7 @@ mkAsset = encodings: {name, value}:
       # files that are in the same directory as this one.
       fileAlone = builtins.path {
         inherit (value) path;
-        name = builtins.unsafeDiscardStringContext (mkValidDrvName { str = builtins.baseNameOf path; });
+        name = builtins.unsafeDiscardStringContext (mkValidDrvName { str = builtins.baseNameOf value.path; });
         recursive = false;
       };
       nameWithHash = builtins.unsafeDiscardStringContext (builtins.baseNameOf fileAlone);
@@ -225,7 +225,7 @@ mkAsset = encodings: {name, value}:
 # Given an encoding generation function to use and a directory containing assets, recursively walk the directory and encode each asset.
 #
 # mkAssetsWith :: (String -> Derivation) -> String -> Derivation
-mkAssetsWith = encodings: d: unionMapFilesWithName (mkAsset encodings) (readDirRecursive d);
+mkAssetsWith = encodings: d: dirToPath (unionMapFilesWithName (mkAsset encodings) (readDirRecursive d));
 
 # Given an input directory containing assets, recursively walk the directory and encode each asset with the default encodings.
 #
