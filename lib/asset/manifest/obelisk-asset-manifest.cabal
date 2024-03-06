@@ -16,6 +16,7 @@ library
 
   build-depends:
       base
+    , base16-bytestring
     , bytestring
     , containers
     , deepseq

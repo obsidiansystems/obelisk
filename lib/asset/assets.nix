@@ -210,7 +210,7 @@ mkAsset = encodings: {name, value}:
         name = builtins.unsafeDiscardStringContext (mkValidDrvName { str = builtins.baseNameOf value.path; });
         recursive = false;
       };
-      nameWithHash = builtins.unsafeDiscardStringContext (builtins.baseNameOf fileAlone);
+      nameWithHash = builtins.hashFile "sha256" value.path + "-" + builtins.unsafeDiscardStringContext (builtins.baseNameOf value.path);
   in {
       ${nameWithHash} = dir {
         type = symlink (builtins.toFile "type" "immutable");
