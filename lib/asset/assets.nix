@@ -250,13 +250,10 @@ mkValidDrvName = { str, replacement ? "?" }:
   in if builtins.substring 0 1 newName == "." then "_" + newName else newName;
 
 # Like builtins.path but always ensures the name is valid.
-mkPath = path:
-  if builtins.typeOf path == "path" # Don't mess with non-paths
-    then builtins.path {
-      inherit path;
-      name = mkValidDrvName { str = builtins.baseNameOf path; };
-    }
-    else path;
+mkPath = path: builtins.path {
+  inherit path;
+  name = builtins.unsafeDiscardStringContext (mkValidDrvName { str = builtins.baseNameOf path; });
+};
 
 # Given an encoding generation function and a file entry resulting from readDirRecursive in the form { name :: String, value: { path :: String } },
 # build a DirEntry for dirToPath with the various encodings of the asset for dirToPath to build into a final directory tree.
