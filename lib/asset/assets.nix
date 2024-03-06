@@ -41,7 +41,7 @@ zopfliEncodings = file:
   nixpkgs.stdenv.mkDerivation {
     name = "encodings";
 
-    input = mkPath file;
+    input = file;
 
     builder = builtins.toFile "builder.sh" ''
       source "$stdenv/setup"
@@ -67,7 +67,7 @@ gzipEncodings = file:
   nixpkgs.stdenv.mkDerivation {
     name = "encodings";
 
-    input = mkPath file;
+    input = file;
 
     builder = builtins.toFile "builder.sh" ''
       source "$stdenv/setup"
@@ -91,7 +91,7 @@ noEncodings = file:
   nixpkgs.stdenv.mkDerivation {
     name = "encodings";
 
-    input = mkPath file;
+    input = file;
 
     builder = builtins.toFile "builder.sh" ''
       source "$stdenv/setup"
@@ -247,13 +247,14 @@ mkPath = path: builtins.path {
 # Given an encoding generation function and a file entry resulting from readDirRecursive in the form { name :: String, value: { path :: String } },
 # build a DirEntry for dirToPath with the various encodings of the asset for dirToPath to build into a final directory tree.
 mkAsset = encodings: {name, value}:
-  let nameWithHash = builtins.unsafeDiscardStringContext (builtins.baseNameOf (mkPath value.path));
+  let asPath = mkPath value.path;
+      nameWithHash = builtins.unsafeDiscardStringContext (builtins.baseNameOf asPath);
   in {
     toDo = null;
     res = delay "2" {
       ${nameWithHash} = dir {
         type = symlink (builtins.toFile "type" "immutable");
-        encodings = symlink (encodings value.path);
+        encodings = symlink (encodings asPath);
       };
       ${name} = dir {
         type = symlink (builtins.toFile "type" "redirect");
