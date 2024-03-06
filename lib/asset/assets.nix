@@ -199,16 +199,32 @@ mkValidDrvName = { str, replacement ? "?" }:
     newName = stringAsChars (c: if isValidDrvNameChar c then c else replacement) str;
   in if builtins.substring 0 1 newName == "." then "_" + newName else newName;
 
+safePath = { name, path }:
+  nixpkgs.stdenv.mkDerivation {
+    inherit name;
+
+    src = path;
+
+    outputHashAlgo = "sha256";
+    outputHash = builtins.hashFile "sha256" path;
+    outputHashMode = "flat";
+
+    builder = builtins.toFile "builder.sh" ''
+      source "$stdenv/setup"
+
+      cp -a "$src" "$out"
+    '';
+  };
+
 # Given an encoding generation function and a file entry resulting from readDirRecursive in the form { name :: String, value: { path :: String } },
 # build a DirEntry for dirToPath with the various encodings of the asset for dirToPath to build into a final directory tree.
 mkAsset = encodings: {name, value}:
   let # We import the file as its own nix store path with a content hash.  If we
       # don't do this, we can wind up with the hash changing depending on other
       # files that are in the same directory as this one.
-      fileAlone = builtins.path {
+      fileAlone = safePath {
         inherit (value) path;
         name = builtins.unsafeDiscardStringContext (mkValidDrvName { str = builtins.baseNameOf value.path; });
-        recursive = false;
       };
       nameWithHash = builtins.hashFile "sha256" value.path + "-" + builtins.unsafeDiscardStringContext (builtins.baseNameOf value.path);
   in {
