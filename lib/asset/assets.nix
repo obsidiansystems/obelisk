@@ -207,18 +207,6 @@ dirToPath = contents:
 # Given a @DirEntry@ either use 'dirToPath' to make a derivation with its contents or return the path directly.
 toPath = x: if x.type == "directory" then dirToPath x.contents else x.path;
 
-# Given a file path, hash its contents as nix does and return the hash string.
-hashFileD = path:
-  nixpkgs.runCommand "hashFile" {
-    buildInputs = [
-      nixpkgs.nix
-    ];
-    preferLocalBuild = true;
-    path = mkPath path;
-  } ''
-    nix-hash --flat --base32 --type sha256 "$path" | tr -d '\n' >"$out"
-  '';
-
 # Build a DirEntry of the shape { type :: String, contents :: {DirEntry} } with type set to directory. Used to create a data model to pass to toPath.
 #
 # dir :: String -> DirEntry
@@ -253,17 +241,15 @@ mkValidDrvName = { str, replacement ? "?" }:
 mkPath = path: builtins.path {
   inherit path;
   name = builtins.unsafeDiscardStringContext (mkValidDrvName { str = builtins.baseNameOf path; });
+  recursive = false;
 };
 
 # Given an encoding generation function and a file entry resulting from readDirRecursive in the form { name :: String, value: { path :: String } },
 # build a DirEntry for dirToPath with the various encodings of the asset for dirToPath to build into a final directory tree.
 mkAsset = encodings: {name, value}:
-  let hashD = hashFileD value.path;
-      nameWithHash = "${delay "1" (builtins.trace
-        "importing IFD asset hash"
-        (builtins.readFile hashD))}-${name}";
+  let nameWithHash = builtins.unsafeDiscardStringContext (builtins.baseNameOf (mkPath value.path));
   in {
-    toDo = hashD;
+    toDo = null;
     res = delay "2" {
       ${nameWithHash} = dir {
         type = symlink (builtins.toFile "type" "immutable");
