@@ -1,9 +1,21 @@
+cabal-version: 2.2
 name: backend
 version: 0.1
-cabal-version: >= 1.8
 build-type: Simple
 
+common defaults
+  default-language: Haskell2010
+  ghc-options: -Wall -O -fno-show-valid-hole-fits
+               -- unsafe code
+               -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields
+               -- unneeded code
+               -Widentities -Wredundant-constraints
+  if impl(ghc >= 8.8)
+    ghc-options:
+               -Wmissing-deriving-strategies
+
 library
+  import: defaults
   hs-source-dirs: src
   if impl(ghcjs)
     buildable: False
@@ -14,26 +26,11 @@ library
                , obelisk-route
   exposed-modules:
     Backend
-  ghc-options: -Wall -O -fno-show-valid-hole-fits
-               -- unsafe code
-               -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields
-               -- unneeded code
-               -Widentities -Wredundant-constraints
-  if impl(ghc >= 8.8)
-    ghc-options:
-               -Wmissing-deriving-strategies
 
 executable backend
+  import: defaults
   main-is: main.hs
   hs-source-dirs: src-bin
-  ghc-options: -Wall -O -fno-show-valid-hole-fits -threaded
-               -- unsafe code
-               -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields
-               -- unneeded code
-               -Widentities -Wredundant-constraints
-  if impl(ghc >= 8.8)
-    ghc-options:
-               -Wmissing-deriving-strategies
   if impl(ghcjs)
     buildable: False
   build-depends: base
