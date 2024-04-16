@@ -24,6 +24,7 @@ library
     , filepath
     , template-haskell
     , text
+    , th-abstraction >= 0.4
     , transformers
     , unix-compat
     , vector
