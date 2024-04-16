@@ -89,7 +89,7 @@ staticClass = do
   let n x = Name (OccName x) NameS
       className = n "StaticFile"
       methodName = n "hashedPath"
-      cls = ClassD [] className [kindedTVFlag (n "s") () (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
+      cls = ClassD [] className [kindedTVFlag (n "s") BndrReq (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
   tell $ Seq.singleton cls
   return $ StaticContext
     { _staticContext_className = className
