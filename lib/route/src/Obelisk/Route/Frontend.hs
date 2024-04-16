@@ -60,6 +60,9 @@ module Obelisk.Route.Frontend
 #if __GLASGOW_HASKELL__ < 810
 import Control.Monad ((<=<))
 #endif
+#if __GLASGOW_HASKELL__ >= 906
+import Control.Monad (when, (<=<))
+#endif
 #endif
 
 import Prelude hiding ((.), id)
