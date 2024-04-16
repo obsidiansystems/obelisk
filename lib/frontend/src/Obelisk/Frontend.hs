@@ -29,6 +29,10 @@ module Obelisk.Frontend
 #if __GLASGOW_HASKELL__ < 810
 import Data.Monoid ((<>))
 #endif
+#if __GLASGOW_HASKELL__ >= 906
+import Control.Monad (when)
+import Data.Functor (void)
+#endif
 #endif
 
 import Prelude hiding ((.))

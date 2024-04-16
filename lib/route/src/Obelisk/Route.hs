@@ -165,6 +165,10 @@ import Control.Lens
 import Control.Monad.Trans (lift)
 import Data.Monoid ((<>))
 #endif
+#if __GLASGOW_HASKELL__ >= 906
+import Control.Monad (forM, (<=<))
+import Control.Monad.Trans (lift)
+#endif
 #endif
 
 import Control.Monad.Except
