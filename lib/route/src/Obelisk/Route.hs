@@ -188,6 +188,7 @@ import Data.Functor.Sum
 import Data.GADT.Compare
 import Data.GADT.Compare.TH
 import Data.GADT.Show
+import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -961,31 +962,31 @@ handleEncoder recover e = Encoder $ do
 
 -- | The typical full route type comprising all of an Obelisk application's routes.
 -- Parameterised by the top level GADTs that define backend and frontend routes, respectively.
-data FullRoute :: (* -> *) -> (* -> *) -> * -> * where
+data FullRoute :: (Type -> Type) -> (Type -> Type) -> Type -> Type where
   FullRoute_Backend :: br a -> FullRoute br fr a
   FullRoute_Frontend :: ObeliskRoute fr a -> FullRoute br fr a
 
 -- | A type which can represent Obelisk-specific resource routes, in addition to application specific routes which serve your
 -- frontend.
-data ObeliskRoute :: (* -> *) -> * -> * where
+data ObeliskRoute :: (Type -> Type) -> Type -> Type where
   -- We need to have the `f a` as an argument here, because otherwise we have no way to specifically check for overlap between us and the given encoder
   ObeliskRoute_App :: f a -> ObeliskRoute f a
   ObeliskRoute_Resource :: ResourceRoute a -> ObeliskRoute f a
 
 -- | A type representing the various resource routes served by Obelisk. These can in principle map to any physical routes you want,
 -- but sane defaults are provided by 'resourceRouteSegment'
-data ResourceRoute :: * -> * where
+data ResourceRoute :: Type -> Type where
   ResourceRoute_Static :: ResourceRoute [Text] -- This [Text] represents the *path in our static files directory*, not necessarily the URL path that the asset gets served at (although that will often be "/static/this/text/thing")
   ResourceRoute_Ghcjs :: ResourceRoute [Text]
   ResourceRoute_JSaddleWarp :: ResourceRoute (R JSaddleWarpRoute)
   ResourceRoute_Version :: ResourceRoute ()
 
-data JSaddleWarpRoute :: * -> * where
+data JSaddleWarpRoute :: Type -> Type where
   JSaddleWarpRoute_JavaScript :: JSaddleWarpRoute ()
   JSaddleWarpRoute_WebSocket :: JSaddleWarpRoute ()
   JSaddleWarpRoute_Sync :: JSaddleWarpRoute [Text]
 
-data IndexOnlyRoute :: * -> * where
+data IndexOnlyRoute :: Type -> Type where
   IndexOnlyRoute :: IndexOnlyRoute ()
 
 concat <$> mapM deriveRouteComponent
@@ -1112,7 +1113,7 @@ someSumEncoder = Encoder $ pure $ EncoderImpl
       Right (Some r) -> Some (InR r)
   }
 
-data Void1 :: * -> * where {}
+data Void1 :: Type -> Type where {}
 
 instance UniverseSome Void1 where
   universeSome = []

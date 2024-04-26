@@ -19,17 +19,18 @@ import Control.Category
 
 import Data.Text (Text)
 import Data.Functor.Identity
+import Data.Kind (Type)
 
 import Obelisk.Route
 import Obelisk.Route.TH
 
-data BackendRoute :: * -> * where
+data BackendRoute :: Type -> Type where
   -- | Used to handle unparseable routes.
   BackendRoute_Missing :: BackendRoute ()
   -- You can define any routes that will be handled specially by the backend here.
   -- i.e. These do not serve the frontend, but do something different, such as serving static files.
 
-data FrontendRoute :: * -> * where
+data FrontendRoute :: Type -> Type where
   FrontendRoute_Main :: FrontendRoute ()
   -- This type is used to define frontend routes, i.e. ones for which the backend will serve the frontend.
 
