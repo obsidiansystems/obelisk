@@ -11,6 +11,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Obelisk.Frontend
   ( ObeliskWidget
@@ -207,7 +208,6 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , PrimMonad m
            , MonadSample DomTimeline (Performable m)
            , DOM.MonadJSM m
-           , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
            , MonadFix (Performable m)
            , MonadFix m
            , Prerender DomTimeline (HydrationDomBuilderT s DomTimeline m)
