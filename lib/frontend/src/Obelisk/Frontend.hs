@@ -66,8 +66,6 @@ import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import System.Info (os)
 import Web.Cookie
 
-import Debug.Trace
-
 type ObeliskWidget t route m =
   ( DomBuilder t m
   , MonadFix m
@@ -132,7 +130,6 @@ nodeListNodes es = do
 
 setInitialRoute :: Bool -> JSM ()
 setInitialRoute useHash = do
-  traceM "setInitialRoute"
   window <- DOM.currentWindowUnchecked
   initialLocation <- DOM.getLocation window
   initialUri <- getLocationUri initialLocation
