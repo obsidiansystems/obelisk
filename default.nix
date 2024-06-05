@@ -83,16 +83,36 @@ in rec {
     set -euo pipefail
     cd '${haskellLib.justStaticExecutables frontend}'
     shopt -s globstar
-    for f in **/all.js; do
-      dir="$out/$(basename "$(dirname "$f")")"
+
+    base=$(pwd)
+    mkdir -p "$out"
+    cd "$out"
+
+    for f in $base/**/all.js; do
+      dir="$(basename "$(dirname "$f")")"
+
       mkdir -p "$dir"
-      ln -s "$(realpath "$f")" "$dir/all.unminified.js"
+      pushd "$dir"
+
+      ln -s "$(realpath "$f")" "$out/$dir/all.unminified.js"
       ${if optimizationLevel == null then ''
-        ln -s "$dir/all.unminified.js" "$dir/all.js"
+        ln -s "$out/$dir/all.unminified.js" "$out/$dir/all.js"
       '' else ''
         # NOTE: "--error_format JSON" avoids closurecompiler crashes when trying to report errors.
-        '${pkgs.closurecompiler}/bin/closure-compiler' --error_format JSON ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
-        echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
+        '${pkgs.closurecompiler}/bin/closure-compiler' \
+          --error_format JSON \
+          ${if externs == null then "" else "--externs '${externs}'"} \
+          --externs '${reflex-platform.ghcjsExternsJs}' \
+          -O '${optimizationLevel}' \
+          --jscomp_warning=checkVars \
+          --warning_level=QUIET \
+          --create_source_map="all.js.map" \
+          --source_map_format=V3 \
+          --js_output_file="all.js" \
+          "all.unminified.js"
+        echo '//# sourceMappingURL=all.js.map' >> "all.js"
+
+        popd
       ''}
     done
   '';
