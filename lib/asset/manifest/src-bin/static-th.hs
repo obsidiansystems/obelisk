@@ -25,7 +25,7 @@ main = do
       , "    Automatically generated module that provides the 'static' TH function"
       , "    to generate paths to static assets."
       , "-}"
-      , "module " <> moduleName <> " ( static, staticFilePath ) where"
+      , "module " <> moduleName <> " ( static, staticFilePath, staticFileContent ) where"
       , ""
       , "import Obelisk.Asset.TH"
       , "import Language.Haskell.TH"
@@ -34,9 +34,11 @@ main = do
       , "#ifdef OBELISK_ASSET_PASSTHRU"
       , "static = staticAssetRaw"
       , "staticFilePath =  staticAssetFilePathRaw \"static.out\""
+      , "staticFileContent = staticAssetFileContent \"static.out\""
       , "#else"
       , "static = staticAssetHashed " <> show root
       , "staticFilePath = staticAssetFilePath " <> show root
+      , "staticFileContent = staticAssetFileContent " <> show root
       , "#endif"
       ]
     }
