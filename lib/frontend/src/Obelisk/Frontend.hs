@@ -87,6 +87,8 @@ type ObeliskWidget t route m =
   , PrebuildAgnostic t route (Client m)
   , HasConfigs m
   , HasCookies m
+  , HasCookies (Client m)
+  , HasSetCookie (Client m)
   , MonadIO (Performable m)
   )
 
@@ -208,6 +210,8 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , MonadFix m
            , Prerender DomTimeline (HydrationDomBuilderT s DomTimeline m)
            , MonadIO (Performable m)
+           , HasCookies (Client (HydrationDomBuilderT s DomTimeline m))
+           , HasSetCookie (Client (HydrationDomBuilderT s DomTimeline m))
            )
         => (forall c. HydrationDomBuilderT s DomTimeline m c -> FloatingWidget () c)
         -> (forall c. HydrationDomBuilderT s DomTimeline m c -> FloatingWidget () c)
