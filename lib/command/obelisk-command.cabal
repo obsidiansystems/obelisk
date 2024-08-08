@@ -55,7 +55,7 @@ library
     , yaml
     , nix-thunk
     , cli-extras
-    
+
   exposed-modules:
     Obelisk.App
     Obelisk.Command
@@ -67,6 +67,9 @@ library
     Obelisk.Command.VmBuilder
     Obelisk.Command.Preprocessor
   ghc-options: -Wall
+
+  if arch(javascript)
+    buildable: False
 
 executable ob
   main-is: src-bin/ob.hs

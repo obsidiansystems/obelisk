@@ -1,16 +1,24 @@
-packages:
-  --./asset/manifest
-  --./asset/serve-snap
-  --./backend
-  --./command
-  ./executable-config/inject
-  ./executable-config/lookup
-  ./frontend
-  ./route
-  --./run
-  --./selftest
-  --./snap-extras
-  ./tabulation
+if arch(javascript)
+  packages:
+    ./executable-config/inject
+    ./executable-config/lookup
+    ./frontend
+    ./route
+    ./tabulation
+else
+  packages:
+    --./asset/manifest
+    --./asset/serve-snap
+    --./backend
+    --./command
+    ./executable-config/inject
+    ./executable-config/lookup
+    ./frontend
+    ./route
+    --./run
+    --./selftest
+    ./snap-extras
+    ./tabulation
 
 source-repository-package
   type: git
