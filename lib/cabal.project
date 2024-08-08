@@ -7,7 +7,7 @@ if arch(javascript)
     ./tabulation
 else
   packages:
-    --./asset/manifest
+    ./asset/manifest
     --./asset/serve-snap
     --./backend
     --./command
