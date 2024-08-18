@@ -22,7 +22,7 @@ library
     , obelisk-executable-config-lookup
     , obelisk-run
     , which
-    , process
+    , process == 1.6.13.2
     , shelly
     , temporary
     , text

@@ -46,7 +46,9 @@ import Data.Time.Clock (getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
+#if MIN_VERSION_Cabal(3,4,0)
 import qualified Distribution.Compat.NonEmptySet as CabalSet
+#endif
 #if MIN_VERSION_Cabal(3,2,1)
 import Distribution.Compiler (CompilerFlavor(..), perCompilerFlavorToList, PerCompilerFlavor)
 #else
@@ -80,7 +82,9 @@ import Distribution.Types.LibraryName (LibraryName(..))
 import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Types.VersionRange (anyVersion)
 import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
+#if MIN_VERSION_Cabal(3,6,0)
 import Distribution.Utils.Path (getSymbolicPath)
+#endif
 #if MIN_VERSION_Cabal(3,2,1)
 import qualified Distribution.Parsec.Warning as Dist
 #else
@@ -105,6 +109,19 @@ import Obelisk.Command.Project
 import Obelisk.Command.Utils (findExePath, ghcidExePath)
 import "nix-thunk" Nix.Thunk
 import Cli.Extras
+
+#if MIN_VERSION_Cabal(3,4,0)
+cabalSetSingleton :: a -> CabalSet.NonEmptySet a
+cabalSetSingleton = CabalSet.singleton
+#else
+cabalSetSingleton :: a -> Set a
+cabalSetSingleton = Set.singleton
+#endif
+
+#if !MIN_VERSION_Cabal(3,6,0)
+getSymbolicPath :: a -> a
+getSymbolicPath = id
+#endif
 
 data CabalPackageInfo = CabalPackageInfo
   { _cabalPackageInfo_packageFile :: FilePath
@@ -536,7 +553,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
       map (dependencyPackageId installedPackageIndex) $
           filter ((`notElem` packageNames) . depPkgName) $
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
-            [Dependency (mkPackageName "obelisk-run") anyVersion (CabalSet.singleton LMainLibName)]
+            [Dependency (mkPackageName "obelisk-run") anyVersion (cabalSetSingleton LMainLibName)]
     dependencyPackageId installedPackageIndex dep =
       case lookupDependency installedPackageIndex (depPkgName dep) (depVerRange dep) of
         ((_version,installedPackageInfo:_) :_) ->

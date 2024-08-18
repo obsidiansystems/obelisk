@@ -47,13 +47,13 @@ import Control.Monad.Fail (MonadFail)
 import Data.Monoid ((<>))
 #endif
 #if __GLASGOW_HASKELL__ >= 906
+import Control.Monad
 import Control.Monad.IO.Class
 #else
 import Control.Monad.Except
 #endif
 #endif
 
-import Control.Monad
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))

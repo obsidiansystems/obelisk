@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -27,7 +28,12 @@ import System.Exit
 import qualified System.Info
 import System.IO (hIsTerminalDevice, Handle, stdout, stderr, hGetEncoding, hSetEncoding, mkTextEncoding)
 import System.Process (rawSystem)
+
+#if MIN_VERSION_optparse_applicative(0,18,0)
 import Text.PrettyPrint.ANSI.Leijen (text, (<$$>))
+#else
+import Options.Applicative.Help.Pretty (text, (<$$>))
+#endif
 
 import Obelisk.App
 import Obelisk.Command.Deploy
@@ -289,17 +295,11 @@ interpretOpts :: Parser [(FilePath, Interpret)]
 interpretOpts = many
     (   (, Interpret_Interpret) <$>
           strOption (common <> long "interpret" <> help
-            "Don't pre-build packages found in DIR when constructing the package database. The default behavior is \
-            \'--interpret <project-root>', which will load everything which is unpacked into GHCi. \
-            \ Use --interpret and --no-interpret multiple times to add or remove multiple trees \
-            \ from the environment. Settings for right-most directories will \
-            \ override settings for any identical directories given earlier."
+            "Don't pre-build packages found in DIR when constructing the package database. The default behavior is '--interpret <project-root>', which will load everything which is unpacked into GHCi. Use --interpret and --no-interpret multiple times to add or remove multiple trees from the environment. Settings for right-most directories will override settings for any identical directories given earlier."
           )
     <|> (, Interpret_NoInterpret) <$>
           strOption (common <> long "no-interpret" <> help
-            "Make packages found in DIR available in the package database (but only when they are used dependencies). \
-            \ This will build the packages in DIR before loading GHCi. \
-            \See help for --interpret for how the two options are related."
+            "Make packages found in DIR available in the package database (but only when they are used dependencies). This will build the packages in DIR before loading GHCi. See help for --interpret for how the two options are related."
           )
     )
   where
