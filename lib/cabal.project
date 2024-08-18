@@ -8,20 +8,47 @@ if arch(javascript)
 else
   packages:
     ./asset/manifest
-    --./asset/serve-snap
-    --./backend
-    --./command
+    ./asset/serve-snap
+    ./backend
+    ./command
     ./executable-config/inject
     ./executable-config/lookup
     ./frontend
     ./route
-    --./run
-    --./selftest
+    ./run
+    ./selftest
     ./snap-extras
     ./tabulation
+
+index-state: 2024-08-04T00:00:00Z
+allow-newer: all
+
+constraints:
+    hnix-store-core < 0.7
+  , hnix-store-remote < 0.7
 
 source-repository-package
   type: git
   location: https://github.com/ymeister/splitmix.git
   tag: fe4d9e4ec01ba7caf8053d6888ec2e7f89fad874
   --sha256: 19fbwcmdmb9w34cp19r2j4qywhnjmxxdv4rwci29pzbvgbnnjdia
+
+if !arch(javascript)
+  source-repository-package
+    type: git
+    location: https://github.com/ymeister/hs-git.git
+    tag: 4534c4589fc63d76d4a28f4ca9d810bea021964b
+    --sha256: 12c4llylc5zls85x11inkxdwllbps77pvwyji7jv9a8c069fg6sf
+
+  source-repository-package
+    type: git
+    location: https://github.com/mpickering/haskell-filesystem.git
+    tag: 2eb26717e986442796d703a80869e6826a10191e
+    subdir: system-fileio system-filepath
+    --sha256: sha256-VDShV+gkVUooMy1OtxrFfZrTAVVhWN/Ffjd6Qq0kHNM=
+
+  source-repository-package
+    type: git
+    location: https://github.com/ymeister/unix-compat.git
+    tag: 339649401c876ca1f76c6f94d6b099c8c47fa9e2
+    --sha256: 0j85q0mqg929nlz9ks6jaxz54pkvifpmldsvqjcz4bv6wml8m3wd

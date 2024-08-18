@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE PackageImports #-}
 {-# LANGUAGE ViewPatterns #-}
+
 {-|
    Description:
    Implementation of the CLI deploy commands. Deployment is done by intializing
@@ -16,7 +18,6 @@
 -}
 module Obelisk.Command.Deploy where
 
-import Control.Applicative (liftA2)
 import Control.Lens
 import Control.Monad
 import Control.Monad.Catch (Exception (displayException), MonadThrow, bracket, throwM, try)
@@ -47,12 +48,17 @@ import qualified Nix.Expr.Shorthands as Nix
 import Prettyprinter (layoutCompact)
 import Prettyprinter.Render.String (renderString)
 
+#if !MIN_VERSION_base(4,18,0)
+import Control.Applicative (liftA2)
+#endif
+
 import Obelisk.App (MonadObelisk, wrapNixThunkError)
 import Obelisk.Command.Nix
 import Obelisk.Command.Project
 import Obelisk.Command.Utils
 
 import "nix-thunk" Nix.Thunk
+import "nix-thunk" Nix.Thunk.Internal (prettyReadThunkError)
 import Cli.Extras
 
 -- | Options passed to the `init` verb
@@ -178,7 +184,7 @@ deployPush deployPath builders = do
       checkGitCleanStatus srcPath True >>= \case
         True -> wrapNixThunkError $ packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
-    Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> T.pack (show err)
+    Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> prettyReadThunkError err
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile

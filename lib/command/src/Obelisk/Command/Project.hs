@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -31,8 +32,6 @@ module Obelisk.Command.Project
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
 import Control.Lens ((.~), (?~), (<&>))
 import Control.Monad
-import Control.Monad.Except
-import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Log
 import Control.Monad.State
 import qualified Data.Aeson as Json
@@ -65,6 +64,11 @@ import System.PosixCompat.Types
 import System.PosixCompat.User
 import qualified System.Process as Proc
 import Text.ShellEscape (sh, bash, bytes)
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Monad.Except
+import Control.Monad.IO.Class (liftIO)
+#endif
 
 import GitHub.Data.GitData (Branch)
 import GitHub.Data.Name (Name)
@@ -350,9 +354,7 @@ mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command 
   let setCwd_ = if chdirToRoot then setCwd (Just root) else id
   pure $ setCwd_ $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{root, pkgs, shell}: ((import root {}).passthru.__unstable__.self.extend (_: _: {\
-          \shellPackages = builtins.fromJSON pkgs;\
-        \})).project.shells.${shell}"
+        "{root, pkgs, shell}: ((import root {}).passthru.__unstable__.self.extend (_: _: {shellPackages = builtins.fromJSON pkgs;})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~
         [ rawArg "root" $ toNixPath $ if chdirToRoot then "." else root
         , strArg "pkgs" (T.unpack $ decodeUtf8 $ BSL.toStrict $ Json.encode packageNamesAndAbsPaths)
@@ -376,9 +378,7 @@ nixShellWithHoogle root isPure shell' command = do
   defShellConfig <- nixShellRunConfig root isPure command
   runProcess_ $ setCwd (Just root) $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {\
-          \userSettings = super.userSettings // { withHoogle = true; };\
-        \})).project.shells.${shell}"
+        "{shell}: ((import ./. {}).passthru.__unstable__.self.extend (_: super: {userSettings = super.userSettings // { withHoogle = true; };})).project.shells.${shell}"
     & nixShellConfig_common . nixCmdConfig_args .~ [ strArg "shell" shell' ]
 
 -- | Describes the provenance of static assets (i.e., are they the result of a derivation
@@ -445,7 +445,6 @@ watchStaticFilesDerivation root = do
     -- derivation actually relies on, or at least use the gitignore
     let filterEvents x =
           let fn = takeFileName x
-              dirs = Set.fromList $ splitDirectories x
               ignoredFilenames = Set.fromList
                 [ "4913" -- Vim temporary file
                 ]

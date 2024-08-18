@@ -11,6 +11,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE PackageImports #-}
+
 module Obelisk.Command.Run where
 
 import Control.Arrow ((&&&))
@@ -45,6 +46,7 @@ import Data.Time.Clock (getCurrentTime)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Traversable (for)
 import Debug.Trace (trace)
+import qualified Distribution.Compat.NonEmptySet as CabalSet
 #if MIN_VERSION_Cabal(3,2,1)
 import Distribution.Compiler (CompilerFlavor(..), perCompilerFlavorToList, PerCompilerFlavor)
 #else
@@ -78,6 +80,7 @@ import Distribution.Types.LibraryName (LibraryName(..))
 import Distribution.Types.PackageName (mkPackageName)
 import Distribution.Types.VersionRange (anyVersion)
 import Distribution.Utils.Generic (toUTF8BS, readUTF8File)
+import Distribution.Utils.Path (getSymbolicPath)
 #if MIN_VERSION_Cabal(3,2,1)
 import qualified Distribution.Parsec.Warning as Dist
 #else
@@ -371,7 +374,12 @@ parseCabalPackage' pkg = runExceptT $ do
     Right (Left (CabalFilePath file)) -> (, file, takeBaseName file) <$> liftIO (readUTF8File file)
     Right (Right (HPackFilePath file)) -> do
       let
-        decodeOptions = Hpack.DecodeOptions (Hpack.ProgramName "ob") file Nothing Hpack.decodeYaml
+        decodeOptions = Hpack.defaultDecodeOptions
+          { Hpack.decodeOptionsProgramName = Hpack.ProgramName "ob"
+          , Hpack.decodeOptionsTarget = file
+          , Hpack.decodeOptionsUserDataDir = Nothing
+          , Hpack.decodeOptionsDecode = Hpack.decodeYaml
+          }
       liftIO (Hpack.readPackageConfig decodeOptions) >>= \case
         Left err -> throwError $ T.pack $ "Failed to parse " <> file <> ": " <> err
         Right (Hpack.DecodeResult hpackPackage _ _ _) -> pure (Hpack.renderPackage [] hpackPackage, file, Hpack.packageName hpackPackage)
@@ -401,7 +409,7 @@ parseCabalPackage' pkg = runExceptT $ do
         , _cabalPackageInfo_packageRoot = takeDirectory packageFile
         , _cabalPackageInfo_buildable = buildable $ libBuildInfo lib
         , _cabalPackageInfo_sourceDirs =
-            fromMaybe (pure ".") $ NE.nonEmpty $ hsSourceDirs $ libBuildInfo lib
+            fromMaybe (pure ".") $ NE.nonEmpty $ fmap getSymbolicPath $ hsSourceDirs $ libBuildInfo lib
         , _cabalPackageInfo_defaultExtensions =
             defaultExtensions $ libBuildInfo lib
         , _cabalPackageInfo_defaultLanguage =
@@ -528,7 +536,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
       map (dependencyPackageId installedPackageIndex) $
           filter ((`notElem` packageNames) . depPkgName) $
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
-            [Dependency (mkPackageName "obelisk-run") anyVersion (Set.singleton LMainLibName)]
+            [Dependency (mkPackageName "obelisk-run") anyVersion (CabalSet.singleton LMainLibName)]
     dependencyPackageId installedPackageIndex dep =
       case lookupDependency installedPackageIndex (depPkgName dep) (depVerRange dep) of
         ((_version,installedPackageInfo:_) :_) ->

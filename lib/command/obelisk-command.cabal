@@ -24,7 +24,7 @@ library
     , git
     , github
     , here
-    , hnix
+    , hnix >=0.5
     , hpack
     , io-streams
     , lens
@@ -39,6 +39,7 @@ library
     , optparse-applicative
     , placeholders
     , prettyprinter
+    , prettyprinter-compat-ansi-wl-pprint
     , process
     , reflex
     , reflex-fsnotify
