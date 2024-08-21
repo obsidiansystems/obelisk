@@ -176,7 +176,7 @@ import Control.Monad.Trans (lift)
 import Data.Monoid ((<>))
 #endif
 #if __GLASGOW_HASKELL__ >= 906
-import Control.Monad (forM, (<=<))
+import Control.Monad (forM, guard, (<=<))
 import Control.Monad.Trans (lift)
 #endif
 #endif

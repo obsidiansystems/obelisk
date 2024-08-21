@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -20,7 +21,10 @@ module Main where
 
 import Prelude hiding (id, (.))
 
+#if __GLASGOW_HASKELL__ < 906
 import Control.Applicative (liftA2)
+#endif
+
 import Control.Categorical.Bifunctor (bimap)
 import Control.Category (Category((.), id))
 import Control.Category.Associative (associate, Associative (disassociate))
