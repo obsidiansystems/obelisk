@@ -5,29 +5,14 @@
 , terms ? { # Accepted terms, conditions, and licenses
     security.acme.acceptTerms = false;
   }
-, reflex-platform-func ? import ./dep/reflex-platform
 , useGHC810 ? true # false if one wants to use ghc 8.6.5
 }:
 let
   inherit (import dep/gitignore.nix { inherit (pkgs) lib; }) gitignoreSource;
-  reflex-platform = getReflexPlatform { inherit system; };
 
   nix-thunk = import ./dep/nix-thunk {};
   mars = nix-thunk.thunkSource ./dep/mars;
   marsProject = args: (import mars args).project;
-
-  getReflexPlatform = { system, enableLibraryProfiling ? profiling }: reflex-platform-func {
-    inherit iosSdkVersion config system enableLibraryProfiling;
-
-    __useNewerCompiler = useGHC810;
-
-    nixpkgsOverlays = [
-      (import ./nixpkgs-overlays)
-    ];
-
-    haskellOverlays = [
-    ];
-  };
 
   obeliskHackageOverlays = [
     {
@@ -172,7 +157,6 @@ let
 
   haskellLib = pkgs.haskell.lib;
 in rec {
-  inherit reflex-platform;
   inherit marsObelisk;
   inherit (nixpkgs) lib;
   inherit nixpkgs pkgs;
@@ -218,7 +202,6 @@ in rec {
     ${exe} "$src" "$haskellManifest" ${packageName} ${moduleName} "$symlinked"
   '';
 
-  #reflex-platform.ghcjsExternsJs = "";
   compressedJs = frontend: optimizationLevel: externs: pkgs.runCommand "compressedJs" {} ''
     set -euo pipefail
     cd '${frontend}'
@@ -231,7 +214,7 @@ in rec {
         ln -s "$dir/all.unminified.js" "$dir/all.js"
       '' else ''
         # NOTE: "--error_format JSON" avoids closurecompiler crashes when trying to report errors.
-        '${pkgs.closurecompiler}/bin/closure-compiler' --error_format JSON ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        '${pkgs.closurecompiler}/bin/closure-compiler' --error_format JSON ${if externs == null then "" else "--externs '${externs}'"} --externs '${mars.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
         echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
       ''}
     done
