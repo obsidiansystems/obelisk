@@ -27,10 +27,6 @@ let
     ];
 
     haskellOverlays = [
-      (import ./haskell-overlays/misc-deps.nix { inherit hackGet; })
-      pkgs.obeliskExecutableConfig.haskellOverlay
-      (import ./haskell-overlays/obelisk.nix)
-      (import ./haskell-overlays/tighten-ob-exes.nix)
     ];
   };
 
