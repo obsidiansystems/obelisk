@@ -10,7 +10,6 @@
 }:
 let
   inherit (import dep/gitignore.nix { inherit (pkgs) lib; }) gitignoreSource;
-  inherit (reflex-platform) hackGet;
   reflex-platform = getReflexPlatform { inherit system; };
 
   nix-thunk = import ./dep/nix-thunk {};
@@ -173,7 +172,6 @@ let
 
   haskellLib = pkgs.haskell.lib;
 in rec {
-  inherit (reflex-platform) hackGet;
   inherit reflex-platform;
   inherit marsObelisk;
   inherit (nixpkgs) lib;
