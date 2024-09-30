@@ -194,7 +194,7 @@ If the `useGHC810` argument is set to false, or not given, then GHC 8.6 will be 
 
 ### Interpreting dependencies in `ob repl`
 
-It is sometimes helpful to unpack dependency thunks and import them as interpreted files in `ob repl`.  To do this, you just need to add those packages' cabal files to your project's `cabal.project`.  Make sure the set of packages there is the same as the set of packages obelisk is interpreting, e.g. using the `--no-interpret` and `--interpret` flags to `ob repl`.
+It is sometimes helpful to unpack dependency thunks and import them as interpreted files in `ob repl`.  To do this, add those packages' cabal files to your project's `cabal.project`.  Make sure the set of packages there is the same as the set of packages obelisk is interpreting, e.g. using the `--no-interpret` and `--interpret` flags to `ob repl`.  You may also need to add the dependencies' files to your git index temporarily so that Haskell.nix doesn't filter them out.
 
 ## Deploying
 
