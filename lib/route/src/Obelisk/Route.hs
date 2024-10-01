@@ -47,6 +47,7 @@ module Obelisk.Route
   , tryDecode
   , hoistCheck
   , hoistParse
+  , generalizeIdentity
   , mapSome
   , rPrism
   , _R
@@ -193,7 +194,7 @@ import Data.Monoid (Ap(..))
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Semigroupoid
-import Data.Some (Some(Some), mapSome)
+import Data.Some (Some(Some), foldSome, mapSome)
 import Data.Tabulation
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -371,6 +372,12 @@ hoistCheck f (Encoder x) = Encoder (f x)
 hoistParse :: (Functor check)
   => (forall t. parse t -> parse' t) -> Encoder check parse a b -> Encoder check parse' a b
 hoistParse f (Encoder x) = Encoder (fmap (\(EncoderImpl dec enc) -> EncoderImpl (f . dec) enc) x)
+
+generalizeIdentity
+  :: (Functor check, Applicative parse)
+  => Encoder check Identity a b
+  -> Encoder check parse a b
+generalizeIdentity = hoistParse (pure . runIdentity)
 
 -- | Check an 'Encoder', transforming it into one whose check monad is anything we want (usually Identity).
 checkEncoder :: (Applicative check', Functor check)
@@ -1136,16 +1143,24 @@ data Void1 :: * -> * where {}
 
 instance UniverseSome Void1 where
   universeSome = []
+instance FiniteSome Void1
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder = Encoder $ pure $ EncoderImpl
-  { _encoderImpl_encode = \case
-      Some f -> case f of {}
+  { _encoderImpl_encode = foldSome $ \case
   , _encoderImpl_decode = \_ -> throwError "void1Encoder: can't decode anything"
   }
 
 instance GShow Void1 where
   gshowsPrec _ = \case {}
+
+-- | Encode a 'PathQuery' as 'Text'
+pathQueryEncoder :: (Applicative check, Applicative parse) => Encoder check parse PathQuery Text
+pathQueryEncoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = \(k, v) -> T.pack $ k <> v
+  , _encoderImpl_decode = \r ->
+      pure $ bimap T.unpack T.unpack $ T.breakOn "?" r
+  }
 
 -- | Given a backend route and a checked route encoder, render the route (path
 -- and query string). See 'checkEncoder' for how to produce a checked encoder.
@@ -1171,9 +1186,9 @@ renderObeliskRoute
   -> R (FullRoute a b)
   -> Text
 renderObeliskRoute e r =
-  let enc :: Encoder Identity (Either Text) (R (FullRoute a b)) PathQuery
-      enc = (pageNameEncoder . hoistParse (pure . runIdentity) e)
-  in (T.pack . uncurry (<>)) $ encode enc r
+  let enc :: Encoder Identity (Either Text) (R (FullRoute a b)) Text
+      enc = (pathQueryEncoder . pageNameEncoder . generalizeIdentity e)
+  in encode enc r
 
 -- | As per the 'unsafeTshowEncoder' but does not use the 'Text' type.
 --

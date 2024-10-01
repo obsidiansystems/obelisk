@@ -266,7 +266,7 @@ getGitHash
   -> m GitHash
 getGitHash repo pathWithinRepo = do
   let git = readProcessAndLogOutput (Debug, Debug) . gitProc repo
-  GitHash <$> git ["rev-parse", "HEAD:" <> pathWithinRepo]
+  GitHash <$> git ["rev-parse", "HEAD:./" <> pathWithinRepo]
 
 
 type CommitId = Text

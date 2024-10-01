@@ -208,7 +208,7 @@ run certDir portOverride root interpretPaths = do
     _ -> pure ()
   ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root
   freePort <- getFreePort
-  withGhciScriptArgs pkgs $ \dotGhciArgs -> do
+  withGhciScriptArgs [] pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
       [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
       , "Backend.backend"
@@ -220,18 +220,19 @@ run certDir portOverride root interpretPaths = do
       , "}"
       ]
 
-runRepl :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
-runRepl root interpretPaths = do
+runRepl :: MonadObelisk m => Maybe FilePath -> FilePath -> PathTree Interpret -> m ()
+runRepl mUserGhciConfig root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   ghciArgs <- getGhciSessionSettings pkgs root
-  withGhciScriptArgs pkgs $ \dotGhciArgs ->
+  userCommands <- maybe (pure []) (fmap lines . liftIO . readFile) mUserGhciConfig
+  withGhciScriptArgs userCommands pkgs $ \dotGhciArgs ->
     runGhciRepl root pkgs (ghciArgs <> dotGhciArgs)
 
 runWatch :: MonadObelisk m => FilePath -> PathTree Interpret -> m ()
 runWatch root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
   ghciArgs <- getGhciSessionSettings pkgs root
-  withGhciScriptArgs pkgs $ \dotGhciArgs ->
+  withGhciScriptArgs [] pkgs $ \dotGhciArgs ->
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs Nothing
 
 exportGhciConfig :: MonadObelisk m => FilePath -> PathTree Interpret -> m [String]
@@ -455,11 +456,13 @@ packageInfoToNamePathMap = Map.fromList . map (_cabalPackageInfo_packageName &&&
 -- Like 'withGhciScript' but provides the precise ghci arguments to add to a ghci session
 withGhciScriptArgs
   :: (MonadObelisk m, Foldable f)
-  => f CabalPackageInfo -- ^ List of packages to load into ghci
+  => [String] -- ^ User commands to insert into .ghci
+  -> f CabalPackageInfo -- ^ List of packages to load into ghci
   -> ([String] -> m ()) -- ^ Action to run with the extra ghci arguments
   -> m ()
-withGhciScriptArgs packageInfos f = withGhciScript loadPreludeManually packageInfos $ \fp ->
-  f ["-XNoImplicitPrelude", "-ghci-script", fp]
+withGhciScriptArgs userCommands packageInfos f =
+  withGhciScript (loadPreludeManually ++ userCommands) packageInfos $ \fp ->
+    f ["-XNoImplicitPrelude", "-ghci-script", fp]
   where
     -- These lines must be first and allow the session to support a custom Prelude when @-XNoImplicitPrelude@
     -- is passed to the ghci session.
