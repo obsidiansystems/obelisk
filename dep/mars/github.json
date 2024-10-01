@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "mars",
+  "branch": "haskell.nix",
   "private": false,
-  "rev": "da5bd07b9c79a3db01a7295ccf31ab098102249b",
-  "sha256": "05d25zyk5272dw2syyk79sp67gbslg90agf6gbacskp5nlmp41qf"
+  "rev": "6e94874209a0183ffe7a212433b7a3aef13c31b5",
+  "sha256": "11pfv1lf993dzyc2qlcv8i8dyzlzyp8xpvcgy5lgkhd4rvlyvd4g"
 }
