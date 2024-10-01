@@ -181,7 +181,7 @@ Obelisk officially supports terminal-based feedback (akin to [`ghcid`](https://g
 
 ### Using GHC 8.10
 
-Obelisk currently uses GHC 8.6 for projects by default, since this is the version on which Obelisk (and reflex-platform more generally) have been most thoroughly tested. However, we understand that this version is significantly behind GHC releases, and thus have experimental support for building with GHC 8.10 instead. To build with GHC 8.10, add the following to your project's `default.nix`:
+Obelisk currently uses GHC 8.6 for projects by default, since this is the version on which Obelisk (and Reflex Platform more generally) have been most thoroughly tested. However, we understand that this version is significantly behind GHC releases, and thus have experimental support for building with GHC 8.10 instead. To build with GHC 8.10, add the following to your project's `default.nix`:
 
 ```diff
   { system ? builtins.currentSystem

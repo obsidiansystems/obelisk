@@ -130,7 +130,7 @@ This is probably because you have a package that needs a C compiler (like `snap-
 ### Names of some variables in all.js (produced by GHCJS) collide with already existing static JS files in my project
 Obelisk now allows the addition of a file to resolve such name collision errors. The file's path can be passed in the configuration via the **externjs** key, as shown below:
 ```nix
-project ./. ({ pkgs, hackGet, ... }: with pkgs.haskell.lib; {
+project ./. ({ pkgs, ... }: with pkgs.haskell.lib; {
   staticFiles = ...
   externjs = path/to/file
 })
