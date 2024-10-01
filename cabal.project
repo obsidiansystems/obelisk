@@ -1,13 +1,17 @@
-packages: lib/asset/serve-snap/*.cabal
-          lib/asset/manifest/obelisk-asset-manifest.cabal
-          lib/backend/*.cabal
-          lib/command/*.cabal
-          lib/executable-config/inject/*.cabal
-          lib/executable-config/lookup/*.cabal
-          lib/frontend/*.cabal
-          lib/route/*.cabal
-          lib/run/*.cabal
-          lib/selftest/*.cabal
-          lib/snap-extras/*.cabal
-          lib/tabulation/*.cabal
+packages:
+  lib/asset/serve-snap/*.cabal
+  lib/asset/manifest/obelisk-asset-manifest.cabal
+  lib/backend/*.cabal
+  lib/command/*.cabal
+  lib/executable-config/inject/*.cabal
+  lib/executable-config/lookup/*.cabal
+  lib/frontend/*.cabal
+  lib/route/*.cabal
+  lib/run/*.cabal
+  lib/selftest/*.cabal
+  lib/snap-extras/*.cabal
+  lib/tabulation/*.cabal
 
+allow-newer:
+  -- TODO Do cabal revision to `reflex-fsnotify` (and update repo), then remove this.
+  reflex-fsnotify:fsnotify

@@ -6,7 +6,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 * Switch to Haskell.nix (Reflex Platform "Mars" rewrite).
 
-* [#1038](https://github.com/obsidiansystems/obelisk/pull/1038): `Obelisk.Route`: Add `pathQueryEncoder` and `generalizeIdentity`
+* [#1038](https://github.com/obsidiansystems/obelisk/pull/1038): `Obelisk.Route`: Add `unsafePathQueryToText` and `generalizeIdentity`
 * [#1071](https://github.com/obsidiansystems/obelisk/pull/1071): Support deployment information repository sub-directories
 * [#1086](https://github.com/obsidiansystems/obelisk/pull/1086): Delete extraneous config files during deploy
 * [#1099](https://github.com/obsidiansystems/obelisk/pull/1099): `Obelisk.Route`: Add `pairRoute` and deprecate `subPairRoute` and `subPairRoute_`

@@ -1155,8 +1155,8 @@ instance GShow Void1 where
   gshowsPrec _ = \case {}
 
 -- | Encode a 'PathQuery' as 'Text'
-pathQueryEncoder :: (Applicative check, Applicative parse) => Encoder check parse PathQuery Text
-pathQueryEncoder = unsafeMkEncoder $ EncoderImpl
+unsafePathQueryToText :: (Applicative check, Applicative parse) => Encoder check parse PathQuery Text
+unsafePathQueryToText = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode = \(k, v) -> T.pack $ k <> v
   , _encoderImpl_decode = \r ->
       pure $ bimap T.unpack T.unpack $ T.breakOn "?" r
@@ -1187,7 +1187,7 @@ renderObeliskRoute
   -> Text
 renderObeliskRoute e r =
   let enc :: Encoder Identity (Either Text) (R (FullRoute a b)) Text
-      enc = (pathQueryEncoder . pageNameEncoder . generalizeIdentity e)
+      enc = (unsafePathQueryToText . pageNameEncoder . generalizeIdentity e)
   in encode enc r
 
 -- | As per the 'unsafeTshowEncoder' but does not use the 'Text' type.
