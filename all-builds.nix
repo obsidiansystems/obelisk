@@ -42,7 +42,7 @@ let
     else [];
 
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
-    reflex-platform = import ./dep/reflex-platform { inherit system __useNewerCompiler; };
+    reflex-platform = import ./dep/mars { inherit system __useNewerCompiler; };
 
     mkPerProfiling = profiling: let
       obelisk = import ./. (self-args // { inherit system profiling; });
