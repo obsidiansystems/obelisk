@@ -410,6 +410,11 @@ in rec {
       reflexHasAttrExtra = b: if self.helpers.bot_args.extraArgs ? b then b else null;
       checkForStaticFiles = a: b: if self.userSettings.staticFiles == null then a else b;
     in rec {
+        overrideProject = f: project args (defArgs:
+          let def = pDef defArgs;
+          in def // f def
+        );
+
         inherit pDef;
         inherit marsObelisk;
         packageNames = {
