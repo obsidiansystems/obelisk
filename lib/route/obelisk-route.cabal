@@ -37,7 +37,37 @@ library
                  transformers,
                  universe,
                  universe-some
+
   exposed-modules: Obelisk.Route
                    Obelisk.Route.TH
                    Obelisk.Route.Frontend
+
   ghc-options: -Wall -Werror -fprint-potential-instances -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+
+test-suite roundtrips
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  default-language: Haskell2010
+  ghc-options: -Wall -Werror -fprint-potential-instances -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+
+  build-depends:
+    QuickCheck,
+    aeson,
+    base,
+    categories,
+    containers,
+    dependent-map,
+    dependent-sum,
+    dependent-sum-template,
+    lens,
+    some,
+    obelisk-route,
+    quickcheck-instances,
+    tabulation,
+    tasty,
+    tasty-quickcheck,
+    text,
+    transformers,
+    universe,
+    universe-some

@@ -228,7 +228,10 @@ deployPushImpl deployPath buildOutputByHost = do
     callProcessAndLogOutput (Notice, Warning) $
       proc rsyncPath
         [ "-e " <> sshPath <> " " <> unwords sshOpts
+        , "--chown=backend:backend"
         , "-qarvz"
+        -- Don't leave old files behind
+        , "--delete"
         , deployPath </> "config"
         , "root@" <> host <> ":/var/lib/backend"
         ]

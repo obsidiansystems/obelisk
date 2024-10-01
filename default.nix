@@ -1,6 +1,6 @@
 { system ? builtins.currentSystem
 , profiling ? false
-, iosSdkVersion ? "15.0"
+, iosSdkVersion ? "16.1"
 , config ? {}
 , terms ? { # Accepted terms, conditions, and licenses
     security.acme.acceptTerms = false;
