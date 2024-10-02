@@ -31,6 +31,7 @@ module Obelisk.Route.Frontend
   , mapRoutedT
   , subRoute
   , subRoute_
+  , pairRoute
   , subPairRoute
   , subPairRoute_
   , maybeRoute
@@ -216,13 +217,30 @@ subRoute_ :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r 
 subRoute_ f = factorRouted $ strictDynWidget_ $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
--- | Like 'subRoute_', but with a pair rather than an R
-subPairRoute_ :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m ()) -> RoutedT t (a, b) m ()
-subPairRoute_ f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute_ (\(Const2 a) -> f a)
-
 subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m b) -> RoutedT t (R r) m (Dynamic t b)
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
+
+-- | Pass the left side of the dynamic pair to the function, which then
+-- routes over the right side.
+pairRoute
+  :: (Monad m, Reflex t)
+  => (Dynamic t rl -> RoutedT t rr m a)
+  -> RoutedT t (rl, rr) m a
+pairRoute f = do
+  r <- askRoute
+  withRoutedT
+    (fmap snd)
+    (f $ fmap fst r)
+
+{-# DEPRECATED
+  subPairRoute, subPairRoute_
+  "Use 'pairRoute' instead. This function unnecessarily eliminates the 'Dynamic' for the left side, which is poor taste. In general, we want to eliminate dynamics as little as possible as we case on the route, so when the router changes DOM is not unnecessarily recomputed."
+#-}
+
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute_ :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m ()) -> RoutedT t (a, b) m ()
+subPairRoute_ f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute_ (\(Const2 a) -> f a)
 
 -- | Like 'subRoute_', but with a pair rather than an R
 subPairRoute :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m c) -> RoutedT t (a, b) m (Dynamic t c)

@@ -4,9 +4,10 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## Unreleased
 
-* Obelisk.Route: add pathQueryEncoder and generalizeIdentity
+* [#1038](https://github.com/obsidiansystems/obelisk/pull/1038): `Obelisk.Route`: Add `pathQueryEncoder` and `generalizeIdentity`
 * [#1071](https://github.com/obsidiansystems/obelisk/pull/1071): Support deployment information repository sub-directories
 * [#1086](https://github.com/obsidiansystems/obelisk/pull/1086): Delete extraneous config files during deploy
+* [#1099](https://github.com/obsidiansystems/obelisk/pull/1099): `Obelisk.Route`: Add `pairRoute` and deprecate `subPairRoute` and `subPairRoute_`
 
 ## v1.3.0.0
 * [#1047](https://github.com/obsidiansystems/obelisk/pull/1047): Update default ios sdk to 15
