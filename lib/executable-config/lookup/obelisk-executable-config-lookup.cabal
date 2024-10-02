@@ -24,7 +24,10 @@ library
       else
         hs-source-dirs: src-other, src
         other-modules: Obelisk.Configs.Internal.Directory
+                     , Obelisk.Configs.Internal.Environment
         build-depends: directory
+                     , attoparsec
+                     , witherable
 
   build-depends:
     base,
