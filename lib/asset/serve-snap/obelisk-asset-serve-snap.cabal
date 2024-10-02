@@ -33,3 +33,6 @@ library
   ghc-options:
     -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O2
     -fno-warn-unused-do-bind -funbox-strict-fields -fprof-auto-calls
+
+  if arch(javascript)
+    buildable: False

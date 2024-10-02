@@ -29,6 +29,8 @@ library
   exposed-modules:
     Obelisk.SelfTest
   ghc-options: -Wall
+  if arch(javascript)
+    buildable: False
 
 executable obelisk-selftest
   main-is: src-bin/obelisk-selftest.hs

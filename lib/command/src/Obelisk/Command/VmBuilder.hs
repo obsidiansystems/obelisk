@@ -1,14 +1,14 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 module Obelisk.Command.VmBuilder where
 
-import Control.Applicative (liftA2)
 import Control.Monad (when, unless)
 import Control.Monad.Catch (handle)
 import Control.Monad.IO.Class (liftIO)
-import Data.Monoid ((<>))
 import Data.String (IsString)
 import Data.String.Here.Uninterpolated (hereLit)
 import Data.Text (Text)
@@ -18,6 +18,11 @@ import System.Directory (createDirectoryIfMissing)
 import System.Exit (ExitCode(..))
 import System.FilePath ((<.>), (</>))
 import qualified System.Info
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Applicative (liftA2)
+import Data.Monoid ((<>))
+#endif
 
 import Obelisk.App (MonadObelisk, getObeliskUserStateDir)
 import Obelisk.Command.Utils (rmPath, whichPath, sshKeygenPath, nixBuildExePath, dockerPath)

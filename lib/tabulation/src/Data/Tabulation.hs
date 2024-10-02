@@ -1,14 +1,16 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Data.Tabulation where
 
 import Control.Lens
+import Data.Kind (Type)
 
 -- | This is a class for record types whose fields can be enumerated by an associated GADT. It's closely related to the concept of a representable functor, except without the functor part, and the fields are not all the same type.
 class HasFields a where
-  type Field a :: * -> *
+  type Field a :: Type -> Type
 
   fieldLens :: Field a x -> Lens' a x
   tabulateFieldsA :: Applicative f => (forall x. Field a x -> f x) -> f a
@@ -75,12 +77,12 @@ While `tabulateFieldsA` compiles, `fieldLens` doesn't, with the same sort of err
    • Could not deduce: f2 ~ f
       from the context: x ~ f2 ()
         bound by a pattern with constructor:
-                   XYHKDField_X :: forall (f :: * -> *). XYHKDField (f ()),
+                   XYHKDField_X :: forall (f :: Type -> Type). XYHKDField (f ()),
                  in a case alternative
         at ../lib/tabulation/src/Data/Tabulation.hs:68:5-16
       ‘f2’ is a rigid type variable bound by
         a pattern with constructor:
-          XYHKDField_X :: forall (f :: * -> *). XYHKDField (f ()),
+          XYHKDField_X :: forall (f :: Type -> Type). XYHKDField (f ()),
         in a case alternative
         at ../lib/tabulation/src/Data/Tabulation.hs:68:5-16
       ‘f’ is a rigid type variable bound by

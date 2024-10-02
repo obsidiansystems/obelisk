@@ -19,3 +19,5 @@ library
   exposed-modules:
       Obelisk.Snap.Extras
   ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+  if arch(javascript)
+    buildable: False

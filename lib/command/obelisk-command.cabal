@@ -24,7 +24,7 @@ library
     , git
     , github
     , here
-    , hnix
+    , hnix >=0.5
     , hpack
     , io-streams
     , lens
@@ -39,6 +39,7 @@ library
     , optparse-applicative
     , placeholders
     , prettyprinter
+    , prettyprinter-compat-ansi-wl-pprint
     , process
     , reflex
     , reflex-fsnotify
@@ -55,7 +56,7 @@ library
     , yaml
     , nix-thunk
     , cli-extras
-    
+
   exposed-modules:
     Obelisk.App
     Obelisk.Command
@@ -67,6 +68,9 @@ library
     Obelisk.Command.VmBuilder
     Obelisk.Command.Preprocessor
   ghc-options: -Wall
+
+  if arch(javascript)
+    buildable: False
 
 executable ob
   main-is: src-bin/ob.hs

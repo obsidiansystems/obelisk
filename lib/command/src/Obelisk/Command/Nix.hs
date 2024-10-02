@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -8,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
+
 module Obelisk.Command.Nix
   ( Arg (..)
   , NixBuildConfig (..)
@@ -46,8 +48,11 @@ import Data.Bool (bool)
 import Data.Default
 import Data.List (intercalate)
 import Data.Maybe
-import Data.Monoid ((<>))
 import qualified Data.Text as T
+
+#if !MIN_VERSION_base(4,18,0)
+import Data.Monoid ((<>))
+#endif
 
 import Obelisk.App (MonadObelisk)
 import Cli.Extras

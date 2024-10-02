@@ -5,7 +5,7 @@ let
   nginxRoot = "/run/nginx";
   obelisk = import ./default.nix {};
   # Get NixOS a pre-release 20.03 that contains the python based tests and recursive nix
-  pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266.tar.gz) {};
+  pkgs = import (builtins.fetchTarball https://github.com/nixos/nixpkgs/archive/3de5266b255cf3bd41438d2cfb0698420a33302e.tar.gz) {};
   sshKeys = import (pkgs.path + /nixos/tests/ssh-keys.nix) pkgs;
   make-test = import (pkgs.path + /nixos/tests/make-test-python.nix);
   obelisk-everywhere = (import ./all-builds.nix { inherit supportedSystems; }).x86_64-linux.cache;

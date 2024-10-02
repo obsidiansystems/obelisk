@@ -1,10 +1,10 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Obelisk.Command.Preprocessor where
 
 import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Builder as BU
 import Data.Foldable (for_)
 import Data.List (intersperse, isPrefixOf, sortOn)
 import Data.Maybe (fromMaybe)
@@ -17,6 +17,12 @@ import System.IO (IOMode (..), hPutStrLn, stderr, withFile)
 import System.FilePath (hasTrailingPathSeparator, joinPath, splitPath)
 import Control.Lens ((<&>))
 import System.Exit
+
+#if MIN_VERSION_bytestring(0,11,0)
+import qualified Data.ByteString.Builder as BU
+#else
+import qualified Data.ByteString.Lazy.Builder as BU
+#endif
 
 import Obelisk.Command.Run (CabalPackageInfo (..), parseCabalPackage')
 
