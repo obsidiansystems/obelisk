@@ -359,7 +359,7 @@ mkObNixShellProc root isPure chdirToRoot packageNamesAndPaths shellAttr command 
   let setCwd_ = if chdirToRoot then setCwd (Just root) else id
   pure $ setCwd_ $ nixShellRunProc $ defShellConfig
     & nixShellConfig_common . nixCmdConfig_target . target_expr ?~
-        "{root, pkgs, shell}: ((import root {}).overrideProject (drv: { doCleanGit = false; })).combinedShell"
+        "{root, pkgs, shell}: (import root {}).combinedShell"
    {-     passthru.__unstable__.self.extend (_: _: {\
           \shellPackages = builtins.fromJSON pkgs;\
         \})).project.shells.${shell}"
