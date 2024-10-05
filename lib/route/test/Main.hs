@@ -270,8 +270,8 @@ overlaps =
 
   in
     testGroup "Overlaps"
-      [ testGroup "No false positives" $ prop isRight $ \_t ->
-        [ -- t "shadowEncoder" $ shadowEncoder bc ac -- https://github.com/obsidiansystems/obelisk/pull/987
+      [ testGroup "No false positives" $ prop isRight $ \t ->
+        [ t "shadowEncoder" $ shadowEncoder bc ac
         ]
       , testGroup "No false negatives" $ prop isLeft $ \t ->
         [ t "enumEncoder" $ enumEncoder @_ @_ @Word8 (*2)
@@ -288,7 +288,7 @@ roundtrips = testGroup "Roundtrip" $ fold
     [ t "dmapEncoder" xymapEncoder
     , t "pathFieldEncoder" xypathFieldEncoder
     , t "shadowEncoder" $ unsafeShowShadowEncoder @Word8 @Char
-    --, t "shadowEncoder" $ shadowEncoder ac bc --https://github.com/obsidiansystems/obelisk/pull/987
+    , t "shadowEncoder" $ shadowEncoder ac bc
     , t "handleEncoder" $ generalizeIdentity $ handleEncoder @_ @_ @Input (error "Must not be used") id
     ]
   , arity1 $ \t ->

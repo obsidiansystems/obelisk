@@ -527,6 +527,7 @@ maybeToEitherEncoder = unsafeMkEncoder $ EncoderImpl
 
 maybeEncoder
   :: ( MonadError Text check
+     , Eq b
      , Show a
      , Show b
      , check ~ parse
@@ -676,14 +677,15 @@ tshow = T.pack . show
 
 shadowEncoder
   :: ( Universe a
+     , Eq c
      , MonadError Text check
      , Show a
      , Show b
      , Show c
      , check ~ parse --TODO: Get rid of this
      )
-  => Encoder check parse a c -- ^ Overlaps; should have a small number of possible routes
-  -> Encoder check parse b c -- ^ Gets overlapped
+  => Encoder check parse a c -- ^ should have a small number of possible routes
+  -> Encoder check parse b c
   -> Encoder check parse (Either a b) c
 shadowEncoder f g = Encoder $ do
   vf <- unEncoder f
@@ -692,7 +694,9 @@ shadowEncoder f g = Encoder $ do
   overlaps <- fmap catMaybes $ forM universe $ \a -> do
     let c = _encoderImpl_encode vf a
     mb <- gCanParse c
-    pure $ fmap (\b -> (a, b, c)) mb
+    pure $ mb >>= \b -> do
+      guard $ _encoderImpl_encode vg b == c
+      pure (a, b, c)
   case overlaps of
     [] -> pure ()
     _ -> throwError $ "shadowEncoder: overlap detected: " <> T.unlines
@@ -701,7 +705,13 @@ shadowEncoder f g = Encoder $ do
     { _encoderImpl_encode = \case
         Left a -> _encoderImpl_encode vf a
         Right b -> _encoderImpl_encode vg b
-    , _encoderImpl_decode = \c -> (Left <$> _encoderImpl_decode vf c) `catchError` \_ -> Right <$> _encoderImpl_decode vg c
+    , _encoderImpl_decode = \c ->
+        let mb = Right <$> _encoderImpl_decode vg c
+        in flip catchError (\_ -> mb) $ do
+          a <- _encoderImpl_decode vf c
+          case c == _encoderImpl_encode vf a of
+            False -> mb
+            True -> pure $ Left a
     }
 
 enum1Encoder
