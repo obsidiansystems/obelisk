@@ -48,12 +48,13 @@ import Data.Monoid ((<>))
 #endif
 
 import Control.Monad
-import Control.Monad.Except
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
 import Data.Dependent.Sum
 import Data.Functor.Identity
+import Data.Kind (Type)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
@@ -202,7 +203,7 @@ data StaticAssets = StaticAssets
   }
   deriving (Show, Read, Eq, Ord)
 
-data GhcjsAppRoute :: (* -> *) -> * -> * where
+data GhcjsAppRoute :: (Type -> Type) -> Type -> Type where
   GhcjsAppRoute_App :: appRouteComponent a -> GhcjsAppRoute appRouteComponent a
   GhcjsAppRoute_Resource :: GhcjsAppRoute appRouteComponent [Text]
 
