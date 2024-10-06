@@ -459,16 +459,21 @@ in rec {
         };
 
         #combinedShell = self.shells.ghc;
-        combinedShell =
-          let packagesToInclude = ["backend" "common" "frontend"];
-          in self.shellFor {
-            withHoogle = false;
-            tools = {
-              cabal = "3.2.0.0";
-            };
-            packages = ps: builtins.map (name: ps.${name}) packagesToInclude;
-            additional = ps: builtins.attrValues (builtins.removeAttrs ps packagesToInclude);
+        combinedShell = combinedShellWith {
+          interpretedPkgs = {
+            backend = "backend";
+            common = "common";
+            frontend = "frontend";
           };
+        };
+        combinedShellWith = { interpretedPkgs }: self.shellFor {
+          withHoogle = false;
+          tools = {
+            cabal = "3.2.0.0";
+          };
+          packages = ps: [];
+          additional = ps: builtins.attrValues (builtins.removeAttrs ps (builtins.attrNames interpretedPkgs));
+        };
 
         hoogleShell = self.shellFor {
           withHoogle = true;
