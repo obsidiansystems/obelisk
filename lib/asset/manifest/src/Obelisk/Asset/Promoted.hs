@@ -12,6 +12,7 @@ import Obelisk.Asset.Gather
 import Data.Foldable
 import Language.Haskell.TH (pprint)
 import Language.Haskell.TH.Syntax hiding (lift)
+import Language.Haskell.TH.Datatype.TyVarBndr (kindedTVFlag)
 import GHC.TypeLits
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -88,7 +89,7 @@ staticClass = do
   let n x = Name (OccName x) NameS
       className = n "StaticFile"
       methodName = n "hashedPath"
-      cls = ClassD [] className [KindedTV (n "s") (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
+      cls = ClassD [] className [kindedTVFlag (n "s") () (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
   tell $ Seq.singleton cls
   return $ StaticContext
     { _staticContext_className = className
