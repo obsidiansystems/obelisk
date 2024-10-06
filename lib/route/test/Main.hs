@@ -257,7 +257,8 @@ exhaustive =
     prop f = f $ \lbl e -> testProperty lbl $ withCheckedEncoder e $ flip all universeF . roundtripsProp
   in
     testGroup "Roundtrip" $ prop $ \t ->
-      [ t "void1Encoder" void1Encoder
+      [ t "voidEncoder" voidEncoder
+      , t "void1Encoder" void1Encoder
       , t "id (Word8)" $ id @_ @Word8
       , t "enumEncoder" $ enumEncoder @_ @_ @Word8 (+1)
       ]

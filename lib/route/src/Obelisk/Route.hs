@@ -117,6 +117,7 @@ module Obelisk.Route
   , handleEncoder
   , someSumEncoder
   , Void1
+  , voidEncoder
   , void1Encoder
   , pathSegmentsTextEncoder
   , queryParametersTextEncoder
@@ -136,6 +137,7 @@ import Control.Applicative
 import Control.Category (Category (..))
 import qualified Control.Categorical.Functor as Cat
 import Control.Categorical.Bifunctor
+import Control.Categorical.Object
 import Control.Category.Associative
 import Control.Category.Monoidal
 import Control.Category.Braided
@@ -201,6 +203,7 @@ import Data.Text.Lens (IsText, packed, unpacked)
 import Data.Type.Equality
 import Data.Universe
 import Data.Universe.Some
+import Data.Void
 import Network.HTTP.Types.URI
 import qualified Numeric.Lens
 import Obelisk.Route.TH
@@ -387,6 +390,10 @@ instance (Applicative check, Monad parse) => Semigroupoid (Encoder check parse) 
 instance (Applicative check, Monad parse) => Category (Encoder check parse) where
   id = Encoder $ pure id
   (.) = o
+
+instance (Applicative check, MonadError Text parse) => HasInitialObject (Encoder check parse) where
+  type Initial (Encoder check parse) = Void
+  initiate = voidEncoder
 
 instance Monad parse => Category (EncoderImpl parse) where
   id = EncoderImpl
@@ -1107,11 +1114,14 @@ instance UniverseSome Void1 where
   universeSome = []
 instance FiniteSome Void1
 
-void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
-void1Encoder = Encoder $ pure $ EncoderImpl
-  { _encoderImpl_encode = foldSome $ \case
-  , _encoderImpl_decode = \_ -> throwError "void1Encoder: can't decode anything"
+voidEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse Void a
+voidEncoder = Encoder $ pure $ EncoderImpl
+  { _encoderImpl_encode = \case
+  , _encoderImpl_decode = \_ -> throwError "voidEncoder: can't decode anything"
   }
+
+void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
+void1Encoder = voidEncoder . viewEncoder (iso (foldSome (\case)) (\case))
 
 instance GShow Void1 where
   gshowsPrec _ = \case {}
