@@ -537,7 +537,7 @@ getGhciSessionSettings (toList -> packageInfos) pathBase = do
           concatMap _cabalPackageInfo_buildDepends packageInfos <>
           [Dependency (mkPackageName "obelisk-run") anyVersion (Set.singleton LMainLibName)]
     dependencyPackageId installedPackageIndex dep =
-      case lookupDependency installedPackageIndex (depPkgName dep) (depVerRange dep) of
+      case lookupDependency installedPackageIndex (depPkgName dep) anyVersion of
         ((_version,installedPackageInfo:_) :_) ->
           compatPackageKey installedPackageInfo
         _ -> error $ "Couldn't resolve dependency for " <> prettyShow dep
