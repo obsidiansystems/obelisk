@@ -1,9 +1,73 @@
+cabal-version: 2.2
 name: frontend
 version: 0.1
-cabal-version: >= 1.8
 build-type: Simple
 
+common ghc2021
+  default-language: Haskell2010
+  default-extensions:
+    BangPatterns
+    BinaryLiterals
+    ConstraintKinds
+    DeriveDataTypeable
+    DeriveGeneric
+    DeriveLift
+    DeriveTraversable
+    DoAndIfThenElse
+    EmptyCase
+    EmptyDataDecls
+    EmptyDataDeriving
+    ExistentialQuantification
+    FlexibleContexts
+    FlexibleInstances
+    ForeignFunctionInterface
+    GADTSyntax
+    GeneralisedNewtypeDeriving
+    HexFloatLiterals
+    ImportQualifiedPost
+    InstanceSigs
+    MonoLocalBinds
+    MultiParamTypeClasses
+    NamedFieldPuns
+    NamedWildCards
+    NumericUnderscores
+    PatternGuards
+    PolyKinds
+    PostfixOperators
+    RankNTypes
+    RelaxedPolyRec
+    ScopedTypeVariables
+    StandaloneDeriving
+    StandaloneKindSignatures
+    StarIsType
+    TraditionalRecordSyntax
+    TupleSections
+    TypeApplications
+    TypeOperators
+
+common ghc2024
+  import: ghc2021
+  default-extensions:
+    DataKinds
+    DerivingStrategies
+    DisambiguateRecordFields
+    GADTs
+    LambdaCase
+    RoleAnnotations
+
+common defaults
+  import: ghc2024
+  ghc-options: -Wall -O -fno-show-valid-hole-fits
+               -- unsafe code
+               -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields
+               -- unneeded code
+               -Widentities -Wredundant-constraints
+  if impl(ghc >= 8.8)
+    ghc-options:
+               -Wmissing-deriving-strategies
+
 library
+  import: defaults
   hs-source-dirs: src
   build-depends: base
                , common
@@ -17,16 +81,9 @@ library
                , text
   exposed-modules:
     Frontend
-  ghc-options: -Wall -O -fno-show-valid-hole-fits
-               -- unsafe code
-               -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields
-               -- unneeded code
-               -Widentities -Wredundant-constraints
-  if impl(ghc >= 8.8)
-    ghc-options:
-               -Wmissing-deriving-strategies
 
 executable frontend
+  import: defaults
   main-is: main.hs
   hs-source-dirs: src-bin
   build-depends: base
@@ -35,14 +92,6 @@ executable frontend
                , obelisk-frontend
                , obelisk-route
                , reflex-dom
-  ghc-options: -Wall -O -fno-show-valid-hole-fits -threaded
-               -- unsafe code
-               -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields
-               -- unneeded code
-               -Widentities -Wredundant-constraints
-  if impl(ghc >= 8.8)
-    ghc-options:
-               -Wmissing-deriving-strategies
   if impl(ghcjs)
     ghc-options: -dedupe
     cpp-options: -DGHCJS_BROWSER
