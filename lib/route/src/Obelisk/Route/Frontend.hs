@@ -29,6 +29,8 @@ module Obelisk.Route.Frontend
   , askRoute
   , withRoutedT
   , mapRoutedT
+  , finalSubRoute
+  , finalSubRoute_
   , subRoute
   , subRoute_
   , pairRoute
@@ -212,6 +214,14 @@ mapRoutedT f = RoutedT . mapReaderT f . unRoutedT
 
 withRoutedT :: (Dynamic t r -> Dynamic t r') -> RoutedT t r' m a -> RoutedT t r m a
 withRoutedT f = RoutedT . withReaderT f . unRoutedT
+
+-- | Consume the rest of the route and leave the RoutedT monad behind
+finalSubRoute :: (r -> m a) -> RoutedT t r m a
+finalSubRoute = strictDynWidget
+
+-- | Consume the rest of the route and leave the RoutedT monad behind
+finalSubRoute_ :: (r -> m ()) -> RoutedT t r m ()
+finalSubRoute_ = strictDynWidget_
 
 subRoute_ :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m ()) -> RoutedT t (R r) m ()
 subRoute_ f = factorRouted $ strictDynWidget_ $ \(c :=> r') -> do
