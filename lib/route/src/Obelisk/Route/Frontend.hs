@@ -216,11 +216,11 @@ withRoutedT :: (Dynamic t r -> Dynamic t r') -> RoutedT t r' m a -> RoutedT t r 
 withRoutedT f = RoutedT . withReaderT f . unRoutedT
 
 -- | Consume the rest of the route and leave the RoutedT monad behind
-finalSubRoute :: (r -> m a) -> RoutedT t r m a
+finalSubRoute :: (MonadHold t m, Adjustable t m) => (r -> m a) -> RoutedT t r m (Dynamic t a)
 finalSubRoute = strictDynWidget
 
 -- | Consume the rest of the route and leave the RoutedT monad behind
-finalSubRoute_ :: (r -> m ()) -> RoutedT t r m ()
+finalSubRoute_ :: (MonadHold t m, Adjustable t m) => (r -> m ()) -> RoutedT t r m ()
 finalSubRoute_ = strictDynWidget_
 
 subRoute_ :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m ()) -> RoutedT t (R r) m ()
@@ -306,13 +306,13 @@ eitherRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Either (Dyna
 eitherRouted r = RoutedT $ ReaderT $ runRoutedT r <=< eitherDyn
 
 -- | WARNING: The input 'Dynamic' must be fully constructed when this is run
-strictDynWidget :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
+strictDynWidget :: (MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
 strictDynWidget f = RoutedT $ ReaderT $ \r -> do
   r0 <- sample $ current r
   (result0, result') <- runWithReplace (f r0) $ f <$> updated r
   holdDyn result0 result'
 
-strictDynWidget_ :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m ()) -> RoutedT t a m ()
+strictDynWidget_ :: (MonadHold t m, Adjustable t m) => (a -> m ()) -> RoutedT t a m ()
 strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   r0 <- sample $ current r
   (_, _) <- runWithReplace (f r0) $ f <$> updated r
