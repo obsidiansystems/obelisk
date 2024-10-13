@@ -468,9 +468,7 @@ in rec {
         };
         combinedShellWith = { interpretedPkgs }: self.shellFor {
           withHoogle = false;
-          tools = {
-            cabal = "3.2.0.0";
-          };
+          tools = { cabal = "latest"; } // super.helpers.bot_args.shellTools;
           packages = ps: [];
           additional = ps: builtins.attrValues (builtins.removeAttrs ps (builtins.attrNames interpretedPkgs));
         };
