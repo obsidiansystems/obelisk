@@ -1,3 +1,9 @@
-optional-packages:
-  *
+packages: *
+multi-repl: True
+tests: True
+benchmarks: True
+
 write-ghc-environment-files: never
+
+-- Remove when pinned cabal contains https://github.com/haskell/cabal/pull/8942
+test-show-details: direct

@@ -1,5 +1,5 @@
 { system ? builtins.currentSystem
-, obelisk ? import ./.obelisk/impl {
+, obelisk ? import (import ./deps.nix).pins.obelisk {
     inherit system;
     iosSdkVersion = "16.1";
 
@@ -20,4 +20,8 @@ project ./. ({ ... }: {
   android.displayName = "Obelisk Minimal Example";
   ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";
   ios.bundleName = "Obelisk Minimal Example";
+
+  packages = {
+    dev = ./dev;
+  };
 })

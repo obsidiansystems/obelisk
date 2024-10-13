@@ -1,0 +1,103 @@
+cabal-version: 2.2
+name: dev
+version: 0.1
+build-type: Simple
+
+common ghc2021
+  default-language: Haskell2010
+  default-extensions:
+    BangPatterns
+    BinaryLiterals
+    ConstrainedClassMethods
+    ConstraintKinds
+    DeriveDataTypeable
+    DeriveFoldable
+    DeriveFunctor
+    DeriveGeneric
+    DeriveLift
+    DeriveTraversable
+    DoAndIfThenElse
+    EmptyCase
+    EmptyDataDecls
+    EmptyDataDeriving
+    ExistentialQuantification
+    ExplicitForAll
+    --FieldSelectors -- 9.2+
+    FlexibleContexts
+    FlexibleInstances
+    ForeignFunctionInterface
+    GADTSyntax
+    GeneralisedNewtypeDeriving
+    HexFloatLiterals
+    ImplicitPrelude
+    ImportQualifiedPost
+    InstanceSigs
+    KindSignatures
+    MonoLocalBinds
+    MonomorphismRestriction
+    MultiParamTypeClasses
+    NamedFieldPuns
+    NamedWildCards
+    NumericUnderscores
+    PatternGuards
+    PolyKinds
+    PostfixOperators
+    RankNTypes
+    RelaxedPolyRec
+    ScopedTypeVariables
+    StandaloneDeriving
+    StandaloneKindSignatures
+    StarIsType
+    TraditionalRecordSyntax
+    TupleSections
+    TypeApplications
+    TypeOperators
+    TypeSynonymInstances
+
+common ghc2024
+  import: ghc2021
+  default-extensions:
+    DataKinds
+    DerivingStrategies
+    DisambiguateRecordFields
+    ExplicitNamespaces
+    GADTs
+    LambdaCase
+    RoleAnnotations
+
+common native
+  if impl(ghcjs)
+    buildable: False
+
+common defaults
+  import: ghc2024
+  ghc-options:
+    -Wall -O -fno-show-valid-hole-fits
+    -- unsafe code
+    -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields
+    -- unneeded code
+    -Widentities -Wredundant-constraints
+
+    -Werror=incomplete-patterns
+    -Werror=missing-fields
+    -Werror=missing-methods
+
+    -ferror-spans
+    -fprint-expanded-synonyms
+
+  if impl(ghc >= 8.8)
+    ghc-options:
+      -Wmissing-deriving-strategies
+
+library
+  import: defaults, native
+  hs-source-dirs: src
+  build-depends:
+      backend
+    , base
+    , directory
+    , frontend
+    , obelisk-run
+
+  exposed-modules:
+    Dev
