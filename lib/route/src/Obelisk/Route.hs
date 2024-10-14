@@ -334,7 +334,7 @@ unsafeEncoder = Encoder
 -- Law:
 -- forall p. _encoderImpl_decode ve . _encoderImpl_encode ve p == pure
 -- Note that the reverse may not be the case: when parsing, a route may be canonicalized, and erroneous routes may be collapsed to a single 404 route.  However, as a consequence of the law, encode . decode must be idempotent.
-data EncoderImpl parse decoded encoded = EncoderImpl
+data EncoderImpl parse decoded encoded = Applicative parse => EncoderImpl
   { _encoderImpl_decode :: !(encoded -> parse decoded) -- Can fail; can lose information; must always succeed on outputs of `_encoderImpl_encode` and result in the original value
   , _encoderImpl_encode :: !(decoded -> encoded) -- Must be injective
   }
@@ -365,7 +365,7 @@ hoistCheck :: (forall t. check t -> check' t) -> Encoder check parse a b -> Enco
 hoistCheck f (Encoder x) = Encoder (f x)
 
 -- | Transform the parse monad of an 'Encoder' by applying a natural transformation.
-hoistParse :: (Functor check)
+hoistParse :: (Functor check, Applicative parse')
   => (forall t. parse t -> parse' t) -> Encoder check parse a b -> Encoder check parse' a b
 hoistParse f (Encoder x) = Encoder (fmap (\(EncoderImpl dec enc) -> EncoderImpl (f . dec) enc) x)
 
@@ -945,8 +945,9 @@ handleEncoder
   -> Encoder check Identity a b
 handleEncoder recover e = Encoder $ do
   i <- unEncoder e
-  return $ i
-    { _encoderImpl_decode = \a -> pure $ case _encoderImpl_decode i a of
+  pure $ EncoderImpl
+    { _encoderImpl_encode = _encoderImpl_encode i
+    , _encoderImpl_decode = \a -> pure $ case _encoderImpl_decode i a of
       Right r -> r
       Left err -> recover err
     }
