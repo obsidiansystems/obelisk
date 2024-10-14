@@ -23,7 +23,8 @@ import Prelude hiding (id, (.))
 import Control.Applicative (liftA2)
 import Control.Categorical.Bifunctor (bimap)
 import Control.Category (Category((.), id))
-import Control.Category.Associative (associate, Associative (disassociate))
+import Control.Category.Associative (associate, disassociate)
+import Control.Category.Braided (braid)
 import Control.Category.Monoidal
 import Control.Lens (Iso', Prism', lazy, lens, reversed, _Just, _Left, _Right)
 import Data.Dependent.Map (DMap)
@@ -215,10 +216,13 @@ atomicEncoders = let t n e = (n, Ex e) in
   , t "disassociate" $ disassociate @_ @(,)    @Bool @Text @Word
   , t "disassociate" $ disassociate @_ @Either @Bool @Text @Word
 
-  , t "idl"   $ idl   @_ @(,) @Text
-  , t "idr"   $ idr   @_ @(,) @Text
-  , t "coidl" $ coidl @_ @(,) @Text
-  , t "coidr" $ coidr @_ @(,) @Text
+  , t "idl"   $ idl   @_ @(,)    @Text
+  , t "idr"   $ idr   @_ @(,)    @Text
+  , t "coidl" $ coidl @_ @(,)    @Text
+  , t "coidr" $ coidr @_ @(,)    @Text
+
+  , t "braid" $ braid @_ @(,)    @Word @Text
+  , t "braid" $ braid @_ @Either @Word @Text
   ]
 
 -- No encoders as arguments
