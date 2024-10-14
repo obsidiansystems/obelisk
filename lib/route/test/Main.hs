@@ -194,6 +194,7 @@ atomicEncoders = let t n e = (n, Ex e) in
   [ t "addPathSegmentEncoder" addPathSegmentEncoder
   , t "fieldMapEncoder" $ fieldMapEncoder @_ @_ @XY
   , t "jsonEncoder" $ jsonEncoder @_ @_ @Input
+  , t "utf8Encoder" utf8Encoder
   , t "maybeToEitherEncoder" $ maybeToEitherEncoder @_ @_ @Input
   , t "pathComponentEncoder" fragmentEncoder
   , t "pathSegmentsTextEncoder" pathSegmentsTextEncoder

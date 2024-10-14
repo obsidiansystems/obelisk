@@ -128,6 +128,7 @@ module Obelisk.Route
   , fieldMapEncoder
   , pathFieldEncoder
   , jsonEncoder
+  , utf8Encoder
   ) where
 
 import Prelude hiding ((.), id)
@@ -1261,6 +1262,14 @@ jsonEncoder = unsafeEncoder $ do
         Left err -> throwError ("jsonEncoder: " <> T.pack err)
         Right x -> return x
     }
+
+utf8Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse Text BS.ByteString
+utf8Encoder = unsafeMkEncoder $ EncoderImpl
+  { _encoderImpl_encode = T.encodeUtf8
+  , _encoderImpl_decode = \bs -> case T.decodeUtf8' bs of
+      Left err -> throwError $ "utf8Encoder: " <> tshow err
+      Right x -> pure x
+  }
 
 -- Useful for app server integration.
 -- p must not start with slashes
