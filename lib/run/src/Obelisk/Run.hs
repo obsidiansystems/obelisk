@@ -292,14 +292,16 @@ obeliskApp configs frontend validFullEncoder uri backend = do
         serveJsaddleHtml (appRouteComponent :/ frontendRouteRest) cookies sendResponse
     FullRoute_Backend _ :/ _ -> backend req sendResponse
 
+-- | Returns a handler to serve an internal JSaddle route (the request and the route should match)
+-- and another handler to serve the initial HTML for a page of the application
 serveJsaddleWarpWithHydration
   :: Map Text ByteString -- ^ Configs
   -> Frontend (R frontendRoute)
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName -- ^ The full route encoder for the whole application
   -> URI --TODO: Can we generate this using the encoder?
   -> IO
-     ( R JSaddleWarpRoute -> Application -- ^ Serve an internal JSaddle route; the request and the route should match
-     , R frontendRoute -> Cookies -> (W.Response -> IO b) -> IO b -- ^ Serve the initial HTML for a page of the application
+     ( R JSaddleWarpRoute -> Application
+     , R frontendRoute -> Cookies -> (W.Response -> IO b) -> IO b
      )
 serveJsaddleWarpWithHydration configs frontend validFullEncoder uri = do
   let mode = FrontendMode
