@@ -31,6 +31,7 @@ module Obelisk.Route.Frontend
   , mapRoutedT
   , subRoute
   , subRoute_
+  , pairRoute
   , subPairRoute
   , subPairRoute_
   , maybeRoute
@@ -59,6 +60,9 @@ module Obelisk.Route.Frontend
 #ifdef __GLASGOW_HASKELL__
 #if __GLASGOW_HASKELL__ < 810
 import Control.Monad ((<=<))
+#endif
+#if __GLASGOW_HASKELL__ >= 906
+import Control.Monad (when, (<=<))
 #endif
 #endif
 
@@ -184,7 +188,7 @@ instance Adjustable t m => Adjustable t (RoutedT t r m) where
   traverseDMapWithKeyWithAdjust f a0 a' = RoutedT $ traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
   traverseDMapWithKeyWithAdjustWithMove f a0 a' = RoutedT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
 
-instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
+instance MonadQuery t vs m => MonadQuery t vs (RoutedT t r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
@@ -216,13 +220,30 @@ subRoute_ :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r 
 subRoute_ f = factorRouted $ strictDynWidget_ $ \(c :=> r') -> do
   runRoutedT (f c) r'
 
--- | Like 'subRoute_', but with a pair rather than an R
-subPairRoute_ :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m ()) -> RoutedT t (a, b) m ()
-subPairRoute_ f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute_ (\(Const2 a) -> f a)
-
 subRoute :: (MonadFix m, MonadHold t m, GEq r, Adjustable t m) => (forall a. r a -> RoutedT t a m b) -> RoutedT t (R r) m (Dynamic t b)
 subRoute f = factorRouted $ strictDynWidget $ \(c :=> r') -> do
   runRoutedT (f c) r'
+
+-- | Pass the left side of the dynamic pair to the function, which then
+-- routes over the right side.
+pairRoute
+  :: (Monad m, Reflex t)
+  => (Dynamic t rl -> RoutedT t rr m a)
+  -> RoutedT t (rl, rr) m a
+pairRoute f = do
+  r <- askRoute
+  withRoutedT
+    (fmap snd)
+    (f $ fmap fst r)
+
+{-# DEPRECATED
+  subPairRoute, subPairRoute_
+  "Use 'pairRoute' instead. This function unnecessarily eliminates the 'Dynamic' for the left side, which is poor taste. In general, we want to eliminate dynamics as little as possible as we case on the route, so when the router changes DOM is not unnecessarily recomputed."
+#-}
+
+-- | Like 'subRoute_', but with a pair rather than an R
+subPairRoute_ :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m ()) -> RoutedT t (a, b) m ()
+subPairRoute_ f = withRoutedT (fmap (\(a, b) -> Const2 a :/ b)) $ subRoute_ (\(Const2 a) -> f a)
 
 -- | Like 'subRoute_', but with a pair rather than an R
 subPairRoute :: (MonadFix m, MonadHold t m, Eq a, Adjustable t m) => (a -> RoutedT t b m c) -> RoutedT t (a, b) m (Dynamic t c)
@@ -278,13 +299,13 @@ eitherRouted :: (Reflex t, MonadFix m, MonadHold t m) => RoutedT t (Either (Dyna
 eitherRouted r = RoutedT $ ReaderT $ runRoutedT r <=< eitherDyn
 
 -- | WARNING: The input 'Dynamic' must be fully constructed when this is run
-strictDynWidget :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
+strictDynWidget :: (MonadHold t m, Adjustable t m) => (a -> m b) -> RoutedT t a m (Dynamic t b)
 strictDynWidget f = RoutedT $ ReaderT $ \r -> do
   r0 <- sample $ current r
   (result0, result') <- runWithReplace (f r0) $ f <$> updated r
   holdDyn result0 result'
 
-strictDynWidget_ :: (MonadSample t m, MonadHold t m, Adjustable t m) => (a -> m ()) -> RoutedT t a m ()
+strictDynWidget_ :: (MonadHold t m, Adjustable t m) => (a -> m ()) -> RoutedT t a m ()
 strictDynWidget_ f = RoutedT $ ReaderT $ \r -> do
   r0 <- sample $ current r
   (_, _) <- runWithReplace (f r0) $ f <$> updated r
@@ -365,7 +386,7 @@ instance (MonadHold t m, Adjustable t m) => Adjustable t (SetRouteT t r m) where
   traverseDMapWithKeyWithAdjust f a0 a' = SetRouteT $ traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
   traverseDMapWithKeyWithAdjustWithMove f a0 a' = SetRouteT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
 
-instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (SetRouteT t r m) where
+instance (MonadQuery t vs m) => MonadQuery t vs (SetRouteT t r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
@@ -443,7 +464,7 @@ instance Adjustable t m => Adjustable t (RouteToUrlT r m) where
   traverseDMapWithKeyWithAdjust f a0 a' = RouteToUrlT $ traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
   traverseDMapWithKeyWithAdjustWithMove f a0 a' = RouteToUrlT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
 
-instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RouteToUrlT r m) where
+instance MonadQuery t vs m => MonadQuery t vs (RouteToUrlT r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental

@@ -85,7 +85,7 @@ rec {
   modern-uri = haskellLib.doJailbreak super.modern-uri;
   monad-logger = self.callHackage "monad-logger" "0.3.36" { };
   neat-interpolation = haskellLib.doJailbreak super.neat-interpolation;
-  nix-thunk = (import ../dep/nix-thunk { }).makeRunnableNixThunk (haskellLib.doJailbreak (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { }));
+  nix-thunk = (import ../dep/nix-thunk { inherit pkgs; }).makeRunnableNixThunk (haskellLib.doJailbreak (self.callCabal2nix "nix-thunk" (hackGet ../dep/nix-thunk) { }));
   cli-extras = haskellLib.doJailbreak (self.callCabal2nix "cli-extras" (hackGet ../dep/cli-extras) { });
   cli-git = haskellLib.doJailbreak (haskellLib.overrideCabal (self.callCabal2nix "cli-git" (hackGet ../dep/cli-git) { }) {
     librarySystemDepends = with pkgs; [

@@ -11,6 +11,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Obelisk.Frontend
   ( ObeliskWidget
@@ -28,6 +29,10 @@ module Obelisk.Frontend
 #ifdef __GLASGOW_HASKELL__
 #if __GLASGOW_HASKELL__ < 810
 import Data.Monoid ((<>))
+#endif
+#if __GLASGOW_HASKELL__ >= 906
+import Control.Monad (when)
+import Data.Functor (void)
 #endif
 #endif
 
@@ -65,8 +70,6 @@ import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import System.Info (os)
 import Web.Cookie
-
-import Debug.Trace
 
 type ObeliskWidget t route m =
   ( DomBuilder t m
@@ -132,7 +135,6 @@ nodeListNodes es = do
 
 setInitialRoute :: Bool -> JSM ()
 setInitialRoute useHash = do
-  traceM "setInitialRoute"
   window <- DOM.currentWindowUnchecked
   initialLocation <- DOM.getLocation window
   initialUri <- getLocationUri initialLocation
@@ -206,7 +208,6 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
            , PrimMonad m
            , MonadSample DomTimeline (Performable m)
            , DOM.MonadJSM m
-           , MonadFix (Client (HydrationDomBuilderT s DomTimeline m))
            , MonadFix (Performable m)
            , MonadFix m
            , Prerender DomTimeline (HydrationDomBuilderT s DomTimeline m)
