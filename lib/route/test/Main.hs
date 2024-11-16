@@ -275,13 +275,17 @@ overlaps =
   in
     testGroup "Overlaps"
       [ testGroup "No false positives" $ prop isRight $ \t ->
-        [ t "shadowEncoder" $ shadowEncoder bc ac
+        [ testGroup "shadowEncoder"
+          [ t "A | B -> C" $ shadowEncoder bc ac
+          ]
         ]
       , testGroup "No false negatives" $ prop isLeft $ \t ->
         [ t "enumEncoder" $ enumEncoder @_ @_ @Word8 (*2)
         , t "pathComponentEncoder" overlappingFragmentEncoder
-        , t "shadowEncoder" $ unsafeShowShadowEncoder @Word8 @Int8
-        , t "shadowEncoder" $ unsafeShowShadowEncoder @Word8 @Word8
+        , testGroup "shadowEncoder"
+          [ t "Word8 | Int8 -> Text" $ unsafeShowShadowEncoder @Word8 @Int8
+          , t "Word8 | Word8 -> Text" $ unsafeShowShadowEncoder @Word8 @Word8
+          ]
         ]
       ]
 
@@ -291,8 +295,10 @@ roundtrips = testGroup "Roundtrip" $ fold
   , arity0 $ \t ->
     [ t "dmapEncoder" xymapEncoder
     , t "pathFieldEncoder" xypathFieldEncoder
-    , t "shadowEncoder" $ unsafeShowShadowEncoder @Word8 @Char
-    , t "shadowEncoder" $ shadowEncoder ac bc
+    , testGroup "shadowEncoder"
+      [ t "Word8 | Char -> Text" $ unsafeShowShadowEncoder @Word8 @Char
+      , t "A | B -> C" $ shadowEncoder ac bc
+      ]
     , t "handleEncoder" $ generalizeIdentity $ handleEncoder @_ @_ @Input (error "Must not be used") id
     ]
   , arity1 $ \t ->
