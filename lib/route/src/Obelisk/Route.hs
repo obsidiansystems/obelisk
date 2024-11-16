@@ -711,12 +711,12 @@ shadowEncoder f g = Encoder $ do
         Left a -> _encoderImpl_encode vf a
         Right b -> _encoderImpl_encode vg b
     , _encoderImpl_decode = \c ->
-        let mb = Right <$> _encoderImpl_decode vg c
-        in flip catchError (\_ -> mb) $ do
-          a <- _encoderImpl_decode vf c
-          case c == _encoderImpl_encode vf a of
-            False -> mb
-            True -> pure $ Left a
+        let ma = Left <$> _encoderImpl_decode vf c
+        in flip catchError (\_ -> ma) $ do
+          b <- _encoderImpl_decode vg c
+          case c == _encoderImpl_encode vg b of
+            False -> ma
+            True -> pure $ Right b
     }
 
 enum1Encoder
