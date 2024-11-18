@@ -471,6 +471,7 @@ in rec {
           tools = { cabal = "latest"; } // super.helpers.bot_args.shellTools or {};
           packages = ps: [];
           additional = ps: builtins.attrValues (builtins.removeAttrs ps (builtins.attrNames interpretedPkgs));
+          nativeBuildInputs = [nix-thunk.command];
         };
 
         hoogleShell = self.shellFor {
