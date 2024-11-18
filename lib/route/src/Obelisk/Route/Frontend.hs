@@ -63,6 +63,9 @@ module Obelisk.Route.Frontend
 #if __GLASGOW_HASKELL__ < 810
 import Control.Monad ((<=<))
 #endif
+#if __GLASGOW_HASKELL__ >= 906
+import Control.Monad (when, (<=<))
+#endif
 #endif
 
 import Prelude hiding ((.), id)
@@ -187,7 +190,7 @@ instance Adjustable t m => Adjustable t (RoutedT t r m) where
   traverseDMapWithKeyWithAdjust f a0 a' = RoutedT $ traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
   traverseDMapWithKeyWithAdjustWithMove f a0 a' = RoutedT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
 
-instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RoutedT t r m) where
+instance MonadQuery t vs m => MonadQuery t vs (RoutedT t r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
@@ -393,7 +396,7 @@ instance (MonadHold t m, Adjustable t m) => Adjustable t (SetRouteT t r m) where
   traverseDMapWithKeyWithAdjust f a0 a' = SetRouteT $ traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
   traverseDMapWithKeyWithAdjustWithMove f a0 a' = SetRouteT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
 
-instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (SetRouteT t r m) where
+instance (MonadQuery t vs m) => MonadQuery t vs (SetRouteT t r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
@@ -471,7 +474,7 @@ instance Adjustable t m => Adjustable t (RouteToUrlT r m) where
   traverseDMapWithKeyWithAdjust f a0 a' = RouteToUrlT $ traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
   traverseDMapWithKeyWithAdjustWithMove f a0 a' = RouteToUrlT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) (coerce a0) $ coerce a'
 
-instance (Monad m, MonadQuery t vs m) => MonadQuery t vs (RouteToUrlT r m) where
+instance MonadQuery t vs m => MonadQuery t vs (RouteToUrlT r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
