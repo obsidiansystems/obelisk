@@ -41,6 +41,19 @@ let
     else if lib.isList v then lib.concatMap collect v
     else [];
 
+  # A simple derivation that just creates a file with the names of all
+  # of its inputs. If built, it will have a runtime dependency on all
+  # of the given build inputs.
+  pinBuildInputs = name: buildInputs: (local-self.nixpkgs.releaseTools.aggregate {
+    inherit name;
+    constituents = buildInputs;
+  }).overrideAttrs (old: {
+    buildCommand = old.buildCommand + ''
+      echo "$propagatedBuildInputs $buildInputs $nativeBuildInputs $propagatedNativeBuildInputs" > "$out/deps"
+    '';
+    inherit buildInputs;
+  });
+
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
     reflex-platform = import ./dep/mars { inherit system __useNewerCompiler; };
 
@@ -90,7 +103,7 @@ let
         inherit iosSkeleton;
       };
     in packages // {
-      cache = reflex-platform.pinBuildInputs
+      cache = pinBuildInputs
         "obelisk-${system}-${nameSuffix}"
         (collect packages);
     };
@@ -100,12 +113,12 @@ let
       unprofiled = mkPerProfiling false;
     };
   in perProfiling // {
-    cache = reflex-platform.pinBuildInputs
+    cache = pinBuildInputs
       "obelisk-${system}"
       (map (p: p.cache) (builtins.attrValues perProfiling));
   });
 
-  metaCache = local-self.reflex-platform.pinBuildInputs
+  metaCache = pinBuildInputs
     "obelisk-everywhere"
     (map (a: a.cache) (builtins.attrValues perPlatform));
 
