@@ -4,7 +4,6 @@
   }
 , local-self ? import ./. self-args
 , supportedSystems ? [ builtins.currentSystem ]
-, __useNewerCompiler  ? true # false if one wants to use ghc 8.6.5
 }:
 
 let
@@ -55,7 +54,7 @@ let
   });
 
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
-    reflex-platform = import ./dep/mars { inherit system __useNewerCompiler; };
+    reflex-platform = import ./dep/mars { inherit system; };
 
     mkPerProfiling = profiling: let
       obelisk = import ./. (self-args // { inherit system profiling; });
