@@ -428,8 +428,6 @@ in rec {
           #(hackage: (import "${marsObelisk.plan-nix}/default.nix").pkgs hackage)
         ];
 
-        ghcjs-app = self.crossSystems.ghcjs.hsPkgs.frontend.components.exes.frontend;
-
         userSettings = {
           android = reflexHasAttr "android";
           ios = reflexHasAttr "ios";
