@@ -81,8 +81,6 @@ let
         echo "return" >> "$out"
         cat "${skeleton.shells.ghc}" >> "$out"
       '';
-      androidSkeleton = skeleton.android.frontend;
-      iosSkeleton = skeleton.ios.frontend;
       nameSuffix = if profiling then "profiled" else "unprofiled";
       packages = {
         skeletonProfiledObRun = rawSkeleton.__unstable__.profiledObRun;
@@ -96,10 +94,10 @@ let
           ghcjs
           serverSkeletonExe
           ;
-      } // lib.optionalAttrs reflex-platform.androidSupport {
-        inherit androidSkeleton;
-      } // lib.optionalAttrs reflex-platform.iosSupport {
-        inherit iosSkeleton;
+      } // lib.optionalAttrs (system == "x86_64-linux") {
+        android-app = rawSkeleton.android.app.aarch64;
+      } // lib.optionalAttrs (system == "x86_64-darwin") {
+        ios-app = rawSkeleton.ios.app.aarch64;
       };
     in packages // {
       cache = pinBuildInputs
