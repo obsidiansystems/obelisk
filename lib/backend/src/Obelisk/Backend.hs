@@ -83,6 +83,7 @@ data BackendConfig frontendRoute = BackendConfig
   , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ()))
     -- ^ Given the URL of all.js, return the widgets which are responsible for
     -- loading the script.
+  , _backendConfig_getPublicConfigs :: IO (Map Text ByteString)
   } deriving (Generic)
 
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
@@ -228,7 +229,7 @@ serveGhcjsApp urlEnc ghcjsWidgets app config = \case
 
 -- | Default obelisk backend configuration.
 defaultBackendConfig :: BackendConfig frontendRoute
-defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets
+defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets getPublicConfigs
 
 -- | Run an obelisk backend with the default configuration.
 runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
@@ -240,10 +241,10 @@ runBackendWith
   -> Backend backendRoute frontendRoute
   -> Frontend (R frontendRoute)
   -> IO ()
-runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets myGetPublicConfigs) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
-    publicConfigs <- getPublicConfigs
+    publicConfigs <- myGetPublicConfigs
     _backend_run backend $ \serveRoute ->
       runSnap $
         getRouteWith validFullEncoder >>= \case
