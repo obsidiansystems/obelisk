@@ -15,12 +15,15 @@
   }
 }:
 with obelisk;
-project {} ({ ... }: {
+project {} ({ pkgs, ... }: {
   name = "skeleton";
   extraArgs = {
     staticFiles = ./static;
   };
   src = ./.;
+  inputThunks = pkgs.obsidianCompilers.thunkSets.common ++ [
+    pkgs._dep.source.aeson-1541
+  ];
   shells = ps: with ps; [
     backend
   ];
