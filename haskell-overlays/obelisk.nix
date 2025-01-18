@@ -29,7 +29,7 @@ in
   };
   obelisk-frontend = self.callCabal2nix "obelisk-frontend" (obeliskCleanSource ../lib/frontend) {};
   obelisk-run = onLinux (self.callCabal2nix "obelisk-run" (obeliskCleanSource ../lib/run) {}) (pkg:
-    haskellLib.overrideCabal pkg (drv: { librarySystemDepends = [ pkgs.iproute ]; })
+    haskellLib.overrideCabal pkg (drv: { librarySystemDepends = [ pkgs.iproute2 ]; })
   );
   obelisk-route = self.callCabal2nix "obelisk-route" (obeliskCleanSource ../lib/route) {};
   obelisk-selftest = haskellLib.dontHaddock (haskellLib.overrideCabal (super.callCabal2nix "obelisk-selftest" (obeliskCleanSource ../lib/selftest) { }) {
