@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
@@ -12,6 +13,7 @@ import Obelisk.Asset.Gather
 import Data.Foldable
 import Language.Haskell.TH (pprint)
 import Language.Haskell.TH.Syntax hiding (lift)
+import Language.Haskell.TH.Datatype.TyVarBndr (kindedTVFlag)
 import GHC.TypeLits
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -88,7 +90,15 @@ staticClass = do
   let n x = Name (OccName x) NameS
       className = n "StaticFile"
       methodName = n "hashedPath"
-      cls = ClassD [] className [KindedTV (n "s") (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
+      cls = ClassD [] className [kindedTVFlag (n "s") breq (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
+
+-- Can replace with Language.Haskell.TH.Datatype.TyVarBndr.BndrReq once support is dropped for th-abstractions < 0.6
+#if MIN_VERSION_template_haskell(2,21,0)
+      breq = BndrReq
+#else
+      breq = ()
+#endif
+
   tell $ Seq.singleton cls
   return $ StaticContext
     { _staticContext_className = className
