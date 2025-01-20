@@ -12,7 +12,7 @@ let
 
   nix-thunk = import ./dep/nix-thunk {};
   mars = nix-thunk.thunkSource ./dep/mars;
-  marsProject = args: (import mars args).project;
+  marsProject = args: (import mars ({ inherit system; } // args)).project;
 
   obeliskHackageOverlays = [
     {
