@@ -42,7 +42,7 @@ let
     }
     {
       name = "obelisk-executable-config-lookup";
-      version = "0.1";
+      version = "0.1.1";
       src = ./lib/executable-config/lookup;
     }
     {
@@ -52,7 +52,7 @@ let
     }
     {
       name = "obelisk-route";
-      version = "0.1";
+      version = "0.2";
       src = ./lib/route;
     }
     {
