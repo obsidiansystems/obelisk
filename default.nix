@@ -14,6 +14,8 @@ let
   mars = nix-thunk.thunkSource ./dep/mars;
   marsProject = args: (import mars ({ inherit system; } // args)).project;
 
+  index-state = "2025-01-25T00:00:00Z";
+
   obeliskHackageOverlays = [
     {
       name = "obelisk-asset-serve-snap";
@@ -78,9 +80,9 @@ let
   ];
 
   obeliskProjDef = { enableLibraryProfiling ? false }: ({ pkgs, thunkSource, ... }: {
-    name = "obelisk-pkgs";
+    name = "obelisk-pkgs"; # For some reason, this needs to match a package in hsPkgs; not sure what that means, and it doesn't seem right
     src = ./.;
-    index-state = "2025-01-25T00:00:00Z";
+    inherit index-state;
     extraArgs = {
       staticFiles = [ null ];
     };
