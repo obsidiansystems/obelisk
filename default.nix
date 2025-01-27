@@ -80,7 +80,7 @@ let
   obeliskProjDef = { enableLibraryProfiling ? false }: ({ pkgs, thunkSource, ... }: {
     name = "obelisk-pkgs";
     src = ./.;
-    index-state = "2023-03-04T00:00:00Z";
+    index-state = "2025-01-25T00:00:00Z";
     extraArgs = {
       staticFiles = [ null ];
     };
@@ -105,6 +105,10 @@ let
       ({ config, pkgs, lib, ... }: {
         packages.cli-git.components.library.build-tools = [
           pkgs.git
+        ];
+        packages.cli-nix.components.library.build-tools = [
+          pkgs.nix-prefetch-git
+          pkgs.nix
         ];
         #packages.nix-thunk.src = thunkSource ./dep/nix-thunk;
         packages.obelisk-command.components.library.build-tools = [
