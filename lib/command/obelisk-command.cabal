@@ -49,14 +49,14 @@ library
     , text
     , time
     , transformers
-    , unix-compat
+    , unix-compat < 0.7
     , unordered-containers
     , utf8-string
     , which
     , yaml
-    , nix-thunk
+    , nix-thunk < 0.7
     , cli-extras
-    
+
   exposed-modules:
     Obelisk.App
     Obelisk.Command
