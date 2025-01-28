@@ -482,7 +482,9 @@ in rec {
              hasLibrary = v ? components && v.components ? library;
              isRedirect = v ? isRedirect && v.isRedirect;
            in !isRedirect && configSetCheck && hasLibrary) ps;
-          in builtins.attrValues (builtins.removeAttrs packages (builtins.attrNames interpretedPkgs));
+          in builtins.attrValues (self.pkgs.lib.filterAttrs (k: _:
+              !(builtins.any (x: self.pkgs.lib.hasPrefix x k) (builtins.attrNames interpretedPkgs)
+            )) packages);
           nativeBuildInputs = [nix-thunk.command];
         };
 
