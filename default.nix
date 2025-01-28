@@ -474,9 +474,15 @@ in rec {
         };
         combinedShellWith = { interpretedPkgs }: self.shellFor {
           withHoogle = false;
-          tools = { cabal = "latest"; } // super.helpers.bot_args.shellTools or {};
+          #tools = { cabal = "latest"; } // super.helpers.bot_args.shellTools or {};
           packages = ps: [];
-          additional = ps: builtins.attrValues (builtins.removeAttrs ps (builtins.attrNames interpretedPkgs));
+          additional = ps: let
+           packages = self.pkgs.lib.filterAttrs (k: v: let
+             configSetCheck = if self.pkg-set.config.packages ? "${k}" then (builtins.tryEval (self.pkg-set.config.packages.${k}.package.identifier.name)).success else false;
+             hasLibrary = v ? components && v.components ? library;
+             isRedirect = v ? isRedirect && v.isRedirect;
+           in !isRedirect && configSetCheck && hasLibrary) ps;
+          in builtins.attrValues (builtins.removeAttrs packages (builtins.attrNames interpretedPkgs));
           nativeBuildInputs = [nix-thunk.command];
         };
 
