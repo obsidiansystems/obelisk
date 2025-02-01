@@ -19,12 +19,6 @@ if !arch(javascript)
     subdir: system-fileio system-filepath
     --sha256: sha256-VDShV+gkVUooMy1OtxrFfZrTAVVhWN/Ffjd6Qq0kHNM=
 
-  source-repository-package
-    type: git
-    location: https://github.com/ymeister/unix-compat.git
-    tag: 339649401c876ca1f76c6f94d6b099c8c47fa9e2
-    --sha256: 0j85q0mqg929nlz9ks6jaxz54pkvifpmldsvqjcz4bv6wml8m3wd
-
 -- https://github.com/haskell-cryptography/HsOpenSSL/issues/93#issuecomment-2311816896
 package HsOpenSSL
   ghc-options: -optc=-Wno-incompatible-pointer-types"

@@ -61,7 +61,7 @@ import System.IO.Temp
 import System.IO.Unsafe (unsafePerformIO)
 import System.PosixCompat.Files
 import System.PosixCompat.Types
-import System.PosixCompat.User
+import System.Posix.User
 import qualified System.Process as Proc
 import Text.ShellEscape (sh, bash, bytes)
 
