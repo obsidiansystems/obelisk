@@ -21,7 +21,6 @@ library
     , extra
     , filepath
     , fsnotify
-    , git
     , github
     , here
     , hnix >=0.5

@@ -14,12 +14,6 @@ source-repository-package
 if !arch(javascript)
   source-repository-package
     type: git
-    location: https://github.com/ymeister/hs-git.git
-    tag: 4534c4589fc63d76d4a28f4ca9d810bea021964b
-    --sha256: 12c4llylc5zls85x11inkxdwllbps77pvwyji7jv9a8c069fg6sf
-
-  source-repository-package
-    type: git
     location: https://github.com/mpickering/haskell-filesystem.git
     tag: 2eb26717e986442796d703a80869e6826a10191e
     subdir: system-fileio system-filepath
