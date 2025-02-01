@@ -54,6 +54,8 @@ import Control.Monad.Except
 #endif
 #endif
 
+import Control.Monad
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))

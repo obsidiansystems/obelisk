@@ -32,7 +32,8 @@ module Obelisk.Frontend
 import Data.Monoid ((<>))
 #endif
 #if __GLASGOW_HASKELL__ >= 906
-import Control.Monad (void, when)
+import Control.Monad (when)
+import Data.Functor (void)
 #endif
 #endif
 

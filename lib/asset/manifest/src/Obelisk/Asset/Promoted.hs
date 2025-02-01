@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
@@ -90,7 +91,15 @@ staticClass = do
   let n x = Name (OccName x) NameS
       className = n "StaticFile"
       methodName = n "hashedPath"
-      cls = ClassD [] className [kindedTVFlag (n "s") BndrReq (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
+      cls = ClassD [] className [kindedTVFlag (n "s") breq (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
+
+-- Can replace with Language.Haskell.TH.Datatype.TyVarBndr.BndrReq once support is dropped for th-abstractions < 0.6
+#if MIN_VERSION_template_haskell(2,21,0)
+      breq = BndrReq
+#else
+      breq = ()
+#endif
+
   tell $ Seq.singleton cls
   return $ StaticContext
     { _staticContext_className = className
