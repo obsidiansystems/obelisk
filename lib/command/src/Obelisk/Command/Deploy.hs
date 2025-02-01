@@ -94,8 +94,14 @@ deployInit deployOpts root = do
     failWith [i|Deploy directory ${deployDir} should not be the same as project root.|]
   thunkPtr <- wrapNixThunkError (readThunk root) >>= \case
     Right (ThunkData_Packed _ ptr) -> return ptr
-    _ -> wrapNixThunkError (getThunkPtr CheckClean_NotIgnored root Nothing)
+    _ -> wrapNixThunkError $ compat $ getThunkPtr CheckClean_NotIgnored root Nothing
   deployInit' thunkPtr deployOpts
+  where
+#if MIN_VERSION_nix_thunk(0,7,1)
+    compat = fmap $ \(ptr, _isWorktree) -> ptr
+#else
+    compat = id
+#endif
 
 -- | The preamble in 'deployInit' provides deployInit' with a 'ThunkPtr' that it can install in
 -- the staging directory.
@@ -276,8 +282,14 @@ fi
 
 -- | Update the source thunk in the staging directory to the HEAD of the branch.
 deployUpdate :: MonadObelisk m => FilePath -> m ()
-deployUpdate deployPath = wrapNixThunkError $
-  updateThunkToLatest (ThunkUpdateConfig Nothing (ThunkConfig Nothing)) (deployPath </> "src")
+deployUpdate deployPath = wrapNixThunkError $ updateThunkToLatest cfg (deployPath </> "src")
+  where
+    cfg = ThunkUpdateConfig
+      Nothing
+#if MIN_VERSION_nix_thunk(0,7,1)
+      Nothing
+#endif
+      (ThunkConfig Nothing)
 
 -- | Platforms that we deploy obelisk artefacts to.
 data PlatformDeployment = Android | IOS

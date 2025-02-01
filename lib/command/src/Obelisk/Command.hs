@@ -236,6 +236,9 @@ thunkConfig = ThunkConfig
 thunkUpdateConfig :: Parser ThunkUpdateConfig
 thunkUpdateConfig = ThunkUpdateConfig
   <$> optional (strOption (long "branch" <> metavar "BRANCH" <> help "Use the given branch when looking for the latest revision"))
+#if MIN_VERSION_nix_thunk(0,7,1)
+  <*> optional (strOption (short 'r' <> long "rev" <> metavar "REVISION" <> help "Update to this specific revision"))
+#endif
   <*> thunkConfig
 
 thunkPackConfig :: Parser ThunkPackConfig
