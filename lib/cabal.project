@@ -1,0 +1,18 @@
+packages:
+  ./executable-config/inject
+  ./executable-config/lookup
+  ./frontend
+  ./route
+  ./tabulation
+
+if !arch(javascript)
+  packages:
+    ./asset/manifest
+    ./asset/serve-snap
+    ./backend
+    ./command
+    ./run
+    ./selftest
+    ./snap-extras
+
+import: cabal.dependencies.project

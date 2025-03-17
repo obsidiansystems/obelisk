@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -20,7 +21,6 @@ module Main where
 
 import Prelude hiding (id, (.))
 
-import Control.Applicative (liftA2)
 import Control.Categorical.Bifunctor (bimap)
 import Control.Category (Category((.), id))
 import Control.Category.Associative (associate, Associative (disassociate))
@@ -46,6 +46,10 @@ import Test.QuickCheck
 import Test.QuickCheck.Instances ()
 import Test.Tasty (defaultMain, testGroup, TestName, TestTree)
 import Test.Tasty.QuickCheck (testProperty)
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Applicative (liftA2)
+#endif
 
 import Obelisk.Route
 import Obelisk.Route.TH

@@ -14,5 +14,5 @@ cabal.project.local
 **/ghcid-output.txt
 
 # HLS specific files
-lib/cabal.project
+#lib/cabal.project
 lib/cabal.project.local

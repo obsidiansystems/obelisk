@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
@@ -5,9 +6,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE TemplateHaskell #-}
+
 module Obelisk.Command.Utils where
 
 import Control.Applicative hiding (many)
+import Control.Monad (void)
 import Control.Monad.Except
 import Data.Bool (bool)
 import Data.Bifunctor
@@ -17,7 +20,6 @@ import Data.List (isInfixOf)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe (maybeToList)
-import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void (Void)
@@ -26,6 +28,10 @@ import System.Which (staticWhich)
 import qualified Text.Megaparsec.Char.Lexer as ML
 import Text.Megaparsec as MP
 import Text.Megaparsec.Char as MP
+
+#if !MIN_VERSION_base(4,18,0)
+import Data.Semigroup ((<>))
+#endif
 
 import Obelisk.App (MonadObelisk)
 import Cli.Extras
@@ -173,9 +179,7 @@ gitLookupDefaultBranch (refs, _) = do
   ref <- case M.lookup GitRef_Head refs of
     Just ref -> pure ref
     Nothing -> throwError
-      "No symref entry for HEAD. \
-      \ Is your git version at least 1.8.5? \
-      \ Otherwise `git ls-remote --symref` will not work."
+      "No symref entry for HEAD. Is your git version at least 1.8.5? Otherwise `git ls-remote --symref` will not work."
   case ref of
     GitRef_Branch b -> pure b
     _ -> throwError $

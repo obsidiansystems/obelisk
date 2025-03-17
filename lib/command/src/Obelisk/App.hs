@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -9,11 +10,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE PackageImports #-}
+
 module Obelisk.App where
 
 import Control.Lens
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
-import Control.Monad.Fail (MonadFail)
 import Control.Monad.Reader (MonadIO, ReaderT (..), ask, runReaderT)
 import Control.Monad.Writer (WriterT)
 import Control.Monad.State (StateT)
@@ -25,16 +26,14 @@ import Control.Monad.Log (MonadLog)
 import Cli.Extras.Types
 import "nix-thunk" Nix.Thunk (NixThunkError)
 
+#if !MIN_VERSION_base(4,18,0)
+import Control.Monad.Fail (MonadFail)
+#endif
+
 import Cli.Extras
-  ( CliConfig
-  , CliLog
-  , CliThrow
-  , CliT (..)
-  , ProcessFailure
+  ( ProcessFailure
   , AsProcessFailure (..)
   , AsUnstructuredError (..)
-  , HasCliConfig
-  , Output
   , runCli
   )
 

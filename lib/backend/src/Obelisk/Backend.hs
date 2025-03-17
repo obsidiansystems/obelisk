@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Obelisk.Backend
   ( Backend (..)
   , BackendConfig (..)
@@ -45,10 +46,14 @@ module Obelisk.Backend
 import Control.Monad.Fail (MonadFail)
 import Data.Monoid ((<>))
 #endif
-#endif
-
+#if __GLASGOW_HASKELL__ >= 906
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO (liftIO))
+#else
+import Control.Monad.Except
+#endif
+#endif
+
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
