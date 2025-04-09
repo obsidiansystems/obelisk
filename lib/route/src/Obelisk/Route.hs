@@ -176,6 +176,8 @@ import qualified Control.Monad.State.Strict as State
 import Control.Monad.Writer (execWriter, tell)
 import Data.Aeson (FromJSON, ToJSON)
 import qualified Data.Aeson as Aeson
+import Data.Bifunctor
+import Data.Bitraversable
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import Data.Dependent.Map (DMap)
@@ -403,25 +405,24 @@ instance Monad parse => Category (EncoderImpl parse) where
     , _encoderImpl_encode = _encoderImpl_encode f . _encoderImpl_encode g
     }
 
-instance Monad parse => Cat.PFunctor (,) (EncoderImpl parse) (EncoderImpl parse) where
+instance (Monad parse, Bitraversable p) => Cat.PFunctor p (EncoderImpl parse) (EncoderImpl parse) where
   first f = Cat.bimap f id
-instance Monad parse => Cat.QFunctor (,) (EncoderImpl parse) (EncoderImpl parse) where
+instance (Monad parse, Bitraversable p) => Cat.QFunctor p (EncoderImpl parse) (EncoderImpl parse) where
   second g = Cat.bimap id g
-instance Monad parse => Cat.Bifunctor (,) (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
+instance (Monad parse, Bitraversable p) => Cat.Bifunctor p (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
   bimap f g = EncoderImpl
-    { _encoderImpl_encode = Cat.bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
-    , _encoderImpl_decode = \(a, b) -> liftA2 (,) (_encoderImpl_decode f a) (_encoderImpl_decode g b)
+    { _encoderImpl_encode = bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
+    , _encoderImpl_decode = bitraverse (_encoderImpl_decode f) (_encoderImpl_decode g)
     }
 
-instance (Monad parse, Applicative check) => Braided (Encoder check parse) (,) where
+instance (Monad parse, Applicative check, Bitraversable p, Symmetric (->) p) => Braided (Encoder check parse) p where
   braid = viewEncoder (iso swap swap)
 
-
-instance (Applicative check, Monad parse) => Cat.PFunctor (,) (Encoder check parse) (Encoder check parse) where
+instance (Applicative check, Monad parse, Bitraversable p) => Cat.PFunctor p (Encoder check parse) (Encoder check parse) where
   first f = Cat.bimap f id
-instance (Applicative check, Monad parse) => Cat.QFunctor (,) (Encoder check parse) (Encoder check parse) where
+instance (Applicative check, Monad parse, Bitraversable p) => Cat.QFunctor p (Encoder check parse) (Encoder check parse) where
   second g = Cat.bimap id g
-instance (Applicative check, Monad parse) => Cat.Bifunctor (,) (Encoder check parse) (Encoder check parse) (Encoder check parse) where
+instance (Applicative check, Monad parse, Bitraversable p) => Cat.Bifunctor p (Encoder check parse) (Encoder check parse) (Encoder check parse) where
   bimap f g = Encoder $ liftA2 Cat.bimap (unEncoder f) (unEncoder g)
 
 instance (Traversable f, Monad parse) => Cat.Functor f (EncoderImpl parse) (EncoderImpl parse) where
@@ -430,40 +431,14 @@ instance (Traversable f, Monad parse) => Cat.Functor f (EncoderImpl parse) (Enco
     , _encoderImpl_decode = traverse $ _encoderImpl_decode ve
     }
 
-instance Monad parse => Cat.PFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
-  first f = Cat.bimap f id
-instance Monad parse => Cat.QFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
-  second g = Cat.bimap id g
-instance Monad parse => Cat.Bifunctor Either (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
-  bimap f g = EncoderImpl
-    { _encoderImpl_encode = Cat.bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
-    , _encoderImpl_decode = \case
-      Left a -> Left <$> _encoderImpl_decode f a
-      Right b -> Right <$> _encoderImpl_decode g b
-    }
-
-instance (Monad parse, Applicative check) => Cat.QFunctor Either (Encoder check parse) (Encoder check parse) where
-  second g = Cat.bimap id g
-instance (Monad parse, Applicative check) => Cat.PFunctor Either (Encoder check parse) (Encoder check parse) where
-  first f = Cat.bimap f id
-instance (Monad parse, Applicative check) => Cat.Bifunctor Either (Encoder check parse) (Encoder check parse) (Encoder check parse) where
-  bimap f g = Encoder $ liftA2 Cat.bimap (unEncoder f) (unEncoder g)
-
-instance (Applicative check, Monad parse) => Associative (Encoder check parse) Either where
-  associate = viewEncoder (iso (associate @(->) @Either) disassociate)
-  disassociate = viewEncoder (iso disassociate associate)
-
-instance (Monad parse, Applicative check) => Braided (Encoder check parse) Either where
-  braid = viewEncoder (iso swap swap)
-
-
+instance (Monad parse, Applicative check, Bitraversable p, Symmetric (->) p) => Symmetric (Encoder check parse) p
 
 instance (Traversable f, Monad check, Monad parse) => Cat.Functor f (Encoder check parse) (Encoder check parse) where
   fmap e = Encoder $ do
     ve <- unEncoder e
     pure $ Cat.fmap ve
 
-instance Monad parse => Associative (EncoderImpl parse) (,) where
+instance (Monad parse, Bitraversable p, Associative (->) p) => Associative (EncoderImpl parse) p where
   associate = EncoderImpl
     { _encoderImpl_encode = associate
     , _encoderImpl_decode = pure . disassociate
@@ -473,8 +448,8 @@ instance Monad parse => Associative (EncoderImpl parse) (,) where
     , _encoderImpl_decode = pure . associate
     }
 
-instance Monad parse => Monoidal (EncoderImpl parse) (,) where
-  type Id (EncoderImpl parse) (,) = ()
+instance (Monad parse, Bitraversable p, Monoidal (->) p) => Monoidal (EncoderImpl parse) p where
+  type Id (EncoderImpl parse) p = Id (->) p
   idl = EncoderImpl
     { _encoderImpl_encode = idl
     , _encoderImpl_decode = pure . coidl
@@ -492,12 +467,12 @@ instance Monad parse => Monoidal (EncoderImpl parse) (,) where
     , _encoderImpl_decode = pure . idr
     }
 
-instance (Applicative check, Monad parse) => Associative (Encoder check parse) (,) where
+instance (Applicative check, Monad parse, Bitraversable p, Associative (->) p) => Associative (Encoder check parse) p where
   associate = Encoder $ pure associate
   disassociate = Encoder $ pure disassociate
 
-instance (Applicative check, Monad parse) => Monoidal (Encoder check parse) (,) where
-  type Id (Encoder check parse) (,) = ()
+instance (Applicative check, Monad parse, Bitraversable p, Monoidal (->) p) => Monoidal (Encoder check parse) p where
+  type Id (Encoder check parse) p = Id (EncoderImpl parse) p
   idl = Encoder $ pure idl
   idr = Encoder $ pure idr
   coidl = Encoder $ pure coidl
