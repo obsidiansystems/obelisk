@@ -135,7 +135,7 @@ import Prelude hiding ((.), id)
 import Control.Applicative
 import Control.Category (Category (..))
 import qualified Control.Categorical.Functor as Cat
-import Control.Categorical.Bifunctor
+import qualified Control.Categorical.Bifunctor as Cat
 import Control.Category.Associative
 import Control.Category.Monoidal
 import Control.Category.Braided
@@ -310,7 +310,7 @@ pathParamEncoder
   => Encoder check parse item Text
   -> Encoder check parse rest PageName
   -> Encoder check parse (item :. rest) PageName
-pathParamEncoder itemUnchecked restUnchecked = addPathSegmentEncoder . bimap itemUnchecked restUnchecked
+pathParamEncoder itemUnchecked restUnchecked = addPathSegmentEncoder . Cat.bimap itemUnchecked restUnchecked
 
 pathLiteralEncoder
   :: ( Applicative check
@@ -319,7 +319,7 @@ pathLiteralEncoder
   => Text
   -> Encoder check parse a PageName
   -> Encoder check parse a PageName
-pathLiteralEncoder t e = addPathSegmentEncoder . bimap (unitEncoder t) e . coidl
+pathLiteralEncoder t e = addPathSegmentEncoder . Cat.bimap (unitEncoder t) e . coidl
 
 --------------------------------------------------------------------------------
 -- Encoder fundamentals
@@ -403,13 +403,13 @@ instance Monad parse => Category (EncoderImpl parse) where
     , _encoderImpl_encode = _encoderImpl_encode f . _encoderImpl_encode g
     }
 
-instance Monad parse => PFunctor (,) (EncoderImpl parse) (EncoderImpl parse) where
-  first f = bimap f id
-instance Monad parse => QFunctor (,) (EncoderImpl parse) (EncoderImpl parse) where
-  second g = bimap id g
-instance Monad parse => Bifunctor (,) (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
+instance Monad parse => Cat.PFunctor (,) (EncoderImpl parse) (EncoderImpl parse) where
+  first f = Cat.bimap f id
+instance Monad parse => Cat.QFunctor (,) (EncoderImpl parse) (EncoderImpl parse) where
+  second g = Cat.bimap id g
+instance Monad parse => Cat.Bifunctor (,) (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
   bimap f g = EncoderImpl
-    { _encoderImpl_encode = bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
+    { _encoderImpl_encode = Cat.bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
     , _encoderImpl_decode = \(a, b) -> liftA2 (,) (_encoderImpl_decode f a) (_encoderImpl_decode g b)
     }
 
@@ -417,12 +417,12 @@ instance (Monad parse, Applicative check) => Braided (Encoder check parse) (,) w
   braid = viewEncoder (iso swap swap)
 
 
-instance (Applicative check, Monad parse) => PFunctor (,) (Encoder check parse) (Encoder check parse) where
-  first f = bimap f id
-instance (Applicative check, Monad parse) => QFunctor (,) (Encoder check parse) (Encoder check parse) where
-  second g = bimap id g
-instance (Applicative check, Monad parse) => Bifunctor (,) (Encoder check parse) (Encoder check parse) (Encoder check parse) where
-  bimap f g = Encoder $ liftA2 bimap (unEncoder f) (unEncoder g)
+instance (Applicative check, Monad parse) => Cat.PFunctor (,) (Encoder check parse) (Encoder check parse) where
+  first f = Cat.bimap f id
+instance (Applicative check, Monad parse) => Cat.QFunctor (,) (Encoder check parse) (Encoder check parse) where
+  second g = Cat.bimap id g
+instance (Applicative check, Monad parse) => Cat.Bifunctor (,) (Encoder check parse) (Encoder check parse) (Encoder check parse) where
+  bimap f g = Encoder $ liftA2 Cat.bimap (unEncoder f) (unEncoder g)
 
 instance (Traversable f, Monad parse) => Cat.Functor f (EncoderImpl parse) (EncoderImpl parse) where
   fmap ve = EncoderImpl
@@ -430,24 +430,24 @@ instance (Traversable f, Monad parse) => Cat.Functor f (EncoderImpl parse) (Enco
     , _encoderImpl_decode = traverse $ _encoderImpl_decode ve
     }
 
-instance Monad parse => PFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
-  first f = bimap f id
-instance Monad parse => QFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
-  second g = bimap id g
-instance Monad parse => Bifunctor Either (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
+instance Monad parse => Cat.PFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
+  first f = Cat.bimap f id
+instance Monad parse => Cat.QFunctor Either (EncoderImpl parse) (EncoderImpl parse) where
+  second g = Cat.bimap id g
+instance Monad parse => Cat.Bifunctor Either (EncoderImpl parse) (EncoderImpl parse) (EncoderImpl parse) where
   bimap f g = EncoderImpl
-    { _encoderImpl_encode = bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
+    { _encoderImpl_encode = Cat.bimap (_encoderImpl_encode f) (_encoderImpl_encode g)
     , _encoderImpl_decode = \case
       Left a -> Left <$> _encoderImpl_decode f a
       Right b -> Right <$> _encoderImpl_decode g b
     }
 
-instance (Monad parse, Applicative check) => QFunctor Either (Encoder check parse) (Encoder check parse) where
-  second g = bimap id g
-instance (Monad parse, Applicative check) => PFunctor Either (Encoder check parse) (Encoder check parse) where
-  first f = bimap f id
-instance (Monad parse, Applicative check) => Bifunctor Either (Encoder check parse) (Encoder check parse) (Encoder check parse) where
-  bimap f g = Encoder $ liftA2 bimap (unEncoder f) (unEncoder g)
+instance (Monad parse, Applicative check) => Cat.QFunctor Either (Encoder check parse) (Encoder check parse) where
+  second g = Cat.bimap id g
+instance (Monad parse, Applicative check) => Cat.PFunctor Either (Encoder check parse) (Encoder check parse) where
+  first f = Cat.bimap f id
+instance (Monad parse, Applicative check) => Cat.Bifunctor Either (Encoder check parse) (Encoder check parse) (Encoder check parse) where
+  bimap f g = Encoder $ liftA2 Cat.bimap (unEncoder f) (unEncoder g)
 
 instance (Applicative check, Monad parse) => Associative (Encoder check parse) Either where
   associate = viewEncoder (iso (associate @(->) @Either) disassociate)
@@ -615,7 +615,7 @@ pathComponentEncoder
   -> Encoder check parse (R p) PageName
 pathComponentEncoder f = Encoder $ do
   let extractEncoder = \case
-        PathEnd e -> first (unitEncoder []) . coidl . e
+        PathEnd e -> Cat.first (unitEncoder []) . coidl . e
         PathSegment _ e -> e
       extractPathSegment = \case
         PathEnd _ -> Nothing
@@ -762,10 +762,10 @@ pathOnlyEncoderIgnoringQuery = unsafeMkEncoder $ EncoderImpl
   }
 
 pathOnlyEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse [Text] PageName
-pathOnlyEncoder = second (unitEncoder mempty) . coidr
+pathOnlyEncoder = Cat.second (unitEncoder mempty) . coidr
 
 queryOnlyEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Map Text (Maybe Text)) PageName
-queryOnlyEncoder = first (unitEncoder []) . coidl
+queryOnlyEncoder = Cat.first (unitEncoder []) . coidl
 
 singletonListEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse a [a]
 singletonListEncoder = unsafeMkEncoder $ EncoderImpl
@@ -938,7 +938,7 @@ type PathQuery = (String, String)
 
 -- | Encode a PageName into a path and query string.
 pageNameEncoder :: (Applicative check, MonadError Text parse) => Encoder check parse PageName PathQuery
-pageNameEncoder = bimap
+pageNameEncoder = Cat.bimap
   (unpackTextEncoder . prefixTextEncoder "/" . pathSegmentsTextEncoder . listToNonEmptyEncoder)
   (unpackTextEncoder . prefixNonemptyTextEncoder "?" . queryParametersTextEncoder . toListMapEncoder)
 
@@ -1133,7 +1133,7 @@ pathQueryEncoder :: (Applicative check, Applicative parse) => Encoder check pars
 pathQueryEncoder = unsafeMkEncoder $ EncoderImpl
   { _encoderImpl_encode = \(k, v) -> T.pack $ k <> v
   , _encoderImpl_decode = \r ->
-      pure $ bimap T.unpack T.unpack $ T.breakOn "?" r
+      pure $ Cat.bimap T.unpack T.unpack $ T.breakOn "?" r
   }
 
 -- | Given a backend route and a checked route encoder, render the route (path
@@ -1188,7 +1188,7 @@ integralEncoder = reviewEncoder Numeric.Lens.integral
 
 pathSegmentEncoder :: (MonadError Text parse, Applicative check, Cons as as a a) =>
   Encoder check parse (a, (as, b)) (as, b)
-pathSegmentEncoder = first (reviewEncoder _Cons) . disassociate
+pathSegmentEncoder = Cat.first (reviewEncoder _Cons) . disassociate
 
 newtype Decoder check parse b a = Decoder { toEncoder :: Encoder check parse a b }
 
@@ -1279,7 +1279,7 @@ jsonEncoder = unsafeEncoder $ do
 byteStringsToPageName :: BS.ByteString -> BS.ByteString -> PageName
 byteStringsToPageName p q =
   let pageNameEncoder' :: Encoder Identity Identity PageName (String, String)
-      pageNameEncoder' = bimap
+      pageNameEncoder' = Cat.bimap
         (unpackTextEncoder . pathSegmentsTextEncoder . listToNonEmptyEncoder)
         (unpackTextEncoder . queryParametersTextEncoder . toListMapEncoder)
   in decode pageNameEncoder' (T.unpack (T.decodeUtf8 p), T.unpack (T.decodeUtf8 q))
