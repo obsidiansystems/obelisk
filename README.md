@@ -48,16 +48,16 @@ Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Refl
 1. Set up nix caches
     1. If you are running NixOS, add this to `/etc/nixos/configuration.nix`:
         ```nix
-        nix.binaryCaches = [ "https://nixcache.reflex-frp.org" ];
-        nix.binaryCachePublicKeys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         nix.settings.experimental-features = [ "nix-command" ];
+        nix.settings.substituters = [ "https://nixcache.reflex-frp.org" ];
+        nix.settings.trusted-public-keys = [ "ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=" ];
         ```
         and rebuild your NixOS configuration (e.g. `sudo nixos-rebuild switch`).
     1. If you are using another operating system or Linux distribution, ensure that these lines are present in your Nix configuration file (`/etc/nix/nix.conf` on most systems; [see full list](https://nixos.org/nix/manual/#sec-conf-file)):
         ```nix
-        binary-caches = https://cache.nixos.org https://nixcache.reflex-frp.org
-        binary-cache-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
-        binary-caches-parallel-connections = 40
+        substituters = https://cache.nixos.org https://nixcache.reflex-frp.org
+        trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
+        http-connections = 40
         experimental-features = nix-command
         ```
         * If you're on a Linux distribution other than NixOS, enable sandboxing (see these [issue 172](https://github.com/obsidiansystems/obelisk/issues/172#issuecomment-411507818) or [issue 6](https://github.com/obsidiansystems/obelisk/issues/6) if you run into build problems) by adding the following:
