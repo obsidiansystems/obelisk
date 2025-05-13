@@ -61,7 +61,7 @@ import Distribution.Fields.ParseResult (runParseResult)
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription, runParseResult)
 #endif
 import Distribution.Pretty (prettyShow)
-import Distribution.Simple.Compiler (PackageDB (GlobalPackageDB))
+import Distribution.Simple.Compiler (PackageDB, PackageDBX (GlobalPackageDB))
 import Distribution.Simple.Configure (configCompilerEx, getInstalledPackages)
 import Distribution.Simple.PackageIndex (InstalledPackageIndex, lookupDependency)
 import Distribution.Simple.Program.Db (defaultProgramDb)
@@ -234,9 +234,9 @@ run certDir portOverride root interpretPaths = do
       , "Backend.backend"
       , "Frontend.frontend"
       , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
-      , ") { Obelisk.Run._runApp_backendPort =", show freePort
-      ,   ", Obelisk.Run._runApp_forceFrontendPort =", show portOverride
-      ,   ", Obelisk.Run._runApp_tlsCertDirectory =", show certDir
+      , ") { _runApp_backendPort =", show freePort
+      ,   ", _runApp_forceFrontendPort =", show portOverride
+      ,   ", _runApp_tlsCertDirectory =", show certDir
       , "}"
       ]
 
@@ -568,7 +568,7 @@ loadPackageIndex packageInfos root = do
   ghcPkgPath <- getPathInNixEnvironment "bash -c 'type -p ghc-pkg'"
   (compiler, _platform, programDb) <- liftIO
     $ configCompilerEx (Just GHC) (Just ghcPath) (Just ghcPkgPath) defaultProgramDb Verbosity.silent
-  liftIO $ getInstalledPackages Verbosity.silent compiler [GlobalPackageDB] programDb
+  liftIO $ getInstalledPackages Verbosity.silent compiler Nothing [GlobalPackageDB] programDb
   where
     getPathInNixEnvironment cmd = do
       path <- readProcessAndLogStderr Debug =<< mkObNixShellProc root False True (packageInfoToNamePathMap packageInfos) "ghc" (Just cmd)
