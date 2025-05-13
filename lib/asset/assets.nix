@@ -262,9 +262,7 @@ mkPath = path:
 # build a DirEntry for dirToPath with the various encodings of the asset for dirToPath to build into a final directory tree.
 mkAsset = encodings: {name, value}:
   let hashD = hashFileD value.path;
-      nameWithHash = "${delay "1" (builtins.trace
-        "importing IFD asset hash"
-        (builtins.readFile hashD))}-${name}";
+      nameWithHash = "${delay "1" (builtins.readFile hashD)}-${name}";
   in {
     toDo = hashD;
     res = delay "2" {
