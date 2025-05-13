@@ -93,7 +93,7 @@ in rec {
         ln -s "$dir/all.unminified.js" "$dir/all.js"
       '' else ''
         # NOTE: "--error_format JSON" avoids closurecompiler crashes when trying to report errors.
-        '${pkgs.closurecompiler}/bin/closure-compiler' --error_format JSON ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        '${pkgs.closurecompiler}/bin/closure-compiler' --language_in UNSTABLE --error_format JSON ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
         echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
       ''}
     done
@@ -262,7 +262,9 @@ in rec {
             , shellToolOverrides ? _: _: {}
             , withHoogle ? false # Setting this to `true` makes shell reloading far slower
             , externjs ? null
-            , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
+            # TODO: Need to figure if we can reset this to ADVANCED or figure out better compression via
+            # https://blog.haskell.org/case-study-foreign-integration-js-browser/
+            , __closureCompilerOptimizationLevel ? "SIMPLE" # Set this to `null` to skip the closure-compiler step
             , __withGhcide ? false
             , __deprecated ? {}
             }:
