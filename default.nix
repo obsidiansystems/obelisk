@@ -212,7 +212,7 @@ in rec {
 
   serverExe = backend: frontend: assets: optimizationLevel: externjs: version:
     let
-      exeBackend = if profiling then backend else haskellLib.justStaticExecutables backend;
+      exeBackend = lib.getBin backend;
       exeFrontend = compressedJs frontend optimizationLevel externjs;
       exeFrontendAssets = mkAssets exeFrontend;
       exeAssets = mkAssets assets;
@@ -295,7 +295,20 @@ in rec {
                 combinedPackages = self.predefinedPackages // self.userSettings.packages // self.shellPackages;
                 projectOverrides = self': super': {
                   ${self.staticName} = haskellLib.dontHaddock (self'.callCabal2nix self.staticName self.processedStatic.haskellManifest {});
-                  ${self.backendName} = haskellLib.addBuildDepend super'.${self.backendName} self'.obelisk-run;
+                  ${self.backendName} = lib.pipe super'.${self.backendName} [
+                    (haskellLib.compose.addBuildDepend self'.obelisk-run)
+                    haskellLib.enableSeparateBinOutput
+                    (haskellLib.compose.overrideCabal
+                      (old: {
+                        # Newer nixpkgs version make sure that static executables don’t pull in GHC via their closure.
+                        # This remove-references-to fixes that for normal obelisk backends.
+                        postInstall = ''
+                          ${old.postInstall or ""}
+                          ${lib.getExe pkgs.removeReferencesTo} -t ${obelisk.snap-server} "$bin/bin/backend"
+                        '';
+                      })
+                    )
+                  ];
                 };
                 totalOverrides = lib.composeExtensions self.projectOverrides self.userSettings.overrides;
                 privateConfigDirs = ["config/backend"];
