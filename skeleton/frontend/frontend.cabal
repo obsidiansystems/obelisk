@@ -43,8 +43,9 @@ executable frontend
   if impl(ghc >= 8.8)
     ghc-options:
                -Wmissing-deriving-strategies
-  if impl(ghcjs)
-    ghc-options: -dedupe
-    cpp-options: -DGHCJS_BROWSER
+  if arch(javascript)
+    -- Workaround for a runtime error ("HEAP8 not found"). Only necessary until
+    -- https://gitlab.haskell.org/ghc/ghc/-/merge_requests/14362 is resolved.
+    ld-options: -sEXPORTED_RUNTIME_METHODS=HEAP8 
   if os(darwin)
     ghc-options: -dynamic
