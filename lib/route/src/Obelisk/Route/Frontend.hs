@@ -82,6 +82,7 @@ import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.GADT.Compare
+import Data.Kind (Type)
 import qualified Data.List as L
 import Data.Map as Map (Map, lookup)
 import Data.Maybe (fromMaybe)
@@ -118,7 +119,7 @@ instance Monad m => Routed t r (RoutedT t r m) where
 
 instance (Monad m, Routed t r m) => Routed t r (ReaderT r' m)
 
-newtype RoutedT t r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
+newtype RoutedT (t :: Type) r m a = RoutedT { unRoutedT :: ReaderT (Dynamic t r) m a }
   deriving
     ( Functor
     , Applicative
