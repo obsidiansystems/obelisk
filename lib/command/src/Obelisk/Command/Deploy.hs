@@ -58,7 +58,9 @@ import Obelisk.Command.Project
 import Obelisk.Command.Utils
 
 import "nix-thunk" Nix.Thunk
+#if MIN_VERSION_nix_thunk(0,7,0)
 import "nix-thunk" Nix.Thunk.Internal (prettyReadThunkError)
+#endif
 import Cli.Extras
 
 -- | Options passed to the `init` verb
@@ -190,7 +192,12 @@ deployPush deployPath builders = do
       checkGitCleanStatus srcPath True >>= \case
         True -> wrapNixThunkError $ packThunk (ThunkPackConfig False (ThunkConfig Nothing)) srcPath
         False -> failWith $ T.pack $ "ob deploy push: ensure " <> srcPath <> " has no pending changes and latest is pushed upstream."
-    Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <> prettyReadThunkError err
+    Left err -> failWith $ "ob deploy push: couldn't read src thunk: " <>
+#if MIN_VERSION_nix_thunk(0,7,0)
+      prettyReadThunkError err
+#else
+      T.pack (show err)
+#endif
   let version = show . _thunkRev_commit $ _thunkPtr_rev thunkPtr
   let moduleFile = deployPath </> "module.nix"
   moduleFileExists <- liftIO $ doesFileExist moduleFile
