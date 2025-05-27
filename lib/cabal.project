@@ -1,0 +1,21 @@
+packages:
+  ./executable-config/inject
+  ./executable-config/lookup
+  ./frontend
+  ./route
+  ./tabulation
+
+if !arch(javascript) && !arch(wasm32)
+  packages:
+    ./asset/manifest
+    ./asset/serve-snap
+    ./backend
+    ./run
+    ./snap-extras
+
+  if impl(ghc < 9.12)
+    packages:
+      ./command
+      ./selftest
+
+import: cabal.dependencies.project

@@ -16,5 +16,5 @@ cabal.project.local
 .envrc
 
 # HLS specific files
-lib/cabal.project
+#lib/cabal.project
 lib/cabal.project.local

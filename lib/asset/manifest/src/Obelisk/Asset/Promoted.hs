@@ -2,6 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
+
 module Obelisk.Asset.Promoted
   ( writeStaticProject
   , declareStatic

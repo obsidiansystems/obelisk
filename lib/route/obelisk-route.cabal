@@ -33,7 +33,6 @@ library
                  template-haskell,
                  tabulation,
                  text,
-                 th-extras,
                  transformers,
                  universe,
                  universe-some
