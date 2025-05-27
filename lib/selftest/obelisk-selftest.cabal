@@ -29,7 +29,7 @@ library
   exposed-modules:
     Obelisk.SelfTest
   ghc-options: -Wall
-  if arch(javascript)
+  if impl(ghcjs)
     buildable: False
 
 executable obelisk-selftest

@@ -5,7 +5,7 @@ packages:
   ./route
   ./tabulation
 
-if !arch(javascript)
+if !impl(ghcjs)
   packages:
     ./asset/manifest
     ./asset/serve-snap

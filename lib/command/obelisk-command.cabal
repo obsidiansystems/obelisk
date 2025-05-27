@@ -70,7 +70,7 @@ library
     Obelisk.Command.Preprocessor
   ghc-options: -Wall
 
-  if arch(javascript)
+  if impl(ghcjs)
     buildable: False
 
 executable ob

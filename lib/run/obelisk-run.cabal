@@ -52,5 +52,5 @@ library
   if os(linux)
     cpp-options: -DIPROUTE_SUPPORTED
     build-depends: which
-  if arch(javascript)
+  if impl(ghcjs)
     buildable: False

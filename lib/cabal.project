@@ -5,7 +5,7 @@ packages:
   ./route
   ./tabulation
 
-if !arch(javascript) && !arch(wasm32)
+if !impl(ghcjs) && !arch(wasm32)
   packages:
     ./asset/manifest
     ./asset/serve-snap

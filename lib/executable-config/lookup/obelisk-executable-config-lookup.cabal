@@ -18,7 +18,7 @@ library
       build-depends: android-activity
       ld-options: -landroid
     else
-      if impl(ghcjs) || arch(javascript)
+      if impl(ghcjs)
         hs-source-dirs: src-ghcjs, src
         build-depends: ghcjs-dom
       else
