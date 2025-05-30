@@ -16,7 +16,7 @@ in
   # Dynamic linking with split objects dramatically increases startup time (about
   # 0.5 seconds on a decent machine with SSD), so we do `justStaticExecutables`.
   obelisk-command = haskellLib.overrideCabal
-    (haskellLib.generateOptparseApplicativeCompletion "ob"
+    (self.generateOptparseApplicativeCompletions ["ob"]
       (haskellLib.justStaticExecutables super.obelisk-command))
     (drv: {
       buildTools = (drv.buildTools or []) ++ [ pkgs.buildPackages.makeWrapper ];
