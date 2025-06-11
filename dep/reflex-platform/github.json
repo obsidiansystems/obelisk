@@ -1,8 +1,8 @@
 {
   "owner": "reflex-frp",
   "repo": "reflex-platform",
-  "branch": "maralorn/new-backend",
+  "branch": "maralorn/new-backend-wasm",
   "private": false,
-  "rev": "88792de686f9f0426e6e01575cf800b6d9f71cda",
-  "sha256": "1nvk11qfi1rzffpvmn4nrah2a75liis2is8pbkydj7sb352r91l5"
+  "rev": "07e2217c49b1adcb304d0473ad9a9a5f61216bcf",
+  "sha256": "12l3cbbqjc1zx8yxca0swnnagwqkswksmqg18hcxqxifg8dndr7h"
 }

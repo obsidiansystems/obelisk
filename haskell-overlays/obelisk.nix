@@ -1,9 +1,8 @@
 # Add obelisk packages
 
-self: super:
+pkgs: self: super:
 
 let
-  pkgs = self.callPackage ({ pkgs }: pkgs) {};
   inherit (pkgs) obeliskCleanSource;
   haskellLib = pkgs.haskell.lib;
   onLinux = pkg: f: if pkgs.stdenv.isLinux then f pkg else pkg;

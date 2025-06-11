@@ -281,7 +281,7 @@ preloadGhcjs allJsUrl = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <>
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
 deferredGhcjsScript :: Text -> FrontendWidgetT r ()
-deferredGhcjsScript allJsUrl = elAttr "script" ("type" =: "text/javascript" <> "src" =: allJsUrl <> "defer" =: "defer") blank
+deferredGhcjsScript allJsUrl = elAttr "script" ("type" =: "module" <> "src" =: allJsUrl <> "defer" =: "defer") blank
 
 -- | An all.js script which is loaded after waiting for some time to pass. This
 -- is useful to ensure any CSS animations on the page can play smoothly before

@@ -28,7 +28,7 @@ let
     haskellOverlays = [
       (import ./haskell-overlays/misc-deps.nix { inherit hackGet; __useNewerCompiler = useGHC810; })
       pkgs.obeliskExecutableConfig.haskellOverlay
-      (import ./haskell-overlays/obelisk.nix)
+      (import ./haskell-overlays/obelisk.nix pkgs)
       (import ./haskell-overlays/tighten-ob-exes.nix)
     ];
   };
@@ -97,6 +97,13 @@ in rec {
         echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
       ''}
     done
+  '';
+  compressedWasm = frontend: optimizationLevel: externs: pkgs.runCommand "compressedWasm" { } ''
+    set -euo pipefail
+    mkdir -p $out/frontend.jsexe
+    ln -s ${pkgs.runCommand "jsffi.js" { buildInputs = [pkgs.nodejs]; } "$(${frontend.compiler}/bin/wasm32-wasi-ghc --print-libdir)/post-link.mjs -i ${frontend}/bin/frontend.wasm -o $out"} $out/frontend.jsexe/ghc_wasm_jsffi.js
+    ln -s ${pkgs.runCommand "frontend.optimized.wasm" {} "${pkgs.binaryen}/bin/wasm-opt --low-memory-unused --strip-dwarf --converge -ol 2 -s 1 ${frontend}/bin/frontend.wasm -o $out"} $out/frontend.jsexe/frontend.wasm
+    cp ${./wasm-shim.js} $out/frontend.jsexe/all.js
   '';
 
   serverModules = {
@@ -213,7 +220,7 @@ in rec {
   serverExe = backend: frontend: assets: optimizationLevel: externjs: version:
     let
       exeBackend = lib.getBin backend;
-      exeFrontend = compressedJs frontend optimizationLevel externjs;
+      exeFrontend = compressedWasm frontend optimizationLevel externjs;
       exeFrontendAssets = mkAssets exeFrontend;
       exeAssets = mkAssets assets;
     in pkgs.runCommand "serverExe" {} ''
@@ -367,6 +374,7 @@ in rec {
 
                     ghc = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghc;
                     ghcjs = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
+                    ghcwasm = lib.filter (x: lib.hasAttr x self.combinedPackages) self.shells-ghcjs;
                   };
                   android = self.__androidWithConfig (self.base + "/config");
                   ios = self.__iosWithConfig (self.base + "/config");
@@ -389,7 +397,7 @@ in rec {
       mainProjectOut = projectOut { inherit system; };
       serverOn = projectInst: version:
         let backend = projectInst.ghc.backend;
-            frontend = mainProjectOut.ghcjs.frontend;
+            frontend = mainProjectOut.ghcwasm.frontend;
             staticFiles = projectInst.passthru.staticFiles;
             ccOptLevel = projectInst.passthru.__closureCompilerOptimizationLevel;
             externJs = projectInst.passthru.externjs;

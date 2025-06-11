@@ -1,6 +1,6 @@
 name: frontend
 version: 0.1
-cabal-version: >= 1.8
+cabal-version: >= 1.10
 build-type: Simple
 
 library
@@ -29,13 +29,15 @@ library
 executable frontend
   main-is: main.hs
   hs-source-dirs: src-bin
+  default-language: GHC2024
   build-depends: base
                , common
                , frontend
                , obelisk-frontend
                , obelisk-route
                , reflex-dom
-  ghc-options: -Wall -O -fno-show-valid-hole-fits -threaded
+  ghc-options: -Wall -O -fno-show-valid-hole-fits
+               -- -threaded
                -- unsafe code
                -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields
                -- unneeded code
@@ -43,6 +45,10 @@ executable frontend
   if impl(ghc >= 8.8)
     ghc-options:
                -Wmissing-deriving-strategies
+  if arch(wasm32)
+    ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hsMain"
+  else
+    buildable: False
   if arch(javascript)
     -- Workaround for a runtime error ("HEAP8 not found"). Only necessary until
     -- https://gitlab.haskell.org/ghc/ghc/-/merge_requests/14362 is resolved.
