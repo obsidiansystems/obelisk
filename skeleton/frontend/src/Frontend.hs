@@ -44,6 +44,11 @@ frontend = Frontend
         ^. js ("skeleton_lib" :: T.Text)
         ^. js1 ("log" :: T.Text) ("Hello, World!" :: T.Text)
 
+      ev <- button "Click me!"
+      d <- holdDyn "" ("Clicked" <$ ev)
+      el "p" $ dynText d
+      
+
       elAttr "img" ("src" =: $(static "obelisk.jpg")) blank
       el "div" $ do
         let
