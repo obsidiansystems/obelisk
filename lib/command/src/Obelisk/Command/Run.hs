@@ -230,13 +230,13 @@ run certDir portOverride root interpretPaths = do
   freePort <- getFreePort
   withGhciScriptArgs [] pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
-      [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
+      [ "Run.run (Run.defaultRunApp"
       , "Backend.backend"
       , "Frontend.frontend"
-      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
-      , ") { _runApp_backendPort =", show freePort
-      ,   ", _runApp_forceFrontendPort =", show portOverride
-      ,   ", _runApp_tlsCertDirectory =", show certDir
+      , "(Run.runServeAsset " ++ show assets ++ ")"
+      , ") { Run._runApp_backendPort =", show freePort
+      ,   ", Run._runApp_forceFrontendPort =", show portOverride
+      ,   ", Run._runApp_tlsCertDirectory =", show certDir
       , "}"
       ]
 
@@ -515,7 +515,7 @@ withGhciScript preCommands (toList -> packageInfos) f =
     dotGhci = unlines $
       preCommands <>
       [ if null modulesToLoad then "" else ":load " <> unwords modulesToLoad
-      , "import qualified Obelisk.Run"
+      , "import qualified Obelisk.Run as Run"
       , "import qualified Frontend"
       , "import qualified Backend"
       ]
