@@ -10,16 +10,16 @@ import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import Data.Traversable (for)
-import GHCJS.DOM
-import GHCJS.DOM.Document (getHead)
-import GHCJS.DOM.DOMStringMap (get)
-import GHCJS.DOM.Element (getInnerHTML)
-import GHCJS.DOM.HTMLElement (HTMLElement(HTMLElement), getDataset)
-import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
-import GHCJS.DOM.ParentNode (querySelectorAll)
-import GHCJS.DOM.Types (MonadJSM, Node(Node), castTo)
+import JSDOM
+import JSDOM.Document (getHead)
+import JSDOM.DOMStringMap (get)
+import JSDOM.Element (getInnerHTML)
+import JSDOM.HTMLElement (HTMLElement(HTMLElement), getDataset)
+import JSDOM.NodeList (IsNodeList, item, getLength)
+import JSDOM.ParentNode (querySelectorAll)
+import JSDOM.Types (MonadJSM, Node(Node), castTo, JSM)
 
-getConfigs :: IO (Map Text ByteString)
+getConfigs :: JSM (Map Text ByteString)
 getConfigs = do
   Just doc <- currentDocument
   Just hd <- getHead doc

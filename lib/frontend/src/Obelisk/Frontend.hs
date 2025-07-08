@@ -175,7 +175,7 @@ runFrontend validFullEncoder frontend = do
           True
 #endif
         }
-  configs <- liftIO Lookup.getConfigs
+  configs <- Lookup.getConfigs
   when (_frontendMode_hydrate mode) removeHTMLConfigs
   -- There's no fundamental reason that adjustRoute needs to control setting the
   -- initial route and *also* the useHash parameter; that's why these are

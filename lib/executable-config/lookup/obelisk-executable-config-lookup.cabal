@@ -18,9 +18,9 @@ library
       build-depends: android-activity
       ld-options: -landroid
     else
-      if impl(ghcjs) || arch(javascript)
+      if impl(ghcjs) || arch(javascript) || arch(wasm32)
         hs-source-dirs: src-ghcjs, src
-        build-depends: ghcjs-dom
+        build-depends: jsaddle-dom
       else
         hs-source-dirs: src-other, src
         other-modules: Obelisk.Configs.Internal.Directory
