@@ -7,6 +7,7 @@
   }
 , reflex-platform-func ? import ./dep/reflex-platform
 , useGHC810 ? true # false if one wants to use ghc 8.6.5
+, zopfli ? true
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -38,7 +39,8 @@ let
   # Development environments for obelisk packages.
   ghcObeliskEnvs = pkgs.lib.mapAttrs (n: v: reflex-platform.workOn ghcObelisk v) ghcObelisk;
 
-  inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
+  assets = import ./lib/asset/assets.nix { inherit nixpkgs; };
+  mkAssets = assets.mkAssetsWith (if zopfli then assets.defaultEncodings else assets.gzipEncodings);
 
   haskellLib = pkgs.haskell.lib;
 
