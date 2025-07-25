@@ -348,7 +348,7 @@ in rec {
                 shells-ghcjs = [
                   self.frontendName
                   self.commonName
-                ];
+                ] ++ builtins.attrNames self.shellPackages;
 
                 shells-ghcSavedSplices = [
                   self.commonName
