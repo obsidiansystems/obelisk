@@ -109,6 +109,7 @@ newtype ConfigsT m a = ConfigsT { unConfigsT :: ReaderT (Map Text ByteString) m 
     , TriggerEvent t
     , HasDocument
     , DomRenderHook t
+    , MonadException
 #ifndef ghcjs_HOST_OS
     , MonadJSM
 #endif
