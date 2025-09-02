@@ -8,6 +8,7 @@ This project's release branch is `master`. This log is written from the perspect
 * [#1071](https://github.com/obsidiansystems/obelisk/pull/1071): Support deployment information repository sub-directories
 * [#1086](https://github.com/obsidiansystems/obelisk/pull/1086): Delete extraneous config files during deploy
 * [#1099](https://github.com/obsidiansystems/obelisk/pull/1099): `Obelisk.Route`: Add `pairRoute` and deprecate `subPairRoute` and `subPairRoute_`
+* [#1131](https://github.com/obsidiansystems/obelisk/pull/1131): Add `MonadException` instance to `ConfigsT`
 
 ## v1.3.0.0
 * [#1047](https://github.com/obsidiansystems/obelisk/pull/1047): Update default ios sdk to 15
