@@ -3,7 +3,7 @@ import {
   OpenFile,
   File,
   ConsoleStdout,
-} from "https://cdn.jsdelivr.net/npm/@bjorn3/browser_wasi_shim@0.4.1/+esm";
+} from "./wasi-shim.js";
 import ghc_wasm_jsffi from "./ghc_wasm_jsffi.js";
 
 // -T is for RTS stats, -c to use compacting gc for the larges generation in an attempt to not grow max use too much

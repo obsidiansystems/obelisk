@@ -98,12 +98,17 @@ in rec {
       ''}
     done
   '';
+  wasi-shim = builtins.fetchurl {
+      url = "https://cdn.jsdelivr.net/npm/@bjorn3/browser_wasi_shim@0.4.1/+esm";
+      sha256 = "sha256:1sihsq0lj2awamj5ws4vx4za3bw7fcr9n385vwx0mqgj08ri184g";
+    };
   compressedWasm = frontend: optimizationLevel: externs: pkgs.runCommand "compressedWasm" { } ''
     set -euo pipefail
     mkdir -p $out/frontend.jsexe
     ln -s ${pkgs.runCommand "jsffi.js" { buildInputs = [pkgs.nodejs]; } "$(${frontend.compiler}/bin/wasm32-wasi-ghc --print-libdir)/post-link.mjs -i ${frontend}/bin/frontend.wasm -o $out"} $out/frontend.jsexe/ghc_wasm_jsffi.js
     ln -s ${pkgs.runCommand "frontend.optimized.wasm" {} "${pkgs.binaryen}/bin/wasm-opt --low-memory-unused --strip-dwarf --converge -ol 2 -s 1 ${frontend}/bin/frontend.wasm -o $out"} $out/frontend.jsexe/frontend.wasm
     cp ${./wasm-shim.js} $out/frontend.jsexe/all.js
+    cp ${wasi-shim}  $out/frontend.jsexe/wasi-shim.js
   '';
 
   serverModules = {
