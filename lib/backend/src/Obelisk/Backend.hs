@@ -276,7 +276,7 @@ renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
 -- | Preload all.js in a link tag.
 -- This is the default preload method.
 preloadGhcjs :: Text -> FrontendWidgetT r ()
-preloadGhcjs allJsUrl = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
+preloadGhcjs _allJsUrl = blank -- elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
