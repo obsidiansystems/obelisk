@@ -163,13 +163,13 @@ runFrontend
 runFrontend validFullEncoder frontend = do
   let mode = FrontendMode
         { _frontendMode_hydrate =
-#ifdef ghcjs_HOST_OS
+#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
           True
 #else
           False
 #endif
         , _frontendMode_adjustRoute =
-#ifdef ghcjs_HOST_OS
+#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
           False
 #else
           True
