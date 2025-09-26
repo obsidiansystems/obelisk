@@ -1121,12 +1121,12 @@ instance FiniteSome Void1
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder = Encoder $ pure $ EncoderImpl
-  { _encoderImpl_encode = foldSome $ \case
+  { _encoderImpl_encode = foldSome $ \f -> case f of {}
   , _encoderImpl_decode = \_ -> throwError "void1Encoder: can't decode anything"
   }
 
 instance GShow Void1 where
-  gshowsPrec _ = \case {}
+  gshowsPrec _ f = case f of {}
 
 -- | Encode a 'PathQuery' as 'Text'
 pathQueryEncoder :: (Applicative check, Applicative parse) => Encoder check parse PathQuery Text
