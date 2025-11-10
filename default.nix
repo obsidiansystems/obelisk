@@ -101,7 +101,7 @@ let
       obelisk-selftest
     ];
     overrides = [
-      ({ config, pkgs, lib, ... }: { packages.git.src = thunkSource ./dep/git; })
+      # ({ config, pkgs, lib, ... }: { packages.git.src = thunkSource ./dep/git; })
       ({ config, pkgs, lib, ... }: {
         packages.cli-git.components.library.build-tools = [
           pkgs.git
@@ -468,9 +468,10 @@ in rec {
         };
         combinedShellWith = { interpretedPkgs }: self.shellFor {
           withHoogle = false;
-          tools = { cabal = "latest"; } // super.helpers.bot_args.shellTools or {};
-          packages = ps: [];
-          additional = ps: builtins.attrValues (builtins.removeAttrs ps (builtins.attrNames interpretedPkgs));
+          tools = { cabal = "latest"; }; # // super.helpers.bot_args.shellTools or {};
+          packages = ps: [ps.backend ps.common ps.frontend];
+          # additional = ps: builtins.attrValues (builtins.removeAttrs ps (builtins.attrNames interpretedPkgs));
+          additional = ps: [ps.obelisk-run];
           nativeBuildInputs = [nix-thunk.command];
         };
 
