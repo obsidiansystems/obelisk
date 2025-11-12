@@ -1,5 +1,4 @@
-index-state: 2025-02-01T00:00:00Z
-allow-newer: hnix:*, hnix-store-core:algebraic-graphs, lens-family-th:template-haskell
+allow-newer: hnix:*, hnix-store-core:algebraic-graphs
 
 constraints:
     hnix-store-core < 0.7
