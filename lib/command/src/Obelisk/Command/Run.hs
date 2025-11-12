@@ -61,7 +61,11 @@ import Distribution.Fields.ParseResult (runParseResult)
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription, runParseResult)
 #endif
 import Distribution.Pretty (prettyShow)
+#if MIN_VERSION_Cabal(3,14,0)
+import Distribution.Simple.Compiler (PackageDBX (GlobalPackageDB))
+#else
 import Distribution.Simple.Compiler (PackageDB (GlobalPackageDB))
+#endif
 import Distribution.Simple.Configure (configCompilerEx, getInstalledPackages)
 import Distribution.Simple.PackageIndex (InstalledPackageIndex, lookupDependency)
 import Distribution.Simple.Program.Db (defaultProgramDb)
@@ -568,7 +572,11 @@ loadPackageIndex packageInfos root = do
   ghcPkgPath <- getPathInNixEnvironment "bash -c 'type -p ghc-pkg'"
   (compiler, _platform, programDb) <- liftIO
     $ configCompilerEx (Just GHC) (Just ghcPath) (Just ghcPkgPath) defaultProgramDb Verbosity.silent
-  liftIO $ getInstalledPackages Verbosity.silent compiler [GlobalPackageDB] programDb
+  liftIO $ getInstalledPackages Verbosity.silent compiler
+#if MIN_VERSION_Cabal(3,14,0)
+    Nothing
+#endif
+    [GlobalPackageDB] programDb
   where
     getPathInNixEnvironment cmd = do
       path <- readProcessAndLogStderr Debug =<< mkObNixShellProc root False True (packageInfoToNamePathMap packageInfos) "ghc" (Just cmd)
