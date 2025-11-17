@@ -7,6 +7,7 @@
   }
 , reflex-platform-func ? import ./dep/reflex-platform
 , useGHC810 ? true # false if one wants to use ghc 8.6.5
+, zopfli ? true
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -38,7 +39,8 @@ let
   # Development environments for obelisk packages.
   ghcObeliskEnvs = pkgs.lib.mapAttrs (n: v: reflex-platform.workOn ghcObelisk v) ghcObelisk;
 
-  inherit (import ./lib/asset/assets.nix { inherit nixpkgs; }) mkAssets;
+  assets = import ./lib/asset/assets.nix { inherit nixpkgs; };
+  mkAssets = assets.mkAssetsWith (if zopfli then assets.defaultEncodings else assets.gzipEncodings);
 
   haskellLib = pkgs.haskell.lib;
 
@@ -91,7 +93,7 @@ in rec {
         ln -s "$dir/all.unminified.js" "$dir/all.js"
       '' else ''
         # NOTE: "--error_format JSON" avoids closurecompiler crashes when trying to report errors.
-        '${pkgs.closurecompiler}/bin/closure-compiler' --error_format JSON ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
+        '${pkgs.closurecompiler}/bin/closure-compiler' --language_in UNSTABLE --error_format JSON ${if externs == null then "" else "--externs '${externs}'"} --externs '${reflex-platform.ghcjsExternsJs}' -O '${optimizationLevel}' --jscomp_warning=checkVars --warning_level=QUIET --create_source_map="$dir/all.js.map" --source_map_format=V3 --js_output_file="$dir/all.js" "$dir/all.unminified.js"
         echo '//# sourceMappingURL=all.js.map' >> "$dir/all.js"
       ''}
     done
@@ -210,7 +212,7 @@ in rec {
 
   serverExe = backend: frontend: assets: optimizationLevel: externjs: version:
     let
-      exeBackend = if profiling then backend else haskellLib.justStaticExecutables backend;
+      exeBackend = lib.getBin backend;
       exeFrontend = compressedJs frontend optimizationLevel externjs;
       exeFrontendAssets = mkAssets exeFrontend;
       exeAssets = mkAssets assets;
@@ -260,7 +262,9 @@ in rec {
             , shellToolOverrides ? _: _: {}
             , withHoogle ? false # Setting this to `true` makes shell reloading far slower
             , externjs ? null
-            , __closureCompilerOptimizationLevel ? "ADVANCED" # Set this to `null` to skip the closure-compiler step
+            # TODO: Need to figure if we can reset this to ADVANCED or figure out better compression via
+            # https://blog.haskell.org/case-study-foreign-integration-js-browser/
+            , __closureCompilerOptimizationLevel ? "SIMPLE" # Set this to `null` to skip the closure-compiler step
             , __withGhcide ? false
             , __deprecated ? {}
             }:
@@ -293,7 +297,20 @@ in rec {
                 combinedPackages = self.predefinedPackages // self.userSettings.packages // self.shellPackages;
                 projectOverrides = self': super': {
                   ${self.staticName} = haskellLib.dontHaddock (self'.callCabal2nix self.staticName self.processedStatic.haskellManifest {});
-                  ${self.backendName} = haskellLib.addBuildDepend super'.${self.backendName} self'.obelisk-run;
+                  ${self.backendName} = lib.pipe super'.${self.backendName} [
+                    (haskellLib.compose.addBuildDepend self'.obelisk-run)
+                    haskellLib.enableSeparateBinOutput
+                    (haskellLib.compose.overrideCabal
+                      (old: {
+                        # Newer nixpkgs version make sure that static executables don’t pull in GHC via their closure.
+                        # This remove-references-to fixes that for normal obelisk backends.
+                        postInstall = ''
+                          ${old.postInstall or ""}
+                          ${lib.getExe pkgs.removeReferencesTo} -t ${obelisk.snap-server} "$bin/bin/backend"
+                        '';
+                      })
+                    )
+                  ];
                 };
                 totalOverrides = lib.composeExtensions self.projectOverrides self.userSettings.overrides;
                 privateConfigDirs = ["config/backend"];
