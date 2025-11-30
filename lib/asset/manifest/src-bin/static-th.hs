@@ -8,7 +8,7 @@ import System.FilePath
 main :: IO ()
 main = do
   --TODO: Usage
-  [root, haskellTarget, packageName, moduleName, fileTarget] <- getArgs
+  [root, haskellTarget, packageName, moduleName, fileTarget, staticAttrName] <- getArgs
   paths <- gatherHashedPaths root
   writeCabalProject haskellTarget $ SimplePkg
     { _simplePkg_name = T.pack packageName
@@ -32,11 +32,11 @@ main = do
       , ""
       , "static, staticFilePath :: FilePath -> Q Exp"
       , "#ifdef OBELISK_ASSET_PASSTHRU"
-      , "static = staticAssetRaw"
-      , "staticFilePath =  staticAssetFilePathRaw \"static.out\""
+      , "static = staticAssetRaw" <> " " <> show staticAttrName 
+      , "staticFilePath =  staticAssetFilePathRaw \"static.out\"" <> " " <> show staticAttrName 
       , "#else"
-      , "static = staticAssetHashed " <> show root
-      , "staticFilePath = staticAssetFilePath " <> show root
+      , "static = staticAssetHashed " <> show root <> " " <> show staticAttrName 
+      , "staticFilePath = staticAssetFilePath " <> show root 
       , "#endif"
       ]
     }

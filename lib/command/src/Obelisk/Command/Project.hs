@@ -23,10 +23,12 @@ module Obelisk.Command.Project
   , withProjectRoot
   , bashEscape
   , shEscape
-  , getHaskellManifestProjectPath
+  , getStaticHaskellManifestProjectPaths
   , AssetSource(..)
+  , StaticInfo(..)
   , describeImpureAssetSource
   , watchStaticFilesDerivation
+  , staticOut
   ) where
 
 import Control.Concurrent.MVar (MVar, newMVar, withMVarMasked)
@@ -41,8 +43,9 @@ import qualified Data.ByteString.Lazy as BSL
 import Data.Default (def)
 import qualified Data.Foldable as F (toList)
 import Data.Function ((&), on)
-import Data.Map (Map)
+import qualified Data.Map as Map (Map, toList, fromList)
 import qualified Data.Set as Set
+import qualified Data.List as List
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
@@ -79,6 +82,15 @@ import Cli.Extras
 import Obelisk.Command.Utils (nixBuildExePath, nixExePath, toNixPath, cp, nixShellPath, lnPath)
 
 --TODO: Make this module resilient to random exceptions
+
+
+staticOut :: FilePath
+staticOut = "static.out"
+
+-- | Common constant used for symlinked static drv
+dotOut :: FilePath
+dotOut = ".out"
+
 
 --TODO: Don't hardcode this
 -- | Source for the Obelisk project
@@ -344,7 +356,7 @@ mkObNixShellProc
   => FilePath -- ^ Path to project root
   -> Bool -- ^ Should this be a pure shell?
   -> Bool -- ^ Should we chdir to the package root in the shell?
-  -> Map Text FilePath -- ^ Package names mapped to their paths
+  -> Map.Map Text FilePath -- ^ Package names mapped to their paths
   -> String -- ^ Shell attribute to use (e.g. @"ghc"@, @"ghcjs"@, etc.)
   -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
   -> m ProcessSpec
@@ -366,7 +378,7 @@ nixShellWithoutPkgs
   => FilePath -- ^ Path to project root
   -> Bool -- ^ Should this be a pure shell?
   -> Bool -- ^ Should we chdir to the package root in the shell?
-  -> Map Text FilePath -- ^ Package names mapped to their paths
+  -> Map.Map Text FilePath -- ^ Package names mapped to their paths
   -> String -- ^ Shell attribute to use (e.g. @"ghc"@, @"ghcjs"@, etc.)
   -> Maybe String -- ^ If 'Just' run the given command; otherwise just open the interactive shell
   -> m ()
@@ -387,6 +399,23 @@ data AssetSource = AssetSource_Derivation
                  | AssetSource_Files
   deriving (Eq)
 
+data StaticInfo = StaticInfo
+  { _staticInfo_name :: T.Text
+  , _staticInfo_assetSource :: AssetSource
+  , _staticInfo_path :: FilePath 
+  }
+
+instance Json.FromJSON StaticInfo where
+  parseJSON = Json.withObject "StaticInfo" $ \o -> do
+    name <- o Json..: "staticName"
+    drvBool <- o Json..: "isDrv"
+    path <- o Json..: "staticPath"
+    return $ StaticInfo
+      { _staticInfo_name  = name
+      , _staticInfo_assetSource = if drvBool then AssetSource_Derivation else AssetSource_Files
+      , _staticInfo_path  = path
+      }
+
 -- | Some log messages to make it easier to tell where static files are coming from
 describeImpureAssetSource :: AssetSource -> Text -> Text
 describeImpureAssetSource src path = case src of
@@ -395,40 +424,42 @@ describeImpureAssetSource src path = case src of
 
 -- | Determine where the static files of a project are and whether they're plain files or a derivation.
 -- If they are a derivation, that derivation will be built.
-findProjectAssets :: MonadObelisk m => FilePath -> m (AssetSource, Text)
+findProjectAssets :: MonadObelisk m => FilePath -> m [StaticInfo]
 findProjectAssets root = do
   isDerivation <- readProcessAndLogStderr Debug $ setCwd (Just root) $
     proc nixExePath
       [ "eval"
       , "--impure"
       , "--expr"
-      , "(let a = import ./. {}; in toString (a.reflex.nixpkgs.lib.isDerivation a.passthru.staticFilesImpure))"
-      , "--raw"
-      -- `--raw` is not available with old nix-instantiate. It drops quotation
-      -- marks and trailing newline, so is very convenient for shelling out.
+      , "(let a = import ./. {}; in builtins.attrValues (builtins.mapAttrs (n: value: {staticName=n;isDrv = a.reflex.nixpkgs.lib.isDerivation value.src; staticPath = value.path;} ) a.passthru.staticFilesImpure))"
+      , "--json"
       ]
-  -- Check whether the impure static files are a derivation (and so must be built)
-  if isDerivation == "1"
-    then do
-      _ <- buildStaticFilesDerivationAndSymlink
-        (readProcessAndLogStderr Debug)
-        root
-      pure (AssetSource_Derivation, T.pack $ root </> "static.out")
-    else fmap (AssetSource_Files,) $ do
-      path <- readProcessAndLogStderr Debug $ setCwd (Just root) $
-        proc nixExePath ["eval", "-f", ".", "passthru.staticFilesImpure", "--raw"]
-      _ <- readProcessAndLogStderr Debug $ setCwd (Just root) $
-        proc lnPath ["-sfT", T.unpack path, "./static.out"]
-      pure path
+  case Json.eitherDecode . BSL.fromStrict . encodeUtf8 $ isDerivation of
+    Left _ -> fail "Unable to get StaticInfo" 
+    Right (statics :: [StaticInfo]) -> do
+      liftIO $ createDirectoryIfMissing False staticOut
+      -- Build symlink path at static.out/<staticName>
+      forM_ statics $ \staticInfo -> do 
+        if _staticInfo_assetSource staticInfo == AssetSource_Derivation
+          then do
+            void $ buildStaticFilesDerivationAndSymlink
+              (readProcessAndLogStderr Debug)
+              root
+              (_staticInfo_name staticInfo) 
+          else do
+            void $ readProcessAndLogStderr Debug $ setCwd (Just root) $
+              proc lnPath ["-sfT", (_staticInfo_path staticInfo), staticOut </> T.unpack (_staticInfo_name staticInfo)]
+      pure statics
 
 -- | Get the nix store path to the generated static asset manifest module (e.g., "obelisk-generated-static")
-getHaskellManifestProjectPath :: MonadObelisk m => FilePath -> m Text
-getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debug $ setCwd (Just root) $
-  proc nixBuildExePath
+getStaticHaskellManifestProjectPaths :: MonadObelisk m => FilePath -> m [Text]
+getStaticHaskellManifestProjectPaths root = do
+  stdout <- readProcessAndLogStderr Debug $ setCwd (Just root) $ proc nixBuildExePath
     [ "--no-out-link"
     , "-E"
-    , "(let a = import ./. {}; in a.passthru.processedStatic.haskellManifest)"
+    , "(let a = import ./. {}; in builtins.mapAttrs (_: x: x.haskellManifest) a.passthru.processedStatic)"
     ]
+  pure $ T.strip <$> T.lines stdout
 
 -- | Watch the common, backend, frontend, and static directories for file
 -- changes and check whether those file changes cause changes in the static
@@ -436,8 +467,11 @@ getHaskellManifestProjectPath root = fmap T.strip $ readProcessAndLogStderr Debu
 watchStaticFilesDerivation
   :: (MonadIO m, MonadObelisk m)
   => FilePath
+  -- ^ root folder 
+  -> [StaticInfo]
+  -- ^ which static folder are we watching 
   -> m ()
-watchStaticFilesDerivation root = do
+watchStaticFilesDerivation root statics = do
   ob <- getObelisk
   liftIO $ runHeadlessApp $ do
     pb <- getPostBuild
@@ -466,17 +500,18 @@ watchStaticFilesDerivation root = do
                   else WatchModeOS
             }
         watch' pkg = fmap (:[]) <$> watchDirectoryTree cfg (root </> pkg <$ pb) (filterEvents . eventPath)
+    -- TODO: similar to previous todo, we should check if frontend and backend depend on this particular static package
+    -- eg. if this static package is only needed by backend   
     rebuild <- batchOccurrences 0.25 =<< mergeWith (<>) <$> mapM watch'
-      [ "frontend"
+      ([ "frontend"
       , "backend"
       , "common"
-      , "static"
-      ]
+      ] <> (_staticInfo_path <$> statics))
     performEvent_
       $ liftIO
       . runObelisk ob
       . putLog Debug
-      . ("Regenerating static.out due to file changes: "<>)
+      . (("Regenerating static due to file changes: ") <>)
       . T.intercalate ", "
       . Set.toList
       . Set.fromList
@@ -487,43 +522,48 @@ watchStaticFilesDerivation root = do
     void $ flip throttleBatchWithLag rebuild $ \e ->
       performEvent $ ffor e $ \_ -> liftIO $ runObelisk ob $ do
         putLog Notice "Static assets being built..."
-        buildStaticCatchErrors >>= \case
+        sequenceA <$> traverse buildStaticCatchErrors (_staticInfo_name <$> statics) >>= \case
           Nothing -> pure ()
-          Just n -> do
-            putLog Notice $ "Static assets built and symlinked to static.out"
-            putLog Debug $ "Generated static asset nix path: " <> n
+          Just ns -> forM_ ns $ \n -> do
+            putLog Notice $ "Static assets built and symlinked to "
+              <> (maybe "static.out" ((<>) ".out" . _staticInfo_name) $ (List.find ((== drvNameFromPath n) . _staticInfo_name) statics))
+            putLog Debug $ "Generated static asset nix path: " <> T.pack n
     pure never
   where
+    drvNameFromPath = T.pack . drop 1 . dropWhile (/= '-') . last . splitDirectories  
     handleBuildFailure
       :: MonadObelisk m
       => (ExitCode, String, String)
-      -> m (Maybe Text)
+      -> m (Maybe FilePath)
     handleBuildFailure (ex, out, err) = case ex of
       ExitSuccess ->
         let out' = T.strip $ T.pack out
-        in pure $ if T.null out' then Nothing else Just out'
+        in pure $ if T.null out' then Nothing else Just $ T.unpack out'
       _ -> do
         putLog Error $
           ("Static assets build failed: " <>) $
             T.unlines $ reverse $ take 20 $ reverse $ T.lines $ T.pack err
         pure Nothing
-    buildStaticCatchErrors :: MonadObelisk m => m (Maybe Text)
-    buildStaticCatchErrors = handleBuildFailure =<<
+    --buildStaticsCatchErrors staticAttrs = traverse buildStaticCatchErrors staticAttrs
+    buildStaticCatchErrors :: MonadObelisk m => Text -> m (Maybe FilePath)
+    buildStaticCatchErrors staticA = handleBuildFailure =<<
       buildStaticFilesDerivationAndSymlink
         readCreateProcessWithExitCode
         root
+        staticA
 
 buildStaticFilesDerivationAndSymlink
   :: MonadObelisk m
   => (ProcessSpec -> m a)
   -> FilePath
+  -> Text
   -> m a
-buildStaticFilesDerivationAndSymlink f root = f $
+buildStaticFilesDerivationAndSymlink f root staticName = f $
   setCwd (Just root) $ ProcessSpec
     { _processSpec_createProcess = Proc.proc
         nixBuildExePath
-        [ "-o", "static.out"
-        , "-E", "(import ./. {}).passthru.staticFilesImpure"
+        [ "-o", staticOut </> T.unpack staticName
+        , "-E", "(import ./. {}).passthru.staticFilesImpure." <> T.unpack staticName <> ".src"
         ]
     , _processSpec_overrideEnv = Nothing
     }

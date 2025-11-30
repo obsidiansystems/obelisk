@@ -41,12 +41,14 @@ staticOutPath = "static.out"
 --
 -- If the filepath can not be found in the static output directory,
 -- this will throw a compile-time error.
-staticAssetRaw :: FilePath -> Q Exp
-staticAssetRaw = staticAssetWorker staticPrefix staticOutPath
+staticAssetRaw :: FilePath -> FilePath -> Q Exp
+staticAssetRaw staticName fp = staticAssetWorker staticPrefix staticOutPath staticName fp 
 
-staticAssetHashed :: FilePath -> FilePath -> Q Exp
-staticAssetHashed root fp = do
-  LitE . StringL . (staticPrefix </>) <$> hashedAssetFilePath root fp
+-- | Generate URL to reference handler which will serve this asset path
+-- | where "/static" route maps to the base directory static.assets 
+staticAssetHashed :: FilePath -> FilePath -> FilePath -> Q Exp
+staticAssetHashed root staticPkgName fp = do
+  LitE . StringL . (\p -> staticPrefix </> staticPkgName </> p) <$> hashedAssetFilePath root fp
 
 -- | Embed a filepath via template haskell. Differently to 'staticAssetRaw'
 -- this points to a local filepath instead of an URL during deployment.
@@ -57,10 +59,13 @@ staticAssetFilePathRaw
   :: FilePath
   -- ^ Add this prefix directory to the embedded filepath @fp@.
   -> FilePath
+  -- ^ Static Project specific prefix to avoid collisions
+  -> FilePath
   -- ^ Filepath you want to embed.
   -> Q Exp
-staticAssetFilePathRaw root = staticAssetWorker root staticOutPath
+staticAssetFilePathRaw root staticName = staticAssetWorker root staticOutPath staticName
 
+-- | Return the real location of 'relativePath' 
 staticAssetFilePath :: FilePath -> FilePath -> Q Exp
 staticAssetFilePath root relativePath = do
   let fullPath = root </> relativePath
@@ -77,13 +82,16 @@ staticAssetWorker
   :: FilePath
   -- ^ Add this prefix directory to the embedded filepath @fp@.
   -> FilePath
-  -- ^ Directory to which the filepath must have been copied.
+  -- ^ Base Directory to which the filepath must have been copied.
+  -- If @fp@ does not exist within this directory, this function will fail.
+  -> FilePath
+  -- ^ Static Project Directory to which the filepath must have been copied.
   -- If @fp@ does not exist within this directory, this function will fail.
   -> FilePath
   -- ^ Filepath you want to embed.
   -> Q Exp
-staticAssetWorker root staticOut fp = do
-  exists <- runIO $ doesFileExist $ staticOut </> fp
+staticAssetWorker root staticOut staticName fp = do
+  exists <- runIO $ doesFileExist $ staticOut </> staticName </> fp
   when (not exists) $
-    fail $ "The file " <> fp <> " was not found in " <> staticOut
-  return $ LitE $ StringL $ root </> fp
+    fail $ "The file " <> fp <> " was not found in " <> staticOut </> staticName
+  return $ LitE $ StringL $ root </> staticName </> fp

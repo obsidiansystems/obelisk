@@ -18,7 +18,7 @@ import Control.Arrow ((&&&))
 import Control.Exception (Exception, bracket)
 import Control.Lens (ifor, (.~), (&), view)
 import Control.Concurrent (forkIO)
-import Control.Monad (filterM, void)
+import Control.Monad (filterM, forM, void)
 import Control.Monad.Except (runExceptT, throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Reader (MonadIO)
@@ -192,8 +192,8 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
           , _target_attr = Just "__unstable__.profiledObRun"
           , _target_expr = Nothing
           }
-  (assetType, assets) <- findProjectAssets root
-  putLog Debug $ describeImpureAssetSource assetType assets
+  staticInfos <- findProjectAssets root
+  forM staticInfos $ \info -> putLog Debug $ describeImpureAssetSource (_staticInfo_assetSource info) (T.pack $ _staticInfo_path info)  
   time <- liftIO getCurrentTime
   let profileBaseName = formatTime defaultTimeLocale profileBasePattern time
   liftIO $ createDirectoryIfMissing True $ takeDirectory $ root </> profileBaseName
@@ -201,7 +201,7 @@ profile profileBasePattern rtsFlags = withProjectRoot "." $ \root -> do
   freePort <- getFreePort
   runProcess_ $ setCwd (Just root) $ setDelegateCtlc True $ proc (outPath </> "bin" </> "ob-run") $
     [ show freePort
-    , T.unpack assets
+    , staticOut
     , profileBaseName
     , "+RTS"
     , "-po" <> profileBaseName
@@ -221,23 +221,23 @@ run
   -> m ()
 run certDir portOverride root interpretPaths = do
   pkgs <- getParsedLocalPkgs root interpretPaths
-  (assetType, assets) <- findProjectAssets root
-  manifestPkg <- parsePackagesOrFail . (:[]) . T.unpack =<< getHaskellManifestProjectPath root
-  putLog Debug $ describeImpureAssetSource assetType assets
-  case assetType of
-    AssetSource_Derivation -> do
+  staticInfos <- findProjectAssets root
+  manifestPkgs <- parsePackagesOrFail . fmap T.unpack =<< getStaticHaskellManifestProjectPaths root
+  forM staticInfos $ \info -> putLog Debug $ describeImpureAssetSource (_staticInfo_assetSource info) (T.pack $ _staticInfo_path info)
+  case filter ((==AssetSource_Derivation) . _staticInfo_assetSource) staticInfos of
+    [] -> pure ()
+    paths@(_:_) -> do
       ob <- getObelisk
       putLog Debug "Starting static file derivation watcher..."
-      void $ liftIO $ forkIO $ runObelisk ob $ watchStaticFilesDerivation root
-    _ -> pure ()
-  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkg) root
+      void $ liftIO $ forkIO $ runObelisk ob $ watchStaticFilesDerivation root paths 
+  ghciArgs <- getGhciSessionSettings (pkgs <> manifestPkgs) root
   freePort <- getFreePort
   withGhciScriptArgs [] pkgs $ \dotGhciArgs -> do
     runGhcid root True (ghciArgs <> dotGhciArgs) pkgs $ Just $ unwords
       [ "Obelisk.Run.run (Obelisk.Run.defaultRunApp"
       , "Backend.backend"
       , "Frontend.frontend"
-      , "(Obelisk.Run.runServeAsset " ++ show assets ++ ")"
+      , "(Obelisk.Run.runServeAsset " ++ (show $ root </> staticOut) ++ ")"
       , ") { Obelisk.Run._runApp_backendPort =", show freePort
       ,   ", Obelisk.Run._runApp_forceFrontendPort =", show portOverride
       ,   ", Obelisk.Run._runApp_tlsCertDirectory =", show certDir

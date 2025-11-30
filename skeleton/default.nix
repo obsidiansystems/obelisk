@@ -16,6 +16,14 @@
 }:
 with obelisk;
 project ./. ({ ... }: {
+  staticFiles = {
+    obelisk-generated-static = {
+      path = ./static;
+      isDrv = false;
+      drvArgs = null;
+      moduleName = "Obelisk.Generated.Static";
+    };
+  };
   android.applicationId = "systems.obsidian.obelisk.examples.minimal";
   android.displayName = "Obelisk Minimal Example";
   ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";
