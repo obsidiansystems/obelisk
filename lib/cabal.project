@@ -10,12 +10,9 @@ if !arch(javascript) && !arch(wasm32)
     ./asset/manifest
     ./asset/serve-snap
     ./backend
+    ./command
     ./run
+    ./selftest
     ./snap-extras
-
-  if impl(ghc < 9.12)
-    packages:
-      ./command
-      ./selftest
 
 import: cabal.dependencies.project
