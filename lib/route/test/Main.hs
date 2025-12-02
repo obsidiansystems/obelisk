@@ -22,6 +22,7 @@ module Main where
 import Prelude hiding (id, (.))
 
 import Control.Categorical.Bifunctor (bimap)
+import Control.Categorical.Object
 import Control.Category (Category((.), id))
 import Control.Category.Associative (associate, Associative (disassociate))
 import Control.Category.Monoidal
@@ -261,7 +262,7 @@ exhaustive =
     prop f = f $ \lbl e -> testProperty lbl $ withCheckedEncoder e $ flip all universeF . roundtripsProp
   in
     testGroup "Roundtrip" $ prop $ \t ->
-      [ t "void1Encoder" void1Encoder
+      [ t "initiate" initiate
       , t "id (Word8)" $ id @_ @Word8
       , t "enumEncoder" $ enumEncoder @_ @_ @Word8 (+1)
       ]
