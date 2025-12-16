@@ -4,7 +4,6 @@
   }
 , local-self ? import ./. self-args
 , supportedSystems ? [ builtins.currentSystem ]
-, __useNewerCompiler  ? true # false if one wants to use ghc 8.6.5
 }:
 
 let
@@ -41,8 +40,21 @@ let
     else if lib.isList v then lib.concatMap collect v
     else [];
 
+  # A simple derivation that just creates a file with the names of all
+  # of its inputs. If built, it will have a runtime dependency on all
+  # of the given build inputs.
+  pinBuildInputs = name: buildInputs: (local-self.nixpkgs.releaseTools.aggregate {
+    inherit name;
+    constituents = buildInputs;
+  }).overrideAttrs (old: {
+    buildCommand = old.buildCommand + ''
+      echo "$propagatedBuildInputs $buildInputs $nativeBuildInputs $propagatedNativeBuildInputs" > "$out/deps"
+    '';
+    inherit buildInputs;
+  });
+
   perPlatform = lib.genAttrs cacheBuildSystems (system: let
-    reflex-platform = import ./dep/mars { inherit system __useNewerCompiler; };
+    reflex-platform = import ./dep/mars { inherit system; };
 
     mkPerProfiling = profiling: let
       obelisk = import ./. (self-args // { inherit system profiling; });
@@ -69,8 +81,6 @@ let
         echo "return" >> "$out"
         cat "${skeleton.shells.ghc}" >> "$out"
       '';
-      androidSkeleton = skeleton.android.frontend;
-      iosSkeleton = skeleton.ios.frontend;
       nameSuffix = if profiling then "profiled" else "unprofiled";
       packages = {
         skeletonProfiledObRun = rawSkeleton.__unstable__.profiledObRun;
@@ -84,13 +94,13 @@ let
           ghcjs
           serverSkeletonExe
           ;
-      } // lib.optionalAttrs reflex-platform.androidSupport {
-        inherit androidSkeleton;
-      } // lib.optionalAttrs reflex-platform.iosSupport {
-        inherit iosSkeleton;
+      } // lib.optionalAttrs (system == "x86_64-linux") {
+        android-app = rawSkeleton.android.app.aarch64;
+      } // lib.optionalAttrs (system == "x86_64-darwin") {
+        ios-app = rawSkeleton.ios.app.aarch64;
       };
     in packages // {
-      cache = reflex-platform.pinBuildInputs
+      cache = pinBuildInputs
         "obelisk-${system}-${nameSuffix}"
         (collect packages);
     };
@@ -100,12 +110,12 @@ let
       unprofiled = mkPerProfiling false;
     };
   in perProfiling // {
-    cache = reflex-platform.pinBuildInputs
+    cache = pinBuildInputs
       "obelisk-${system}"
       (map (p: p.cache) (builtins.attrValues perProfiling));
   });
 
-  metaCache = local-self.reflex-platform.pinBuildInputs
+  metaCache = pinBuildInputs
     "obelisk-everywhere"
     (map (a: a.cache) (builtins.attrValues perPlatform));
 
