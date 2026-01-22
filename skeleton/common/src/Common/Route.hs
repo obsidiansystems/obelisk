@@ -40,8 +40,8 @@ concat <$> mapM deriveRouteComponent
   ]
 
 fullRouteEncoder
-  :: Encoder (Either Text) Identity (R (FullRoute BackendRoute FrontendRoute)) PageName
-fullRouteEncoder = mkFullRouteEncoder
+  :: Either Text (Encoder Identity Identity (R (FullRoute BackendRoute FrontendRoute)) PageName)
+fullRouteEncoder = checkEncoder $ mkFullRouteEncoder
   (FullRoute_Backend BackendRoute_Missing :/ ())
   (\case
       BackendRoute_Missing -> PathSegment "missing" $ unitEncoder mempty)
