@@ -28,7 +28,7 @@ import Control.Category.Monoidal
 import Control.Lens (Iso', Prism', lazy, lens, reversed, _Just, _Left, _Right)
 import Data.Dependent.Map (DMap)
 import Data.Dependent.Sum (DSum((:=>)) )
-import Data.Either (isLeft, isRight)
+import Data.Either (fromRight, isLeft, isRight)
 import Data.Foldable (Foldable(fold))
 import Data.Functor.Identity (Identity)
 import Data.Int (Int8)
@@ -111,15 +111,16 @@ instance Arbitrary (DMap XYField Identity) where
 
 data A = A deriving (Bounded, Enum, Eq, Ord, Show, Universe)
 data B = B deriving (Bounded, Enum, Eq, Ord, Show, Universe)
-data C = C1 | C2 deriving (Bounded, Enum, Eq, Ord, Show, Universe)
+data C = C1 | C2 | C3 deriving (Bounded, Enum, Eq, Ord, Show, Universe)
 instance Arbitrary A where arbitrary = pure A
 instance Arbitrary B where arbitrary = pure B
+instance Arbitrary C where arbitrary = oneof $ fmap pure [C1, C2, C3]
 
 ac :: Encoder' A C
 ac = generalizeIdentity $ handleEncoder (\_ -> A) $ enumEncoder $ \A -> C1
 
 bc :: Encoder' B C
-bc = enumEncoder $ \B -> C2
+bc = generalizeIdentity $ handleEncoder (\_ -> B) $ enumEncoder $ \B -> C2
 
 type Encoder' a b = Encoder (Either Text) (Either Text) a b
 type Cont a = forall r. (a -> r) -> r
@@ -269,19 +270,41 @@ exhaustive =
 overlaps :: TestTree
 overlaps =
   let
-    prop :: (forall x y. Either x y -> Bool) -> Cont (forall a b. TestName -> Encoder' a b -> TestTree)
-    prop is f = f $ \n -> testProperty n . is . checkEncoder @(Either Text)
+    check :: (forall x y. Either x y -> Bool) -> Cont (forall a b. TestName -> Encoder' a b -> TestTree)
+    check is f = f $ \n -> testProperty n . is . checkEncoder @(Either Text)
+
+    whenApplicable = fromRight $ property Discard
+
+    shadows
+      :: (Arbitrary z, Eq x, Eq y, Eq z, Show x, Show y, Show z, Universe x)
+      => TestName -> Encoder' x z -> Encoder' y z -> TestTree
+    shadows lbl x2z' y2z' = testProperty lbl $ whenApplicable $ do
+      x2z  <- checkEncoder x2z'
+      y2z  <- checkEncoder y2z'
+      xy2z <- checkEncoder (shadowEncoder x2z' y2z')
+      pure $ withMaxSuccess 1e3 $ \z -> whenApplicable $ do
+        x <- tryDecode x2z z
+        y <- tryDecode y2z z
+        pure $ property $ encode y2z y /= z ==> tryDecode xy2z z == Right (Left x)
 
   in
     testGroup "Overlaps"
-      [ testGroup "No false positives" $ prop isRight $ \_t ->
-        [ -- t "shadowEncoder" $ shadowEncoder bc ac -- https://github.com/obsidiansystems/obelisk/pull/987
+      [ testGroup "No false positives" $ check isRight $ \t ->
+        [ testGroup "shadowEncoder"
+          [ t "A | B -> C" $ shadowEncoder bc ac
+          ]
         ]
-      , testGroup "No false negatives" $ prop isLeft $ \t ->
+      , testGroup "No false negatives" $ check isLeft $ \t ->
         [ t "enumEncoder" $ enumEncoder @_ @_ @Word8 (*2)
         , t "pathComponentEncoder" overlappingFragmentEncoder
-        , t "shadowEncoder" $ unsafeShowShadowEncoder @Word8 @Int8
-        , t "shadowEncoder" $ unsafeShowShadowEncoder @Word8 @Word8
+        , testGroup "shadowEncoder"
+          [ t "Word8 | Int8 -> Text" $ unsafeShowShadowEncoder @Word8 @Int8
+          , t "Word8 | Word8 -> Text" $ unsafeShowShadowEncoder @Word8 @Word8
+          ]
+        ]
+      , testGroup "Shadowing of non-canonical encodings"
+        [ shadows "A | B -> C" ac bc
+        , shadows "B | A -> C" bc ac
         ]
       ]
 
@@ -291,8 +314,10 @@ roundtrips = testGroup "Roundtrip" $ fold
   , arity0 $ \t ->
     [ t "dmapEncoder" xymapEncoder
     , t "pathFieldEncoder" xypathFieldEncoder
-    , t "shadowEncoder" $ unsafeShowShadowEncoder @Word8 @Char
-    --, t "shadowEncoder" $ shadowEncoder ac bc --https://github.com/obsidiansystems/obelisk/pull/987
+    , testGroup "shadowEncoder"
+      [ t "Word8 | Char -> Text" $ unsafeShowShadowEncoder @Word8 @Char
+      , t "A | B -> C" $ shadowEncoder ac bc
+      ]
     , t "handleEncoder" $ generalizeIdentity $ handleEncoder @_ @_ @Input (error "Must not be used") id
     ]
   , arity1 $ \t ->
