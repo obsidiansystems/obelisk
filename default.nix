@@ -6,6 +6,7 @@
     security.acme.acceptTerms = false;
   }
 , reflex-platform-func ? import ./dep/reflex-platform
+, extraServiceParams ? {}
 }:
 let
   reflex-platform = getReflexPlatform { inherit system; };
@@ -163,7 +164,7 @@ in rec {
           WorkingDirectory = "~";
           Restart = "always";
           RestartSec = 5;
-        };
+        } // extraServiceParams;
       };
       users = {
         users.${user} = {
