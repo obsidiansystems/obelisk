@@ -29,10 +29,12 @@ library
   exposed-modules:
     Obelisk.SelfTest
   ghc-options: -Wall
-  if arch(javascript)
+  if arch(javascript) || arch(wasm32)
     buildable: False
 
 executable obelisk-selftest
   main-is: src-bin/obelisk-selftest.hs
   build-depends: base, obelisk-selftest
   ghc-options: -Wall -O2 -threaded
+  if arch(javascript) || arch(wasm32)
+    buildable: False

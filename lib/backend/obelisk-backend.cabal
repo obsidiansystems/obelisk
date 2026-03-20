@@ -29,5 +29,5 @@ library
   exposed-modules: Obelisk.Backend
   ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
 
-  if arch(javascript)
+  if arch(javascript) || arch(wasm32)
     buildable: False

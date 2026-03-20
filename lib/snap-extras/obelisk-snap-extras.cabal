@@ -7,6 +7,7 @@ cabal-version: >=1.2
 
 library
   hs-source-dirs: src
+
   build-depends:
       attoparsec
     , base
@@ -16,8 +17,11 @@ library
     , filepath
     , text
     , unordered-containers
+
   exposed-modules:
       Obelisk.Snap.Extras
+
   ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
-  if arch(javascript)
+
+  if arch(javascript) || arch(wasm32)
     buildable: False
