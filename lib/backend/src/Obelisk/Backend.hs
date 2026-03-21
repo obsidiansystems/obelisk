@@ -85,6 +85,7 @@ data Backend backendRoute frontendRoute = Backend
 data BackendConfig frontendRoute = BackendConfig
   { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
   , _backendConfig_staticAssets :: !StaticAssets -- ^ Static assets
+  , _backendConfig_frontendGhcjsAssets :: !StaticAssets -- ^ Compiled GHCJS frontend assets
   , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ()))
     -- ^ Given the URL of all.js, return the widgets which are responsible for
     -- loading the script.
@@ -233,7 +234,7 @@ serveGhcjsApp urlEnc ghcjsWidgets app config = \case
 
 -- | Default obelisk backend configuration.
 defaultBackendConfig :: BackendConfig frontendRoute
-defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultGhcjsWidgets
+defaultBackendConfig = BackendConfig runSnapWithCommandLineArgs defaultStaticAssets defaultFrontendGhcjsAssets defaultGhcjsWidgets
 
 -- | Run an obelisk backend with the default configuration.
 runBackend :: Backend backendRoute frontendRoute -> Frontend (R frontendRoute) -> IO ()
@@ -245,7 +246,7 @@ runBackendWith
   -> Backend backendRoute frontendRoute
   -> Frontend (R frontendRoute)
   -> IO ()
-runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
+runBackendWith (BackendConfig runSnap staticAssets frontendGhcjsAssets ghcjsWidgets) backend frontend = case checkEncoder $ _backend_routeEncoder backend of
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
@@ -255,11 +256,15 @@ runBackendWith (BackendConfig runSnap staticAssets ghcjsWidgets) backend fronten
           Identity r -> case r of
             FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
             FullRoute_Frontend obeliskRoute :/ a ->
-              serveDefaultObeliskApp routeToUrl (($ allJsUrl) <$> ghcjsWidgets) (serveStaticAssets staticAssets) frontend publicConfigs $
+              serveObeliskApp routeToUrl (($ allJsUrl) <$> ghcjsWidgets) (serveStaticAssets staticAssets) frontendApp publicConfigs $
                 obeliskRoute :/ a
               where
                 routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
                 allJsUrl = renderAllJsPath validFullEncoder
+                frontendApp = GhcjsApp
+                  { _ghcjsApp_compiled = frontendGhcjsAssets
+                  , _ghcjsApp_value = frontend
+                  }
 
 renderGhcjsFrontend
   :: (MonadSnap m, HasCookies m)
