@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 -- | Shared utilities for Obelisk Setup.hs hooks.
 module Obelisk.Setup.Utils
   ( findProjectRoot

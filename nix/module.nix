@@ -31,7 +31,9 @@ in {
   };
 
   config = {
-    inherit (obeliskLib) extraCabalProject source-repository-packages;
+    inherit (obeliskLib) extraCabalProject;
+    # source-repository-packages disabled; using optional-packages in cabal.project instead.
+    # inherit (obeliskLib) source-repository-packages;
 
     hackage-overlays =
       if static != null
