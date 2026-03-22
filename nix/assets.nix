@@ -26,12 +26,43 @@ delay = identifier:
   then builtins.throw "don't force me ${identifier}"
   else id;
 
-# Default encoding generation function for this platform; usually zopfliEncodings, but gzipEncodings on darwin due to zopfli not building on darwin.
+# Default encoding generation function: brotli + gzip for best browser coverage.
 #
 # defaultEncodings :: String -> Derivation
-defaultEncodings =
-  # zopfli isn't supported on macOS as of nixpkgs eafd703a63
-  if nixpkgs.stdenv.isDarwin then gzipEncodings else zopfliEncodings;
+defaultEncodings = unionEncodings [ brotliEncodings gzipEncodings ];
+
+# Merge multiple encoding functions by joining their outputs with symlinkJoin.
+#
+# unionEncodings :: [String -> Derivation] -> String -> Derivation
+unionEncodings = encodingFns: file:
+  nixpkgs.symlinkJoin {
+    name = "encodings";
+    paths = map (fn: fn file) encodingFns;
+  };
+
+# Encoding generation function which uses brotli at maximum quality.
+#
+# brotliEncodings :: String -> Derivation
+brotliEncodings = file:
+  nixpkgs.stdenv.mkDerivation {
+    name = "encodings";
+
+    input = mkPath file;
+
+    builder = builtins.toFile "builder.sh" ''
+      source "$stdenv/setup"
+
+      mkdir -p "$out"
+
+      ln -s "$input" "$out/identity"
+
+      brotli -c -q 11 "$input" >"$out/br"
+    '';
+
+    buildInputs = [
+      nixpkgs.brotli
+    ];
+  };
 
 # Encoding generation function which uses zopfli to encode the asset with very high compression efficiency, at the cost of CPU time compressing.
 # Generates gzip, compress/zlib, and deflate outputs all using zopfli with 5 iterations.
