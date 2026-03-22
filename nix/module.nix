@@ -244,8 +244,6 @@ in {
     # source-repository-packages disabled; using optional-packages in cabal.project instead.
     # inherit (obeliskLib) source-repository-packages;
 
-    optimizations.all = lib.mkDefault true;
-
     overrides = [
       obeliskLib.buildTypeOverride
       obeliskLib.jsexeOverride
