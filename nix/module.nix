@@ -2,7 +2,7 @@
 # into a project. Declares `obelisk.static` and `obelisk.frontend.js` options;
 # when set, generates hackage overlay and wires assets into frontend/backend data dirs.
 # frontend.js defaults to the project's GHCJS-cross-compiled frontend.
-{ config, lib, system, ... }:
+{ config, lib, system, nix-haskell-patches, ... }:
 
 let obeliskLib = import ./lib.nix { inherit system; };
 
@@ -11,6 +11,10 @@ let obeliskLib = import ./lib.nix { inherit system; };
     frontendJs = config.obelisk.frontend.js;
 
 in {
+  imports = [
+    "${nix-haskell-patches}/js/splitmix"
+  ];
+
   options.obelisk = {
     static = lib.mkOption {
       type = lib.types.nullOr (lib.types.either lib.types.path lib.types.package);
