@@ -2,11 +2,25 @@
 # into a project. Declares `obelisk.static` and `obelisk.frontend.js` options;
 # when set, generates hackage overlay and wires assets into frontend/backend data dirs.
 # frontend.js defaults to the project's GHCJS-cross-compiled frontend.
-{ config, lib, system, nix-haskell-patches, ... }:
+{ config, lib, pkgs, system, nix-haskell-patches, ... }:
 
 let obeliskLib = import ./lib.nix { inherit system; };
 
-    static = config.obelisk.static;
+    assets = import ./assets.nix { nixpkgs = pkgs; };
+
+    rawStatic = config.obelisk.static.path;
+
+    # Hash and copy static files into a flat directory with cache-busting names.
+    hashedStatic = if rawStatic != null
+      then pkgs.runCommand "hashed-static" {
+        LANG = "en_US.UTF-8";
+        LOCALE_ARCHIVE = "${pkgs.glibcLocales}/lib/locale/locale-archive";
+      } ''
+        ${obeliskLib.obelisk-asset-manifest-generate} --module-only ${rawStatic} "$TMPDIR" Obelisk.Generated.Static $out
+      ''
+      else null;
+
+    static = config.obelisk.static.compressed;
 
     frontendJs = config.obelisk.frontend.js;
 
@@ -16,10 +30,28 @@ in {
   ];
 
   options.obelisk = {
-    static = lib.mkOption {
-      type = lib.types.nullOr (lib.types.either lib.types.path lib.types.package);
-      default = null;
-      description = "Static assets path or derivation.";
+    static = {
+      path = lib.mkOption {
+        type = lib.types.nullOr (lib.types.either lib.types.path lib.types.package);
+        default = null;
+        description = "Static assets path or derivation.";
+      };
+
+      compress = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether to compress static assets with zopfli/gzip.";
+      };
+
+      compressed = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default =
+          if hashedStatic != null && config.obelisk.static.compress
+            then assets.mkAssets hashedStatic
+            else hashedStatic;
+        defaultText = lib.literalExpression "assets.mkAssets hashedStatic";
+        description = "Hashed static assets after optional compression. Used by overrides.";
+      };
     };
 
     frontend.js = lib.mkOption {
@@ -38,9 +70,9 @@ in {
     overrides = [
       obeliskLib.buildTypeOverride
       obeliskLib.jsexeOverride
-      (obeliskLib.frontendDataOverride { inherit static; })
-      (obeliskLib.backendDataOverride { inherit static; inherit frontendJs; })
-      (obeliskLib.staticManifestOverride { inherit static; })
+      (obeliskLib.frontendDataOverride { static = hashedStatic; compressedStatic = static; })
+      (obeliskLib.backendDataOverride { static = hashedStatic; compressedStatic = static; inherit frontendJs; })
+      (obeliskLib.staticManifestOverride { static = rawStatic; })
     ];
   };
 }

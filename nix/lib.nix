@@ -19,7 +19,7 @@ let src = ../.;
       lib.filterAttrs (name: _: config.packages ? ${name});
 
 in {
-  inherit src;
+  inherit src obelisk-asset-manifest-generate;
 
   frontendJs = config:
     config.haskell-nix.project.projectCross.ghcjs.hsPkgs.frontend.components.exes.frontend;
@@ -91,17 +91,19 @@ in {
 
   # Symlink static assets into frontend's dataDir
   # at both build time (preBuild) and in the installed output (postInstall).
-  frontendDataOverride = { static ? null }:
+  frontendDataOverride = { static ? null, compressedStatic ? null }:
     ({ config, lib, pkgs, ... }:
       let dataDir = config.packages.frontend.package.dataDir;
       in {
         packages.frontend.components.library.preBuild = lib.optionalString (dataDir != "") ''
           mkdir -p ${dataDir}
           ${if static != null && static != {} then ''ln -sf ${static} ${dataDir}/static'' else ""}
+          ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} ${dataDir}/static.assets'' else ""}
         '';
         packages.frontend.components.library.postInstall = ''
           for datadir in $data/share/*/*/frontend-*; do
             ${if static != null && static != {} then ''ln -sf ${static} "$datadir/static"'' else ""}
+            ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} "$datadir/static.assets"'' else ""}
           done
         '';
       }
@@ -109,18 +111,20 @@ in {
 
   # Symlink static assets and frontend jsexe into backend's dataDir
   # at both build time (preBuild) and in the installed output (postInstall).
-  backendDataOverride = { static ? null, frontendJs ? null }:
+  backendDataOverride = { static ? null, compressedStatic ? null, frontendJs ? null }:
     ({ config, lib, pkgs, ... }:
       let dataDir = config.packages.backend.package.dataDir;
       in {
         packages.backend.components.library.preBuild = lib.optionalString (dataDir != "") ''
           mkdir -p ${dataDir}
           ${if static != null && static != {} then ''ln -sf ${static} ${dataDir}/static'' else ""}
+          ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} ${dataDir}/static.assets'' else ""}
           ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs}/bin/frontend.jsexe ${dataDir}/frontend.jsexe'' else ""}
         '';
         packages.backend.components.library.postInstall = ''
           for datadir in $data/share/*/*/backend-*; do
             ${if static != null && static != {} then ''ln -sf ${static} "$datadir/static"'' else ""}
+            ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} "$datadir/static.assets"'' else ""}
             ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs}/bin/frontend.jsexe "$datadir/frontend.jsexe"'' else ""}
           done
         '';
