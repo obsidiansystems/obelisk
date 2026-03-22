@@ -9,11 +9,10 @@
         import ./nix { inherit system; }
       );
 
-      packages = eachSystem (system:
-        (import ./nix/docs.nix { inherit system; }) // {
-          release = import ./release.nix { inherit system; };
-        }
-      );
+      packages = eachSystem (system: {
+        docs = (import ./nix/docs.nix { inherit system; }).docs;
+        release = import ./release.nix { inherit system; };
+      });
     };
 
   nixConfig = {

@@ -17,9 +17,8 @@ Contributions and issue reports are encouraged and appreciated!
     - [In the Changelog](#in-the-changelog)
     - [In the Readme](#in-the-readme)
 - [Development Environment](#development-environment)
-  - [Building `ob` for testing](#building-ob-for-testing)
-  - [Testing features from an unmerged branch](#testing-features-from-an-unmerged-branch)
-  - [Hacking on Obelisk from within an Obelisk project](#hacking-on-obelisk-from-within-an-obelisk-project)
+  - [Working on obelisk libraries](#working-on-obelisk-libraries)
+  - [Testing with the skeleton](#testing-with-the-skeleton)
 
 ## Opening Issues
 
@@ -62,17 +61,16 @@ Your pull request should add no new warnings to the project. It should also gene
 
 Make sure the project builds and that the tests pass! This will generally also be checked by CI before merge, but trying it yourself first means you'll catch problems earlier and your contribution can be merged that much sooner!
 
-You can run the tests like this:
-```bash
-$(nix-build -A selftest --no-out-link)
-```
-
-To test that your changes build across platforms, you can also try to build release.nix, like this:
+Build the skeleton with both frontend targets:
 ```bash
 nix-build release.nix
 ```
 
-Note, however, that to build release.nix you must accept the android license agreement and your machine must be configured to build both ios and android executables (usually via remote builders).
+Or build individual targets:
+```bash
+nix-build release.nix -A serverExe.wasm
+nix-build release.nix -A serverExe.js
+```
 
 
 ### Documentation
@@ -92,61 +90,41 @@ The readme is the first place a lot of people look for information about the rep
 
 ## Development Environment
 
-There are two ways to get live compiler feedback while developing Obelisk libraries. For libraries that are dependencies of the `skeleton` application, the easiest way to get feedback is to
+### Working on obelisk libraries
+
+Enter the skeleton's nix shell to get a development environment with all obelisk libraries available:
 
 ```bash
 cd skeleton
-ob run
+nix-shell  # or: nix develop 'git+file:.?submodules=1'
 ```
 
-This `ob run` session only loads modules that are dependencies of the skeleton and `obelisk-run`. For example, `obelisk-asset` and `obelisk-route` are used by the skeleton.
+From within the shell, uncomment the obelisk `optional-packages` stanzas in `cabal.project` to develop obelisk libraries alongside the skeleton:
 
-For other libraries like `obelisk-command` you can use `ghcid`. To launch `ghcid` for `lib/command` you can run
-
-```bash
-nix-shell -A obeliskEnvs.obelisk-command --run "cd lib/command && ghcid"
+```cabal
+optional-packages:
+  deps/obelisk/lib/*
+  deps/obelisk/lib/*/*
 ```
 
-[Haskell-Language-Server](https://haskell-language-server.readthedocs.io/en/latest/)(HLS) can be used on the Haskell libraries in `lib`. Simply launch your lsp-client of choice in the `lib` subdirectory. Set up the appropriate environment by running `./lib/setupHls.sh up` and tear it down again with `./lib/setupHls.sh down`
-
-### Building `ob` for testing
-
-To re-install `ob` from source globally you can do
+Then use `ob-run` for live feedback, or `ob-repl` for a REPL:
 
 ```bash
-nix-env -f /path/to/obelisk -iA command
+ob-run       # watch-and-rebuild development server
+ob-repl      # REPL with optimizations disabled
 ```
 
-You can also open a shell with the local version of `ob` available on your `$PATH`:
+### Testing with the skeleton
+
+The skeleton serves as the integration test for obelisk. To verify your changes work end-to-end:
 
 ```bash
-nix run -f /path/to/obelisk command
+cd skeleton
+nix-shell
+ob-run       # test development workflow
 ```
 
-### Testing features from an unmerged branch
-
-If you'd like to use a branch of Obelisk that hasn't been merged into `develop` or `master` (usually to investigate an open PR):
-
+For a full production build test:
 ```bash
-cd /your/project/root
-ob thunk update --branch <target-branch> .obelisk/impl
-```
-
-### Hacking on Obelisk from within an Obelisk project
-
-`ob` will defer to the version found in your project's `.obelisk/impl` directory. To work on that version specifically:
-
-```bash
-ob thunk unpack ./.obelisk/impl
-cd ./.obelisk/impl
-# apply your changes
-```
-
-If you want to commit your changes, first push them to your fork of obelisk and then
-
-```bash
-cd /your/project/root
-ob thunk pack .obelisk/impl
-git add .obelisk/impl
-git commit -m "Bump obelisk"
+nix-build release.nix
 ```
