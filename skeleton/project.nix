@@ -16,4 +16,7 @@
     withHoogle = true;
   };
 
+  # if you're not in a hurry
+  #optimizations.all = true;
+
 }
