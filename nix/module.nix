@@ -22,7 +22,9 @@ let obeliskLib = import ./lib.nix { inherit system; };
 
     static = config.obelisk.static.compressed;
 
-    frontendJs = config.obelisk.frontend.js;
+    frontendJs = config.obelisk.frontend.js.package;
+
+    compressedFrontendJs = config.obelisk.frontend.js.compressed;
 
 in {
   imports = [
@@ -54,11 +56,23 @@ in {
       };
     };
 
-    frontend.js = lib.mkOption {
-      type = lib.types.nullOr lib.types.package;
-      default = obeliskLib.frontendJs config;
-      defaultText = lib.literalExpression "obeliskLib.frontendJs config";
-      description = "GHCJS-compiled frontend derivation.";
+    frontend.js = {
+      package = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default = obeliskLib.frontendJs config;
+        defaultText = lib.literalExpression "obeliskLib.frontendJs config";
+        description = "GHCJS-compiled frontend derivation.";
+      };
+
+      compressed = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default =
+          if frontendJs != null && config.obelisk.static.compress
+            then assets.mkAssets "${frontendJs}/bin/frontend.jsexe"
+            else null;
+        defaultText = lib.literalExpression "assets.mkAssets frontendJs";
+        description = "Compressed frontend jsexe for obelisk-asset-serve-snap.";
+      };
     };
   };
 
@@ -71,7 +85,7 @@ in {
       obeliskLib.buildTypeOverride
       obeliskLib.jsexeOverride
       (obeliskLib.frontendDataOverride { static = hashedStatic; compressedStatic = static; })
-      (obeliskLib.backendDataOverride { static = hashedStatic; compressedStatic = static; inherit frontendJs; })
+      (obeliskLib.backendDataOverride { static = hashedStatic; compressedStatic = static; inherit frontendJs compressedFrontendJs; })
       (obeliskLib.staticManifestOverride { static = rawStatic; })
     ];
   };

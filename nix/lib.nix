@@ -111,7 +111,7 @@ in {
 
   # Symlink static assets and frontend jsexe into backend's dataDir
   # at both build time (preBuild) and in the installed output (postInstall).
-  backendDataOverride = { static ? null, compressedStatic ? null, frontendJs ? null }:
+  backendDataOverride = { static ? null, compressedStatic ? null, frontendJs ? null, compressedFrontendJs ? null }:
     ({ config, lib, pkgs, ... }:
       let dataDir = config.packages.backend.package.dataDir;
       in {
@@ -120,12 +120,14 @@ in {
           ${if static != null && static != {} then ''ln -sf ${static} ${dataDir}/static'' else ""}
           ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} ${dataDir}/static.assets'' else ""}
           ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs}/bin/frontend.jsexe ${dataDir}/frontend.jsexe'' else ""}
+          ${if compressedFrontendJs != null && compressedFrontendJs != {} then ''ln -sf ${compressedFrontendJs} ${dataDir}/frontend.jsexe.assets'' else ""}
         '';
         packages.backend.components.library.postInstall = ''
           for datadir in $data/share/*/*/backend-*; do
             ${if static != null && static != {} then ''ln -sf ${static} "$datadir/static"'' else ""}
             ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} "$datadir/static.assets"'' else ""}
             ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs}/bin/frontend.jsexe "$datadir/frontend.jsexe"'' else ""}
+            ${if compressedFrontendJs != null && compressedFrontendJs != {} then ''ln -sf ${compressedFrontendJs} "$datadir/frontend.jsexe.assets"'' else ""}
           done
         '';
       }
