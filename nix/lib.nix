@@ -24,8 +24,12 @@ let src = ../.;
     mkOptionalPackages = { config, lib }:
       lib.filterAttrs (name: _: config.packages ? ${name});
 
+    assets = import ./assets.nix { nixpkgs = (import ../deps/nix-haskell/pins/nixpkgs { inherit system; }); };
+
+    docs = import ./docs.nix { inherit system; };
+
 in {
-  inherit src obelisk-asset-manifest-generate wasi-shim;
+  inherit src obelisk-asset-manifest-generate wasi-shim assets docs;
 
   frontendJs = config:
     config.haskell-nix.project.projectCross.ghcjs.hsPkgs.frontend.components.exes.frontend;
