@@ -94,7 +94,7 @@ linkFrontendAssets = do
     fail $ "[Setup] GHCJS output directory not found: " <> jsexeDir
 
   symlink jsexeDir (dataDir </> "frontend.jsexe")
-  symlink (projectRoot </> "static" </> "manifest" </> "data" </> "static") (dataDir </> "static")
+  symlink (projectRoot </> "static" </> "generated" </> "data" </> "static") (dataDir </> "static")
 
 strip :: String -> String
 strip = reverse . dropWhile isSpace . reverse . dropWhile isSpace

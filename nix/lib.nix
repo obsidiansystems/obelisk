@@ -51,11 +51,16 @@ in {
   staticManifestOverride = { static }: { config, lib, ... }:
     let optional = mkOptionalPackages { inherit config lib; };
     in {
-      packages = optional {
-        obelisk-generated-static.components.library.preBuild = lib.optionalString (static != null) ''
+      packages =
+        let preBuild = lib.optionalString (static != null) ''
+          rm -rf src
+          mkdir -p src
           ${obelisk-asset-manifest-generate} --module-only ${static} . Obelisk.Generated.Static data/static
         '';
-      };
+        in optional {
+          obelisk-generated-static.components.library.preBuild = preBuild;
+          obelisk-generated-static-custom.components.library.preBuild = preBuild;
+        };
     };
 
   # Force Simple build type so haskell.nix doesn't run a Setup.hs configure step.
@@ -67,6 +72,7 @@ in {
         frontend.package.buildType = lib.mkOverride 75 "Simple";
         frontend-custom.package.buildType = lib.mkOverride 75 "Simple";
         obelisk-generated-static.package.buildType = lib.mkOverride 75 "Simple";
+        obelisk-generated-static-custom.package.buildType = lib.mkOverride 75 "Simple";
       };
     };
 
