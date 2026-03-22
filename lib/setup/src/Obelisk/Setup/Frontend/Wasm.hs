@@ -5,6 +5,7 @@
 module Obelisk.Setup.Frontend.Wasm (main) where
 
 import Distribution.Simple
+import Distribution.Simple.LocalBuildInfo (withOptimization)
 import System.Directory
   ( copyFile
   , createDirectoryIfMissing
@@ -23,24 +24,21 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Exception (SomeException, try)
 import Control.Monad (forM_, unless)
-import System.IO.Unsafe (unsafePerformIO)
 
-import Obelisk.Setup.Utils (findProjectRoot, symlink)
-
-{-# NOINLINE wasmBuildResult #-}
-wasmBuildResult :: MVar (Either SomeException ())
-wasmBuildResult = unsafePerformIO newEmptyMVar
+import Obelisk.Setup.Utils (crossCabalArgs, findProjectRoot, optLevelFlags, strip, symlink)
 
 main :: IO ()
 main = defaultMainWithHooks simpleUserHooks
-  { preBuild = \args flags -> do
+  { buildHook = \pd lbi hooks flags -> do
+      envArgs <- crossCabalArgs
+      let extraFlags = optLevelFlags (withOptimization lbi) <> envArgs
+      resultVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
       _ <- forkIO $ do
-        result <- try buildFrontendWithWasm
-        putMVar wasmBuildResult result
-      preBuild simpleUserHooks args flags
-  , postBuild = \args flags pd lbi -> do
+        result <- try (buildFrontendWithWasm extraFlags)
+        putMVar resultVar result
+      buildHook simpleUserHooks pd lbi hooks flags
       hPutStrLn stderr "[Setup] Waiting for WASM frontend build..."
-      result <- takeMVar wasmBuildResult
+      result <- takeMVar resultVar
       case result of
         Left e -> do
           hPutStrLn stderr $ "[Setup] WASM build failed: " <> show e
@@ -48,7 +46,6 @@ main = defaultMainWithHooks simpleUserHooks
         Right () -> do
           hPutStrLn stderr "[Setup] WASM frontend build complete."
           assembleAndLinkFrontend
-          postBuild simpleUserHooks args flags pd lbi
   }
 
 -- | Find the wasm32 cross cabal: either the @wasm32-unknown-wasi@ wrapper
@@ -78,8 +75,9 @@ getWasmGhcLibdir = do
   pure (strip raw)
 
 -- | Build the frontend executable with the wasm32 cross-compiler.
-buildFrontendWithWasm :: IO ()
-buildFrontendWithWasm = do
+-- Extra flags (e.g. @--ghc-options=-O0@) are forwarded to the cross cabal.
+buildFrontendWithWasm :: [String] -> IO ()
+buildFrontendWithWasm extraFlags = do
   projectRoot <- findProjectRoot
   (wasmCabal, mkArgs) <- findWasmCabal
   let distWasm = projectRoot </> "dist-wasm"
@@ -91,7 +89,7 @@ buildFrontendWithWasm = do
             ExitSuccess -> pure ()
             ExitFailure _ -> fail "[Setup] WASM cabal build failed"
   hPutStrLn stderr "[Setup] Building frontend with WASM..."
-  callInRoot wasmCabal (mkArgs ["build", "exe:frontend", "--builddir=" <> distWasm])
+  callInRoot wasmCabal (mkArgs (["build", "exe:frontend", "--builddir=" <> distWasm] <> extraFlags))
 
 -- | Assemble the jsexe directory and symlink it into @frontend\/data\/@.
 assembleAndLinkFrontend :: IO ()
@@ -222,6 +220,3 @@ shimJs = unlines
   , "})();"
   ]
 
-strip :: String -> String
-strip = reverse . dropWhile isSpace . reverse . dropWhile isSpace
-  where isSpace c = c == ' ' || c == '\n' || c == '\r' || c == '\t'

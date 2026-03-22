@@ -3,10 +3,16 @@
 module Obelisk.Setup.Utils
   ( findProjectRoot
   , symlink
+  , crossCabalArgs
+  , optLevelFlags
+  , strip
   ) where
 
 import Control.Exception (IOException, catch)
 import Control.Monad (unless, when)
+import Distribution.Simple.Compiler (OptimisationLevel (..))
+import System.Environment (lookupEnv)
+
 import System.Directory
   ( createFileLink
   , doesDirectoryExist
@@ -41,3 +47,18 @@ symlink target linkName = do
   unless dirExists $ do
     createFileLink target linkName
     hPutStrLn stderr $ "[Setup] Symlinked " <> linkName <> " -> " <> target
+
+-- | Read extra cabal arguments for cross builds from @OBELISK_CROSS_CABAL_ARGS@.
+crossCabalArgs :: IO [String]
+crossCabalArgs = maybe [] words <$> lookupEnv "OBELISK_CROSS_CABAL_ARGS"
+
+-- | Map a Cabal 'OptimisationLevel' to @--ghc-options@ flags for cross cabal.
+optLevelFlags :: OptimisationLevel -> [String]
+optLevelFlags NoOptimisation      = ["--ghc-options=-O0"]
+optLevelFlags NormalOptimisation   = ["--ghc-options=-O1"]
+optLevelFlags MaximumOptimisation  = ["--ghc-options=-O2"]
+
+-- | Strip leading and trailing whitespace.
+strip :: String -> String
+strip = reverse . dropWhile isSpace . reverse . dropWhile isSpace
+  where isSpace c = c == ' ' || c == '\n' || c == '\r' || c == '\t'

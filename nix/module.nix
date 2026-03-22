@@ -257,8 +257,24 @@ in {
       (obeliskLib.staticManifestOverride { static = rawStatic; })
     ];
 
+    shell.nativeBuildInputs = [
+      (pkgs.writeShellApplication {
+        name = "ob-run";
+        runtimeInputs = [ pkgs.inotify-tools ];
+        text = builtins.readFile ../scripts/ob-run;
+      })
+    ];
+
     shell.shellHook = ''
       export OBELISK_WASI_SHIM="${obeliskLib.wasi-shim}"
+
+      echo ""
+      echo "  ob-run [-- CABAL_ARGS...]"
+      echo "           Watches backend/, common/, and frontend/ for .hs, .cabal,"
+      echo "           and .project changes, then rebuilds and restarts the backend."
+      echo "           Disables optimizations for faster rebuilds. Press Enter to force a restart."
+      echo "           Run 'ob-run -h' for details."
+      echo ""
     '';
   };
 }

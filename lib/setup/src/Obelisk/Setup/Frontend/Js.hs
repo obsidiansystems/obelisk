@@ -4,6 +4,7 @@
 module Obelisk.Setup.Frontend.Js (main) where
 
 import Distribution.Simple
+import Distribution.Simple.LocalBuildInfo (withOptimization)
 import System.Directory
   ( createDirectoryIfMissing
   , doesDirectoryExist
@@ -18,24 +19,21 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Exception (SomeException, try)
 import Control.Monad (unless)
-import System.IO.Unsafe (unsafePerformIO)
 
-import Obelisk.Setup.Utils (findProjectRoot, symlink)
-
-{-# NOINLINE ghcjsBuildResult #-}
-ghcjsBuildResult :: MVar (Either SomeException ())
-ghcjsBuildResult = unsafePerformIO newEmptyMVar
+import Obelisk.Setup.Utils (crossCabalArgs, findProjectRoot, optLevelFlags, strip, symlink)
 
 main :: IO ()
 main = defaultMainWithHooks simpleUserHooks
-  { preBuild = \args flags -> do
+  { buildHook = \pd lbi hooks flags -> do
+      envArgs <- crossCabalArgs
+      let extraFlags = optLevelFlags (withOptimization lbi) <> envArgs
+      resultVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
       _ <- forkIO $ do
-        result <- try buildFrontendWithGhcjs
-        putMVar ghcjsBuildResult result
-      preBuild simpleUserHooks args flags
-  , postBuild = \args flags pd lbi -> do
+        result <- try (buildFrontendWithGhcjs extraFlags)
+        putMVar resultVar result
+      buildHook simpleUserHooks pd lbi hooks flags
       hPutStrLn stderr "[Setup] Waiting for GHCJS frontend build..."
-      result <- takeMVar ghcjsBuildResult
+      result <- takeMVar resultVar
       case result of
         Left e -> do
           hPutStrLn stderr $ "[Setup] GHCJS build failed: " <> show e
@@ -43,7 +41,6 @@ main = defaultMainWithHooks simpleUserHooks
         Right () -> do
           hPutStrLn stderr "[Setup] GHCJS frontend build complete."
           linkFrontendAssets
-          postBuild simpleUserHooks args flags pd lbi
   }
 
 findGhcjsCabal :: IO (String, [String] -> [String])
@@ -57,8 +54,10 @@ findGhcjsCabal = do
         Just _ -> pure ("javascript-unknown-ghcjs-cabal", id)
         Nothing -> fail "[Setup] Neither javascript-unknown-ghcjs nor javascript-unknown-ghcjs-cabal found on PATH. Are you in a nix shell?"
 
-buildFrontendWithGhcjs :: IO ()
-buildFrontendWithGhcjs = do
+-- | Build the frontend executable with GHCJS.
+-- Extra flags (e.g. @--ghc-options=-O0@) are forwarded to the cross cabal.
+buildFrontendWithGhcjs :: [String] -> IO ()
+buildFrontendWithGhcjs extraFlags = do
   projectRoot <- findProjectRoot
   (ghcjsCabal, mkArgs) <- findGhcjsCabal
   let distJs = projectRoot </> "dist-js"
@@ -72,7 +71,7 @@ buildFrontendWithGhcjs = do
             ExitFailure _ -> fail "[Setup] GHCJS cabal build failed"
 
   hPutStrLn stderr "[Setup] Building frontend with GHCJS..."
-  callInRoot ghcjsCabal (mkArgs ["build", "exe:frontend", "--builddir=" <> distJs])
+  callInRoot ghcjsCabal (mkArgs (["build", "exe:frontend", "--builddir=" <> distJs] <> extraFlags))
 
 linkFrontendAssets :: IO ()
 linkFrontendAssets = do
@@ -96,6 +95,3 @@ linkFrontendAssets = do
   symlink jsexeDir (dataDir </> "frontend.jsexe")
   symlink (projectRoot </> "static" </> "generated" </> "data" </> "static") (dataDir </> "static")
 
-strip :: String -> String
-strip = reverse . dropWhile isSpace . reverse . dropWhile isSpace
-  where isSpace c = c == ' ' || c == '\n' || c == '\r' || c == '\t'
