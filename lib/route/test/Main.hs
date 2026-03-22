@@ -42,7 +42,7 @@ import GHC.Generics (Generic)
 import qualified Control.Categorical.Functor as Cat
 import qualified Data.Aeson as Aeson
 import qualified Data.Dependent.Map as DMap
-import Test.QuickCheck
+import Test.QuickCheck hiding (Some)
 import Test.QuickCheck.Instances ()
 import Test.Tasty (defaultMain, testGroup, TestName, TestTree)
 import Test.Tasty.QuickCheck (testProperty)
