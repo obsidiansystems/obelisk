@@ -1,1 +1,0 @@
-../deps/nix-haskell/docs/modules.md
