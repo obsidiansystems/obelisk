@@ -50,6 +50,7 @@ in {
     obelisk-frontend = src + "/lib/frontend";
     obelisk-route = src + "/lib/route";
     obelisk-snap-extras = src + "/lib/snap-extras";
+    obelisk-setup = src + "/lib/setup";
     tabulation = src + "/lib/tabulation";
 
     reflex-dom = src + "/deps/reflex-dom/reflex-dom";
