@@ -240,9 +240,13 @@ in {
   };
 
   config = {
+    _module.args.obeliskLib = obeliskLib;
+
     inherit (obeliskLib) extraCabalProject;
     # source-repository-packages disabled; using optional-packages in cabal.project instead.
     # inherit (obeliskLib) source-repository-packages;
+
+    compiler-nix-name = lib.mkDefault "ghc914";
 
     overrides = [
       obeliskLib.buildTypeOverride

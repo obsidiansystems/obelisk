@@ -1,0 +1,16 @@
+dist
+dist-newstyle
+dist-js
+dist-wasm
+cabal.project.local
+*.o
+*.hi
+backend/data
+!backend/data/.keep
+frontend/data
+!frontend/data/.keep
+frontend.jsexe
+frontend/frontend.jsexe
+frontend.jsexe.assets
+static/result
+result

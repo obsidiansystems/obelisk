@@ -55,6 +55,7 @@ in rec {
 
     reflex-dom = src + "/deps/reflex-dom/reflex-dom";
     reflex-dom-core = src + "/deps/reflex-dom/reflex-dom-core";
+    chrome-test-utils = src + "/deps/reflex-dom/chrome-test-utils";
   };
 
   extraCabalProject = [

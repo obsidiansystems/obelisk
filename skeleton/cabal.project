@@ -1,0 +1,28 @@
+packages:
+  backend
+  common
+  frontend
+
+optional-packages:
+  frontend/js
+  frontend/wasm
+  static/generated
+  static/generated/custom
+
+optional-packages:
+  deps/obelisk/lib/*
+  deps/obelisk/lib/*/*
+
+optional-packages:
+  deps/obelisk/deps/reflex-dom/*
+
+multi-repl: True
+
+
+
+if !(arch(javascript) || arch(wasm32))
+  package reflex-dom
+    flags: +use-warp -webkit2gtk
+
+if arch(wasm32)
+  shared: True

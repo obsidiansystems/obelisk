@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+output="${1:?Usage: static/generate <output-path>}"
+
+nix-build "$(dirname "$0")" -o "$output"
