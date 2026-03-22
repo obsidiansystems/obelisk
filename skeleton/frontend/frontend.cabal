@@ -151,8 +151,7 @@ library
     if !(arch(javascript) || arch(wasm32))
       cpp-options:      -DNOT_REPL
       other-modules:    Paths_frontend
-      build-depends:    directory
-                      , file-embed
+      build-depends:    file-embed
 
     -- Directories containing source files.
     hs-source-dirs:   src

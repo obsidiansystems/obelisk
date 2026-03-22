@@ -31,7 +31,8 @@ main :: IO ()
 main = defaultMainWithHooks simpleUserHooks
   { buildHook = \pd lbi hooks flags -> do
       envArgs <- crossCabalArgs
-      let extraFlags = optLevelFlags (withOptimization lbi) <> envArgs
+      let optFlags = optLevelFlags (withOptimization lbi)
+          extraFlags = optFlags <> envArgs
       resultVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
       _ <- forkIO $ do
         result <- try (buildFrontendWithWasm extraFlags)
@@ -45,7 +46,7 @@ main = defaultMainWithHooks simpleUserHooks
           exitFailure
         Right () -> do
           hPutStrLn stderr "[Setup] WASM frontend build complete."
-          assembleAndLinkFrontend
+          assembleAndLinkFrontend optFlags
   }
 
 -- | Find the wasm32 cross cabal: either the @wasm32-unknown-wasi@ wrapper
@@ -92,8 +93,8 @@ buildFrontendWithWasm extraFlags = do
   callInRoot wasmCabal (mkArgs (["build", "exe:frontend", "--builddir=" <> distWasm] <> extraFlags))
 
 -- | Assemble the jsexe directory and symlink it into @frontend\/data\/@.
-assembleAndLinkFrontend :: IO ()
-assembleAndLinkFrontend = do
+assembleAndLinkFrontend :: [String] -> IO ()
+assembleAndLinkFrontend extraFlags = do
   projectRoot <- findProjectRoot
   (wasmCabal, mkArgs) <- findWasmCabal
   let distWasm = projectRoot </> "dist-wasm"
@@ -103,7 +104,7 @@ assembleAndLinkFrontend = do
 
   -- Find the compiled .wasm binary
   binPathRaw <- readCreateProcess
-    (inRoot wasmCabal (mkArgs ["list-bin", "frontend", "--builddir=" <> distWasm])) ""
+    (inRoot wasmCabal (mkArgs (["list-bin", "frontend", "--builddir=" <> distWasm] <> extraFlags))) ""
   let wasmBin = strip binPathRaw
 
   -- Create jsexe assembly directory

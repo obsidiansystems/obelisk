@@ -17,8 +17,13 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   exit 0
 fi
 
-# Kill the backend process on exit.
-trap 'kill "$PID" 2>/dev/null' EXIT
+# Kill all child processes on exit.
+cleanup() {
+  kill "$PID" 2>/dev/null || true
+  kill "$INOTIFY_PID" 2>/dev/null || true
+  kill "$READ_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 restart() {
   kill "$PID" 2>/dev/null || true

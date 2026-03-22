@@ -162,7 +162,6 @@ library
                       --
                     , directory
                     , file-embed
-                    , filepath
                     , obelisk-backend
 
     -- Directories containing source files.

@@ -13,7 +13,9 @@ custom-setup
 
 library
     build-depends:      base
+                        --
                       , ghc-prim
+                      , obelisk-setup
                       , text
 
     hs-source-dirs:     src

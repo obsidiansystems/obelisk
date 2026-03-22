@@ -52,11 +52,13 @@ symlink target linkName = do
 crossCabalArgs :: IO [String]
 crossCabalArgs = maybe [] words <$> lookupEnv "OBELISK_CROSS_CABAL_ARGS"
 
--- | Map a Cabal 'OptimisationLevel' to @--ghc-options@ flags for cross cabal.
+-- | Map a Cabal 'OptimisationLevel' to cabal-level optimization flags.
+-- Uses @-O@ rather than @--ghc-options=-O@ so that cabal's build directory
+-- layout (e.g. @noopt/@) matches the optimization level.
 optLevelFlags :: OptimisationLevel -> [String]
-optLevelFlags NoOptimisation      = ["--ghc-options=-O0"]
-optLevelFlags NormalOptimisation   = ["--ghc-options=-O1"]
-optLevelFlags MaximumOptimisation  = ["--ghc-options=-O2"]
+optLevelFlags NoOptimisation      = ["-O0"]
+optLevelFlags NormalOptimisation   = ["-O1"]
+optLevelFlags MaximumOptimisation  = ["-O2"]
 
 -- | Strip leading and trailing whitespace.
 strip :: String -> String

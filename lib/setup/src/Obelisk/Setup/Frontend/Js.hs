@@ -26,7 +26,8 @@ main :: IO ()
 main = defaultMainWithHooks simpleUserHooks
   { buildHook = \pd lbi hooks flags -> do
       envArgs <- crossCabalArgs
-      let extraFlags = optLevelFlags (withOptimization lbi) <> envArgs
+      let optFlags = optLevelFlags (withOptimization lbi)
+          extraFlags = optFlags <> envArgs
       resultVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
       _ <- forkIO $ do
         result <- try (buildFrontendWithGhcjs extraFlags)
@@ -40,7 +41,7 @@ main = defaultMainWithHooks simpleUserHooks
           exitFailure
         Right () -> do
           hPutStrLn stderr "[Setup] GHCJS frontend build complete."
-          linkFrontendAssets
+          linkFrontendAssets optFlags
   }
 
 findGhcjsCabal :: IO (String, [String] -> [String])
@@ -73,8 +74,8 @@ buildFrontendWithGhcjs extraFlags = do
   hPutStrLn stderr "[Setup] Building frontend with GHCJS..."
   callInRoot ghcjsCabal (mkArgs (["build", "exe:frontend", "--builddir=" <> distJs] <> extraFlags))
 
-linkFrontendAssets :: IO ()
-linkFrontendAssets = do
+linkFrontendAssets :: [String] -> IO ()
+linkFrontendAssets extraFlags = do
   projectRoot <- findProjectRoot
   (ghcjsCabal, mkArgs) <- findGhcjsCabal
   let dataDir = projectRoot </> "frontend" </> "data"
@@ -84,7 +85,7 @@ linkFrontendAssets = do
 
   let inRoot cmd args = (proc cmd args) { cwd = Just projectRoot }
 
-  binPathRaw <- readCreateProcess (inRoot ghcjsCabal (mkArgs ["list-bin", "frontend", "--builddir=" <> distJs])) ""
+  binPathRaw <- readCreateProcess (inRoot ghcjsCabal (mkArgs (["list-bin", "frontend", "--builddir=" <> distJs] <> extraFlags))) ""
   let binPath = strip binPathRaw
       jsexeDir = binPath <> ".jsexe"
 

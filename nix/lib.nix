@@ -112,19 +112,24 @@ in rec {
   # at both build time (preBuild) and in the installed output (postInstall).
   frontendDataOverride = { static ? null, compressedStatic ? null }:
     ({ config, lib, pkgs, ... }:
-      let dataDir = config.packages.frontend.package.dataDir;
+      let optional = mkOptionalPackages { inherit config lib; };
+          dataDir = if config.packages ? frontend
+            then config.packages.frontend.package.dataDir
+            else "";
       in {
-        packages.frontend.components.library.preBuild = lib.optionalString (dataDir != "") ''
-          mkdir -p ${dataDir}
-          ${if static != null && static != {} then ''ln -sf ${static} ${dataDir}/static'' else ""}
-          ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} ${dataDir}/static.assets'' else ""}
-        '';
-        packages.frontend.components.library.postInstall = ''
-          for datadir in $data/share/*/*/frontend-*; do
-            ${if static != null && static != {} then ''ln -sf ${static} "$datadir/static"'' else ""}
-            ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} "$datadir/static.assets"'' else ""}
-          done
-        '';
+        packages = optional {
+          frontend.components.library.preBuild = lib.optionalString (dataDir != "") ''
+            mkdir -p ${dataDir}
+            ${if static != null && static != {} then ''ln -sf ${static} ${dataDir}/static'' else ""}
+            ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} ${dataDir}/static.assets'' else ""}
+          '';
+          frontend.components.library.postInstall = ''
+            for datadir in $data/share/*/*/frontend-*; do
+              ${if static != null && static != {} then ''ln -sf ${static} "$datadir/static"'' else ""}
+              ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} "$datadir/static.assets"'' else ""}
+            done
+          '';
+        };
       }
     );
 
@@ -132,23 +137,28 @@ in rec {
   # at both build time (preBuild) and in the installed output (postInstall).
   backendDataOverride = { static ? null, compressedStatic ? null, frontendJs ? null, compressedFrontendJs ? null }:
     ({ config, lib, pkgs, ... }:
-      let dataDir = config.packages.backend.package.dataDir;
+      let optional = mkOptionalPackages { inherit config lib; };
+          dataDir = if config.packages ? backend
+            then config.packages.backend.package.dataDir
+            else "";
       in {
-        packages.backend.components.library.preBuild = lib.optionalString (dataDir != "") ''
-          mkdir -p ${dataDir}
-          ${if static != null && static != {} then ''ln -sf ${static} ${dataDir}/static'' else ""}
-          ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} ${dataDir}/static.assets'' else ""}
-          ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs} ${dataDir}/frontend.jsexe'' else ""}
-          ${if compressedFrontendJs != null && compressedFrontendJs != {} then ''ln -sf ${compressedFrontendJs} ${dataDir}/frontend.jsexe.assets'' else ""}
-        '';
-        packages.backend.components.library.postInstall = ''
-          for datadir in $data/share/*/*/backend-*; do
-            ${if static != null && static != {} then ''ln -sf ${static} "$datadir/static"'' else ""}
-            ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} "$datadir/static.assets"'' else ""}
-            ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs} "$datadir/frontend.jsexe"'' else ""}
-            ${if compressedFrontendJs != null && compressedFrontendJs != {} then ''ln -sf ${compressedFrontendJs} "$datadir/frontend.jsexe.assets"'' else ""}
-          done
-        '';
+        packages = optional {
+          backend.components.library.preBuild = lib.optionalString (dataDir != "") ''
+            mkdir -p ${dataDir}
+            ${if static != null && static != {} then ''ln -sf ${static} ${dataDir}/static'' else ""}
+            ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} ${dataDir}/static.assets'' else ""}
+            ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs} ${dataDir}/frontend.jsexe'' else ""}
+            ${if compressedFrontendJs != null && compressedFrontendJs != {} then ''ln -sf ${compressedFrontendJs} ${dataDir}/frontend.jsexe.assets'' else ""}
+          '';
+          backend.components.library.postInstall = ''
+            for datadir in $data/share/*/*/backend-*; do
+              ${if static != null && static != {} then ''ln -sf ${static} "$datadir/static"'' else ""}
+              ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} "$datadir/static.assets"'' else ""}
+              ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs} "$datadir/frontend.jsexe"'' else ""}
+              ${if compressedFrontendJs != null && compressedFrontendJs != {} then ''ln -sf ${compressedFrontendJs} "$datadir/frontend.jsexe.assets"'' else ""}
+            done
+          '';
+        };
       }
     );
 

@@ -49,8 +49,9 @@ custom-setup
     obelisk-setup
 
 library
-    build-depends:      frontend
-                      , base
+    build-depends:      base
+                        --
+                      , frontend
 
     reexported-modules: Frontend
 
