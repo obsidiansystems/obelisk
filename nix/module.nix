@@ -263,17 +263,20 @@ in {
         runtimeInputs = [ pkgs.inotify-tools ];
         text = builtins.readFile ../scripts/ob-run;
       })
+      (pkgs.writeShellApplication {
+        name = "ob-repl";
+        text = builtins.readFile ../scripts/ob-repl;
+      })
     ];
 
     shell.shellHook = ''
       export OBELISK_WASI_SHIM="${obeliskLib.wasi-shim}"
 
       echo ""
-      echo "  ob-run [-- CABAL_ARGS...]"
-      echo "           Watches backend/, common/, and frontend/ for .hs, .cabal,"
-      echo "           and .project changes, then rebuilds and restarts the backend."
-      echo "           Disables optimizations for faster rebuilds. Press Enter to force a restart."
-      echo "           Run 'ob-run -h' for details."
+      echo "  ob-run  [-- CABAL_ARGS...]  — Rebuild and restart backend on source changes."
+      echo "  ob-repl [TARGETS...]        — GHCi REPL (defaults to lib:backend lib:common lib:frontend)."
+      echo ""
+      echo "  Both disable optimizations for faster builds. Run -h for details."
       echo ""
     '';
   };
