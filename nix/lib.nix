@@ -32,7 +32,7 @@ let src = ../.;
 
     serverModule = ./server.nix;
 
-in {
+in rec {
   inherit src obelisk-asset-manifest-generate wasi-shim assets docs serverModule;
 
   frontendJs = config:
@@ -127,25 +127,6 @@ in {
       }
     );
 
-  # Assemble a flat deployment directory for the given frontend target.
-  # Contains the backend binary, compressed static/frontend assets.
-  mkServerExe = { proj, target }:
-    let targetProj = proj.override { obelisk.frontend.target = target; };
-        backendExe = targetProj.hsPkgs.backend.components.exes.backend;
-        compressedStatic = targetProj.config.obelisk.static.compressed;
-        compressedFrontend = targetProj.config.obelisk.frontend.${target}.compressed;
-    in pkgs.runCommand "server-exe" {} ''
-      mkdir $out
-      set -eux
-      ln -s ${backendExe}/bin/* $out/
-      ${pkgs.lib.optionalString (compressedStatic != null) ''
-        ln -s ${compressedStatic} $out/static.assets
-      ''}
-      ${pkgs.lib.optionalString (compressedFrontend != null) ''
-        ln -s ${compressedFrontend} $out/frontend.jsexe.assets
-      ''}
-    '';
-
   # Symlink static assets and frontend jsexe into backend's dataDir
   # at both build time (preBuild) and in the installed output (postInstall).
   backendDataOverride = { static ? null, compressedStatic ? null, frontendJs ? null, compressedFrontendJs ? null }:
@@ -169,5 +150,45 @@ in {
         '';
       }
     );
+
+  # Assemble a flat deployment directory for the given frontend target.
+  # Contains the backend binary, compressed static/frontend assets.
+  mkServerExe = { proj, target }:
+    let targetProj = proj.override { obelisk.frontend.target = target; };
+        backendExe = targetProj.hsPkgs.backend.components.exes.backend;
+        compressedStatic = targetProj.config.obelisk.static.compressed;
+        compressedFrontend = targetProj.config.obelisk.frontend.${target}.compressed;
+    in pkgs.runCommand "server-exe" {} ''
+      mkdir $out
+      set -eux
+      ln -s ${backendExe}/bin/* $out/
+      ${pkgs.lib.optionalString (compressedStatic != null) ''
+        ln -s ${compressedStatic} $out/static.assets
+      ''}
+      ${pkgs.lib.optionalString (compressedFrontend != null) ''
+        ln -s ${compressedFrontend} $out/frontend.jsexe.assets
+      ''}
+    '';
+
+  # Build an OCI container image (podman/docker) for the given frontend target.
+  mkContainerImage = { proj, target, name ? proj.config.name, tag ? "latest" }:
+    let serverExe = mkServerExe { inherit proj target; };
+        appDir = pkgs.runCommand "app-dir" {} ''
+          mkdir -p $out/app
+          ln -s ${serverExe}/* $out/app/
+        '';
+    in pkgs.dockerTools.buildLayeredImage {
+      inherit name tag;
+      contents = [ appDir pkgs.cacert pkgs.gnutar pkgs.glibcLocales ];
+      config = {
+        Cmd = [ "/app/backend" "--port=8000" ];
+        ExposedPorts = { "8000/tcp" = {}; };
+        WorkingDir = "/app";
+        Env = [
+          "LANG=en_US.UTF-8"
+          "LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive"
+        ];
+      };
+    };
 
 }

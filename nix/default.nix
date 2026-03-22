@@ -31,6 +31,11 @@ in lib // {
 
       inherit serverExe;
 
+      containerImage = {
+        wasm = lib.mkContainerImage { inherit proj; target = "wasm"; };
+        js = lib.mkContainerImage { inherit proj; target = "js"; };
+      };
+
       server = { exe ? serverExe.wasm, ... }@args:
         let nixos = import (pkgs.path + /nixos);
         in nixos {
