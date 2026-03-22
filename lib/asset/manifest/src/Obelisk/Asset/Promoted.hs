@@ -5,6 +5,7 @@
 
 module Obelisk.Asset.Promoted
   ( writeStaticProject
+  , writeStaticModule
   , declareStatic
   , StaticConfig (..)
   ) where
@@ -15,7 +16,6 @@ import Data.Foldable
 import Language.Haskell.TH (pprint)
 import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Datatype.TyVarBndr (kindedTVFlag)
-import GHC.TypeLits
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Control.Monad.Trans.Writer
@@ -24,7 +24,14 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.List as L
+import qualified Data.Text.IO as T
+import System.Directory (createDirectoryIfMissing)
 import Obelisk.Asset.Cabal (writeCabalProject, SimplePkg(..))
+
+#if !MIN_VERSION_base(4,21,0)
+import GHC.TypeLits
+#endif
 
 data StaticConfig = StaticConfig
   { _staticConfig_packageName :: Text --TODO: Better type
@@ -41,6 +48,17 @@ writeStaticProject paths target cfg = do
     , _simplePkg_moduleContents = modContents
     , _simplePkg_dependencies = ["base", "ghc-prim", "text"]
     }
+
+-- | Write just the Haskell module file into an existing package directory,
+-- without generating a .cabal file.
+writeStaticModule :: Map FilePath FilePath -> FilePath -> Text -> IO ()
+writeStaticModule paths target moduleName = do
+  modContents <- staticModuleFile moduleName paths
+  let (modName', moduleDirPath) = case L.uncons (reverse $ T.splitOn "." moduleName) of
+        Nothing -> error $ "writeStaticModule: invalid module name " <> T.unpack moduleName
+        Just (name, parents) -> (name, target </> "src" </> T.unpack (T.intercalate "/" $ reverse parents))
+  createDirectoryIfMissing True moduleDirPath
+  T.writeFile (moduleDirPath </> T.unpack modName' <.> "hs") modContents
 
 staticModuleFile :: Text -> Map FilePath FilePath -> IO Text
 staticModuleFile moduleName paths = do
@@ -91,7 +109,13 @@ staticClass = do
   let n x = Name (OccName x) NameS
       className = n "StaticFile"
       methodName = n "staticPath"
-      cls = ClassD [] className [kindedTVFlag (n "s") breq (ConT ''Symbol)] [] [SigD methodName (ConT ''Text)]
+#if MIN_VERSION_base(4,21,0)
+      -- GHC >= 9.14 pprint emits GHC.Internal.Types.Symbol; use explicit GHC.Types name
+      symbol = Name (OccName "Symbol") (NameQ (ModName "GHC.Types"))
+#else
+      symbol = ''Symbol
+#endif
+      cls = ClassD [] className [kindedTVFlag (n "s") breq (ConT symbol)] [] [SigD methodName (ConT ''Text)]
 
 -- Can replace with Language.Haskell.TH.Datatype.TyVarBndr.BndrReq once support is dropped for th-abstractions < 0.6
 #if MIN_VERSION_template_haskell(2,21,0)

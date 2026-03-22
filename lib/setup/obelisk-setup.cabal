@@ -7,16 +7,21 @@ library
   default-language: Haskell2010
   hs-source-dirs:   src
   exposed-modules:
-    Obelisk.Setup.Backend
-    Obelisk.Setup.Frontend
-    Obelisk.Setup.Manifest
     Obelisk.Setup.Utils
   ghc-options: -Wall
   build-depends:
     base >= 4.7 && < 5,
     Cabal >= 3.0 && < 4,
-    containers,
-    deepseq,
     directory >= 1.3.6 && < 2,
-    filepath >= 1.4 && < 2,
-    process >= 1.6 && < 2
+    filepath >= 1.4 && < 2
+
+  if !(arch(javascript) || arch(wasm32))
+    exposed-modules:
+      Obelisk.Setup.Backend
+      Obelisk.Setup.Frontend
+      Obelisk.Setup.Static
+    build-depends:
+      containers,
+      obelisk-asset-manifest,
+      process >= 1.6 && < 2,
+      text

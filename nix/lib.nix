@@ -18,25 +18,8 @@ let src = ../.;
     mkOptionalPackages = { config, lib }:
       lib.filterAttrs (name: _: config.packages ? ${name});
 
-    # Generate the Obelisk.Generated.Static Haskell module from static assets.
-    obelisk-generated-static-manifest = static:
-      obelisk-asset-manifest.nixpkgs.runCommand "obelisk-generated-static" {
-        LANG = "en_US.UTF-8";
-        LOCALE_ARCHIVE = "${obelisk-asset-manifest.nixpkgs.glibcLocales}/lib/locale/locale-archive";
-      } ''
-        ${obelisk-asset-manifest-generate} ${static} $out obelisk-generated-static Obelisk.Generated.Static $out/files
-        sed -i -e 's/GHC\.Internal\.Types/GHC.Types/g' $out/src/Obelisk/Generated/Static.hs
-      '';
-
 in {
-  inherit src obelisk-asset-manifest obelisk-asset-manifest-generate;
-
-  # Hackage overlay entry for the generated static-asset manifest package.
-  obeliskGeneratedStaticOverlay = static: {
-    name = "obelisk-generated-static";
-    version = "0";
-    src = obelisk-generated-static-manifest static;
-  };
+  inherit src;
 
   frontendJs = config:
     config.haskell-nix.project.projectCross.ghcjs.hsPkgs.frontend.components.exes.frontend;
@@ -63,6 +46,18 @@ in {
 
   inherit mkOptionalPackages;
 
+  # Generate Obelisk.Generated.Static module before building obelisk-generated-static.
+  # Needed because build-type is overridden to Simple (no Setup.hs runs in nix).
+  staticManifestOverride = { static }: { config, lib, ... }:
+    let optional = mkOptionalPackages { inherit config lib; };
+    in {
+      packages = optional {
+        obelisk-generated-static.components.library.preBuild = lib.optionalString (static != null) ''
+          ${obelisk-asset-manifest-generate} --module-only ${static} . Obelisk.Generated.Static data/static
+        '';
+      };
+    };
+
   # Force Simple build type so haskell.nix doesn't run a Setup.hs configure step.
   buildTypeOverride = { config, lib, ... }:
     let optional = mkOptionalPackages { inherit config lib; };
@@ -71,7 +66,7 @@ in {
         backend.package.buildType = lib.mkOverride 75 "Simple";
         frontend.package.buildType = lib.mkOverride 75 "Simple";
         frontend-custom.package.buildType = lib.mkOverride 75 "Simple";
-        static-manifest.package.buildType = lib.mkOverride 75 "Simple";
+        obelisk-generated-static.package.buildType = lib.mkOverride 75 "Simple";
       };
     };
 

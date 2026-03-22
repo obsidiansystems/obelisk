@@ -16,11 +16,11 @@ Pre-build hook that symlinks frontend assets into `backend/data/`:
 Pre-build hook that cross-compiles the frontend with GHCJS (in a background thread), then post-build symlinks the output into `frontend/data/`:
 
 - GHCJS-compiled `frontend.jsexe` -> `frontend/data/frontend.jsexe`
-- `static/manifest/data/static` -> `frontend/data/static`
+- `static/generated/data/static` -> `frontend/data/static`
 
 Looks for `javascript-unknown-ghcjs` or `javascript-unknown-ghcjs-cabal` on `$PATH` (provided by the nix shell).
 
-### `Obelisk.Setup.Manifest`
+### `Obelisk.Setup.Static`
 
 Pre-build hook that generates static asset manifests:
 
@@ -55,4 +55,4 @@ Then write a one-line `Setup.hs`:
 import Obelisk.Setup.Backend (main)
 ```
 
-Replace `Backend` with `Frontend` or `Manifest` as appropriate.
+Replace `Backend` with `Frontend` or `Static` as appropriate.

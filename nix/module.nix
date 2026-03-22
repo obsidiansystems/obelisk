@@ -35,16 +35,12 @@ in {
     # source-repository-packages disabled; using optional-packages in cabal.project instead.
     # inherit (obeliskLib) source-repository-packages;
 
-    hackage-overlays =
-      if static != null
-      then [ (obeliskLib.obeliskGeneratedStaticOverlay static) ]
-      else [];
-
     overrides = [
       obeliskLib.buildTypeOverride
       obeliskLib.jsexeOverride
       (obeliskLib.frontendDataOverride { inherit static; })
       (obeliskLib.backendDataOverride { inherit static; inherit frontendJs; })
+      (obeliskLib.staticManifestOverride { inherit static; })
     ];
   };
 }
