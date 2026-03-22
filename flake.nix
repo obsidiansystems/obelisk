@@ -10,7 +10,9 @@
       );
 
       packages = eachSystem (system:
-        import ./nix/docs.nix { inherit system; }
+        (import ./nix/docs.nix { inherit system; }) // {
+          release = import ./release.nix { inherit system; };
+        }
       );
     };
 

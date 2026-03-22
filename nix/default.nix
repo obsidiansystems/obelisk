@@ -24,6 +24,9 @@ in lib // {
           js = lib.mkServerExe { inherit proj; target = "js"; };
         };
     in proj // {
+      config = eval.config;
+      nixpkgs = eval.nixpkgs;
+
       exe = {
         wasm = (proj.override { obelisk.frontend.target = "wasm"; }).hsPkgs.backend.components.exes.backend;
         js = (proj.override { obelisk.frontend.target = "js"; }).hsPkgs.backend.components.exes.backend;
