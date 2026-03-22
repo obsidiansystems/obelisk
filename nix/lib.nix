@@ -28,8 +28,12 @@ let src = ../.;
 
     docs = import ./docs.nix { inherit system; };
 
+    pkgs = import ../deps/nix-haskell/pins/nixpkgs { inherit system; };
+
+    serverModule = ./server.nix;
+
 in {
-  inherit src obelisk-asset-manifest-generate wasi-shim assets docs;
+  inherit src obelisk-asset-manifest-generate wasi-shim assets docs serverModule;
 
   frontendJs = config:
     config.haskell-nix.project.projectCross.ghcjs.hsPkgs.frontend.components.exes.frontend;
@@ -122,6 +126,25 @@ in {
         '';
       }
     );
+
+  # Assemble a flat deployment directory for the given frontend target.
+  # Contains the backend binary, compressed static/frontend assets.
+  mkServerExe = { proj, target }:
+    let targetProj = proj.override { obelisk.frontend.target = target; };
+        backendExe = targetProj.hsPkgs.backend.components.exes.backend;
+        compressedStatic = targetProj.config.obelisk.static.compressed;
+        compressedFrontend = targetProj.config.obelisk.frontend.${target}.compressed;
+    in pkgs.runCommand "server-exe" {} ''
+      mkdir $out
+      set -eux
+      ln -s ${backendExe}/bin/* $out/
+      ${pkgs.lib.optionalString (compressedStatic != null) ''
+        ln -s ${compressedStatic} $out/static.assets
+      ''}
+      ${pkgs.lib.optionalString (compressedFrontend != null) ''
+        ln -s ${compressedFrontend} $out/frontend.jsexe.assets
+      ''}
+    '';
 
   # Symlink static assets and frontend jsexe into backend's dataDir
   # at both build time (preBuild) and in the installed output (postInstall).

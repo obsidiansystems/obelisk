@@ -8,19 +8,37 @@ let lib = import ./lib.nix { inherit system; };
 
 in lib // {
   inherit module;
-  inherit (lib) extraCabalProject;
+  inherit (lib) extraCabalProject serverModule;
 
   project = userModule:
-    let proj = (nix-haskell {
+    let eval = nix-haskell {
           imports = [
             module
             userModule
           ];
-        }).haskell-nix.project;
+        };
+        proj = eval.haskell-nix.project;
+        pkgs = eval.nixpkgs;
+        serverExe = {
+          wasm = lib.mkServerExe { inherit proj; target = "wasm"; };
+          js = lib.mkServerExe { inherit proj; target = "js"; };
+        };
     in proj // {
       exe = {
         wasm = (proj.override { obelisk.frontend.target = "wasm"; }).hsPkgs.backend.components.exes.backend;
         js = (proj.override { obelisk.frontend.target = "js"; }).hsPkgs.backend.components.exes.backend;
       };
+
+      inherit serverExe;
+
+      server = { exe ? serverExe.wasm, ... }@args:
+        let nixos = import (pkgs.path + /nixos);
+        in nixos {
+          inherit system;
+          configuration = {
+            imports = [ lib.serverModule ];
+            services.obelisk = { enable = true; } // args;
+          };
+        };
     };
 }
