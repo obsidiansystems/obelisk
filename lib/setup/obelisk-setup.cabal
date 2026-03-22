@@ -18,7 +18,8 @@ library
   if !(arch(javascript) || arch(wasm32))
     exposed-modules:
       Obelisk.Setup.Backend
-      Obelisk.Setup.Frontend
+      Obelisk.Setup.Frontend.Js
+      Obelisk.Setup.Frontend.Wasm
       Obelisk.Setup.Static
     build-depends:
       containers,

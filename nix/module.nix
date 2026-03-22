@@ -54,8 +54,9 @@ in {
 
       compressed = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
-        default =
-          if hashedStatic != null && config.obelisk.static.compress
+        # Skip in nix-shell to avoid triggering asset generation.
+        default = if lib.inNixShell then null
+          else if hashedStatic != null && config.obelisk.static.compress
             then assets.mkAssets hashedStatic
             else hashedStatic;
         defaultText = lib.literalExpression "assets.mkAssets hashedStatic";
@@ -72,7 +73,8 @@ in {
     frontend.js = {
       package = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
-        default = obeliskLib.frontendJs config;
+        # Skip in nix-shell to avoid triggering cross-compilation builds.
+        default = if lib.inNixShell then null else obeliskLib.frontendJs config;
         defaultText = lib.literalExpression "obeliskLib.frontendJs config";
         description = "GHCJS-compiled frontend derivation.";
       };
@@ -157,7 +159,8 @@ in {
     frontend.wasm = {
       package = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
-        default = obeliskLib.frontendWasm config;
+        # Skip in nix-shell to avoid triggering cross-compilation builds.
+        default = if lib.inNixShell then null else obeliskLib.frontendWasm config;
         defaultText = lib.literalExpression "obeliskLib.frontendWasm config";
         description = "WASM-compiled frontend derivation.";
       };
@@ -253,5 +256,9 @@ in {
       })
       (obeliskLib.staticManifestOverride { static = rawStatic; })
     ];
+
+    shell.shellHook = ''
+      export OBELISK_WASI_SHIM="${obeliskLib.wasi-shim}"
+    '';
   };
 }

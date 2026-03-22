@@ -1,7 +1,7 @@
 -- | Frontend Setup.hs hook. Cross-compiles the frontend with GHCJS in a
 -- background thread during pre-build, then symlinks the output and static
 -- assets into @frontend\/data\/@ after build completes.
-module Obelisk.Setup.Frontend (main) where
+module Obelisk.Setup.Frontend.Js (main) where
 
 import Distribution.Simple
 import System.Directory

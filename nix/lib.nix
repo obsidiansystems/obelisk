@@ -79,7 +79,8 @@ in {
       packages = optional {
         backend.package.buildType = lib.mkOverride 75 "Simple";
         frontend.package.buildType = lib.mkOverride 75 "Simple";
-        frontend-custom.package.buildType = lib.mkOverride 75 "Simple";
+        frontend-js.package.buildType = lib.mkOverride 75 "Simple";
+        frontend-wasm.package.buildType = lib.mkOverride 75 "Simple";
         obelisk-generated-static.package.buildType = lib.mkOverride 75 "Simple";
         obelisk-generated-static-custom.package.buildType = lib.mkOverride 75 "Simple";
       };
