@@ -13,16 +13,25 @@ let src = ../.;
     obelisk-asset-manifest-generate =
       "${obelisk-asset-manifest.haskell-nix.project.hsPkgs.obelisk-asset-manifest.components.exes.obelisk-asset-manifest-generate}/bin/obelisk-asset-manifest-generate";
 
+    # Vendored browser WASI shim for WASM frontend.
+    wasi-shim = builtins.fetchTarball {
+      url = "https://registry.npmjs.org/@bjorn3/browser_wasi_shim/-/browser_wasi_shim-0.3.0.tgz";
+      sha256 = "0j8xls87rl2gjr12z4k6jsmc65idrbpilcg9277mlhcrg1l9qdsz";
+    };
+
     # Keep only overrides whose package name exists in the project,
     # so overrides for absent packages are silently skipped.
     mkOptionalPackages = { config, lib }:
       lib.filterAttrs (name: _: config.packages ? ${name});
 
 in {
-  inherit src obelisk-asset-manifest-generate;
+  inherit src obelisk-asset-manifest-generate wasi-shim;
 
   frontendJs = config:
     config.haskell-nix.project.projectCross.ghcjs.hsPkgs.frontend.components.exes.frontend;
+
+  frontendWasm = config:
+    config.haskell-nix.project.projectCross.wasi32.hsPkgs.frontend.components.exes.frontend;
 
   source-repository-packages = {
     obelisk-asset-manifest = src + "/lib/asset/manifest";
@@ -119,14 +128,14 @@ in {
           mkdir -p ${dataDir}
           ${if static != null && static != {} then ''ln -sf ${static} ${dataDir}/static'' else ""}
           ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} ${dataDir}/static.assets'' else ""}
-          ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs}/bin/frontend.jsexe ${dataDir}/frontend.jsexe'' else ""}
+          ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs} ${dataDir}/frontend.jsexe'' else ""}
           ${if compressedFrontendJs != null && compressedFrontendJs != {} then ''ln -sf ${compressedFrontendJs} ${dataDir}/frontend.jsexe.assets'' else ""}
         '';
         packages.backend.components.library.postInstall = ''
           for datadir in $data/share/*/*/backend-*; do
             ${if static != null && static != {} then ''ln -sf ${static} "$datadir/static"'' else ""}
             ${if compressedStatic != null && compressedStatic != {} then ''ln -sf ${compressedStatic} "$datadir/static.assets"'' else ""}
-            ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs}/bin/frontend.jsexe "$datadir/frontend.jsexe"'' else ""}
+            ${if frontendJs != null && frontendJs != {} then ''ln -sf ${frontendJs} "$datadir/frontend.jsexe"'' else ""}
             ${if compressedFrontendJs != null && compressedFrontendJs != {} then ''ln -sf ${compressedFrontendJs} "$datadir/frontend.jsexe.assets"'' else ""}
           done
         '';

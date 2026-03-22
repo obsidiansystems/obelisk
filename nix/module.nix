@@ -1,7 +1,6 @@
-# nix-haskell module that wires obelisk overrides and hackage overlays
-# into a project. Declares `obelisk.static` and `obelisk.frontend.js` options;
-# when set, generates hackage overlay and wires assets into frontend/backend data dirs.
-# frontend.js defaults to the project's GHCJS-cross-compiled frontend.
+# nix-haskell module that wires obelisk overrides into a project.
+# Declares `obelisk.static`, `obelisk.frontend.js`, and `obelisk.frontend.wasm` options;
+# `obelisk.frontend.target` selects which pipeline feeds the backend.
 { config, lib, pkgs, system, nix-haskell-patches, ... }:
 
 let obeliskLib = import ./lib.nix { inherit system; };
@@ -24,7 +23,15 @@ let obeliskLib = import ./lib.nix { inherit system; };
 
     frontendJs = config.obelisk.frontend.js.package;
 
-    compressedFrontendJs = config.obelisk.frontend.js.compressed;
+    frontendWasm = config.obelisk.frontend.wasm.package;
+
+    # Select which frontend pipeline feeds the backend based on target.
+    frontendOutput =
+      if config.obelisk.frontend.target == "wasm"
+      then { inherit (config.obelisk.frontend.wasm) optimized compressed; }
+      else { inherit (config.obelisk.frontend.js) optimized compressed; };
+
+    compressedFrontendJs = frontendOutput.compressed;
 
 in {
   imports = [
@@ -54,6 +61,12 @@ in {
         defaultText = lib.literalExpression "assets.mkAssets hashedStatic";
         description = "Hashed static assets after optional compression. Used by overrides.";
       };
+    };
+
+    frontend.target = lib.mkOption {
+      type = lib.types.enum [ "js" "wasm" ];
+      default = "wasm";
+      description = "Frontend compilation target.";
     };
 
     frontend.js = {
@@ -140,6 +153,87 @@ in {
         description = "Compressed frontend jsexe for obelisk-asset-serve-snap.";
       };
     };
+
+    frontend.wasm = {
+      package = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default = obeliskLib.frontendWasm config;
+        defaultText = lib.literalExpression "obeliskLib.frontendWasm config";
+        description = "WASM-compiled frontend derivation.";
+      };
+
+      optimization = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Whether to run wasm-opt on frontend WASM.";
+        };
+
+        level = lib.mkOption {
+          type = lib.types.enum [ "0" "1" "2" "3" "4" "s" "z" ];
+          default = "2";
+          description = "wasm-opt optimization level (-O).";
+        };
+
+        extraFlags = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [ "-ol" "2" "-s" "1" "--low-memory-unused" "--strip-dwarf" "--converge" ];
+          description = "Extra flags passed to wasm-opt.";
+        };
+      };
+
+      optimized = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default =
+          let opt = config.obelisk.frontend.wasm.optimization;
+              wasmBin = "${frontendWasm}/bin/frontend.wasm";
+              ghc = config.haskell-nix.project.projectCross.wasi32.pkg-set.config.ghc.package;
+              flags = lib.concatStringsSep " " ([ "-all" "-O${opt.level}" ] ++ opt.extraFlags);
+          in if frontendWasm == null then null
+            else pkgs.runCommand "frontend.jsexe.wasm" {
+              nativeBuildInputs = [ pkgs.nodejs pkgs.binaryen pkgs.wasm-tools ];
+            } ''
+              mkdir -p $out
+
+              # Extract JSFFI bindings
+              node $(${ghc}/bin/wasm32-unknown-wasi-ghc --print-libdir)/post-link.mjs \
+                -i ${wasmBin} -o $out/ghc_wasm_jsffi.js
+
+              # Optimize and strip WASM binary
+              ${if opt.enable
+                then ''
+                  wasm-opt ${flags} ${wasmBin} -o $out/frontend.wasm
+                  wasm-tools strip -a $out/frontend.wasm -o $out/frontend.wasm
+                ''
+                else ''cp ${wasmBin} $out/frontend.wasm''}
+
+              # Assemble jsexe directory
+              cp ${./wasm/shim.js} $out/all.js
+              cp ${obeliskLib.wasi-shim}/dist/*.js $out/
+              mv $out/index.js $out/wasi-shim.js
+            '';
+        defaultText = lib.literalExpression "wasm-opt + post-link.mjs";
+        description = "Optimized WASM frontend jsexe directory.";
+      };
+
+      compress = lib.mkOption {
+        type = lib.types.bool;
+        default = config.obelisk.static.compress;
+        description = "Whether to compress frontend WASM with brotli/gzip.";
+      };
+
+      compressed = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default =
+          let jsexe = config.obelisk.frontend.wasm.optimized;
+          in if jsexe == null then null
+            else if config.obelisk.frontend.wasm.compress
+            then assets.mkAssets jsexe
+            else jsexe;
+        defaultText = lib.literalExpression "assets.mkAssets optimized";
+        description = "Compressed WASM frontend for obelisk-asset-serve-snap.";
+      };
+    };
   };
 
   config = {
@@ -151,7 +245,12 @@ in {
       obeliskLib.buildTypeOverride
       obeliskLib.jsexeOverride
       (obeliskLib.frontendDataOverride { static = hashedStatic; compressedStatic = static; })
-      (obeliskLib.backendDataOverride { static = hashedStatic; compressedStatic = static; inherit frontendJs compressedFrontendJs; })
+      (obeliskLib.backendDataOverride {
+        static = hashedStatic;
+        compressedStatic = static;
+        frontendJs = frontendOutput.optimized;
+        inherit compressedFrontendJs;
+      })
       (obeliskLib.staticManifestOverride { static = rawStatic; })
     ];
   };

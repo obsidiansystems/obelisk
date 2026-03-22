@@ -6,8 +6,8 @@ build-type: Simple
 library
   exposed-modules: Obelisk.ExecutableConfig.Lookup, Obelisk.Configs
 
-  if impl(ghcjs) || arch(javascript)
-    hs-source-dirs: src-ghcjs, src
+  if impl(ghcjs) || arch(javascript) || arch(wasm32)
+    hs-source-dirs: src-js, src
     build-depends: ghcjs-dom
   else
     hs-source-dirs: src-other, src

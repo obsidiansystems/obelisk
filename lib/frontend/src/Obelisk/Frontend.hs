@@ -163,19 +163,23 @@ runFrontend
 runFrontend validFullEncoder frontend = do
   let mode = FrontendMode
         { _frontendMode_hydrate =
-#ifdef ghcjs_HOST_OS
+#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
           True
 #else
           False
 #endif
         , _frontendMode_adjustRoute =
-#ifdef ghcjs_HOST_OS
+#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
           False
 #else
           True
 #endif
         }
+#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
+  configs <- Lookup.getConfigs
+#else
   configs <- liftIO Lookup.getConfigs
+#endif
   when (_frontendMode_hydrate mode) removeHTMLConfigs
   -- There's no fundamental reason that adjustRoute needs to control setting the
   -- initial route and *also* the useHash parameter; that's why these are

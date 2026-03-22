@@ -18,8 +18,9 @@ import GHCJS.DOM.HTMLElement (HTMLElement(HTMLElement), getDataset)
 import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
 import GHCJS.DOM.ParentNode (querySelectorAll)
 import GHCJS.DOM.Types (MonadJSM, Node(Node), castTo)
+import Language.Javascript.JSaddle (JSM)
 
-getConfigs :: IO (Map Text ByteString)
+getConfigs :: JSM (Map Text ByteString)
 getConfigs = do
   Just doc <- currentDocument
   Just hd <- getHead doc
@@ -27,7 +28,7 @@ getConfigs = do
   fmap Map.fromList $ for nodes $ \node -> do
     e <- castTo HTMLElement node >>= \case
       Nothing -> error "Found node with data attribute obelisk-executable-config-inject-key that is not an HTMLElement."
-      Just htmlE -> return htmlE
+      Just htmlE -> pure htmlE
     dataset <- getDataset e
     (,)
       -- the key is camelCased: https://html.spec.whatwg.org/multipage/dom.html#dom-dataset
@@ -35,7 +36,7 @@ getConfigs = do
       <*> (fmap decodeOrFail (getInnerHTML e))
   where
     decodeOrFail x = case B64.decode (T.encodeUtf8 x) of
-      Left e -> error ("Obelisk.ExecutableConfig.Lookup.getConfigs: error when decoding base64: " ++ e)
+      Left e -> error ("Obelisk.ExecutableConfig.Lookup.getConfigs: error when decoding base64: " <> e)
       Right x' -> x'
 
 -- | Collect all nodes in the node list.
