@@ -5,11 +5,11 @@ set -euo pipefail
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   echo "Usage: ob-repl [TARGETS...] [-- CABAL_ARGS...]"
   echo ""
-  echo "Starts 'cabal repl' with optimizations disabled and cross builds skipped."
-  echo "TARGETS defaults to 'lib:backend lib:common lib:frontend'. Examples:"
-  echo "  ob-repl                        # repl for backend, common, and frontend"
-  echo "  ob-repl lib:common             # repl for common library only"
-  echo "  ob-repl lib:backend -- -v      # repl for backend with verbose cabal output"
+  echo "  Starts 'cabal repl' with optimizations disabled and cross builds skipped."
+  echo "  TARGETS defaults to 'lib:backend lib:common lib:frontend'. Examples:"
+  echo "    ob-repl                        # repl for backend, common, and frontend"
+  echo "    ob-repl lib:common             # repl for common library only"
+  echo "    ob-repl lib:backend -- -v      # repl for backend with verbose cabal output"
   exit 0
 fi
 

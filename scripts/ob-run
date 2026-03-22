@@ -7,13 +7,13 @@ set -euo pipefail
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   echo "Usage: ob-run [-- CABAL_ARGS...]"
   echo ""
-  echo "Runs 'cabal run backend' with optimizations disabled and restarts it"
-  echo "whenever .hs, .cabal, or .project files change in backend/, common/,"
-  echo "or frontend/. Disables -O2, -fspecialise, -fexpose-all-unfoldings,"
-  echo "-fspecialise-aggressively, -flate-specialise, and -fcross-module-specialise"
-  echo "for faster rebuilds."
-  echo "Extra arguments after -- are passed through to cabal run."
-  echo "Press Enter to force a restart."
+  echo "  Runs 'cabal run backend' with optimizations disabled and restarts it"
+  echo "  whenever .hs, .cabal, or .project files change in backend/, common/,"
+  echo "  or frontend/. Disables -O2, -fspecialise, -fexpose-all-unfoldings,"
+  echo "  -fspecialise-aggressively, -flate-specialise, and -fcross-module-specialise"
+  echo "  for faster rebuilds."
+  echo "  Extra arguments after -- are passed through to cabal run."
+  echo "  Press Enter to force a restart."
   exit 0
 fi
 

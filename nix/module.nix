@@ -273,10 +273,13 @@ in {
       export OBELISK_WASI_SHIM="${obeliskLib.wasi-shim}"
 
       echo ""
-      echo "  ob-run  [-- CABAL_ARGS...]  — Rebuild and restart backend on source changes."
-      echo "  ob-repl [TARGETS...]        — GHCi REPL (defaults to lib:backend lib:common lib:frontend)."
+      echo "=== ob-run ==="
       echo ""
-      echo "  Both disable optimizations for faster builds. Run -h for details."
+      ob-run --help
+      echo ""
+      echo "=== ob-repl ==="
+      echo ""
+      ob-repl --help
       echo ""
     '';
   };
