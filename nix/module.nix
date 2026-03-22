@@ -64,13 +64,47 @@ in {
         description = "GHCJS-compiled frontend derivation.";
       };
 
+      optimize = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Whether to run closure-compiler on frontend JS.";
+      };
+
+      optimized = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default =
+          if frontendJs == null then null
+          else if config.obelisk.frontend.js.optimize
+            then pkgs.runCommand "frontend.jsexe.optimized" {
+              nativeBuildInputs = [ pkgs.closurecompiler ];
+            } ''
+              cp -r ${frontendJs}/bin/frontend.jsexe $out
+              chmod -R u+w $out
+              for js in $out/*.js; do
+                closure-compiler --compilation_level SIMPLE "$js" --js_output_file "$js.opt"
+                mv -f "$js.opt" "$js"
+              done
+            ''
+            else "${frontendJs}/bin/frontend.jsexe";
+        defaultText = lib.literalExpression "closure-compiler frontendJs";
+        description = "Closure-compiled frontend jsexe.";
+      };
+
+      compress = lib.mkOption {
+        type = lib.types.bool;
+        default = config.obelisk.static.compress;
+        description = "Whether to compress frontend JS with brotli/gzip.";
+      };
+
       compressed = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
         default =
-          if frontendJs != null && config.obelisk.static.compress
-            then assets.mkAssets "${frontendJs}/bin/frontend.jsexe"
-            else null;
-        defaultText = lib.literalExpression "assets.mkAssets frontendJs";
+          let jsexe = config.obelisk.frontend.js.optimized;
+          in if jsexe == null then null
+            else if config.obelisk.frontend.js.compress
+            then assets.mkAssets jsexe
+            else jsexe;
+        defaultText = lib.literalExpression "assets.mkAssets optimized";
         description = "Compressed frontend jsexe for obelisk-asset-serve-snap.";
       };
     };
