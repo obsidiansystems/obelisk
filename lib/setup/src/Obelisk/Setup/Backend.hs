@@ -2,7 +2,6 @@
 -- before build so the backend can serve them at runtime.
 module Obelisk.Setup.Backend (main) where
 
-import Prelude hiding (main)
 import Distribution.Simple
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))

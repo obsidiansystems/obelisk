@@ -1,9 +1,9 @@
+{-# LANGUAGE BangPatterns #-}
 -- | Static manifest Setup.hs hook. Runs @static\/generate@ to produce hashed
 -- static assets, then generates the @Obelisk.Generated.Static.Instances@
 -- module with @StaticFile@ instances for cache-busting paths.
 module Obelisk.Setup.Manifest (main) where
 
-import Prelude hiding (main)
 import Distribution.Simple
 import Control.DeepSeq (force)
 import Control.Monad (forM)
@@ -12,7 +12,7 @@ import System.Directory
   , doesFileExist
   , listDirectory
   )
-import System.FilePath (takeDirectory, splitFileName, normalise, (</>))
+import System.FilePath (splitFileName, normalise, (</>))
 import System.IO (hPutStrLn, stderr)
 import System.Process (CreateProcess (..), proc, readCreateProcess, waitForProcess, withCreateProcess)
 import System.Exit (ExitCode (..))

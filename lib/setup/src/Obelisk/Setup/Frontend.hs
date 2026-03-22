@@ -3,7 +3,6 @@
 -- assets into @frontend\/data\/@ after build completes.
 module Obelisk.Setup.Frontend (main) where
 
-import Prelude hiding (main)
 import Distribution.Simple
 import System.Directory
   ( createDirectoryIfMissing
