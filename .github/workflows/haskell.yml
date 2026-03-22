@@ -42,9 +42,6 @@ jobs:
         brew update
         brew install libsodium
 
-    - name: Set up cabal project file for CI
-      run: cd lib && cp cabal.project.ci cabal.project
-
     - name: Install dependencies
       run: |
         cabal update
