@@ -267,6 +267,10 @@ in {
         name = "ob-repl";
         text = builtins.readFile ../scripts/ob-repl;
       })
+      (pkgs.writeShellApplication {
+        name = "ob-hoogle";
+        text = builtins.readFile ../scripts/ob-hoogle;
+      })
     ];
 
     shell.shellHook = ''
@@ -281,6 +285,21 @@ in {
       echo ""
       ob-repl --help
       echo ""
+      echo "=== ob-hoogle ==="
+      echo ""
+      ob-hoogle --help
+      echo ""
+
+      export HOOGLE_PIDFILE="''${TMPDIR:-/tmp}/ob-hoogle.pid"
+      HOOGLE_REFSFILE="''${TMPDIR:-/tmp}/ob-hoogle.refs"
+      echo $$ >> "$HOOGLE_REFSFILE"
+      trap '
+        sed -i "/^'$$'$/d" "$HOOGLE_REFSFILE"
+        if [ ! -s "$HOOGLE_REFSFILE" ] && [ -f "$HOOGLE_PIDFILE" ]; then
+          kill "$(cat "$HOOGLE_PIDFILE")" 2>/dev/null
+          rm -f "$HOOGLE_PIDFILE" "$HOOGLE_REFSFILE"
+        fi
+      ' EXIT
     '';
   };
 }
