@@ -64,26 +64,58 @@ in {
         description = "GHCJS-compiled frontend derivation.";
       };
 
-      optimize = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Whether to run closure-compiler on frontend JS.";
+      optimization = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Whether to run closure-compiler on frontend JS.";
+        };
+
+        level = lib.mkOption {
+          type = lib.types.enum [ "BUNDLE" "WHITESPACE_ONLY" "SIMPLE" "TRANSPILE_ONLY" "ADVANCED" ];
+          default = "ADVANCED";
+          description = "Closure-compiler optimization level.";
+        };
+
+        externs = lib.mkOption {
+          type = lib.types.listOf lib.types.path;
+          default = [];
+          description = "Extern files passed to closure-compiler via --externs.";
+        };
+
+        extraFlags = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [];
+          description = "Extra flags passed to closure-compiler.";
+        };
       };
 
       optimized = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
         default =
-          if frontendJs == null then null
-          else if config.obelisk.frontend.js.optimize
+          let opt = config.obelisk.frontend.js.optimization;
+              externFlags = map (e: "--externs ${e}") opt.externs;
+              flags = lib.concatStringsSep " " ([
+                "--language_in" "UNSTABLE"
+                "--compilation_level" opt.level
+                "--warning_level" "QUIET"
+                "--isolation_mode" "IIFE"
+                "--assume_function_wrapper"
+                "--emit_use_strict"
+                "--jscomp_off=undefinedVars"
+              ] ++ externFlags ++ opt.extraFlags);
+          in if frontendJs == null then null
+            else if opt.enable
             then pkgs.runCommand "frontend.jsexe.optimized" {
               nativeBuildInputs = [ pkgs.closurecompiler ];
             } ''
               cp -r ${frontendJs}/bin/frontend.jsexe $out
               chmod -R u+w $out
-              for js in $out/*.js; do
-                closure-compiler --compilation_level SIMPLE "$js" --js_output_file "$js.opt"
-                mv -f "$js.opt" "$js"
-              done
+              closure-compiler ${flags} \
+                --externs $out/all.externs.js \
+                --js $out/all.js \
+                --js_output_file $out/all.js.opt
+              mv -f $out/all.js.opt $out/all.js
             ''
             else "${frontendJs}/bin/frontend.jsexe";
         defaultText = lib.literalExpression "closure-compiler frontendJs";
