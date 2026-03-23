@@ -12,7 +12,14 @@
   # obelisk.static.path = ./static/src;
 
   shell = {
-    crossPlatforms = ps: with ps; [ ghcjs wasi32 ];
+    crossPlatforms = ps: with ps; [
+      wasi32
+
+      # To enable JS builds in `nix-shell`, uncomment ghcjs below and use:
+      #   cabal build/repl/run backend -f -wasm
+      #   ob-run/ob-repl -f -wasm
+      # ghcjs
+    ];
     withHoogle = true;
   };
 
