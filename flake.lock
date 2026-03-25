@@ -84,6 +84,21 @@
       }
     },
     "flake-compat": {
+      "locked": {
+        "lastModified": 1767039857,
+        "narHash": "sha256-vNpUSpF5Nuw8xvDLj2KCwwksIbjua2LZCqhV1LNRDns=",
+        "owner": "NixOS",
+        "repo": "flake-compat",
+        "rev": "5edf11c44bc78a0d334f6334cdaf7d60d732daab",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "flake-compat",
+        "type": "github"
+      }
+    },
+    "flake-compat_2": {
       "flake": false,
       "locked": {
         "lastModified": 1672831974,
@@ -156,7 +171,7 @@
         "cabal-34": "cabal-34",
         "cabal-36": "cabal-36",
         "cardano-shell": "cardano-shell",
-        "flake-compat": "flake-compat",
+        "flake-compat": "flake-compat_2",
         "hackage": "hackage",
         "hackage-for-stackage": "hackage-for-stackage",
         "hackage-internal": "hackage-internal",
@@ -478,16 +493,17 @@
     },
     "nix-haskell": {
       "inputs": {
+        "flake-compat": "flake-compat",
         "haskell-nix": "haskell-nix",
         "nixpkgs": "nixpkgs",
         "reflex-platform": "reflex-platform"
       },
       "locked": {
-        "lastModified": 1774403493,
-        "narHash": "sha256-sWBJ2IXahg+fzwSSiQX7rdPq6+ApostENoaDYETc2BY=",
+        "lastModified": 1774408168,
+        "narHash": "sha256-do26Ik50yH8NYSxuhwzBwNKsxIN88GoovwioWPvCpJU=",
         "ref": "refs/heads/main",
-        "rev": "fb1141a733e549137a72fb530d4c946fb26605e0",
-        "revCount": 97,
+        "rev": "d6a3bb8f96ff35fd0ae2a0d64f40b584c92aa493",
+        "revCount": 98,
         "type": "git",
         "url": "file:./deps/nix-haskell"
       },
@@ -660,6 +676,10 @@
     },
     "root": {
       "inputs": {
+        "flake-compat": [
+          "nix-haskell",
+          "flake-compat"
+        ],
         "haskell-nix": [
           "nix-haskell",
           "haskell-nix"

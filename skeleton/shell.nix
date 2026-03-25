@@ -1,5 +1,5 @@
-{ system ? builtins.currentSystem }:
+{ system ? builtins.currentSystem, inputs ? {} }:
 
-let project = import ./default.nix { inherit system; };
+let project = import ./default.nix { inherit system inputs; };
 
 in project.shell
