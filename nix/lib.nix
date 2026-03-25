@@ -1,8 +1,17 @@
-{ system }:
+{ system
+, inputs ? {}
+, pkgs ?
+    if inputs ? nixpkgs
+    then import inputs.nixpkgs { inherit system; }
+    else import ../deps/nix-haskell/pins/nixpkgs { inherit system; }
+}:
 
 let src = ../.;
 
-    nix-haskell = import ../deps/nix-haskell { inherit system; };
+    nix-haskell =
+      if inputs ? nix-haskell
+      then import inputs.nix-haskell { inherit system pkgs inputs; }
+      else import ../deps/nix-haskell { inherit system; };
 
     # Standalone project built only to produce the manifest generator executable.
     obelisk-asset-manifest = nix-haskell {
@@ -24,11 +33,9 @@ let src = ../.;
     mkOptionalPackages = { config, lib }:
       lib.filterAttrs (name: _: config.packages ? ${name});
 
-    assets = import ./assets.nix { nixpkgs = (import ../deps/nix-haskell/pins/nixpkgs { inherit system; }); };
+    assets = import ./assets.nix { nixpkgs = pkgs; };
 
-    docs = import ./docs.nix { inherit system; };
-
-    pkgs = import ../deps/nix-haskell/pins/nixpkgs { inherit system; };
+    docs = import ./docs.nix { inherit system inputs pkgs; };
 
     serverModule = ./server.nix;
 

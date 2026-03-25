@@ -1,8 +1,16 @@
-{ system }:
+{ system, inputs ? {} }:
 
-let lib = import ./lib.nix { inherit system; };
+let pkgs =
+      if inputs ? nixpkgs
+      then import inputs.nixpkgs { inherit system; }
+      else import ../deps/nix-haskell/pins/nixpkgs { inherit system; };
 
-    nix-haskell = import ../deps/nix-haskell { inherit system; };
+    nix-haskell =
+      if inputs ? nix-haskell
+      then import inputs.nix-haskell { inherit system pkgs inputs; }
+      else import ../deps/nix-haskell { inherit system; };
+
+    lib = import ./lib.nix { inherit system inputs pkgs; };
 
     module = import ./module.nix;
 

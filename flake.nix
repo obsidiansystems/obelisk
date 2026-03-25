@@ -1,17 +1,24 @@
 {
-  outputs = { self, nixpkgs, ... }:
+  inputs = {
+    nix-haskell.url = "git+file:./deps/nix-haskell";
+    nixpkgs.follows = "nix-haskell/nixpkgs";
+    haskell-nix.follows = "nix-haskell/haskell-nix";
+    reflex-platform.follows = "nix-haskell/reflex-platform";
+  };
+
+  outputs = inputs@{ self, nixpkgs, ... }:
     let eachSystem = nixpkgs.lib.genAttrs
           [ "x86_64-linux"
             "aarch64-linux"
           ];
     in {
       lib = eachSystem (system:
-        import ./nix { inherit system; }
+        import ./nix { inherit system inputs; }
       );
 
       packages = eachSystem (system: {
-        docs = (import ./nix/docs.nix { inherit system; }).docs;
-        release = import ./release.nix { inherit system; };
+        docs = (import ./nix/docs.nix { inherit system inputs; }).docs;
+        release = import ./release.nix { inherit system inputs; };
       });
     };
 

@@ -1,6 +1,6 @@
-{ system ? builtins.currentSystem }:
+{ system ? builtins.currentSystem, inputs ? {} }:
 
-let skeleton = import ./skeleton { inherit system; };
+let skeleton = import ./skeleton { inherit system inputs; };
 
 in skeleton.nixpkgs.linkFarm "obelisk-release" [
   { name = "shell"; path = skeleton.shell; }
