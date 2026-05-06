@@ -36,6 +36,7 @@ let obeliskLib = import ./lib.nix { inherit system; };
 in {
   imports = [
     "${nix-haskell-patches}/js/splitmix"
+    "${nix-haskell-patches}/wasm/jsaddle-wasm"
   ];
 
   options.obelisk = {
