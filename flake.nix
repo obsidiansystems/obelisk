@@ -1,6 +1,10 @@
 {
   inputs = {
-    nix-haskell.url = "git+file:./deps/nix-haskell";
+    self.submodules = true;
+
+    nix-haskell.url = ./deps/nix-haskell;
+    reflex-dom.url = ./deps/reflex-dom;
+
     flake-compat.follows = "nix-haskell/flake-compat";
     nixpkgs.follows = "nix-haskell/nixpkgs";
     haskell-nix.follows = "nix-haskell/haskell-nix";
