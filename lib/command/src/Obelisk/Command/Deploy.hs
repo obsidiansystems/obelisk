@@ -2,11 +2,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
+{- ORMOLU_DISABLE -}
 {-|
    Description:
    Implementation of the CLI deploy commands. Deployment is done by intializing
@@ -161,8 +162,9 @@ deployPush
   -- ^ Path to the staging directory
   -> [String]
   -- ^ nix builders arg string for the nix-build that builds the deployment artefacts
+  -> Bool
   -> m ()
-deployPush deployPath builders = do
+deployPush deployPath builders reboot = do
   hosts <- Set.fromList . filter (/= mempty) . lines <$> readDeployConfig deployPath "backend_hosts"
   adminEmail <- readDeployConfig deployPath "admin_email"
   enableHttps <- read <$> readDeployConfig deployPath "enable_https"
@@ -226,7 +228,7 @@ deployPush deployPath builders = do
         [ "root@" <> host
         , unwords
             [ "bash -c"
-            , bashEscape (deployActivationScript outputPath)
+            , bashEscape (deployActivationScript outputPath reboot)
             ]
         ]
   isClean <- checkGitCleanStatus deployPath True
@@ -248,8 +250,9 @@ deployPush deployPath builders = do
 deployActivationScript
   :: String
   -- ^ The out path of the configuration to activate
+  -> Bool
   -> String
-deployActivationScript outPath =
+deployActivationScript outPath reboot =
 -- Note that we don't want to $(staticWhich "nix-env") here, because this is executing on a remote machine
 -- This logic follows the nixos auto-upgrade module as of writing.
 -- If the workflow is added to switch-to-configuration proper, we can simplify this:
@@ -259,7 +262,8 @@ nix-env -p /nix/var/nix/profiles/system --set "${bashEscape outPath}"
 /nix/var/nix/profiles/system/bin/switch-to-configuration boot
 booted="$(readlink /run/booted-system/{initrd,kernel,kernel-modules})"
 built="$(readlink /nix/var/nix/profiles/system/{initrd,kernel,kernel-modules})"
-if [ "$booted" = "$built" ]; then
+echo "${bashEscape (show reboot)}"
+if [[ "$booted" = "$built" && "${bashEscape (show reboot)}" == "${bashEscape (show False)}" ]]; then
   /nix/var/nix/profiles/system/bin/switch-to-configuration switch
 else
   /run/current-system/sw/bin/shutdown -r +1
