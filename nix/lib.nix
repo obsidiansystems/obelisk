@@ -176,6 +176,7 @@ in rec {
         backendExe = targetProj.hsPkgs.backend.components.exes.backend;
         compressedStatic = targetProj.config.obelisk.static.compressed;
         compressedFrontend = targetProj.config.obelisk.frontend.${target}.compressed;
+        configPath = targetProj.config.obelisk.config.path;
     in pkgs.runCommand "server-exe" {} ''
       mkdir $out
       set -eux
@@ -185,6 +186,15 @@ in rec {
       ''}
       ${pkgs.lib.optionalString (compressedFrontend != null) ''
         ln -s ${compressedFrontend} $out/frontend.jsexe.assets
+      ''}
+      ${pkgs.lib.optionalString (configPath != null) ''
+        mkdir -p $out/config
+      ''}
+      ${pkgs.lib.optionalString (configPath != null && builtins.pathExists (configPath + "/common")) ''
+        cp -RL ${configPath + "/common"} $out/config/common
+      ''}
+      ${pkgs.lib.optionalString (configPath != null && builtins.pathExists (configPath + "/frontend")) ''
+        cp -RL ${configPath + "/frontend"} $out/config/frontend
       ''}
     '';
 
