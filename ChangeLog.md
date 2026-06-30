@@ -2,6 +2,30 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## 2.0.0.0
+
+Obelisk v2.0.0 promotes the `next` line to the mainline release. This is a
+breaking, ground-up modernization of the framework. Existing v1 projects do not
+build against v2 unchanged; see `docs/migrating-to-v2.md` for the full
+migration mapping. Projects that need the old stack should stay on the
+preserved `release/1.x` line.
+
+* **GHC 8.10 → 9.14.** The toolchain moves to GHC 9.14.
+* **Frontend GHCJS → WASM.** WASM (`wasm32-unknown-wasi`) is the new default
+  frontend target; GHCJS remains available via `obelisk.frontend.target = "js"`.
+* **Build system reflex-platform → nix-haskell.** Builds are now driven by
+  nix-haskell/haskell.nix with flakes and git submodules instead of
+  reflex-platform.
+* **`ob` CLI removed.** The Haskell `ob` command-line tool is gone, replaced by
+  shell scripts placed on `PATH` by the nix shell: `ob-run`, `ob-repl`,
+  `ob-hoogle`, and the new `ob-init` and `ob-deploy`.
+* **Deployment model changed.** The managed `ob deploy` workflow
+  (`init`/`push`/`test`) is removed. Deploy via the `services.obelisk` NixOS
+  module, the produced OCI container image, or the minimal `ob-deploy` script.
+* **Mobile pipeline changed.** The native iOS/Android build pipeline is removed.
+  CapacitorJS is the new path to mobile apps; Reflex-Lynx is an ongoing research
+  direction.
+
 ## Unreleased v2.0.0.0
 
 Complete rewrite of the nix build system around nix-haskell and a NixOS-style
