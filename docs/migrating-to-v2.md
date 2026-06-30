@@ -108,6 +108,40 @@ Apply it with `nixos-rebuild switch` (directly, via `deploy-rs`, or via the
 `adminEmail`, `internalPort` (default `8000`), `backendArgs`, `redirectHosts`,
 `configHash` (bump to force a restart).
 
+### obelisk-systemd (multiple apps / home-manager)
+
+For hosts running more than one obelisk app, or for user-level (non-root)
+deployment, [`obsidiansystems/obelisk-systemd`](https://github.com/obsidiansystems/obelisk-systemd)
+provides NixOS and home-manager modules that turn a built `serverExe` into a
+systemd service. It works with v2 unchanged — `serverExe.{wasm,js}` already has
+the directory layout it expects (a top-level `backend` binary plus assets), and
+it runs `./backend --port=…` just like the built-in module.
+
+```nix
+{ ... }:
+let app = import ./path/to/my-app { system = "x86_64-linux"; };
+in {
+  # imports = [ obelisk-systemd.nixosModules.default ];  # however you wire the input
+  obelisks."my-app" = {
+    obelisk = app.serverExe.wasm;          # or .js — a directory, not a bare binary
+    configSource = "/var/lib/my-app/config";
+    port = 8000;
+    enableNginxReverseProxy = true;
+    virtualHostName = "myapp.example.com";
+    enableHttps = true;
+    acmeCertAdminEmail = "admin@example.com";
+  };
+}
+```
+
+`configSource` is the **authoritative** runtime config: point it at the
+project's *full* `config/` (common + frontend + backend, secrets included) kept
+on the host outside the Nix store. This complements `obelisk.config.path` — the
+build bakes only public `common`/`frontend` into `serverExe`, and `configSource`
+supplies everything (including `backend/` secrets) at runtime, so secrets never
+enter the store. Other options: `baseUrl` (default `/`, matching v2's relative
+routing), `userName`, `userHome`, `extraBackendArgs`.
+
 ### OCI container
 
 ```bash
