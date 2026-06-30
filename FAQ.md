@@ -175,4 +175,4 @@ in {
 }
 ```
 
-Then build with `nix-build release.nix -A serverExe` etc. Use `nix repl` to explore available attributes.
+Then build with `nix-build skeleton -A serverExe` etc. Use `nix repl` to explore available attributes.
