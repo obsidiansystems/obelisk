@@ -287,6 +287,26 @@ in {
 
 This configures nginx (with WebSocket proxy), ACME/Let's Encrypt, systemd service with auto-restart, and firewall rules.
 
+For hosts running **multiple** obelisk apps, or for user-level (home-manager) deployment, [obelisk-systemd](https://github.com/obsidiansystems/obelisk-systemd) provides NixOS and home-manager modules that turn a built `serverExe` into a systemd service. It works with obelisk v2 unchanged — the `serverExe` directory (top-level `backend` binary + assets) is exactly what it expects:
+
+```nix
+{ ... }:
+let app = import ./path/to/my-app { system = "x86_64-linux"; };
+in {
+  obelisks."my-app" = {
+    obelisk = app.serverExe.wasm;          # a directory, not a bare binary
+    configSource = "/var/lib/my-app/config";
+    port = 8000;
+    enableNginxReverseProxy = true;
+    virtualHostName = "myapp.example.com";
+    enableHttps = true;
+    acmeCertAdminEmail = "admin@example.com";
+  };
+}
+```
+
+Here `configSource` is the authoritative runtime config directory on the host (the full `config/`, secrets included). It pairs with `obelisk.config.path`, which bakes only public `common`/`frontend` config into the build so backend secrets stay out of the Nix store.
+
 ### OCI Container
 
 ```bash
