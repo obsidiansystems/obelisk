@@ -69,7 +69,6 @@ import Reflex.Host.Class
 import Obelisk.Configs
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import qualified Obelisk.ExecutableConfig.Lookup as Lookup
-import System.Info (os)
 import Web.Cookie
 
 type ObeliskWidget t route m =
@@ -111,9 +110,7 @@ data Frontend route = Frontend
 
 baseTag :: forall route t m. ObeliskWidget t route m => RoutedT t route m ()
 baseTag =
-  if os == "ios"
-    then blank
-    else elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+  elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
 
 removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
