@@ -61,6 +61,12 @@ Your pull request should add no new warnings to the project. It should also gene
 
 Make sure the project builds and that the tests pass! This will generally also be checked by CI before merge, but trying it yourself first means you'll catch problems earlier and your contribution can be merged that much sooner!
 
+Build and test the libraries:
+```bash
+cd lib && cabal build all
+cd lib && cabal test all
+```
+
 Build the skeleton with both frontend targets:
 ```bash
 nix-build release.nix
@@ -68,8 +74,8 @@ nix-build release.nix
 
 Or build individual targets:
 ```bash
-nix-build release.nix -A serverExe.wasm
-nix-build release.nix -A serverExe.js
+nix-build skeleton -A serverExe.wasm
+nix-build skeleton -A serverExe.js
 ```
 
 
