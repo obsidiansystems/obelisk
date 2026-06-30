@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# ob-init: Scaffold a new obelisk project from the skeleton template.
+#
+# Replaces the old `ob init`. Copies obelisk's skeleton/ into a new directory,
+# renames the project, repoints deps/obelisk at the obelisk source, and creates
+# an initial git commit.
+#
+# Limitation (v1): the generated project still consumes obelisk through the
+# deps/obelisk path (an absolute symlink into the obelisk source it was
+# scaffolded from) rather than a portable git flake input. The generated
+# flake.nix carries a clearly-marked TODO describing how to switch to a git
+# input (e.g. obelisk.url = "github:obsidiansystems/obelisk"). Until then the
+# project builds only on a machine that can see that obelisk path.
+set -euo pipefail
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -eq 0 ]]; then
+  echo "Usage: ob-init <project-dir> [--name NAME]"
+  echo ""
+  echo "  Scaffolds a new obelisk project in <project-dir> by copying the"
+  echo "  obelisk skeleton template, then:"
+  echo "    * sets the project name in project.nix to NAME"
+  echo "      (default: the basename of <project-dir>);"
+  echo "    * repoints deps/obelisk at the obelisk source it was scaffolded"
+  echo "      from, so 'import ./deps/obelisk' resolves;"
+  echo "    * runs 'git init' and creates an initial commit."
+  echo ""
+  echo "  The skeleton is read from \$OBELISK_SKELETON (exported by the obelisk"
+  echo "  nix-shell). Run ob-init from inside that shell."
+  echo ""
+  echo "  Limitation: the generated project references obelisk via deps/obelisk"
+  echo "  rather than a portable git flake input. See the TODO in the generated"
+  echo "  flake.nix for how to switch obelisk/nix-haskell to a git input."
+  exit 0
+fi
+
+# Parse arguments: a single positional <project-dir> plus optional --name NAME.
+DIR=""
+NAME=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name)
+      if [[ $# -lt 2 ]]; then
+        echo "ob-init: --name requires an argument." >&2
+        exit 1
+      fi
+      NAME="$2"
+      shift 2
+      ;;
+    --name=*)
+      NAME="${1#--name=}"
+      shift
+      ;;
+    -*)
+      echo "ob-init: unknown option '$1'; see 'ob-init --help'." >&2
+      exit 1
+      ;;
+    *)
+      if [[ -n "$DIR" ]]; then
+        echo "ob-init: unexpected extra argument '$1'." >&2
+        exit 1
+      fi
+      DIR="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$DIR" ]]; then
+  echo "ob-init: missing <project-dir>; see 'ob-init --help'." >&2
+  exit 1
+fi
+
+if [[ -e "$DIR" ]]; then
+  echo "ob-init: target '$DIR' already exists." >&2
+  exit 1
+fi
+
+SKELETON="${OBELISK_SKELETON:-}"
+if [[ -z "$SKELETON" ]]; then
+  echo "ob-init: \$OBELISK_SKELETON is not set." >&2
+  echo "Run ob-init from inside the obelisk nix-shell." >&2
+  exit 1
+fi
+if [[ ! -d "$SKELETON" ]]; then
+  echo "ob-init: skeleton directory '$SKELETON' does not exist." >&2
+  exit 1
+fi
+
+# Default the project name to the basename of the target directory.
+if [[ -z "$NAME" ]]; then
+  NAME="$(basename "$DIR")"
+fi
+
+# The obelisk source is the parent of the skeleton directory.
+OBELISK_SRC="$(dirname "$SKELETON")"
+
+echo "Scaffolding '$NAME' in '$DIR'..."
+
+# Copy the skeleton, preserving symlinks, then make the tree writable (the
+# skeleton may live in the read-only nix store).
+cp -a "$SKELETON" "$DIR"
+chmod -R u+w "$DIR"
+
+# Rename the project in project.nix.
+sed -i "s/name = \"obelisk-skeleton\";/name = \"${NAME}\";/" "$DIR/project.nix"
+
+# Repoint deps/obelisk at the obelisk source (the skeleton's symlink is
+# relative to the obelisk repo and would dangle in the new location).
+rm -f "$DIR/deps/obelisk"
+ln -s "$OBELISK_SRC" "$DIR/deps/obelisk"
+
+# Leave a clearly-marked TODO in the generated flake about consuming obelisk as
+# a portable git input instead of the deps/obelisk path.
+sed -i 's|^  inputs = {|  inputs = {\n    # TODO(ob-init): this project consumes obelisk via the deps/obelisk path\n    # (see deps/obelisk). For a portable project, replace the path-based\n    # wiring with a git flake input, e.g.:\n    #   obelisk.url = "github:obsidiansystems/obelisk";\n    #   nix-haskell.follows = "obelisk/nix-haskell";|' \
+  "$DIR/flake.nix"
+
+# Initialise a git repository with an initial commit.
+git -C "$DIR" init -q
+git -C "$DIR" add -A
+git -C "$DIR" commit -q -m "Initial commit (scaffolded by ob-init)"
+
+echo "Created obelisk project '$NAME' in '$DIR'."

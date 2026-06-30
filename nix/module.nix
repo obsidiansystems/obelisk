@@ -276,10 +276,21 @@ in {
         name = "ob-hoogle";
         text = builtins.readFile ../scripts/ob-hoogle;
       })
+      (pkgs.writeShellApplication {
+        name = "ob-deploy";
+        runtimeInputs = [ pkgs.openssh ];
+        text = builtins.readFile ../scripts/ob-deploy;
+      })
+      (pkgs.writeShellApplication {
+        name = "ob-init";
+        runtimeInputs = [ pkgs.git ];
+        text = builtins.readFile ../scripts/ob-init;
+      })
     ];
 
     shell.shellHook = ''
       export OBELISK_WASI_SHIM="${obeliskLib.wasi-shim}"
+      export OBELISK_SKELETON="${obeliskLib.src}/skeleton"
 
       echo ""
       echo "=== ob-run ==="
@@ -293,6 +304,14 @@ in {
       echo "=== ob-hoogle ==="
       echo ""
       ob-hoogle --help
+      echo ""
+      echo "=== ob-deploy ==="
+      echo ""
+      ob-deploy --help
+      echo ""
+      echo "=== ob-init ==="
+      echo ""
+      ob-init --help
       echo ""
 
       export HOOGLE_PIDFILE="''${TMPDIR:-/tmp}/ob-hoogle.pid"
