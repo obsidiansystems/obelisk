@@ -11,6 +11,10 @@
   # For projects without a build step, use:
   # obelisk.static.path = ./static/src;
 
+  # Public config (common/ + frontend/) is bundled into the production server;
+  # backend/ is never bundled (keep secrets out of the Nix store).
+  obelisk.config.path = ./config;
+
   shell = {
     crossPlatforms = ps: with ps; [
       wasi32
