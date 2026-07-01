@@ -102,7 +102,7 @@ Enter the skeleton's nix shell to get a development environment with all obelisk
 
 ```bash
 cd skeleton
-nix-shell  # or: nix develop 'git+file:.?submodules=1'
+nix-shell  # or: nix develop 'git+file:.'
 ```
 
 From within the shell, uncomment the obelisk `optional-packages` stanzas in `cabal.project` to develop obelisk libraries alongside the skeleton:

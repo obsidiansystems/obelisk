@@ -1,6 +1,0 @@
-[submodule "deps/nix-haskell"]
-	path = deps/nix-haskell
-	url = https://github.com/reflex-frp/nix-haskell.git
-[submodule "deps/reflex-dom"]
-	path = deps/reflex-dom
-	url = https://github.com/ymeister/reflex-dom.git

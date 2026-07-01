@@ -1,29 +1,22 @@
 {
-  inputs = {
-    self.submodules = true;
-
-    nix-haskell.url = ./deps/nix-haskell;
-    reflex-dom.url = ./deps/reflex-dom;
-
-    flake-compat.follows = "nix-haskell/flake-compat";
-    nixpkgs.follows = "nix-haskell/nixpkgs";
-    haskell-nix.follows = "nix-haskell/haskell-nix";
-    reflex-platform.follows = "nix-haskell/reflex-platform";
-  };
-
-  outputs = inputs@{ self, nixpkgs, ... }:
-    let eachSystem = nixpkgs.lib.genAttrs
+  # Dependencies are pinned as nix-thunks under deps/ (see deps/*/github.json),
+  # not git submodules — so no `?submodules=1` / `--recursive` is needed. The nix
+  # code (nix/*.nix) imports them directly; `nixpkgs` for the flake outputs comes
+  # from the nix-haskell thunk's pins.
+  outputs = { self, ... }:
+    let nixpkgs = import ((import ./deps/nix-haskell/thunk.nix) + "/pins/nixpkgs") {};
+        eachSystem = nixpkgs.lib.genAttrs
           [ "x86_64-linux"
             "aarch64-linux"
           ];
     in {
       lib = eachSystem (system:
-        import ./nix { inherit system inputs; }
+        import ./nix { inherit system; }
       );
 
       packages = eachSystem (system: {
-        docs = (import ./nix/docs.nix { inherit system inputs; }).docs;
-        release = import ./release.nix { inherit system inputs; };
+        docs = (import ./nix/docs.nix { inherit system; }).docs;
+        release = import ./release.nix { inherit system; };
       });
     };
 

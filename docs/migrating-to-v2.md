@@ -17,10 +17,11 @@ project by hand.
   module that consumes obelisk's `nix/module.nix`; build outputs come from
   `nix/lib.nix` (`serverExe`, `containerImage`, `frontendWasm`/`frontendJs`).
   See [`docs/module.md`](module.md) for the full option reference.
-- **Flakes + submodules.** The repo is a flake and pulls `nix-haskell` and
-  `reflex-dom` in as git submodules under `deps/`. Run nix with
-  `?submodules=1` (e.g. `nix develop 'git+file:.?submodules=1'`) or clone
-  `--recursive`.
+- **Flakes + nix-thunks.** The repo is a flake, and its dependencies
+  (`nix-haskell`, `reflex-dom`) are pinned as **nix-thunks** under `deps/`
+  (a small `github.json` + `default.nix`/`thunk.nix`), not git submodules — so
+  plain `nix develop` / `nix-build` work with no `?submodules=1` or
+  `--recursive`. Bump a pin with `nix-thunk update deps/<name>`.
 - **GHC 8.10 → 9.14.**
 - **GHCJS → WASM by default.** The default frontend target is now `"wasm"`
   (compiled with `wasm32-unknown-wasi-cabal`, run via jsaddle-wasm and a
@@ -50,7 +51,7 @@ project by hand.
 | `ob watch` | `ob-run`. The separate "watch for errors only" mode is gone; use `ob-run` (rebuild loop) or `ob-repl` + `:reload`. |
 | `ob repl` | `ob-repl` (`scripts/ob-repl`) — GHCi for `backend`+`common`+`frontend`, `-O0`, cross builds skipped (`-f -cross`). `ob-repl lib:common` for a single target. |
 | `ob hoogle` | `ob-hoogle` (`scripts/ob-hoogle`) — `ob-hoogle start [PORT]` / `stop` / `restart`. |
-| `ob shell` | `nix-shell` (or `nix develop 'git+file:.?submodules=1'`). Run a one-off command with `nix-shell --run '...'` / `nix develop -c '...'`. |
+| `ob shell` | `nix-shell` (or `nix develop 'git+file:.'`). Run a one-off command with `nix-shell --run '...'` / `nix develop -c '...'`. |
 | `ob shell --ghcjs` | Cross toolchains are selected by `shell.crossPlatforms` in `project.nix` (e.g. `ps: with ps; [ ghcjs wasi32 ]`) and by `obelisk.frontend.target`. There is no per-invocation `--ghcjs` flag. |
 | `ob profile` | Removed. Build with profiling through cabal/nix directly (e.g. a profiling-enabled `cabal build` in the nix shell, or a `--enable-profiling` cabal config). |
 | `ob doc` | Removed. Use `ob-hoogle` for searchable docs, or `cabal haddock` / the nix `docs` output. |
@@ -259,8 +260,8 @@ These fail loudly — expect them:
 - **`BackendConfig` gained a field** (`_backendConfig_frontendGhcjsAssets`).
   Positional/record construction breaks; code using `defaultBackendConfig { … }`
   is fine.
-- **reflex-dom is a fork** (`ymeister/reflex-dom`, a submodule). You cannot pin
-  upstream `reflex-dom`/`reflex-dom-core`.
+- **reflex-dom is a fork** (`ymeister/reflex-dom`, pinned as a nix-thunk under
+  `deps/`). You cannot pin upstream `reflex-dom`/`reflex-dom-core`.
 - **Raw GHCJS FFI must be ported.** Hand-rolled `foreign import javascript`
   (GHCJS syntax) must move to the GHC WASM backend's JSFFI (or route through
   jsaddle). Code using `ghcjs-dom` is unaffected — it now rides on jsaddle-wasm.
