@@ -47,7 +47,7 @@ Start from the skeleton or use it as a reference for your own project:
 ```bash
 cp -r deps/obelisk/skeleton my-app
 cd my-app
-nix-shell  # or: nix develop 'git+file:.?submodules=1'
+nix-shell  # or: nix develop 'git+file:.'
 ob-run
 ```
 
@@ -79,7 +79,7 @@ my-app/
 Enter the nix shell to get all build tools (GHC, cabal, cross-compilers, hoogle):
 
 ```bash
-nix-shell  # or: nix develop 'git+file:.?submodules=1'
+nix-shell  # or: nix develop 'git+file:.'
 ```
 
 ### ob-init
@@ -243,11 +243,11 @@ Key module options (see [`docs/module.md`](docs/module.md) for full reference):
 # Full production build (backend + optimized/compressed frontend)
 nix-build -A serverExe.wasm
 nix-build -A serverExe.js
-# or: nix build 'git+file:.?submodules=1#serverExe.wasm'
+# or: nix build 'git+file:.#serverExe.wasm'
 
 # OCI container image
 nix-build -A containerImage.wasm
-# or: nix build 'git+file:.?submodules=1#containerImage.wasm'
+# or: nix build 'git+file:.#containerImage.wasm'
 ```
 
 ### With cabal
@@ -311,7 +311,7 @@ Here `configSource` is the authoritative runtime config directory on the host (t
 
 ```bash
 nix-build -A containerImage.wasm
-# or: nix build 'git+file:.?submodules=1#containerImage.wasm'
+# or: nix build 'git+file:.#containerImage.wasm'
 
 # Load and run with podman or docker
 podman load < result

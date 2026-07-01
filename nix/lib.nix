@@ -3,10 +3,13 @@
 , pkgs ?
     if inputs ? nixpkgs
     then import inputs.nixpkgs { inherit system; }
-    else import ../deps/nix-haskell/pins/nixpkgs { inherit system; }
+    else import ((import ../deps/nix-haskell/thunk.nix) + "/pins/nixpkgs") { inherit system; }
 }:
 
 let src = ../.;
+
+    # deps/reflex-dom is a nix-thunk; import its thunk.nix for the fetched source.
+    reflex-dom-src = import (src + "/deps/reflex-dom/thunk.nix");
 
     nix-haskell =
       if inputs ? nix-haskell
@@ -60,9 +63,9 @@ in rec {
     obelisk-setup = src + "/lib/setup";
     tabulation = src + "/lib/tabulation";
 
-    reflex-dom = src + "/deps/reflex-dom/reflex-dom";
-    reflex-dom-core = src + "/deps/reflex-dom/reflex-dom-core";
-    chrome-test-utils = src + "/deps/reflex-dom/chrome-test-utils";
+    reflex-dom = reflex-dom-src + "/reflex-dom";
+    reflex-dom-core = reflex-dom-src + "/reflex-dom-core";
+    chrome-test-utils = reflex-dom-src + "/chrome-test-utils";
   };
 
   extraCabalProject = [
