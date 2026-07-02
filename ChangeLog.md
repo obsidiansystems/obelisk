@@ -14,8 +14,8 @@ preserved `release/1.x` line.
 * **Frontend GHCJS → WASM.** WASM (`wasm32-unknown-wasi`) is the new default
   frontend target; GHCJS remains available via `obelisk.frontend.target = "js"`.
 * **Build system reflex-platform → nix-haskell.** Builds are now driven by
-  nix-haskell/haskell.nix with flakes and git submodules instead of
-  reflex-platform.
+  nix-haskell/haskell.nix with flakes (dependency pins vendored as nix-thunks
+  under `deps/`) instead of reflex-platform.
 * **`ob` CLI removed.** The Haskell `ob` command-line tool is gone, replaced by
   shell scripts placed on `PATH` by the nix shell: `ob-run`, `ob-repl`,
   `ob-hoogle`, and the new `ob-init` and `ob-deploy`.
@@ -58,7 +58,9 @@ Adds WASM frontend target alongside GHCJS. Adds GHC 9.14 support.
 ### WASM frontend
 
 * Complete wasm32-wasi frontend compilation target producing a `frontend.jsexe` directory the backend serves unchanged
-* Browser bootstrap shim (`nix/wasm/shim.js`) using async IIFE with dynamic `import()`, resolving assets relative to script URL
+* Browser bootstrap shim (`lib/setup/data/shim.js`, served as `all.js`) using async IIFE with dynamic `import()`, resolving assets relative to script URL
+* The shim compiles `frontend.wasm` while it downloads (`WebAssembly.instantiateStreaming`) and accepts runtime overrides (WASI argv/env, stdout/stderr sinks) via a `globalThis.__obelisk_wasm` object
+* The backend emits a `<link rel="preload" as="fetch">` hint for `frontend.wasm` on WASM deployments (detected from the compiled frontend assets at startup)
 * Vendored `@bjorn3/browser_wasi_shim` for WASI browser support
 * `wasm-opt` optimization and `wasm-tools strip` for production builds
 * GHC JSFFI extraction via `post-link.mjs`
@@ -83,6 +85,7 @@ Adds WASM frontend target alongside GHCJS. Adds GHC 9.14 support.
 ### Backend
 
 * Add `_backendConfig_frontendGhcjsAssets` field to `BackendConfig` for separate frontend asset paths
+* The `GhcjsWidgets` in `_backendConfig_ghcjsWidgets` now receive a `GhcjsAppUrls` record (all.js URL plus optional `frontend.wasm` URL) instead of a bare all.js URL; `defaultGhcjsWidgets` additionally preloads `frontend.wasm` on WASM builds (new `preloadWasm` and `renderFrontendWasmPath` exports)
 
 ### Development tools
 

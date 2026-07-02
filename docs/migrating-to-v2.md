@@ -260,6 +260,13 @@ These fail loudly — expect them:
 - **`BackendConfig` gained a field** (`_backendConfig_frontendGhcjsAssets`).
   Positional/record construction breaks; code using `defaultBackendConfig { … }`
   is fine.
+- **Custom `GhcjsWidgets` take a `GhcjsAppUrls` record.**
+  `_backendConfig_ghcjsWidgets` is now `GhcjsWidgets (GhcjsAppUrls -> _)`
+  instead of `GhcjsWidgets (Text -> _)`: the record carries the all.js URL
+  plus the `frontend.wasm` URL when the deployed frontend is a WASM build.
+  Apps using `defaultGhcjsWidgets` are unaffected (and gain a
+  `frontend.wasm` preload hint on WASM); custom widgets should read
+  `_ghcjsAppUrls_allJs` where they previously took the URL directly.
 - **reflex-dom is a fork** (`ymeister/reflex-dom`, pinned as a nix-thunk under
   `deps/`). You cannot pin upstream `reflex-dom`/`reflex-dom-core`.
 - **Raw GHCJS FFI must be ported.** Hand-rolled `foreign import javascript`
