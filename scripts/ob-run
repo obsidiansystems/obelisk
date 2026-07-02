@@ -1,83 +1,105 @@
 #!/usr/bin/env bash
-# ob-run: Development server that rebuilds and restarts the backend on source changes.
-# Disables optimizations (-O0 and -fno-* flags) for faster rebuilds.
-# Triggers on .hs, .cabal, .project file changes or when the user presses Enter.
+# ob-run: Development server with in-process backend reloading and in-place
+# frontend rebuilds.
+#
+# The backend runs inside a ghcid session: saving a backend/common/frontend
+# module recompiles it to bytecode and reruns the server in-process — no
+# native linking, no process restart. A separate watcher cross-compiles the
+# frontend (WASM by default) and assembles the served assets in place under
+# the running server; refresh the browser to pick them up.
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  echo "Usage: ob-run [-- CABAL_ARGS...]"
+  echo "Usage: ob-run [--js] [-- BACKEND_ARGS...]"
   echo ""
-  echo "  Runs 'cabal run backend' with optimizations disabled and restarts it"
-  echo "  whenever .hs, .cabal, or .project files change in backend/, common/,"
-  echo "  or frontend/. Disables -O2, -fspecialise, -fexpose-all-unfoldings,"
-  echo "  -fspecialise-aggressively, -flate-specialise, and -fcross-module-specialise"
-  echo "  for faster rebuilds."
-  echo "  Extra arguments after -- are passed through to cabal run."
-  echo "  Press Enter to force a restart."
+  echo "  Runs the backend under ghcid: backend/common/frontend modules reload"
+  echo "  in-process on save (no relink, no restart) and the server reruns."
+  echo "  A separate watcher cross-compiles the frontend (WASM by default) and"
+  echo "  swaps the served assets in place; refresh the browser to see them."
+  echo "  Editing a .cabal file or cabal.project restarts the ghcid session."
+  echo ""
+  echo "  --js            build the GHCJS frontend (frontend-js) instead of WASM"
+  echo "  BACKEND_ARGS    after --, passed to the backend (Snap options,"
+  echo "                  e.g. 'ob-run -- --port=8017')"
   exit 0
 fi
 
-PID=""
-INOTIFY_PID=""
-READ_PID=""
+# Parse arguments: optional --js, then -- followed by backend (Snap) args.
+FRONTEND_PKG=frontend-wasm
+BACKEND_ARGS=()
+SEEN_DASHDASH=false
+for arg in "$@"; do
+  if [[ "$arg" == "--" ]]; then
+    SEEN_DASHDASH=true
+  elif $SEEN_DASHDASH; then
+    BACKEND_ARGS+=("$arg")
+  elif [[ "$arg" == "--js" ]]; then
+    FRONTEND_PKG=frontend-js
+  else
+    echo "ob-run: unknown argument '$arg'; see 'ob-run --help'." >&2
+    exit 1
+  fi
+done
 
-# Kill all child processes on exit.
+DEV_GHC_OPTIONS=(
+  --ghc-options=-O0
+  --ghc-options=-fno-specialise
+  --ghc-options=-fno-expose-all-unfoldings
+  --ghc-options=-fno-specialise-aggressively
+  --ghc-options=-fno-late-specialise
+  --ghc-options=-fno-cross-module-specialise
+)
+
+export OBELISK_CROSS_CABAL_ARGS="-O0 ${DEV_GHC_OPTIONS[*]}"
+
+# Resolve the backend's Cabal data dir deterministically in the repl session
+# (Paths_backend honors this standard override).
+backend_datadir="$PWD/backend/data"
+export backend_datadir
+
+# Ensure the data symlinks the backend serves from exist (normally created by
+# the Setup.hs hooks during `cabal build backend`).
+mkdir -p backend/data frontend/data
+ln -sfn "$PWD/frontend/data/frontend.jsexe" backend/data/frontend.jsexe
+ln -sfn "$PWD/frontend/data/static" backend/data/static
+
+GHCID_PID=""
+WATCH_PID=""
 cleanup() {
-  if [[ -n "$PID" ]]; then kill "$PID" 2>/dev/null || true; fi
-  if [[ -n "$INOTIFY_PID" ]]; then kill "$INOTIFY_PID" 2>/dev/null || true; fi
-  if [[ -n "$READ_PID" ]]; then kill "$READ_PID" 2>/dev/null || true; fi
+  if [[ -n "$WATCH_PID" ]]; then kill "$WATCH_PID" 2>/dev/null || true; fi
+  if [[ -n "$GHCID_PID" ]]; then kill "$GHCID_PID" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
 
-# Enter-to-restart needs a controlling terminal; without one (CI, editor
-# tasks, headless shells) the read would exit immediately and trigger a
-# restart loop, so only arm it when /dev/tty is usable.
-HAVE_TTY=false
-if { : < /dev/tty; } 2>/dev/null; then
-  HAVE_TTY=true
-fi
+# Frontend asset watcher: rebuild the cross-compiled frontend whenever
+# frontend/common/static sources change. The wrapper package's Setup.hs does
+# the cross-build (incremental, persistent dist-wasm) and assembles the jsexe
+# into frontend/data/, which the running server serves through symlinks.
+# A separate --builddir keeps this cabal invocation from contending with
+# ghcid's live repl session over dist-newstyle.
+(
+  while true; do
+    cabal build "$FRONTEND_PKG" -O0 "${DEV_GHC_OPTIONS[@]}" --builddir=dist-devfrontend \
+      || echo "[ob-run] frontend build failed; fix the error and save to retry" >&2
+    inotifywait -r -e modify,create,delete,move \
+      --include '\.(hs|cabal)$' \
+      frontend common static 2>/dev/null || sleep 2
+  done
+) &
+WATCH_PID=$!
 
-restart() {
-  kill "$PID" 2>/dev/null || true
-  wait "$PID" 2>/dev/null || true
-  echo "Restarting..."
-}
+# Backend under ghcid: in-process bytecode reload + rerun of the server on
+# save. Runs Backend.run, the entry point the backend library exports (the
+# backend executable's Main is a thin wrapper around it). -f -cross drops
+# the dependency on the frontend wrapper so the repl never cross-compiles.
+ghcid \
+  -c "cabal repl lib:backend lib:common lib:frontend -O0 -f -cross ${DEV_GHC_OPTIONS[*]}" \
+  --test Backend.run \
+  --setup ":set args ${BACKEND_ARGS[*]}" \
+  --restart=cabal.project \
+  --restart=backend/backend.cabal \
+  --restart=common/common.cabal \
+  --restart=frontend/frontend.cabal &
+GHCID_PID=$!
 
-while true; do
-  # Run the backend in the background with optimizations disabled.
-  DEV_GHC_OPTIONS=(
-    --ghc-options=-O0
-    --ghc-options=-fno-specialise
-    --ghc-options=-fno-expose-all-unfoldings
-    --ghc-options=-fno-specialise-aggressively
-    --ghc-options=-fno-late-specialise
-    --ghc-options=-fno-cross-module-specialise
-  )
-  OBELISK_CROSS_CABAL_ARGS="-O0 ${DEV_GHC_OPTIONS[*]}" \
-    cabal run backend -O0 "${DEV_GHC_OPTIONS[@]}" "$@" &
-  PID=$!
-
-  # Watch for source file changes.
-  inotifywait -r -e modify,create,delete \
-    --include '\.(hs|cabal|project)$' \
-    backend common frontend 2>/dev/null &
-  INOTIFY_PID=$!
-
-  # Also allow manual restart by pressing Enter (when a terminal is attached).
-  READ_PID=""
-  if [[ "$HAVE_TTY" == true ]]; then
-    read -r < /dev/tty 2>/dev/null &
-    READ_PID=$!
-  fi
-
-  # Restart on whichever triggers first.
-  if [[ -n "$READ_PID" ]]; then
-    wait -n "$INOTIFY_PID" "$READ_PID" 2>/dev/null || true
-  else
-    wait -n "$INOTIFY_PID" 2>/dev/null || true
-  fi
-  kill "$INOTIFY_PID" 2>/dev/null || true
-  if [[ -n "$READ_PID" ]]; then kill "$READ_PID" 2>/dev/null || true; fi
-
-  restart
-done
+wait "$GHCID_PID"
