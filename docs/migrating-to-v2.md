@@ -45,7 +45,7 @@ project by hand.
 
 | v1 (`ob` / reflex-platform) | v2 replacement |
 |---|---|
-| `ob init` | `scripts/ob-init`: scaffolds a new project from `skeleton/`. (Or just `cp -r deps/obelisk/skeleton my-app`.) |
+| `ob init` | `nix run github:obsidiansystems/obelisk#init -- my-app` (no clone or install needed; pins obelisk as a nix-thunk), or `ob-init` from an obelisk shell. |
 | `ob init --branch BRANCH` / `--symlink PATH` | No managed init source. Copy/point at the skeleton you want; obelisk's own libraries are injected via `obeliskLib.source-repository-packages` in `project.nix`. |
 | `ob run` | `ob-run` (`scripts/ob-run`): dev server on `:8000` with v1-style in-process reloading: the backend runs under ghcid, so backend/common/frontend edits recompile to bytecode and rerun the server without linking or restarting. (It runs `Backend.run`, the library entry point scaffolded apps export; the executable's `Main` is a thin wrapper around it.) **What still differs from v1:** the browser runs the real cross-compiled WASM frontend, not a native jsaddle-warp one; frontend edits trigger an (incremental) cross-build whose output is swapped in place under the running server, and you refresh the browser manually. v1's `config/common/route` interpretation and dev-TLS (self-signed/`--cert`) are gone: pass Snap's `--port` after `--` (`ob-run -- --port=8017`), and put a local reverse proxy (e.g. caddy) in front for https during development. A native-frontend (jsaddle-warp) dev mode is tracked as a post-2.0 follow-up. |
 | `ob watch` | `ob-watch` (`scripts/ob-watch`): ghcid over `cabal repl`; type errors on every save at GHCi speed, no server, no cross builds. |
