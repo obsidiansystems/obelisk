@@ -18,7 +18,11 @@ preserved `release/1.x` line.
   under `deps/`) instead of reflex-platform.
 * **`ob` CLI removed.** The Haskell `ob` command-line tool is gone, replaced by
   shell scripts placed on `PATH` by the nix shell: `ob-run`, `ob-repl`,
-  `ob-hoogle`, and the new `ob-init` and `ob-deploy`.
+  `ob-watch` (ghcid error-watch), `ob-hoogle`, and the new `ob-init` and
+  `ob-deploy`. The v1 dev server's in-process ghcid/jsaddle-warp reload model
+  is not yet restored — `ob-run` is a rebuild-and-restart loop; see
+  `docs/migrating-to-v2.md`. Plain-cabal workflows (no nix shell) are
+  documented in `docs/cabal.md`.
 * **Deployment model changed.** The managed `ob deploy` workflow
   (`init`/`push`/`test`) is removed. Deploy via the `services.obelisk` NixOS
   module, the produced OCI container image, or the minimal `ob-deploy` script.

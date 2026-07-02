@@ -47,8 +47,8 @@ project by hand.
 |---|---|
 | `ob init` | `scripts/ob-init` — scaffolds a new project from `skeleton/`. (Or just `cp -r deps/obelisk/skeleton my-app`.) |
 | `ob init --branch BRANCH` / `--symlink PATH` | No managed init source. Copy/point at the skeleton you want; obelisk's own libraries are injected via `obeliskLib.source-repository-packages` in `project.nix`. |
-| `ob run` | `ob-run` (`scripts/ob-run`) — watch-and-rebuild dev server on `:8000`; rebuilds on `.hs`/`.cabal`/`.project` change or Enter. |
-| `ob watch` | `ob-run`. The separate "watch for errors only" mode is gone; use `ob-run` (rebuild loop) or `ob-repl` + `:reload`. |
+| `ob run` | `ob-run` (`scripts/ob-run`) — watch-and-rebuild dev server on `:8000`; rebuilds on `.hs`/`.cabal`/`.project` change or Enter. **Different reload model:** v1 reloaded interpreted code in-process via ghcid, with the frontend running as native Haskell over jsaddle-warp (no cross-compile in the dev loop); v2 relinks the backend, cross-compiles the frontend to WASM (incrementally), and restarts the process on each change — dev iteration is slower than v1 for now. v1's `config/common/route` interpretation, `--port` flag, and dev-TLS (self-signed/`--cert`) are also gone: pass Snap's `--port` after `--`, and put a local reverse proxy (e.g. caddy) in front for https during development. Restoring the fast jsaddle-warp dev loop is tracked as a post-2.0 follow-up. |
+| `ob watch` | `ob-watch` (`scripts/ob-watch`) — ghcid over `cabal repl`; type errors on every save at GHCi speed, no server, no cross builds. |
 | `ob repl` | `ob-repl` (`scripts/ob-repl`) — GHCi for `backend`+`common`+`frontend`, `-O0`, cross builds skipped (`-f -cross`). `ob-repl lib:common` for a single target. |
 | `ob hoogle` | `ob-hoogle` (`scripts/ob-hoogle`) — `ob-hoogle start [PORT]` / `stop` / `restart`. |
 | `ob shell` | `nix-shell` (or `nix develop 'git+file:.'`). Run a one-off command with `nix-shell --run '...'` / `nix develop -c '...'`. |
@@ -74,8 +74,13 @@ project by hand.
 | — (new) | `nix-build skeleton -A containerImage.wasm` for an OCI image |
 | `ob run` triggering a JS build | `cabal build backend` / `cabal run backend` transparently cross-builds the frontend via the custom `Setup.hs` hooks (`OBELISK_CROSS_CABAL_ARGS` passes ghc-options through). |
 
-The nix shell is no longer mandatory for `cabal build` — it only needs
-`wasm32-unknown-wasi-cabal` and/or `javascript-unknown-ghcjs-cabal` on `PATH`.
+The nix shell is no longer mandatory for `cabal build`, but the cross-build
+needs more than the cross cabal: `wasm32-unknown-wasi-cabal`,
+`wasm32-unknown-wasi-ghc`, and `node` on `PATH`, plus `OBELISK_WASI_SHIM` set
+(and `javascript-unknown-ghcjs-cabal` for the js target). The nix shell
+provides all of these; for the fully nix-free setup (ghc-wasm-meta toolchain,
+static assets, production builds, manual deploy) see
+[`docs/cabal.md`](cabal.md).
 
 ## Deployment model
 

@@ -38,7 +38,7 @@ Obelisk is targeted primarily at Haskell developers who want to build high-quali
 
 ### Who should consider using it?
 
-Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Reflex/Reflex-DOM](https://reflex-frp.org/), web technologies like [HTML](https://developer.mozilla.org/en-US/docs/Web/HTML) and [CSS](https://developer.mozilla.org/en-US/docs/Web/CSS), and a terminal shell like [Bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)). Knowledge of [Nix](https://nixos.org/) helps but is not strictly necessary.
+Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Reflex/Reflex-DOM](https://reflex-frp.org/), web technologies like [HTML](https://developer.mozilla.org/en-US/docs/Web/HTML) and [CSS](https://developer.mozilla.org/en-US/docs/Web/CSS), and a terminal shell like [Bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)). Knowledge of [Nix](https://nixos.org/) helps but is not required for day-to-day development — once the cross-toolchain is on your `PATH`, the edit loop is plain `cabal` (see [docs/cabal.md](docs/cabal.md)). Production builds and the shipped static-asset pipeline do use nix.
 
 ## Quick Start
 
@@ -108,6 +108,15 @@ Start a REPL with optimizations disabled:
 ```bash
 ob-repl              # loads backend, common, frontend
 ob-repl lib:common   # load specific target
+```
+
+### ob-watch
+
+Continuous type-error feedback via [ghcid](https://github.com/ndmitchell/ghcid) — recompiles to bytecode on every save and reports errors at GHCi speed, without starting a server or cross-compiling the frontend:
+
+```bash
+ob-watch             # watches backend, common, frontend
+ob-watch lib:common  # watch a specific target
 ```
 
 ### ob-hoogle
@@ -263,7 +272,7 @@ cabal run backend       # run with WASM frontend cross-build
 
 The backend's custom Setup.hs automatically cross-compiles the frontend (WASM or GHCJS) and links static assets during `cabal build`.
 
-The nix shell is not strictly required, if you have `wasm32-unknown-wasi-cabal` and/or `javascript-unknown-ghcjs-cabal` in your PATH, plain `cabal build` will work without nix.
+The nix shell is not strictly required — but the cross-build needs more than the cross cabal: `wasm32-unknown-wasi-cabal`, `wasm32-unknown-wasi-ghc`, and `node` on `PATH`, plus the `OBELISK_WASI_SHIM` environment variable (the nix shell provides and exports all of these). See [docs/cabal.md](docs/cabal.md) for the complete plain-cabal workflow: prerequisites (including getting the toolchain from ghc-wasm-meta without nix), static assets, dev runs, production builds, and a manual deploy recipe.
 
 ## Deployment
 
