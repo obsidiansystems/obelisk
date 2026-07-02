@@ -101,6 +101,12 @@ echo "Scaffolding '$NAME' in '$DIR'..."
 cp -a "$SKELETON" "$DIR"
 chmod -R u+w "$DIR"
 
+# Drop build artifacts that leak into the copy when the skeleton comes from a
+# dirty obelisk working tree rather than a clean store copy (e.g. nix `result`
+# symlinks left by `nix-build skeleton`).
+rm -rf "$DIR"/result "$DIR"/result-* "$DIR"/dist-newstyle "$DIR"/dist-wasm \
+  "$DIR"/dist-js "$DIR"/.ghc.environment.* "$DIR"/ghcid-output.txt
+
 # Rename the project in project.nix.
 sed -i "s/name = \"obelisk-skeleton\";/name = \"${NAME}\";/" "$DIR/project.nix"
 
