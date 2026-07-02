@@ -72,7 +72,7 @@ in {
         Project config directory (with common/, frontend/, backend/ subtrees).
         Its common/ and frontend/ subtrees are bundled into the production
         server as public configs; backend/ is never bundled (it may hold
-        secrets — supply those to the running server at runtime).
+        secrets; supply those to the running server at runtime).
       '';
     };
 

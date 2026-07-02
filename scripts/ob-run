@@ -3,7 +3,7 @@
 # frontend rebuilds.
 #
 # The backend runs inside a ghcid session: saving a backend/common/frontend
-# module recompiles it to bytecode and reruns the server in-process — no
+# module recompiles it to bytecode and reruns the server in-process: no
 # native linking, no process restart. A separate watcher cross-compiles the
 # frontend (WASM by default) and assembles the served assets in place under
 # the running server; refresh the browser to pick them up.
