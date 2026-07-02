@@ -26,11 +26,10 @@ preserved `release/1.x` line.
   CapacitorJS is the new path to mobile apps; Reflex-Lynx is an ongoing research
   direction.
 
-## Unreleased v2.0.0.0
-
-Complete rewrite of the nix build system around nix-haskell and a NixOS-style
-module system. Replaces reflex-platform with direct haskell.nix integration.
-Adds WASM frontend target alongside GHCJS. Adds GHC 9.14 support.
+The sections below detail the rewrite summarized above: the nix build system
+is rebuilt around nix-haskell and a NixOS-style module system, replacing
+reflex-platform with direct haskell.nix integration, adding the WASM frontend
+target alongside GHCJS and GHC 9.14 support.
 
 ### Vanilla cabal builds
 
