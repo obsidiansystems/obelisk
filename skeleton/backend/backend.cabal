@@ -157,11 +157,13 @@ library
 
     -- Other library packages from which modules are imported.
     build-depends:    common
+                    , frontend
                       --
                     , base
                       --
                     , directory
                     , file-embed
+                    , filepath
                     , obelisk-backend
 
     -- Directories containing source files.
@@ -190,9 +192,6 @@ executable backend
     build-depends:    backend
                       --
                     , base
-                      --
-                    , filepath
-                    , obelisk-backend
 
     if flag(cross)
       if flag(wasm)
