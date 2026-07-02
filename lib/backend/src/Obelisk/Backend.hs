@@ -22,13 +22,16 @@ module Obelisk.Backend
   , runBackendWith
   -- * Configuration of backend
   , GhcjsWidgets(..)
+  , GhcjsAppUrls(..)
   , defaultGhcjsWidgets
   -- * all.js script loading functions
   , deferredGhcjsScript
   , delayedGhcjsScript
   -- * all.js preload functions
   , preloadGhcjs
+  , preloadWasm
   , renderAllJsPath
+  , renderFrontendWasmPath
   -- * Re-exports
   , Default (def)
   , getPageName
@@ -75,6 +78,8 @@ import Snap (MonadSnap, Snap, commandLineConfig, defaultConfig, getsRequest, htt
             , rqPathInfo, rqQueryString, setContentType, writeBS, writeText
             , rqCookies, Cookie(..) , setHeader)
 import Snap.Internal.Http.Server.Config (Config (accessLog, errorLog), ConfigLog (ConfigIoLog))
+import System.Directory (doesPathExist)
+import System.FilePath ((</>))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 data Backend backendRoute frontendRoute = Backend
@@ -86,9 +91,9 @@ data BackendConfig frontendRoute = BackendConfig
   { _backendConfig_runSnap :: !(Snap () -> IO ()) -- ^ Function to run the snap server
   , _backendConfig_staticAssets :: !StaticAssets -- ^ Static assets
   , _backendConfig_frontendGhcjsAssets :: !StaticAssets -- ^ Compiled GHCJS frontend assets
-  , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (Text -> FrontendWidgetT (R frontendRoute) ()))
-    -- ^ Given the URL of all.js, return the widgets which are responsible for
-    -- loading the script.
+  , _backendConfig_ghcjsWidgets :: !(GhcjsWidgets (GhcjsAppUrls -> FrontendWidgetT (R frontendRoute) ()))
+    -- ^ Given the URLs of the compiled frontend's entry-point assets, return
+    -- the widgets which are responsible for loading the script.
   } deriving (Generic)
 
 -- | The static assets provided must contain a compiled GHCJS app that corresponds exactly to the Frontend provided
@@ -105,13 +110,26 @@ data GhcjsWidgets a = GhcjsWidgets
   -- ^ A script widget, placed in the document body
   } deriving (Functor, Generic)
 
+-- | URLs of the compiled frontend's entry-point assets, passed to the
+-- 'GhcjsWidgets' in 'BackendConfig' so they can emit script and preload tags.
+data GhcjsAppUrls = GhcjsAppUrls
+  { _ghcjsAppUrls_allJs :: !Text
+    -- ^ URL of @all.js@: the compiled GHCJS app, or the WASM bootstrap shim.
+  , _ghcjsAppUrls_wasm :: !(Maybe Text)
+    -- ^ URL of @frontend.wasm@ when the compiled frontend is a WASM build,
+    -- detected by 'runBackendWith' from the frontend assets on disk.
+  } deriving (Show, Eq, Ord, Generic)
 
--- | Given the URL of all.js, return the widgets which are responsible for
--- loading the script. Defaults to 'preloadGhcjs' and 'deferredGhcjsScript'.
-defaultGhcjsWidgets :: GhcjsWidgets (Text -> FrontendWidgetT r ())
+-- | Given the URLs of the compiled frontend's entry-point assets, return the
+-- widgets which are responsible for loading the script. Defaults to
+-- 'preloadGhcjs' (plus 'preloadWasm' for WASM builds) and
+-- 'deferredGhcjsScript'.
+defaultGhcjsWidgets :: GhcjsWidgets (GhcjsAppUrls -> FrontendWidgetT r ())
 defaultGhcjsWidgets = GhcjsWidgets
-  { _ghcjsWidgets_preload = preloadGhcjs
-  , _ghcjsWidgets_script = deferredGhcjsScript
+  { _ghcjsWidgets_preload = \urls -> do
+      preloadGhcjs $ _ghcjsAppUrls_allJs urls
+      mapM_ preloadWasm $ _ghcjsAppUrls_wasm urls
+  , _ghcjsWidgets_script = deferredGhcjsScript . _ghcjsAppUrls_allJs
   }
 
 -- | Serve a frontend, which must be the same frontend that Obelisk has built and placed in the default location
@@ -179,6 +197,19 @@ getRouteWith e = do
 renderAllJsPath :: Encoder Identity Identity (R (FullRoute a b)) PageName -> Text
 renderAllJsPath validFullEncoder =
   renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ ["all.js"]
+
+-- | URL at which the WASM frontend binary is served, mirroring 'renderAllJsPath'.
+renderFrontendWasmPath :: Encoder Identity Identity (R (FullRoute a b)) PageName -> Text
+renderFrontendWasmPath validFullEncoder =
+  renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_Resource ResourceRoute_Ghcjs) :/ ["frontend.wasm"]
+
+-- | Check whether the compiled frontend assets contain a @frontend.wasm@
+-- binary, i.e. whether the frontend was built for the WASM target. Both the
+-- unprocessed and the processed (content-addressed) asset layouts are probed.
+frontendAssetsIncludeWasm :: StaticAssets -> IO Bool
+frontendAssetsIncludeWasm assets = (||)
+  <$> doesPathExist (_staticAssets_unprocessed assets </> "frontend.wasm")
+  <*> doesPathExist (_staticAssets_processed assets </> "frontend.wasm")
 
 serveObeliskApp
   :: (MonadSnap m, HasCookies m, MonadFail m)
@@ -250,17 +281,23 @@ runBackendWith (BackendConfig runSnap staticAssets frontendGhcjsAssets ghcjsWidg
   Left e -> fail $ "backend error:\n" <> T.unpack e
   Right validFullEncoder -> do
     publicConfigs <- getPublicConfigs
+    hasWasm <- frontendAssetsIncludeWasm frontendGhcjsAssets
+    let ghcjsAppUrls = GhcjsAppUrls
+          { _ghcjsAppUrls_allJs = renderAllJsPath validFullEncoder
+          , _ghcjsAppUrls_wasm = if hasWasm
+              then Just $ renderFrontendWasmPath validFullEncoder
+              else Nothing
+          }
     _backend_run backend $ \serveRoute ->
       runSnap $
         getRouteWith validFullEncoder >>= \case
           Identity r -> case r of
             FullRoute_Backend backendRoute :/ a -> serveRoute $ backendRoute :/ a
             FullRoute_Frontend obeliskRoute :/ a ->
-              serveObeliskApp routeToUrl (($ allJsUrl) <$> ghcjsWidgets) (serveStaticAssets staticAssets) frontendApp publicConfigs $
+              serveObeliskApp routeToUrl (($ ghcjsAppUrls) <$> ghcjsWidgets) (serveStaticAssets staticAssets) frontendApp publicConfigs $
                 obeliskRoute :/ a
               where
                 routeToUrl (k :/ v) = renderObeliskRoute validFullEncoder $ FullRoute_Frontend (ObeliskRoute_App k) :/ v
-                allJsUrl = renderAllJsPath validFullEncoder
                 frontendApp = GhcjsApp
                   { _ghcjsApp_compiled = frontendGhcjsAssets
                   , _ghcjsApp_value = frontend
@@ -282,6 +319,18 @@ renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
 -- This is the default preload method.
 preloadGhcjs :: Text -> FrontendWidgetT r ()
 preloadGhcjs allJsUrl = elAttr "link" ("rel" =: "preload" <> "as" =: "script" <> "href" =: allJsUrl) blank
+
+-- | Preload @frontend.wasm@ with a fetch hint matching the bootstrap shim's
+-- request, so the (multi-megabyte) binary starts downloading before all.js
+-- runs. Emitted by 'defaultGhcjsWidgets' when the frontend is a WASM build.
+preloadWasm :: Text -> FrontendWidgetT r ()
+preloadWasm wasmUrl = elAttr "link"
+  (  "rel" =: "preload"
+  <> "as" =: "fetch"
+  <> "type" =: "application/wasm"
+  <> "crossorigin" =: "anonymous"
+  <> "href" =: wasmUrl
+  ) blank
 
 -- | Load the script from the given URL in a deferred script tag.
 -- This is the default method.
