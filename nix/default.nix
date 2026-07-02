@@ -1,4 +1,4 @@
-{ system, inputs ? {} }:
+{ system ? builtins.currentSystem, inputs ? {} }:
 
 let pkgs =
       if inputs ? nixpkgs
