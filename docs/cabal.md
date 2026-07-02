@@ -2,14 +2,14 @@
 
 Obelisk's custom `Setup.hs` hooks do the framework-specific work (frontend
 cross-compilation, static asset generation, asset linking) during an ordinary
-`cabal build`. That means the nix **dev shell is a convenience, not a
-requirement** — but "plain cabal" still has real prerequisites, and some parts
-of the pipeline (production asset processing, the skeleton's default static
-build) do use nix. This guide is the honest, end-to-end version of that story.
+`cabal build`, so the nix dev shell is not required for development. "Plain
+cabal" still has prerequisites beyond cabal itself, and two parts of the
+pipeline (production asset processing and the skeleton's default static
+build) use nix. This guide covers the whole path: what you need, the edit
+loop, static assets, production builds, and deployment.
 
-**TL;DR:** the day-to-day edit loop works with cabal alone once the
-cross-toolchain is on `PATH`; production builds should use
-`nix-build -A serverExe.wasm`.
+In short: the edit loop works with cabal alone once the cross-toolchain is on
+`PATH`; production builds should use `nix-build -A serverExe.wasm`.
 
 ## 1. Prerequisites
 
@@ -22,13 +22,13 @@ shell out, so the following must be available:
 | `wasm32-unknown-wasi-cabal` (or the `wasm32-unknown-wasi` wrapper) | cross-compiling the frontend to WASM | yes (wasm target) |
 | `wasm32-unknown-wasi-ghc` | locating `post-link.mjs` (`--print-libdir`) | yes (wasm target) |
 | `node` | running `post-link.mjs` to extract the JSFFI bindings | yes (wasm target) |
-| `OBELISK_WASI_SHIM` env var | locating the `@bjorn3/browser_wasi_shim` package (its `dist/*.js` is copied into the jsexe) | yes (wasm target) — the Setup hook **fails if unset** |
+| `OBELISK_WASI_SHIM` env var | locating the `@bjorn3/browser_wasi_shim` package (its `dist/*.js` is copied into the jsexe) | yes (wasm target); the Setup hook fails if unset |
 | `wasm-opt`, `wasm-tools` | optimizing/stripping `frontend.wasm` | optional (skipped with a warning) |
 | `javascript-unknown-ghcjs-cabal` | the GHCJS frontend target | only with `-f -wasm` |
 
-The obelisk nix shell provides all of these (and exports `OBELISK_WASI_SHIM`
-for you) — entering it once and using plain `cabal` commands inside it is the
-easiest hybrid.
+The obelisk nix shell provides all of these and exports `OBELISK_WASI_SHIM`.
+Entering it once and using plain `cabal` commands inside it is the easiest
+setup.
 
 To go fully nix-free:
 
@@ -36,7 +36,7 @@ To go fully nix-free:
   [ghc-wasm-meta](https://gitlab.haskell.org/haskell-wasm/ghc-wasm-meta),
   which distributes wasm32-wasi GHC/cabal binaries. Obelisk's Setup hook looks
   for the executables under the names `wasm32-unknown-wasi-cabal` /
-  `wasm32-unknown-wasi-ghc` (or a `wasm32-unknown-wasi` wrapper) — symlink
+  `wasm32-unknown-wasi-ghc` (or a `wasm32-unknown-wasi` wrapper); symlink
   them if your installation names them differently.
 - Install the WASI browser polyfill and point `OBELISK_WASI_SHIM` at its
   package root:
@@ -47,7 +47,7 @@ To go fully nix-free:
   ```
 
 - **Caveat:** the skeleton's `static/generate` script runs `nix-build` (see
-  §3), so an out-of-the-box scaffold still touches nix once per static-asset
+  section 3), so an out-of-the-box scaffold still touches nix once per static-asset
   change unless you swap that script out.
 
 One more knob: `OBELISK_CROSS_CABAL_ARGS` passes extra arguments through to
@@ -68,16 +68,16 @@ cabal run backend              # build + serve on http://localhost:8000
 cabal run backend -- --port=8123   # Snap's CLI flags after --
 ```
 
-- The port comes from Snap's `commandLineConfig` (default **8000**); pass any
+- The port comes from Snap's `commandLineConfig` (default 8000); pass any
   Snap option after `--`.
 - Run from the project root: the backend reads `config/` relative to its
-  working directory (a missing `config/` is fine — configs are optional).
-- `-f -cross` skips the frontend cross-build entirely (fast backend-only
+  working directory. A missing `config/` is fine; configs are optional.
+- `-f -cross` skips the frontend cross-build entirely (backend-only
   iteration; this is what `ob-repl`/`ob-watch` use).
 - `-f -wasm` switches the frontend target to GHCJS
   (`javascript-unknown-ghcjs-cabal` must be on `PATH`).
-- The WASM cross-build reuses a persistent `dist-wasm` build directory, so it
-  is incremental — only changed modules recompile.
+- The WASM cross-build reuses a persistent `dist-wasm` build directory, so
+  only changed modules recompile.
 
 Repl and type-error watching are one-liners over the same mechanism (or use
 the `ob-repl` / `ob-watch` scripts, which add the dev ghc-options):
@@ -96,8 +96,8 @@ wrapper around it).
 `static/generated` (and `static/generated/custom` on native builds) carry a
 custom `Setup.hs` (`Obelisk.Setup.Static`) which, on every native build:
 
-1. runs the executable script **`static/generate <output>`** to produce
-   `static/generated/data/static` — the skeleton's version is
+1. runs the executable script `static/generate <output>` to produce
+   `static/generated/data/static`; the skeleton's version is
    `nix-build static/ -o <output>` (building `static/default.nix`);
 2. hashes the resulting files and regenerates
    `static/generated/src/Obelisk/Generated/Static.hs`, giving you the checked
@@ -105,7 +105,7 @@ custom `Setup.hs` (`Obelisk.Setup.Static`) which, on every native build:
 
 **Adding an asset:** drop the file under `static/src/`, rebuild (any
 `cabal build backend` re-runs the pipeline), and reference it with
-`static @"path/to/file"` — a typo is a compile error.
+`static @"path/to/file"`. A typo in the path is a compile error.
 
 **Gotcha:** `static/generated/src/Obelisk/Generated/Static.hs` and
 `static/generated/data/static` are tracked placeholders that builds
@@ -123,32 +123,32 @@ cp -r "$(dirname "$0")/src" "$output"
 ```
 
 The nix-build version stays useful when static assets are themselves built
-(SASS, bundlers, image pipelines — anything expressible as a derivation).
+(SASS, bundlers, image pipelines: anything expressible as a derivation).
 
 ## 4. Production builds without nix (and what you give up)
 
 Plain `cabal build backend` produces everything needed to serve the app:
 
 - the `backend` binary (under `dist-newstyle/`);
-- `frontend/data/frontend.jsexe/` — the assembled frontend (`frontend.wasm`,
+- `frontend/data/frontend.jsexe/`: the assembled frontend (`frontend.wasm`,
   `all.js` bootstrap, `ghc_wasm_jsffi.js`, `wasi-shim.js`), symlinked into
   `backend/data/frontend.jsexe` by the backend's Setup hook;
-- `backend/data/static` — the generated static assets.
+- `backend/data/static`: the generated static assets.
 
-The backend serves these **unprocessed** directories directly (its
+The backend serves these unprocessed directories directly (its
 `StaticAssets` configuration carries both a processed and an unprocessed
 path, and falls back to the unprocessed one). `wasm-opt` has been applied
-best-effort if it was on `PATH`. What you do *not* get compared to
-`nix-build -A serverExe.wasm`:
+if it was on `PATH`. Compared to `nix-build -A serverExe.wasm`, you do not
+get:
 
-- brotli/gzip **precompression** of assets (the nix `mkAssets` pipeline);
-- the content-addressed **processed asset layout** with far-future caching;
+- brotli/gzip precompression of assets (the nix `mkAssets` pipeline);
+- the content-addressed processed asset layout with far-future caching;
 - GHCJS closure-compiler optimization (js target);
 - a self-contained output directory with pinned runtime dependencies.
 
 ### Manual deploy recipe
 
-For a small deployment this is nonetheless serviceable:
+This is enough for a small deployment:
 
 ```bash
 # on the build machine (same OS/arch as the server, or build on the server)
@@ -156,7 +156,7 @@ BIN=$(cabal list-bin backend)
 rsync -aL "$BIN" backend/data/ config/ me@server:/srv/myapp/
 #         ^ binary  ^ frontend.jsexe + static (follow symlinks)  ^ runtime config
 
-# on the server — point the binary's Cabal data dir at the copied assets
+# on the server: point the binary's Cabal data dir at the copied assets
 cd /srv/myapp
 backend_datadir=/srv/myapp ./backend --port=8000
 ```
@@ -167,7 +167,7 @@ unit is just `ExecStart=/srv/myapp/backend --port=8000` with
 `WorkingDirectory=/srv/myapp` and `Environment=backend_datadir=/srv/myapp`.
 
 For anything beyond that, use the supported paths: `services.obelisk` (NixOS),
-the OCI `containerImage`, `ob-deploy`, or obelisk-systemd — see the README's
+the OCI `containerImage`, `ob-deploy`, or obelisk-systemd; see the README's
 Deployment section.
 
 ## 5. Docs and Hoogle
@@ -175,5 +175,5 @@ Deployment section.
 - `cabal haddock all` builds package docs; the nix `docs` output builds the
   full set.
 - `ob-hoogle` runs `hoogle server` against whatever Hoogle database is on
-  `PATH` — a dependency-scoped database currently comes from the nix shell
-  (`withHoogle`), so Hoogle is effectively a nix-shell feature.
+  `PATH`. A dependency-scoped database currently comes only from the nix
+  shell (`withHoogle`), so Hoogle is in practice a nix-shell feature.

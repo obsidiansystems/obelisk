@@ -1,6 +1,6 @@
 {
   # Dependencies are pinned as nix-thunks under deps/ (see deps/*/github.json),
-  # not git submodules — so no `?submodules=1` / `--recursive` is needed. The nix
+  # not git submodules, so no `?submodules=1` / `--recursive` is needed. The nix
   # code (nix/*.nix) imports them directly; `nixpkgs` for the flake outputs comes
   # from the nix-haskell thunk's pins.
   outputs = { self, ... }:

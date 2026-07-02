@@ -4,16 +4,15 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## 2.0.0.0
 
-Obelisk v2.0.0 promotes the `next` line to the mainline release. This is a
-breaking, ground-up modernization of the framework. Existing v1 projects do not
-build against v2 unchanged; see `docs/migrating-to-v2.md` for the full
-migration mapping. Projects that need the old stack should stay on the
+Obelisk v2.0.0 promotes the `next` line to the mainline release. It is a
+breaking rewrite: v1 projects do not build against v2 unchanged. See
+`docs/migrating-to-v2.md` for the full migration mapping. Projects that need the old stack should stay on the
 preserved `release/1.x` line.
 
-* **GHC 8.10 → 9.14.** The toolchain moves to GHC 9.14.
-* **Frontend GHCJS → WASM.** WASM (`wasm32-unknown-wasi`) is the new default
+* **GHC 8.10 to 9.14.** The toolchain moves to GHC 9.14.
+* **Frontend GHCJS to WASM.** WASM (`wasm32-unknown-wasi`) is the new default
   frontend target; GHCJS remains available via `obelisk.frontend.target = "js"`.
-* **Build system reflex-platform → nix-haskell.** Builds are now driven by
+* **Build system reflex-platform to nix-haskell.** Builds are now driven by
   nix-haskell/haskell.nix with flakes (dependency pins vendored as nix-thunks
   under `deps/`) instead of reflex-platform.
 * **`ob` CLI removed.** The Haskell `ob` command-line tool is gone, replaced by
@@ -22,7 +21,7 @@ preserved `release/1.x` line.
   `ob-deploy`. `ob-run` keeps v1's in-process reload model for the backend
   (ghcid; no relink or restart on save) and rebuilds the cross-compiled
   frontend in place under the running server; the browser runs real WASM
-  rather than v1's native jsaddle-warp frontend — see `docs/migrating-to-v2.md`.
+  rather than v1's native jsaddle-warp frontend; see `docs/migrating-to-v2.md`.
   Plain-cabal workflows (no nix shell) are documented in `docs/cabal.md`.
 * **Deployment model changed.** The managed `ob deploy` workflow
   (`init`/`push`/`test`) is removed. Deploy via the `services.obelisk` NixOS

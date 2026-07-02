@@ -38,7 +38,7 @@ Obelisk is targeted primarily at Haskell developers who want to build high-quali
 
 ### Who should consider using it?
 
-Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Reflex/Reflex-DOM](https://reflex-frp.org/), web technologies like [HTML](https://developer.mozilla.org/en-US/docs/Web/HTML) and [CSS](https://developer.mozilla.org/en-US/docs/Web/CSS), and a terminal shell like [Bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)). Knowledge of [Nix](https://nixos.org/) helps but is not required for day-to-day development — once the cross-toolchain is on your `PATH`, the edit loop is plain `cabal` (see [docs/cabal.md](docs/cabal.md)). Production builds and the shipped static-asset pipeline do use nix.
+Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Reflex/Reflex-DOM](https://reflex-frp.org/), web technologies like [HTML](https://developer.mozilla.org/en-US/docs/Web/HTML) and [CSS](https://developer.mozilla.org/en-US/docs/Web/CSS), and a terminal shell like [Bash](https://en.wikipedia.org/wiki/Bash_(Unix_shell)). Knowledge of [Nix](https://nixos.org/) helps but is not required for day-to-day development: once the cross-toolchain is on your `PATH`, the edit loop is plain `cabal` (see [docs/cabal.md](docs/cabal.md)). Production builds and the shipped static-asset pipeline do use nix.
 
 ## Quick Start
 
@@ -93,7 +93,7 @@ ob-init my-app --name my-app   # also set the project name
 
 ### ob-run
 
-Development server with in-process reloading. The backend runs inside a [ghcid](https://github.com/ndmitchell/ghcid) session: saving a `backend`/`common`/`frontend` module recompiles it to bytecode and reruns the server in-process — no native linking, no process restart. A separate watcher cross-compiles the frontend (WASM by default, incrementally) and swaps the served assets in place under the running server; refresh the browser to pick them up.
+Development server with in-process reloading. The backend runs inside a [ghcid](https://github.com/ndmitchell/ghcid) session: saving a `backend`/`common`/`frontend` module recompiles it to bytecode and reruns the server in-process: no native linking, no process restart. A separate watcher cross-compiles the frontend (WASM by default, incrementally) and swaps the served assets in place under the running server; refresh the browser to pick them up.
 
 ```bash
 ob-run                   # serve on :8000
@@ -114,7 +114,7 @@ ob-repl lib:common   # load specific target
 
 ### ob-watch
 
-Continuous type-error feedback via [ghcid](https://github.com/ndmitchell/ghcid) — recompiles to bytecode on every save and reports errors at GHCi speed, without starting a server or cross-compiling the frontend:
+Continuous type-error feedback via [ghcid](https://github.com/ndmitchell/ghcid): recompiles to bytecode on every save and reports errors at GHCi speed, without starting a server or cross-compiling the frontend:
 
 ```bash
 ob-watch             # watches backend, common, frontend
@@ -274,7 +274,7 @@ cabal run backend       # run with WASM frontend cross-build
 
 The backend's custom Setup.hs automatically cross-compiles the frontend (WASM or GHCJS) and links static assets during `cabal build`.
 
-The nix shell is not strictly required — but the cross-build needs more than the cross cabal: `wasm32-unknown-wasi-cabal`, `wasm32-unknown-wasi-ghc`, and `node` on `PATH`, plus the `OBELISK_WASI_SHIM` environment variable (the nix shell provides and exports all of these). See [docs/cabal.md](docs/cabal.md) for the complete plain-cabal workflow: prerequisites (including getting the toolchain from ghc-wasm-meta without nix), static assets, dev runs, production builds, and a manual deploy recipe.
+The nix shell is not strictly required, but the cross-build needs more than the cross cabal: `wasm32-unknown-wasi-cabal`, `wasm32-unknown-wasi-ghc`, and `node` on `PATH`, plus the `OBELISK_WASI_SHIM` environment variable (the nix shell provides and exports all of these). See [docs/cabal.md](docs/cabal.md) for the complete plain-cabal workflow: prerequisites (including getting the toolchain from ghc-wasm-meta without nix), static assets, dev runs, production builds, and a manual deploy recipe.
 
 ## Deployment
 
@@ -302,7 +302,7 @@ in {
 
 This configures nginx (with WebSocket proxy), ACME/Let's Encrypt, systemd service with auto-restart, and firewall rules.
 
-For hosts running **multiple** obelisk apps, or for user-level (home-manager) deployment, [obelisk-systemd](https://github.com/obsidiansystems/obelisk-systemd) provides NixOS and home-manager modules that turn a built `serverExe` into a systemd service. It works with obelisk v2 unchanged — the `serverExe` directory (top-level `backend` binary + assets) is exactly what it expects:
+For hosts running multiple obelisk apps, or for user-level (home-manager) deployment, [obelisk-systemd](https://github.com/obsidiansystems/obelisk-systemd) provides NixOS and home-manager modules that turn a built `serverExe` into a systemd service. It works with obelisk v2 unchanged: the `serverExe` directory (top-level `backend` binary + assets) is exactly what it expects:
 
 ```nix
 { ... }:
@@ -335,7 +335,7 @@ podman run -p 8000:8000 my-app:latest
 
 ### Native Apps
 
-Obelisk v2 does **not** cross-compile a native iOS/Android binary the way the legacy reflex-platform pipeline did — that build path has been removed. Instead, the mobile story for v2.0 is [CapacitorJS](https://capacitorjs.com/): a thin native WebView shell wrapped around the **same** WASM frontend web assets (HTML, JS, WASM) that the browser serves. There is no separate Haskell cross-compile for mobile — you ship the web build and Capacitor packages it for iOS and Android, exposing JavaScript hooks for OS features (camera, filesystem, push notifications, etc.) that your Haskell frontend reaches through GHC's JavaScript FFI.
+Obelisk v2 does not cross-compile a native iOS/Android binary the way the legacy reflex-platform pipeline did; that build path has been removed. The mobile path for v2.0 is [CapacitorJS](https://capacitorjs.com/): a thin native WebView shell wrapped around the same WASM frontend web assets (HTML, JS, WASM) that the browser serves. There is no separate Haskell cross-compile for mobile: you ship the web build and Capacitor packages it for iOS and Android, exposing JavaScript hooks for OS features (camera, filesystem, push notifications, etc.) that your Haskell frontend reaches through GHC's JavaScript FFI.
 
 See [`docs/mobile.md`](docs/mobile.md) for the step-by-step recipe.
 
@@ -343,7 +343,7 @@ For desktop, the same web assets can be wrapped with [Tauri](https://tauri.app/)
 
 #### Future: native mobile via Lynx
 
-Truly native (non-WebView) mobile rendering is a research direction, not a shipping feature. The most promising avenue is a Reflex renderer targeting [Lynx](https://lynxjs.org/). The cited experimental proof-of-concept is [miso-lynx](https://github.com/dmjio/miso), but it is **not** directly usable by Obelisk: miso follows the Elm architecture rather than Reflex's FRP model, so it serves only as evidence that the approach is feasible. A Reflex-Lynx renderer would be required before this becomes a real option.
+Truly native (non-WebView) mobile rendering is a research direction, not a shipping feature. The most promising avenue is a Reflex renderer targeting [Lynx](https://lynxjs.org/). The cited experimental proof-of-concept is [miso-lynx](https://github.com/dmjio/miso), but it is not directly usable by Obelisk: miso follows the Elm architecture rather than Reflex's FRP model, so it serves only as evidence that the approach is feasible. A Reflex-Lynx renderer would be required before this becomes a real option.
 
 
 ## Skeleton

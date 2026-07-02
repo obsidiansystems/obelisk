@@ -1,6 +1,6 @@
 # Mobile apps on Obelisk v2 (CapacitorJS)
 
-> **Status: UNVALIDATED — this recipe is the intended path; the spike (running
+> **Status: UNVALIDATED. This recipe is the intended path; the spike (running
 > the bundle in a real WebView on iOS/Android) has not yet been executed.
 > Validate before relying on it.**
 
@@ -10,23 +10,22 @@ In v1, `ob deploy test android|ios` cross-compiled the Haskell frontend for the
 device and packaged it natively (the old `ob deploy test` flow, with an Apple
 `TEAMID` for iOS).
 
-In v2 there is **no mobile-specific Haskell cross-compile**. The frontend
-already compiles to a self-contained set of web assets — HTML, JavaScript, and
-(by default) WebAssembly — that run in a browser engine. On a phone that engine
+In v2 there is no mobile-specific Haskell cross-compile. The frontend
+already compiles to a self-contained set of web assets (HTML, JavaScript, and
+by default WebAssembly) that run in a browser engine. On a phone that engine
 is the system WebView:
 
 - **iOS:** `WKWebView`
 - **Android:** the Chromium-based Android System WebView
 
-So the mobile story is just: *take the exact same frontend bundle you ship to
-the web and load it inside a WebView wrapper.* [CapacitorJS](https://capacitorjs.com/)
-is that wrapper. It produces an Xcode project and an Android Gradle project
+The mobile story: load the same frontend bundle you ship to the web inside a
+WebView wrapper. [CapacitorJS](https://capacitorjs.com/) is that wrapper. It produces an Xcode project and an Android Gradle project
 whose web root points at your bundle, and exposes native OS APIs (camera,
 filesystem, push, etc.) over a JS bridge that your Haskell frontend can call
 through the JavaScript FFI. No Haskell toolchain runs on the device.
 
-This means **web, iOS, and Android run byte-for-byte the same frontend
-artifact**. There is nothing mobile-specific to build in Haskell.
+Web, iOS, and Android therefore run byte-for-byte the same frontend
+artifact. There is nothing mobile-specific to build in Haskell.
 
 ## The bundle you are wrapping
 
@@ -60,7 +59,7 @@ below passes.
 ### 1. Build the frontend bundle
 
 `cabal build backend` transparently cross-builds the frontend and assembles the
-bundle via the Setup.hs hook — this is the simplest way to get the artifact:
+bundle via the Setup.hs hook; this is the simplest way to get the artifact:
 
 ```bash
 cabal build backend   # cross-builds + assembles the frontend
@@ -136,7 +135,7 @@ The WASM frontend depends on:
   `OBELISK_WASI_SHIM` env var (see `Obelisk.Setup.Frontend.Wasm` and
   `nix/module.nix`).
 
-These are exercised in desktop browsers, but **`WKWebView` is not Safari** — it
+These are exercised in desktop browsers, but `WKWebView` is not Safari: it
 has historically differed in WASM instantiation limits, module caching,
 `WebAssembly.instantiateStreaming` MIME handling, and `SharedArrayBuffer` /
 cross-origin-isolation availability. Android System WebView is closer to desktop
@@ -154,14 +153,14 @@ conservative WebView target.
 ## Future: native rendering via Reflex-Lynx
 
 WebView wrapping gives you a web app in a native shell, not native widgets. A
-research track aims at **native rendering** — driving a platform UI toolkit from
+research track aims at native rendering: driving a platform UI toolkit from
 Reflex instead of the DOM.
 
-The cited proof of concept is **miso-lynx** (Miso targeting ByteDance's
+The cited proof of concept is miso-lynx (Miso targeting ByteDance's
 [Lynx](https://lynxjs.org/) cross-platform rendering engine). It demonstrates a
 Haskell FRP-style frontend rendering to native Lynx views rather than a WebView.
-It is **not directly Reflex-compatible** — Miso and Reflex are different FRP
-frameworks — so adopting this path would require a Reflex host for Lynx
+It is not directly Reflex-compatible (Miso and Reflex are different FRP
+frameworks), so adopting this path would require a Reflex host for Lynx
 (tentatively "Reflex-Lynx"). This is exploratory and not part of the supported
 v2 mobile path; the Capacitor/WebView recipe above is the intended route for
 now.

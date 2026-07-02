@@ -16,8 +16,8 @@ The lookup library (`obelisk-executable-config-lookup`) provides two implementat
 
 | Function | Native backend / Warp | Cross-compiled frontend (JS/GHCJS/WASM) |
 |----------|:---------------------:|:---------------------------------------:|
-| inject   | ✔                     |                                         |
-| get      | ✔                     | ✔                                       |
+| inject   | x                     |                                         |
+| get      | x                     | x                                       |
 
 ### Native backend / Warp
 
