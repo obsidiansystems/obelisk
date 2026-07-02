@@ -284,6 +284,11 @@ in {
         text = builtins.readFile ../scripts/ob-repl;
       })
       (pkgs.writeShellApplication {
+        name = "ob-watch";
+        runtimeInputs = [ pkgs.haskellPackages.ghcid ];
+        text = builtins.readFile ../scripts/ob-watch;
+      })
+      (pkgs.writeShellApplication {
         name = "ob-hoogle";
         text = builtins.readFile ../scripts/ob-hoogle;
       })
@@ -311,6 +316,10 @@ in {
       echo "=== ob-repl ==="
       echo ""
       ob-repl --help
+      echo ""
+      echo "=== ob-watch ==="
+      echo ""
+      ob-watch --help
       echo ""
       echo "=== ob-hoogle ==="
       echo ""
