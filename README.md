@@ -250,6 +250,10 @@ nix-build -A containerImage.wasm
 # or: nix build 'git+file:.#containerImage.wasm'
 ```
 
+> **Platform note:** the nix builds (and the nix dev shell, which provides the
+> cross-compilers) currently support Linux only (`x86_64-linux` and
+> `aarch64-linux`). Restoring macOS support is tracked as a follow-up.
+
 ### With cabal
 
 ```bash

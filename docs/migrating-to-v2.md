@@ -269,6 +269,10 @@ These fail loudly — expect them:
   `_ghcjsAppUrls_allJs` where they previously took the URL directly.
 - **reflex-dom is a fork** (`ymeister/reflex-dom`, pinned as a nix-thunk under
   `deps/`). You cannot pin upstream `reflex-dom`/`reflex-dom-core`.
+- **nix builds are Linux-only.** v2's flake only produces `x86_64-linux` and
+  `aarch64-linux` outputs; v1's macOS (`aarch64-darwin`) nix support — and the
+  iOS toolchain that depended on it — is gone. Restoring macOS nix support is
+  tracked as a post-promotion follow-up.
 - **Raw GHCJS FFI must be ported.** Hand-rolled `foreign import javascript`
   (GHCJS syntax) must move to the GHC WASM backend's JSFFI (or route through
   jsaddle). Code using `ghcjs-dom` is unaffected — it now rides on jsaddle-wasm.
