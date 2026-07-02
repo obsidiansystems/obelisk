@@ -17,13 +17,25 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   exit 0
 fi
 
+PID=""
+INOTIFY_PID=""
+READ_PID=""
+
 # Kill all child processes on exit.
 cleanup() {
-  kill "$PID" 2>/dev/null || true
-  kill "$INOTIFY_PID" 2>/dev/null || true
-  kill "$READ_PID" 2>/dev/null || true
+  if [[ -n "$PID" ]]; then kill "$PID" 2>/dev/null || true; fi
+  if [[ -n "$INOTIFY_PID" ]]; then kill "$INOTIFY_PID" 2>/dev/null || true; fi
+  if [[ -n "$READ_PID" ]]; then kill "$READ_PID" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
+
+# Enter-to-restart needs a controlling terminal; without one (CI, editor
+# tasks, headless shells) the read would exit immediately and trigger a
+# restart loop, so only arm it when /dev/tty is usable.
+HAVE_TTY=false
+if { : < /dev/tty; } 2>/dev/null; then
+  HAVE_TTY=true
+fi
 
 restart() {
   kill "$PID" 2>/dev/null || true
@@ -51,14 +63,21 @@ while true; do
     backend common frontend 2>/dev/null &
   INOTIFY_PID=$!
 
-  # Also allow manual restart by pressing Enter.
-  read -r < /dev/tty 2>/dev/null &
-  READ_PID=$!
+  # Also allow manual restart by pressing Enter (when a terminal is attached).
+  READ_PID=""
+  if [[ "$HAVE_TTY" == true ]]; then
+    read -r < /dev/tty 2>/dev/null &
+    READ_PID=$!
+  fi
 
   # Restart on whichever triggers first.
-  wait -n "$INOTIFY_PID" "$READ_PID" 2>/dev/null || true
+  if [[ -n "$READ_PID" ]]; then
+    wait -n "$INOTIFY_PID" "$READ_PID" 2>/dev/null || true
+  else
+    wait -n "$INOTIFY_PID" 2>/dev/null || true
+  fi
   kill "$INOTIFY_PID" 2>/dev/null || true
-  kill "$READ_PID" 2>/dev/null || true
+  if [[ -n "$READ_PID" ]]; then kill "$READ_PID" 2>/dev/null || true; fi
 
   restart
 done
