@@ -223,7 +223,7 @@ in {
                 else ''cp ${wasmBin} $out/frontend.wasm''}
 
               # Assemble jsexe directory
-              cp ${./wasm/shim.js} $out/all.js
+              cp ${../lib/setup/data/shim.js} $out/all.js
               cp ${obeliskLib.wasi-shim}/dist/*.js $out/
               mv $out/index.js $out/wasi-shim.js
             '';

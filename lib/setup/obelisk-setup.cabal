@@ -2,6 +2,8 @@ cabal-version: 3.4
 name:          obelisk-setup
 version:       0.1
 license:       BSD-3-Clause
+data-dir:      data
+data-files:    shim.js
 
 library
   default-language: Haskell2010
@@ -21,6 +23,10 @@ library
       Obelisk.Setup.Frontend.Js
       Obelisk.Setup.Frontend.Wasm
       Obelisk.Setup.Static
+    other-modules:
+      Paths_obelisk_setup
+    autogen-modules:
+      Paths_obelisk_setup
     build-depends:
       containers,
       obelisk-asset-manifest,
