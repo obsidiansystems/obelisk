@@ -37,7 +37,7 @@ The artifact to point Capacitor at is the assembled frontend output directory
   `Obelisk.Setup.Frontend.Wasm` (`lib/setup/src/Obelisk/Setup/Frontend/Wasm.hs`)
   into `frontend/data/frontend.jsexe/` during `cabal build backend`. The
   assembled directory contains `frontend.wasm`, `ghc_wasm_jsffi.js`, `all.js`
-  (the loader/shim, canonical source `nix/wasm/shim.js`), and the `wasi-shim.js`
+  (the loader/shim, canonical source `lib/setup/data/shim.js`), and the `wasi-shim.js`
   bundle from `@bjorn3/browser_wasi_shim`. (`frontendWasm` in `nix/lib.nix` is an
   internal config-taking function, not a `nix-build -A` target; the
   optimized/compressed variants are `obelisk.frontend.wasm.optimized` /
@@ -131,7 +131,7 @@ marked unvalidated.
 The WASM frontend depends on:
 
 - `jsaddle-wasm` driving the DOM from WASM,
-- the `@bjorn3/browser_wasi_shim` WASI polyfill loaded via `nix/wasm/shim.js`
+- the `@bjorn3/browser_wasi_shim` WASI polyfill loaded via the bootstrap shim (`lib/setup/data/shim.js`)
   (`all.js` / `wasi-shim.js`), located at build time through the
   `OBELISK_WASI_SHIM` env var (see `Obelisk.Setup.Frontend.Wasm` and
   `nix/module.nix`).

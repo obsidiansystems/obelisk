@@ -26,6 +26,7 @@ import Control.Exception (SomeException, try)
 import Control.Monad (forM_, unless)
 
 import Obelisk.Setup.Utils (crossCabalArgs, findProjectRoot, optLevelFlags, strip, symlink)
+import Paths_obelisk_setup (getDataFileName)
 
 main :: IO ()
 main = defaultMainWithHooks simpleUserHooks
@@ -123,8 +124,10 @@ assembleAndLinkFrontend extraFlags = do
       ExitSuccess -> pure ()
       ExitFailure _ -> fail "[Setup] post-link.mjs failed"
 
-  -- Write all.js shim
-  writeFile (jsexeDir </> "all.js") shimJs
+  -- Copy the all.js bootstrap shim (shipped as a data file so this package
+  -- and the nix build assemble the jsexe from the same source)
+  shimSrc <- getDataFileName "shim.js"
+  copyFile shimSrc (jsexeDir </> "all.js")
 
   -- Copy wasi-shim dist files
   copyWasiShim jsexeDir
@@ -187,37 +190,4 @@ optimizeWasm wasmFile = do
             removeFile stripped
           ExitFailure _ ->
             hPutStrLn stderr "[Setup] wasm-tools strip failed; continuing"
-
--- | Browser bootstrap shim for WASM frontend.
--- Canonical source: nix/wasm/shim.js
-shimJs :: String
-shimJs = unlines
-  [ "(function() {"
-  , "  var base = new URL(\".\", document.currentScript.src).href;"
-  , "  (async function() {"
-  , "    const { WASI, OpenFile, File, ConsoleStdout } = await import(base + \"wasi-shim.js\");"
-  , "    const { default: ghc_wasm_jsffi } = await import(base + \"ghc_wasm_jsffi.js\");"
-  , ""
-  , "    const args = [];"
-  , "    const env = [\"GHCRTS=-H64m\"];"
-  , "    const fds = ["
-  , "      new OpenFile(new File([])),"
-  , "      ConsoleStdout.lineBuffered(msg => console.log(`[WASI stdout] ${msg}`)),"
-  , "      ConsoleStdout.lineBuffered(msg => console.warn(`[WASI stderr] ${msg}`)),"
-  , "    ];"
-  , "    const wasi = new WASI(args, env, fds, { debug: false });"
-  , ""
-  , "    const instance_exports = {};"
-  , "    const response = await fetch(base + \"frontend.wasm\");"
-  , "    const bytes = await response.arrayBuffer();"
-  , "    const { instance } = await WebAssembly.instantiate(bytes,"
-  , "      { wasi_snapshot_preview1: wasi.wasiImport,"
-  , "        ghc_wasm_jsffi: ghc_wasm_jsffi(instance_exports) }"
-  , "    );"
-  , "    Object.assign(instance_exports, instance.exports);"
-  , "    wasi.initialize(instance);"
-  , "    await instance.exports.hs_start();"
-  , "  })();"
-  , "})();"
-  ]
 
