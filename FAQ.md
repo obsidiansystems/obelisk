@@ -10,6 +10,9 @@
 1. [ob-run rebuilds too much. How do I speed it up?](#ob-run-rebuilds-too-much-how-do-i-speed-it-up)
 1. [cabal can't find obelisk-setup during cross-compilation](#cabal-cant-find-obelisk-setup-during-cross-compilation)
 1. [How do I cache individual build components with Nix?](#how-do-i-cache-individual-build-components-with-nix)
+1. [How do I fix "Ambiguous module name" errors?](#how-do-i-fix-ambiguous-module-name-errors)
+1. [How do I fix systemd-timesyncd causing my deployment to fail?](#how-do-i-fix-systemd-timesyncd-causing-my-deployment-to-fail)
+1. [How do I develop over HTTPS?](#how-do-i-develop-over-https)
 
 ### How do I declare a new Haskell dependency?
 
@@ -176,3 +179,37 @@ in {
 ```
 
 Then build with `nix-build skeleton -A serverExe` etc. Use `nix repl` to explore available attributes.
+
+### How do I fix "Ambiguous module name" errors?
+
+`ob-repl`, `ob-run`, and `ob-watch` load the `common`, `backend`, and `frontend` packages into one GHCi session, and GHCi does not sandbox their dependencies from each other. A module name provided by two packages can therefore be ambiguous in the repl even though `cabal build` succeeds.
+
+Disambiguate with [PackageImports](https://downloads.haskell.org/ghc/latest/docs/users_guide/exts/package_qualified_imports.html). For example, if you see
+
+```
+error:
+    Ambiguous module name 'Crypto.Hash':
+      it was found in multiple packages:
+      cryptohash-0.11.9 cryptonite-0.25
+```
+
+specify the package in the import:
+
+```haskell
+{-# LANGUAGE PackageImports #-}
+import "cryptonite" Crypto.Hash
+```
+
+### How do I fix systemd-timesyncd causing my deployment to fail?
+
+An upstream systemd issue can break activation on a NixOS deploy target. Delete `/var/lib/systemd/timesync` and `/var/lib/private` on the target machine; see [issue #670](https://github.com/obsidiansystems/obelisk/issues/670).
+
+### How do I develop over HTTPS?
+
+`ob-run` serves plain HTTP (v1's built-in self-signed dev TLS was removed). Browsers treat `localhost` as a secure context, so most APIs that require HTTPS already work. If you need real TLS locally (for example to test on another device), put a local reverse proxy in front of the dev server:
+
+```bash
+caddy reverse-proxy --from localhost:8443 --to localhost:8000
+```
+
+[Caddy](https://caddyserver.com/) generates and trusts a local certificate automatically; any TLS-terminating proxy works the same way.

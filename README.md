@@ -42,6 +42,10 @@ Obelisk assumes basic knowledge of [Haskell](https://www.haskell.org/) and [Refl
 
 ## Quick Start
 
+Prerequisites: Nix with the reflex-frp binary caches configured; see
+[docs/setup.md](docs/setup.md). Without the caches your first build compiles
+the toolchain from source.
+
 Start from the skeleton or use it as a reference for your own project:
 
 ```bash
@@ -277,6 +281,10 @@ The backend's custom Setup.hs automatically cross-compiles the frontend (WASM or
 The nix shell is not strictly required, but the cross-build needs more than the cross cabal: `wasm32-unknown-wasi-cabal`, `wasm32-unknown-wasi-ghc`, and `node` on `PATH`, plus the `OBELISK_WASI_SHIM` environment variable (the nix shell provides and exports all of these). See [docs/cabal.md](docs/cabal.md) for the complete plain-cabal workflow: prerequisites (including getting the toolchain from ghc-wasm-meta without nix), static assets, dev runs, production builds, and a manual deploy recipe.
 
 ## Deployment
+
+For an end-to-end walkthrough (build, host config, deploy, verify, update),
+see [guides/deploy](guides/deploy/README.md). The sections below are the
+reference for each path.
 
 ### NixOS Server
 
