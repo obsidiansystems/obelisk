@@ -46,16 +46,22 @@ Prerequisites: Nix with the reflex-frp binary caches configured; see
 [docs/setup.md](docs/setup.md). Without the caches your first build compiles
 the toolchain from source.
 
-Start from the skeleton or use it as a reference for your own project:
+Scaffold a project without cloning anything:
 
 ```bash
-cp -r deps/obelisk/skeleton my-app
+nix run github:obsidiansystems/obelisk#init -- my-app
 cd my-app
-nix-shell  # or: nix develop 'git+file:.'
+nix-shell
 ob-run
 ```
 
-Open http://localhost:8000 in your browser.
+Open http://localhost:8000 in your browser. The generated project pins
+obelisk (as a nix-thunk under `deps/obelisk`) to the revision it was
+scaffolded from; bump it later with `nix-thunk update deps/obelisk`.
+
+If you have an obelisk checkout (for example to hack on obelisk itself),
+`nix-shell` in it and run `ob-init my-app` instead; see `ob-init --help`
+for the pin-vs-symlink details.
 
 ## Project Structure
 
