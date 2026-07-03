@@ -3,7 +3,7 @@
 let pkgs =
       if inputs ? nixpkgs
       then import inputs.nixpkgs { inherit system; }
-      else import ((import ../deps/nix-haskell/thunk.nix) + "/pins/nixpkgs") { inherit system; };
+      else import ((import ./thunk.nix) ../deps/nix-haskell + "/pins/nixpkgs") { inherit system; };
 
     nix-haskell =
       if inputs ? nix-haskell
