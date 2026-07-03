@@ -92,6 +92,13 @@ WATCH_PID=$!
 # save. Runs Backend.run, the entry point the backend library exports (the
 # backend executable's Main is a thin wrapper around it). -f -cross drops
 # the dependency on the frontend wrapper so the repl never cross-compiles.
+#
+# The frontend code is used twice, on purpose. lib:frontend here is the copy
+# the backend calls for server-side rendering; loading it in the repl means
+# frontend edits update the served HTML in about a second. The browser never
+# runs this copy (this is not jsaddle-warp): what the browser executes is the
+# cross-compiled output the watcher above rebuilds, which is slower but is
+# the real artifact.
 ghcid \
   -c "cabal repl lib:backend lib:common lib:frontend -O0 -f -cross ${DEV_GHC_OPTIONS[*]}" \
   --test Backend.run \

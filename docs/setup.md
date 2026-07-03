@@ -60,9 +60,9 @@ on.
 ## 3. Accessing private repositories
 
 If your project pins dependencies from private git repositories (as
-`source-repository-package` stanzas in `cabal.project`, or as nix-thunks or
-submodules under `deps/`), the Nix builder fetches them over SSH, so the
-building user needs SSH access to the host:
+`source-repository-package` stanzas in `cabal.project`, or as nix-thunks
+under `deps/` consumed via `thunkSource`), the Nix builder fetches them over
+SSH, so the building user needs SSH access to the host:
 
 - [GitHub](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)
 - [GitLab](https://docs.gitlab.com/ee/user/ssh.html)
