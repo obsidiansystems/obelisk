@@ -3,13 +3,13 @@
 , pkgs ?
     if inputs ? nixpkgs
     then import inputs.nixpkgs { inherit system; }
-    else import ((import ../deps/nix-haskell/thunk.nix) + "/pins/nixpkgs") { inherit system; }
+    else import ((import ./thunk.nix) ../deps/nix-haskell + "/pins/nixpkgs") { inherit system; }
 }:
 
 let nix-haskell-src =
       if inputs ? nix-haskell
       then inputs.nix-haskell
-      else import ../deps/nix-haskell/thunk.nix;
+      else (import ./thunk.nix) ../deps/nix-haskell;
 
     eval = import (nix-haskell-src + "/eval.nix") { inherit system pkgs inputs; };
 

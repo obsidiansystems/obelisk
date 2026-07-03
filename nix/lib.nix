@@ -3,13 +3,15 @@
 , pkgs ?
     if inputs ? nixpkgs
     then import inputs.nixpkgs { inherit system; }
-    else import ((import ../deps/nix-haskell/thunk.nix) + "/pins/nixpkgs") { inherit system; }
+    else import ((import ./thunk.nix) ../deps/nix-haskell + "/pins/nixpkgs") { inherit system; }
 }:
 
 let src = ../.;
 
-    # deps/reflex-dom is a nix-thunk; import its thunk.nix for the fetched source.
-    reflex-dom-src = import (src + "/deps/reflex-dom/thunk.nix");
+    # Resolve nix-thunk dirs whether packed or unpacked (see nix/thunk.nix).
+    thunkSource = import ./thunk.nix;
+
+    reflex-dom-src = thunkSource (src + "/deps/reflex-dom");
 
     nix-haskell =
       if inputs ? nix-haskell
