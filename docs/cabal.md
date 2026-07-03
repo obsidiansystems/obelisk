@@ -3,10 +3,9 @@
 Obelisk's custom `Setup.hs` hooks do the framework-specific work (frontend
 cross-compilation, static asset generation, asset linking) during an ordinary
 `cabal build`, so the nix dev shell is not required for development. "Plain
-cabal" still has prerequisites beyond cabal itself, and two parts of the
-pipeline (production asset processing and the skeleton's default static
-build) use nix. This guide covers the whole path: what you need, the edit
-loop, static assets, production builds, and deployment.
+cabal" still has prerequisites beyond cabal itself, and production asset
+processing uses nix. This guide covers the whole path: what you need, the
+edit loop, static assets, production builds, and deployment.
 
 In short: the edit loop works with cabal alone once the cross-toolchain is on
 `PATH`; production builds should use `nix-build -A serverExe.wasm`.
@@ -46,9 +45,10 @@ To go fully nix-free:
   export OBELISK_WASI_SHIM="$PWD/node_modules/@bjorn3/browser_wasi_shim"
   ```
 
-- **Caveat:** the skeleton's `static/generate` script runs `nix-build` (see
-  section 3), so an out-of-the-box scaffold still touches nix once per static-asset
-  change unless you swap that script out.
+- **Caveat:** the skeleton's default `static/generate` implementation runs
+  `nix-build`, so an out-of-the-box scaffold touches nix on static-asset
+  changes. The framework only requires that the script honor
+  `static/generate <output-path>`; swap in any implementation (see section 3).
 
 One more knob: `OBELISK_CROSS_CABAL_ARGS` passes extra arguments through to
 the cross cabal invocation. The dev scripts set it to `-O0` plus
@@ -97,11 +97,14 @@ wrapper around it).
 custom `Setup.hs` (`Obelisk.Setup.Static`) which, on every native build:
 
 1. runs the executable script `static/generate <output>` to produce
-   `static/generated/data/static`; the skeleton's version is
-   `nix-build static/ -o <output>` (building `static/default.nix`);
+   `static/generated/data/static`. The script's implementation is yours: the
+   only contract is that it writes the assets to the given output path. The
+   skeleton's default is `nix-build static/ -o <output>` (building
+   `static/default.nix`);
 2. hashes the resulting files and regenerates
    `static/generated/src/Obelisk/Generated/Static.hs`, giving you the checked
-   `static @"..."` API and immutable `/static/<hash>-name` URLs.
+   `static @"..."` API and immutable `/static/<hash>-name` URLs. This
+   manifest step always runs and needs no nix.
 
 **Adding an asset:** drop the file under `static/src/`, rebuild (any
 `cabal build backend` re-runs the pipeline), and reference it with
