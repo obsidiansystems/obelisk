@@ -4,13 +4,13 @@
   # code (nix/*.nix) imports them directly; `nixpkgs` for the flake outputs comes
   # from the nix-haskell thunk's pins.
   outputs = { self, ... }:
-    let systems = [ "x86_64-linux" "aarch64-linux" ];
-        # genAttrs without importing nixpkgs: the top-level import took no
-        # `system`, which broke pure evaluation (nix flake show, nix run).
-        eachSystem = f: builtins.listToAttrs
-          (map (system: { name = system; value = f system; }) systems);
+    let thunkSource = import ./nix/thunk.nix;
         pkgsFor = system:
-          import ((import ./deps/nix-haskell/thunk.nix) + "/pins/nixpkgs") { inherit system; };
+          import (thunkSource ./deps/nix-haskell + "/pins/nixpkgs") { inherit system; };
+        # nixpkgs must be imported with an explicit system: an argument-less
+        # import breaks pure evaluation (nix flake show, nix run).
+        lib = (pkgsFor "x86_64-linux").lib;
+        eachSystem = lib.genAttrs lib.systems.flakeExposed;
     in {
       lib = eachSystem (system:
         import ./nix { inherit system; }

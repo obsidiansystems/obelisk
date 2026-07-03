@@ -51,7 +51,7 @@ project by hand.
 | `ob watch` | `ob-watch` (`scripts/ob-watch`): ghcid over `cabal repl`; type errors on every save at GHCi speed, no server, no cross builds. |
 | `ob repl` | `ob-repl` (`scripts/ob-repl`): GHCi for `backend`+`common`+`frontend`, `-O0`, cross builds skipped (`-f -cross`). `ob-repl lib:common` for a single target. |
 | `ob hoogle` | `ob-hoogle` (`scripts/ob-hoogle`): `ob-hoogle start [PORT]` / `stop` / `restart`. |
-| `ob shell` | `nix-shell` (or `nix develop 'git+file:.'`). Run a one-off command with `nix-shell --run '...'` / `nix develop -c '...'`. |
+| `ob shell` | `nix-shell` (or `nix develop`). Run a one-off command with `nix-shell --run '...'` / `nix develop -c '...'`. |
 | `ob shell --ghcjs` | Cross toolchains are selected by `shell.crossPlatforms` in `project.nix` (e.g. `ps: with ps; [ ghcjs wasi32 ]`) and by `obelisk.frontend.target`. There is no per-invocation `--ghcjs` flag. |
 | `ob profile` | Removed. Build with profiling through cabal/nix directly (e.g. a profiling-enabled `cabal build` in the nix shell, or a `--enable-profiling` cabal config). |
 | `ob doc` | Removed. Use `ob-hoogle` for searchable docs, or `cabal haddock` / the nix `docs` output. |
@@ -60,9 +60,9 @@ project by hand.
 | `ob deploy update` | Bump your source pins by hand: update the `tag`/`rev` in `source-repository-package` stanzas (`cabal.project`) or update the relevant git submodule, then rebuild. There is no managed thunk to "update". |
 | `ob deploy test android` | CapacitorJS: wrap the WASM/JS frontend bundle in an Android WebView shell. See [`docs/mobile.md`](mobile.md). |
 | `ob deploy test ios` | CapacitorJS: wrap the same bundle in a WKWebView shell. No Apple `TEAMID` flag in obelisk anymore; signing is handled in Xcode/Capacitor. See [`docs/mobile.md`](mobile.md). |
-| `ob thunk pack` | Removed. Reference remote deps with native `source-repository-package` stanzas in `cabal.project` (git `location` + `tag`), or as git submodules under `deps/`. |
-| `ob thunk unpack` | Removed. With a `source-repository-package`, the dep is already an ordinary git checkout/submodule; edit it in place. |
-| `ob thunk update` | Removed. Edit the `tag`/`rev` in the `source-repository-package` stanza (or `cd` into the submodule and check out a new revision), then commit. |
+| `ob thunk pack` | The `nix-thunk` CLI: `nix-thunk pack deps/<name>`. Thunks remain first-class for project deps: keep them under `deps/` and consume them in `project.nix` with `source-repository-packages = { my-dep = thunkSource ./deps/my-dep; };`. Plain `source-repository-package` stanzas in `cabal.project` (git `location` + `tag`) also work. |
+| `ob thunk unpack` | `nix-thunk unpack deps/<name>` checks the dep out in place; the nix side keeps working (`thunkSource` handles both packed and unpacked thunks). |
+| `ob thunk update` | `nix-thunk update deps/<name>`, or edit the `tag`/`rev` in a `source-repository-package` stanza, then commit. |
 | `ob internal ...` | Removed. The dev scripts encapsulate the few internals that mattered (e.g. GHCi configuration is just `ob-repl`). |
 
 ## Build commands
@@ -273,11 +273,13 @@ These fail loudly; expect them:
   `frontend.wasm` preload hint on WASM); custom widgets should read
   `_ghcjsAppUrls_allJs` where they previously took the URL directly.
 - **reflex-dom is a fork** (`ymeister/reflex-dom`, pinned as a nix-thunk under
-  `deps/`). You cannot pin upstream `reflex-dom`/`reflex-dom-core`.
-- **nix builds are Linux-only.** v2's flake only produces `x86_64-linux` and
-  `aarch64-linux` outputs; v1's macOS (`aarch64-darwin`) nix support, and the
-  iOS toolchain that depended on it, are gone. Restoring macOS nix support is
-  tracked as a post-promotion follow-up.
+  `deps/`). You cannot pin upstream `reflex-dom`/`reflex-dom-core` yet;
+  upstreaming the fork is planned.
+- **nix builds are supported on Linux only.** The flake exposes outputs for
+  all standard systems, but only `x86_64-linux` and `aarch64-linux` are
+  tested and served by the binary caches; v1's macOS (`aarch64-darwin`) nix
+  support, and the iOS toolchain that depended on it, are gone. Restoring
+  macOS support is tracked as a post-promotion follow-up.
 - **Raw GHCJS FFI must be ported.** Hand-rolled `foreign import javascript`
   (GHCJS syntax) must move to the GHC WASM backend's JSFFI (or route through
   jsaddle). Code using `ghcjs-dom` is unaffected; it now rides on jsaddle-wasm.
@@ -311,8 +313,10 @@ These won't error; watch for them:
 2. Replace reflex-platform `default.nix`/thunks with a `project.nix`
    (`nix-haskell` module). Inject obelisk via
    `inherit (obeliskLib) source-repository-packages;`.
-3. Convert every `ob thunk` dependency to a `source-repository-package` stanza
-   in `cabal.project` or a git submodule under `deps/`.
+3. Keep `ob thunk` dependencies as nix-thunks under `deps/` (managed with the
+   `nix-thunk` CLI, consumed via `source-repository-packages = { my-dep =
+   thunkSource ./deps/my-dep; };` in `project.nix`), or convert them to
+   `source-repository-package` stanzas in `cabal.project`.
 4. Pick a frontend target (`obelisk.frontend.target`, default `"wasm"`).
 5. Replace `ob run`/`ob repl`/`ob hoogle` muscle memory with
    `ob-run`/`ob-repl`/`ob-hoogle`.

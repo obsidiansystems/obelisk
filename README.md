@@ -89,7 +89,7 @@ my-app/
 Enter the nix shell to get all build tools (GHC, cabal, cross-compilers, hoogle):
 
 ```bash
-nix-shell  # or: nix develop 'git+file:.'
+nix-shell  # or: nix develop
 ```
 
 ### ob-init
@@ -264,16 +264,18 @@ Key module options (see [`docs/module.md`](docs/module.md) for full reference):
 # Full production build (backend + optimized/compressed frontend)
 nix-build -A serverExe.wasm
 nix-build -A serverExe.js
-# or: nix build 'git+file:.#serverExe.wasm'
+# or: nix build .#serverExe.wasm
 
 # OCI container image
 nix-build -A containerImage.wasm
-# or: nix build 'git+file:.#containerImage.wasm'
+# or: nix build .#containerImage.wasm
 ```
 
-> **Platform note:** the nix builds (and the nix dev shell, which provides the
-> cross-compilers) currently support Linux only (`x86_64-linux` and
-> `aarch64-linux`). Restoring macOS support is tracked as a follow-up.
+> **Platform note:** the nix builds (and the nix dev shell, which provides
+> the cross-compilers) are supported on Linux only: `x86_64-linux` and
+> `aarch64-linux` are tested and served by the binary caches. The flake
+> exposes other systems, but they are untested; restoring macOS support is
+> tracked as a follow-up.
 
 ### With cabal
 
@@ -340,7 +342,7 @@ Here `configSource` is the authoritative runtime config directory on the host (t
 
 ```bash
 nix-build -A containerImage.wasm
-# or: nix build 'git+file:.#containerImage.wasm'
+# or: nix build .#containerImage.wasm
 
 # Load and run with podman or docker
 podman load < result
