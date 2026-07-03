@@ -60,6 +60,7 @@ import Control.Monad.Except
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BSC8
 import Data.Default (Default (..))
+import Data.Foldable (for_)
 import Data.Dependent.Sum
 import Data.Functor.Identity
 import Data.Kind (Type)
@@ -128,7 +129,7 @@ defaultGhcjsWidgets :: GhcjsWidgets (GhcjsAppUrls -> FrontendWidgetT r ())
 defaultGhcjsWidgets = GhcjsWidgets
   { _ghcjsWidgets_preload = \urls -> do
       preloadGhcjs $ _ghcjsAppUrls_allJs urls
-      mapM_ preloadWasm $ _ghcjsAppUrls_wasm urls
+      for_ (_ghcjsAppUrls_wasm urls) preloadWasm
   , _ghcjsWidgets_script = deferredGhcjsScript . _ghcjsAppUrls_allJs
   }
 
