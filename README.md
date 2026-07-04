@@ -103,15 +103,14 @@ ob-init my-app --name my-app   # also set the project name
 
 ### ob-run
 
-Development server with in-process reloading. The backend runs inside a [ghcid](https://github.com/ndmitchell/ghcid) session: saving a `backend`/`common`/`frontend` module recompiles it to bytecode and reruns the server in-process: no native linking, no process restart. A separate watcher cross-compiles the frontend (WASM by default, incrementally) and swaps the served assets in place under the running server; refresh the browser to pick them up.
+Watch-and-rebuild development server. Rebuilds the backend on `.hs`, `.cabal`, or `.project` file changes, or when you press Enter:
 
 ```bash
 ob-run                   # serve on :8000
-ob-run -- --port=8017    # args after -- go to the backend (Snap options)
-ob-run --js              # build the GHCJS frontend instead of WASM
+ob-run -- --port=8017    # args after -- go to cabal run (then the backend)
 ```
 
-Editing a `.cabal` file or `cabal.project` restarts the ghcid session. All compilation runs with optimizations disabled (`-O0`) for fast iteration.
+Disables optimizations (`-O0`) for fast rebuilds. Cross-compiles the frontend (WASM by default) in the background during each build via the backend's custom Setup.hs.
 
 ### ob-repl
 

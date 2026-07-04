@@ -87,9 +87,8 @@ cabal repl lib:backend lib:common lib:frontend -O0 -f -cross
 ghcid -c "cabal repl lib:backend lib:common lib:frontend -O0 -f -cross"
 ```
 
-Inside the repl, `Backend.run` starts the server (this is the same entry point
-`ob-run` reruns on every reload; the backend executable's `Main` is a thin
-wrapper around it).
+Inside the repl, `Backend.run` starts the server (the backend executable's
+`Main` is a thin wrapper around it).
 
 ## 3. Static assets
 
