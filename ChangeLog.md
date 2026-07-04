@@ -18,11 +18,10 @@ preserved `release/1.x` line.
 * **`ob` CLI removed.** The Haskell `ob` command-line tool is gone, replaced by
   shell scripts placed on `PATH` by the nix shell: `ob-run`, `ob-repl`,
   `ob-watch` (ghcid error-watch), `ob-hoogle`, and the new `ob-init` (also a flake app: `nix run github:obsidiansystems/obelisk#init -- my-app`) and
-  `ob-deploy`. `ob-run` keeps v1's in-process reload model for the backend
-  (ghcid; no relink or restart on save) and rebuilds the cross-compiled
-  frontend in place under the running server; the browser runs real WASM
-  rather than v1's native jsaddle-warp frontend; see `docs/migrating-to-v2.md`.
-  Plain-cabal workflows (no nix shell) are documented in `docs/cabal.md`.
+  `ob-deploy`. `ob-run` is a watch-and-rebuild dev server; v1's interpreted
+  in-process reload (ghcid + jsaddle-warp) is not yet restored and is the
+  flagship follow-up; see `docs/migrating-to-v2.md`. Plain-cabal workflows
+  (no nix shell) are documented in `docs/cabal.md`.
 * **Deployment model changed.** The managed `ob deploy` workflow
   (`init`/`push`/`test`) is removed. Deploy via the `services.obelisk` NixOS
   module, the produced OCI container image, or the minimal `ob-deploy` script.
