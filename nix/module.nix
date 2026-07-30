@@ -56,12 +56,20 @@ in {
       compressed = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
         # Skip in nix-shell to avoid triggering asset generation.
+        #
+        # The pipeline must run over the *raw* tree: mkAssets serves each input
+        # file under both its original name (an uncacheable redirect) and its
+        # hashed name (immutable). The app references hashed names (via
+        # Obelisk.Generated.Static, which hashes identically), so feeding the
+        # already-hashed tree here would demote every URL the app emits to a
+        # no-store redirect, defeating browser caching entirely.
         default = if lib.inNixShell then null
-          else if hashedStatic != null && config.obelisk.static.compress
-            then assets.mkAssets hashedStatic
-            else hashedStatic;
-        defaultText = lib.literalExpression "assets.mkAssets hashedStatic";
-        description = "Hashed static assets after optional compression. Used by overrides.";
+          else if rawStatic == null then null
+          else if config.obelisk.static.compress
+            then assets.mkAssets rawStatic
+            else assets.mkAssetsWith assets.noEncodings rawStatic;
+        defaultText = lib.literalExpression "assets.mkAssets rawStatic";
+        description = "Static assets preprocessed for obelisk-asset-serve-snap, with optional compression.";
       };
     };
 
