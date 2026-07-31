@@ -71,74 +71,127 @@ flag wasm
   manual: True
 
 common common
+  default-language: GHC2024
+
   default-extensions:
-    AllowAmbiguousTypes
-    BangPatterns
-    ConstraintKinds
-    DataKinds
-    DefaultSignatures
-    DeriveDataTypeable
-    DeriveFoldable
-    DeriveFunctor
-    DeriveGeneric
-    DeriveTraversable
-    DerivingStrategies
-    EmptyCase
-    EmptyDataDecls
-    ExtendedDefaultRules
-    FlexibleContexts
-    FlexibleInstances
-    FunctionalDependencies
-    GADTs
-    GeneralizedNewtypeDeriving
-    ImportQualifiedPost
-    InstanceSigs
-    KindSignatures
-    LambdaCase
-    MultiParamTypeClasses
-    NumericUnderscores
-    OverloadedStrings
-    PartialTypeSignatures
-    PatternSynonyms
-    PolyKinds
-    QuantifiedConstraints
-    QuasiQuotes
-    RankNTypes
-    RecursiveDo
-    ScopedTypeVariables
-    StandaloneDeriving
-    TemplateHaskell
-    TupleSections
-    TypeApplications
-    TypeFamilies
-    TypeFamilyDependencies
-    TypeOperators
-    UndecidableInstances
-    ViewPatterns
+      GHC2024
+      --
+    , ApplicativeDo
+    , Arrows
+    , BangPatterns
+    , BinaryLiterals
+    , BlockArguments
+    , ConstrainedClassMethods
+    , ConstraintKinds
+    , DataKinds
+    , DefaultSignatures
+    , DeriveDataTypeable
+    , DeriveFoldable
+    , DeriveFunctor
+    , DeriveGeneric
+    , DeriveLift
+    , DeriveTraversable
+    , DerivingStrategies
+    , DerivingVia
+    , DisambiguateRecordFields
+    , DoAndIfThenElse
+    , DuplicateRecordFields
+    , EmptyCase
+    , EmptyDataDecls
+    , EmptyDataDeriving
+    , ExistentialQuantification
+    , ExplicitForAll
+    , ExplicitNamespaces
+    , ExtendedDefaultRules
+    , FlexibleContexts
+    , FlexibleInstances
+    , FunctionalDependencies
+    , GADTs
+    , GeneralizedNewtypeDeriving
+    , HexFloatLiterals
+    , ImportQualifiedPost
+    , ImpredicativeTypes
+    , InstanceSigs
+    , KindSignatures
+    , LambdaCase
+    , LexicalNegation
+    , LiberalTypeSynonyms
+    , MonadComprehensions
+    , MultilineStrings
+    , MultiParamTypeClasses
+    , MultiWayIf
+    , NamedDefaults
+    , NegativeLiterals
+    , NoDeriveAnyClass
+    , NoNamedFieldPuns
+    , NoRecordWildCards
+    , NumericUnderscores
+    , OrPatterns
+    , OverloadedLabels
+    , OverloadedLists
+    , OverloadedRecordDot
+    , OverloadedRecordUpdate
+    , OverloadedStrings
+    , PackageImports
+    , ParallelListComp
+    , PartialTypeSignatures
+    , PatternGuards
+    , PatternSynonyms
+    , PolyKinds
+    , PostfixOperators
+    , QualifiedDo
+    , QuantifiedConstraints
+    , QuasiQuotes
+    , RankNTypes
+    , RecursiveDo
+    , RequiredTypeArguments
+    , RoleAnnotations
+    , ScopedTypeVariables
+    , StandaloneDeriving
+    , StandaloneKindSignatures
+    , TemplateHaskell
+    , TemplateHaskellQuotes
+    , TransformListComp
+    , TupleSections
+    , TypeApplications
+    , TypeData
+    , TypeFamilies
+    , TypeFamilyDependencies
+    , TypeOperators
+    , TypeSynonymInstances
+    , UndecidableInstances
+    , UnicodeSyntax
+    , ViewPatterns
+
   if flag(strict)
-    ghc-options:
-      -Werror
-      -Wunused-packages
-  ghc-options: -Wall -O2 -fexpose-all-unfoldings -fno-show-valid-hole-fits
-               -- unnecessary checks
-               -Wno-type-defaults
-               -Wno-partial-type-signatures
-               -- unsafe code
-               -Wincomplete-record-updates -Werror=incomplete-record-updates
-               -Wincomplete-patterns -Werror=incomplete-patterns
-               -Wincomplete-uni-patterns -Werror=incomplete-uni-patterns
-               -Wpartial-fields -Werror=partial-fields
-               -Wmissing-fields -Werror=missing-fields
-               -- unneeded code
-               -Widentities
-               -Wredundant-constraints
-               -Wunused-packages
+    ghc-options:  -Werror
+                  -Wunused-packages
+
+  ghc-options:    -O2
+                  -fexpose-all-unfoldings
+                  -fspecialise
+                  -fspecialise-aggressively
+                  -flate-specialise
+                  -fcross-module-specialise
+
+  ghc-options:    -Wall
+                  -Wno-type-defaults
+                  -Wincomplete-record-updates -Werror=incomplete-record-updates
+                  -Wincomplete-patterns -Werror=incomplete-patterns
+                  -Wincomplete-uni-patterns -Werror=incomplete-uni-patterns
+                  -Wpartial-fields -Werror=partial-fields
+                  -Wmissing-fields -Werror=missing-fields
+                  -Widentities
+                  -Wredundant-constraints
+                  -Wunused-packages
+
   if impl(ghc >= 8.8)
     ghc-options:
-               -Wmissing-deriving-strategies
-               -Werror=missing-deriving-strategies
+                  -Wmissing-deriving-strategies
+                  -Werror=missing-deriving-strategies
+
   if !(arch(wasm32))
-    ghc-options: -threaded -rtsopts -with-rtsopts=-N
+    ghc-options:  -threaded -rtsopts -with-rtsopts=-N
 
 library
     -- Import common warning flags.
@@ -156,10 +209,10 @@ library
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    common
-                    , frontend
+    build-depends:    base
                       --
-                    , base
+                    , common
+                    , frontend
                       --
                     , directory
                     , file-embed
@@ -168,9 +221,6 @@ library
 
     -- Directories containing source files.
     hs-source-dirs:   src
-
-    -- Base language which the package is written in.
-    default-language: Haskell2010
 
     if (arch(javascript) || arch(wasm32))
       buildable: False
@@ -189,9 +239,9 @@ executable backend
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    backend
+    build-depends:    base
                       --
-                    , base
+                    , backend
 
     if flag(cross)
       if flag(wasm)
@@ -203,9 +253,6 @@ executable backend
 
     -- Directories containing source files.
     hs-source-dirs:   app
-
-    -- Base language which the package is written in.
-    default-language: Haskell2010
 
     if (arch(javascript) || arch(wasm32))
       buildable: False
