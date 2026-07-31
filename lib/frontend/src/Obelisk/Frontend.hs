@@ -252,7 +252,9 @@ renderFrontendHtml
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
   --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
   html <- fmap snd $ liftIO $ renderStatic $ runHydratableT $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
-    el "html" $ do
+    -- The lang attribute only needs to exist server-side: hydration appends
+    -- into the existing head/body and never replaces the html element.
+    elAttr "html" ("lang" =: "en") $ do
       el "head" $ do
         baseTag
         injectExecutableConfigs configs
