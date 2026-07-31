@@ -183,7 +183,7 @@ Then build with `nix-build skeleton -A serverExe` etc. Use `nix repl` to explore
 
 ### How do I fix "Ambiguous module name" errors?
 
-`ob-repl`, `ob-run`, and `ob-watch` load the `common`, `backend`, and `frontend` packages into one GHCi session, and GHCi does not sandbox their dependencies from each other. A module name provided by two packages can therefore be ambiguous in the repl even though `cabal build` succeeds.
+`ob-repl` and `ob-watch` load the `common`, `backend`, and `frontend` packages into one GHCi session, and GHCi does not sandbox their dependencies from each other. A module name provided by two packages can therefore be ambiguous in the repl even though `cabal build` succeeds.
 
 Disambiguate with [PackageImports](https://downloads.haskell.org/ghc/latest/docs/users_guide/exts/package_qualified_imports.html). For example, if you see
 

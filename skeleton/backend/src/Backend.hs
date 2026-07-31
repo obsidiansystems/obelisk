@@ -15,9 +15,9 @@ backend = Backend
   , _backend_routeEncoder = fullRouteEncoder
   }
 
--- | Serve the app. This is the entry point used by the backend executable,
--- and by @ob-run@\/@ob-repl@ to run the server inside a GHCi session (where
--- it reloads in-process instead of relinking).
+-- | Serve the app. This is the entry point of the backend executable, so it
+-- is what @ob-run@ relinks and restarts on each change; under @ob-repl@ it
+-- is in scope and can be called by hand.
 run :: IO ()
 run = runBackendWith config backend frontend
   where
