@@ -25,7 +25,17 @@ if !(arch(javascript) || arch(wasm32))
 
 multi-repl: True
 
-
+-- Mirrors the nix module's `optimizations.all = true`, so plain-cabal builds
+-- get the same flags as `nix-build`. ob-run/ob-repl override these with
+-- -O0 -fno-* on the command line for fast rebuilds.
+package *
+  ghc-options:
+    -O2
+    -fexpose-all-unfoldings
+    -fspecialise
+    -fspecialise-aggressively
+    -flate-specialise
+    -fcross-module-specialise
 
 if !(arch(javascript) || arch(wasm32))
   package reflex-dom

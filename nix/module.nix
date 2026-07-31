@@ -268,6 +268,8 @@ in {
 
     compiler-nix-name = lib.mkDefault "ghc914";
 
+    optimizations.all = lib.mkDefault true;
+
     overrides = [
       obeliskLib.buildTypeOverride
       obeliskLib.jsexeOverride
