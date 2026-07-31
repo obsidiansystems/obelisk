@@ -1,4 +1,4 @@
-# Machine setup: Nix, binary caches, private repositories
+# Machine setup: Nix, git submodules, binary caches, private repositories
 
 What a machine needs before it can build an Obelisk project. One-time setup;
 after this, the [Quick Start](../README.md#quick-start) applies.
@@ -13,12 +13,36 @@ flakes` in your Nix configuration.
 Note: obelisk's nix builds currently support Linux only (`x86_64-linux` and
 `aarch64-linux`).
 
-Note: obelisk's own dependencies are git submodules of the obelisk repo.
-Nix 2.27+ fetches them automatically (obelisk's flake declares
-`inputs.self.submodules = true`); on older Nix, add `?submodules=1` to the
-obelisk flake URL, and clone checkouts with `--recurse-submodules`.
+## 2. Git submodules
 
-## 2. Set up binary caches
+obelisk keeps its own dependencies as git submodules, so it has to be pulled
+in recursively. Bring it into a project whichever way suits you: clone it with
+`--recurse-submodules`, import it as a flake with `?submodules=1`, or import
+it as a nix-thunk with `fetchSubmodules = true`.
+
+If you also pin your project's own dependencies as submodules (a scaffolded
+project already pins obelisk that way), set these once:
+
+```
+git config --global submodule.recurse true
+git config --global diff.submodule log
+```
+
+or, in `~/.config/git/config` directly:
+
+```ini
+[submodule]
+    recurse = true
+[diff]
+    submodule = log
+```
+
+`submodule.recurse` makes `clone`, `pull`, `checkout`, and friends update
+submodules for you, so a branch switch or a pull can't silently leave a pin at
+the wrong revision. `diff.submodule = log` shows submodule bumps as the list
+of commits they move across, instead of a pair of opaque hashes.
+
+## 3. Set up binary caches
 
 Without the caches below, your first build compiles the GHC 9.14 toolchain
 and the WASM cross-compiler from source, which takes hours. With them it is a
@@ -62,7 +86,7 @@ then restart the daemon: `sudo systemctl restart nix-daemon`.
 `cache.iog.io` serves the haskell.nix infrastructure that nix-haskell builds
 on.
 
-## 3. Accessing private repositories
+## 4. Accessing private repositories
 
 If your project pins dependencies from private git repositories (as
 `source-repository-package` stanzas in `cabal.project`, or as nix-thunks
