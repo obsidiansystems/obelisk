@@ -20,8 +20,8 @@
       wasi32
 
       # To enable JS builds in `nix-shell`, uncomment ghcjs below and use:
-      #   cabal build/repl/run backend -f -wasm
-      #   ob-run/ob-repl -f -wasm
+      #   cabal build/repl/run backend -f js
+      #   ob-run/ob-repl -f js
       # ghcjs
     ];
     withHoogle = true;

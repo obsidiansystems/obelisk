@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ob-repl: GHCi REPL with optimizations disabled and cross builds skipped (-f -cross).
+# ob-repl: GHCi REPL with optimizations disabled and cross builds skipped (-f native).
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -41,4 +41,4 @@ DEV_GHC_OPTIONS=(
 )
 
 export OBELISK_CROSS_CABAL_ARGS="-O0 ${DEV_GHC_OPTIONS[*]}"
-exec cabal repl "${TARGETS[@]}" -O0 -f -cross "${DEV_GHC_OPTIONS[@]}" "${EXTRA_ARGS[@]}"
+exec cabal repl "${TARGETS[@]}" -O0 -f native "${DEV_GHC_OPTIONS[@]}" "${EXTRA_ARGS[@]}"
