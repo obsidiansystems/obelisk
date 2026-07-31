@@ -1,25 +1,24 @@
 {
   inputs = {
-    self.submodules = true;
+    # ob-init rewrites this to pin the obelisk revision a project was
+    # scaffolded from. ?submodules=1 makes the fetch include obelisk's deps/
+    # submodules on any Nix version (on 2.27+ it is redundant with obelisk's
+    # inputs.self.submodules = true).
+    obelisk.url = "github:obsidiansystems/obelisk?submodules=1";
 
-    nix-haskell.url = ./deps/nix-haskell;
-
-    nixpkgs.follows = "nix-haskell/nixpkgs";
-    haskell-nix.follows = "nix-haskell/haskell-nix";
-    reflex-platform.follows = "nix-haskell/reflex-platform";
+    nixpkgs.follows = "obelisk/nixpkgs";
   };
 
-  outputs = inputs@{ self, nixpkgs, ... }:
-    let eachSystem = nixpkgs.lib.genAttrs
-          [ "x86_64-linux"
-            "aarch64-linux"
-          ];
+  outputs = inputs@{ self, obelisk, nixpkgs }:
+    let eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in {
       legacyPackages = eachSystem (system:
-        let pkgs = nixpkgs.legacyPackages.${system};
-            project = import ./default.nix { inherit system inputs; };
-        in project
+        import ./default.nix { inherit system inputs; }
       );
+
+      devShells = eachSystem (system: {
+        default = (import ./default.nix { inherit system inputs; }).shell;
+      });
     };
 
   nixConfig = {

@@ -1,36 +1,41 @@
 {
-  # Dependencies are pinned as nix-thunks under deps/ (see deps/*/github.json),
-  # not git submodules, so no `?submodules=1` / `--recursive` is needed. The nix
-  # code (nix/*.nix) imports them directly; `nixpkgs` for the flake outputs comes
-  # from the nix-haskell thunk's pins.
-  outputs = { self, ... }:
-    let thunkSource = import ./nix/thunk.nix;
-        pkgsFor = system:
-          import (thunkSource ./deps/nix-haskell + "/pins/nixpkgs") { inherit system; };
-        # nixpkgs must be imported with an explicit system: an argument-less
-        # import breaks pure evaluation (nix flake show, nix run).
-        lib = (pkgsFor "x86_64-linux").lib;
-        eachSystem = lib.genAttrs lib.systems.flakeExposed;
+  inputs = {
+    # Dependencies are git submodules under deps/; this makes nix fetch them
+    # automatically when the flake is fetched over git (Nix 2.27+; on older
+    # Nix, add ?submodules=1 to the flake URL).
+    self.submodules = true;
+
+    nix-haskell.url = ./deps/nix-haskell;
+    reflex-dom.url = ./deps/reflex-dom;
+
+    flake-compat.follows = "nix-haskell/flake-compat";
+    nixpkgs.follows = "nix-haskell/nixpkgs";
+    haskell-nix.follows = "nix-haskell/haskell-nix";
+    reflex-platform.follows = "nix-haskell/reflex-platform";
+  };
+
+  outputs = inputs@{ self, nixpkgs, ... }:
+    let eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in {
       lib = eachSystem (system:
-        import ./nix { inherit system; }
+        import ./nix { inherit system inputs; }
       );
 
       packages = eachSystem (system: {
-        docs = (import ./nix/docs.nix { inherit system; }).md;
-        release = import ./release.nix { inherit system; };
+        docs = (import ./nix/docs.nix { inherit system inputs; }).md;
+        release = import ./release.nix { inherit system inputs; };
       });
 
       devShells = eachSystem (system: {
-        default = (import ./skeleton { inherit system; }).shell;
+        default = (import ./skeleton { inherit system inputs; }).shell;
       });
 
       # Scaffold a new project without cloning obelisk:
       #   nix run github:obsidiansystems/obelisk#init -- my-app
-      # The generated project pins deps/obelisk to the exact revision this
-      # flake was fetched at (as a nix-thunk).
+      # The generated project pins obelisk (as a flake input) to the exact
+      # revision this flake was fetched at.
       apps = eachSystem (system:
-        let pkgs = pkgsFor system;
+        let pkgs = nixpkgs.legacyPackages.${system};
             ob-init = pkgs.writeShellApplication {
               name = "ob-init";
               runtimeInputs = [ pkgs.git ];
@@ -42,7 +47,6 @@
               text = ''
                 export OBELISK_SKELETON="''${OBELISK_SKELETON:-${self}/skeleton}"
                 export OBELISK_PIN_REV="''${OBELISK_PIN_REV:-${self.rev or ""}}"
-                export OBELISK_PIN_SHA256="''${OBELISK_PIN_SHA256:-${self.narHash}}"
                 exec ${ob-init}/bin/ob-init "$@"
               '';
             };
