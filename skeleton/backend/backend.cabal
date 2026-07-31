@@ -60,14 +60,21 @@ flag strict
   default: False
   manual: True
 
-flag cross
-  description: Build cross-compiled frontend (WASM or GHCJS)
+-- Which frontend the backend executable is built against. When more than one
+-- is enabled, native wins over js, and js over wasm.
+flag wasm
+  description: Build the WASM frontend (default)
   default: True
   manual: True
 
-flag wasm
-  description: Use WASM frontend instead of GHCJS
-  default: True
+flag js
+  description: Build the GHCJS frontend
+  default: False
+  manual: True
+
+flag native
+  description: Build the frontend natively, skipping cross-compilation
+  default: False
   manual: True
 
 common common
@@ -243,11 +250,12 @@ executable backend
                       --
                     , backend
 
-    if flag(cross)
-      if flag(wasm)
-        build-depends: frontend-wasm
-      else
-        build-depends: frontend-js
+    if flag(native)
+      build-depends: frontend
+    elif flag(js)
+      build-depends: frontend-js
+    elif flag(wasm)
+      build-depends: frontend-wasm
     else
       build-depends: frontend
 

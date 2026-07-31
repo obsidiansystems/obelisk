@@ -75,7 +75,7 @@ nix-build skeleton -A serverExe.wasm   # or serverExe.js for GHCJS
 ```
 
 To target GHCJS instead of WASM, set `obelisk.frontend.target = "js"` in
-`project.nix` (or pass `-f -wasm` to `cabal build backend`) and rebuild.
+`project.nix` (or pass `-f js` to `cabal build backend`) and rebuild.
 
 ### 2. Scaffold a Capacitor project
 

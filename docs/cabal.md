@@ -23,7 +23,7 @@ shell out, so the following must be available:
 | `node` | running `post-link.mjs` to extract the JSFFI bindings | yes (wasm target) |
 | `OBELISK_WASI_SHIM` env var | locating the `@bjorn3/browser_wasi_shim` package (its `dist/*.js` is copied into the jsexe) | yes (wasm target); the Setup hook fails if unset |
 | `wasm-opt`, `wasm-tools` | optimizing/stripping `frontend.wasm` | optional (skipped with a warning) |
-| `javascript-unknown-ghcjs-cabal` | the GHCJS frontend target | only with `-f -wasm` |
+| `javascript-unknown-ghcjs-cabal` | the GHCJS frontend target | only with `-f js` |
 
 The obelisk nix shell provides all of these and exports `OBELISK_WASI_SHIM`.
 Entering it once and using plain `cabal` commands inside it is the easiest
@@ -74,9 +74,12 @@ cabal run backend -- --port=8123   # Snap's CLI flags after --
   Snap option after `--`.
 - Run from the project root: the backend reads `config/` relative to its
   working directory. A missing `config/` is fine; configs are optional.
-- `-f -cross` skips the frontend cross-build entirely (backend-only
+- The frontend target is a flag on `backend`: `wasm` (the default), `js`, or
+  `native`. When more than one is set, `native` wins over `js`, and `js` over
+  `wasm`.
+- `-f native` skips the frontend cross-build entirely (backend-only
   iteration; this is what `ob-repl`/`ob-watch` use).
-- `-f -wasm` switches the frontend target to GHCJS
+- `-f js` switches the frontend target to GHCJS
   (`javascript-unknown-ghcjs-cabal` must be on `PATH`).
 - The WASM cross-build reuses a persistent `dist-wasm` build directory, so
   only changed modules recompile.
@@ -85,8 +88,8 @@ Repl and type-error watching are one-liners over the same mechanism (or use
 the `ob-repl` / `ob-watch` scripts, which add the dev ghc-options):
 
 ```bash
-cabal repl lib:backend lib:common lib:frontend -O0 -f -cross
-ghcid -c "cabal repl lib:backend lib:common lib:frontend -O0 -f -cross"
+cabal repl lib:backend lib:common lib:frontend -O0 -f native
+ghcid -c "cabal repl lib:backend lib:common lib:frontend -O0 -f native"
 ```
 
 Inside the repl, `Backend.run` starts the server (the backend executable's
