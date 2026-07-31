@@ -17,11 +17,15 @@ project by hand.
   module that consumes obelisk's `nix/module.nix`; build outputs come from
   `nix/lib.nix` (`serverExe`, `containerImage`, `frontendWasm`/`frontendJs`).
   See [`docs/module.md`](module.md) for the full option reference.
-- **Flakes + nix-thunks.** The repo is a flake, and its dependencies
-  (`nix-haskell`, `reflex-dom`) are pinned as nix-thunks under `deps/`
-  (a small `github.json` + `default.nix`/`thunk.nix`), not git submodules, so
-  plain `nix develop` / `nix-build` work with no `?submodules=1` or
-  `--recursive`. Bump a pin with `nix-thunk update deps/<name>`.
+- **Flakes + git submodules.** The repo is a flake, and its dependencies
+  (`nix-haskell`, `reflex-dom`) are git submodules under `deps/`. The flake
+  declares `inputs.self.submodules = true`, so Nix 2.27+ fetches them
+  automatically; on older Nix add `?submodules=1` to flake URLs, and clone
+  with `--recurse-submodules` (or `git submodule update --init`) for local
+  checkouts. Bump a pin with `git -C deps/<name> fetch && git -C deps/<name>
+  checkout <rev>` (plain `git submodule update --remote` also works).
+  nix-thunks remain supported for *project* dependencies (see the `ob thunk`
+  rows below).
 - **GHC 8.10 to 9.14.**
 - **GHCJS to WASM by default.** The default frontend target is now `"wasm"`
   (compiled with `wasm32-unknown-wasi-cabal`, run via jsaddle-wasm and a
@@ -45,7 +49,7 @@ project by hand.
 
 | v1 (`ob` / reflex-platform) | v2 replacement |
 |---|---|
-| `ob init` | `nix run github:obsidiansystems/obelisk#init -- my-app` (no clone or install needed; pins obelisk as a nix-thunk), or `ob-init` from an obelisk shell. |
+| `ob init` | `nix run github:obsidiansystems/obelisk#init -- my-app` (no clone or install needed; pins obelisk as a flake input), or `ob-init` from an obelisk shell. |
 | `ob init --branch BRANCH` / `--symlink PATH` | No managed init source. Copy/point at the skeleton you want; obelisk's own libraries are injected via `obeliskLib.source-repository-packages` in `project.nix`. |
 | `ob run` | `ob-run` (`scripts/ob-run`): watch-and-rebuild dev server on `:8000`; rebuilds on `.hs`/`.cabal`/`.project` change or Enter, cross-compiling the frontend (incrementally) during each rebuild. **Reload model regression:** v1 reloaded interpreted code in-process via ghcid, with the frontend running natively over jsaddle-warp; v2 currently relinks and restarts per change, so dev iteration is slower than v1 for now. Restoring the interpreted dev loop (ghcid + jsaddle-warp, selectable against the real-WASM mode) is the flagship post-2.0 follow-up. v1's `config/common/route` interpretation and dev-TLS are also gone: pass Snap's `--port` after `--`, and use a local reverse proxy (e.g. caddy) for https in development. |
 | `ob watch` | `ob-watch` (`scripts/ob-watch`): ghcid over `cabal repl`; type errors on every save at GHCi speed, no server, no cross builds. |
@@ -60,7 +64,7 @@ project by hand.
 | `ob deploy update` | Bump your source pins by hand: update the `tag`/`rev` in `source-repository-package` stanzas (`cabal.project`) or update the relevant git submodule, then rebuild. There is no managed thunk to "update". |
 | `ob deploy test android` | CapacitorJS: wrap the WASM/JS frontend bundle in an Android WebView shell. See [`docs/mobile.md`](mobile.md). |
 | `ob deploy test ios` | CapacitorJS: wrap the same bundle in a WKWebView shell. No Apple `TEAMID` flag in obelisk anymore; signing is handled in Xcode/Capacitor. See [`docs/mobile.md`](mobile.md). |
-| `ob thunk pack` | The `nix-thunk` CLI: `nix-thunk pack deps/<name>`. Thunks remain first-class for project deps: keep them under `deps/` and consume them in `project.nix` with `source-repository-packages = { my-dep = thunkSource ./deps/my-dep; };`. Plain `source-repository-package` stanzas in `cabal.project` (git `location` + `tag`) also work. |
+| `ob thunk pack` | The `nix-thunk` CLI: `nix-thunk pack deps/<name>`. Thunks remain first-class for project deps: keep them under `deps/` and consume them in `project.nix` with `source-repository-packages = { my-dep = obeliskLib.thunkSource ./deps/my-dep; };`. Plain `source-repository-package` stanzas in `cabal.project` (git `location` + `tag`) also work. |
 | `ob thunk unpack` | `nix-thunk unpack deps/<name>` checks the dep out in place; the nix side keeps working (`thunkSource` handles both packed and unpacked thunks). |
 | `ob thunk update` | `nix-thunk update deps/<name>`, or edit the `tag`/`rev` in a `source-repository-package` stanza, then commit. |
 | `ob internal ...` | Removed. The dev scripts encapsulate the few internals that mattered (e.g. GHCi configuration is just `ob-repl`). |
@@ -272,7 +276,7 @@ These fail loudly; expect them:
   Apps using `defaultGhcjsWidgets` are unaffected (and gain a
   `frontend.wasm` preload hint on WASM); custom widgets should read
   `_ghcjsAppUrls_allJs` where they previously took the URL directly.
-- **reflex-dom is a fork** (`ymeister/reflex-dom`, pinned as a nix-thunk under
+- **reflex-dom is a fork** (`ymeister/reflex-dom`, pinned as a git submodule under
   `deps/`). You cannot pin upstream `reflex-dom`/`reflex-dom-core` yet;
   upstreaming the fork is planned.
 - **nix builds are supported on Linux only.** The flake exposes outputs for
@@ -315,8 +319,8 @@ These won't error; watch for them:
    `inherit (obeliskLib) source-repository-packages;`.
 3. Keep `ob thunk` dependencies as nix-thunks under `deps/` (managed with the
    `nix-thunk` CLI, consumed via `source-repository-packages = { my-dep =
-   thunkSource ./deps/my-dep; };` in `project.nix`), or convert them to
-   `source-repository-package` stanzas in `cabal.project`.
+   obeliskLib.thunkSource ./deps/my-dep; };` in `project.nix`), or convert
+   them to `source-repository-package` stanzas in `cabal.project`.
 4. Pick a frontend target (`obelisk.frontend.target`, default `"wasm"`).
 5. Replace `ob run`/`ob repl`/`ob hoogle` muscle memory with
    `ob-run`/`ob-repl`/`ob-hoogle`.

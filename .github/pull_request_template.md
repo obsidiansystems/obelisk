@@ -7,4 +7,4 @@ I have:
   - [ ] Looked for lint in my changes with `hlint .` (lint found code you did not write can be left alone)
   - [ ] Run the test suite: `cd lib && cabal test all`
   - [ ] [Updated the changelog](https://github.com/obsidiansystems/obelisk/blob/develop/CONTRIBUTING.md#in-the-changelog)
-  - [ ] (Optional) Run the production build locally: `nix-build release.nix`
+  - [ ] (Optional) Build the skeleton release locally: `nix-build release.nix`

@@ -2,15 +2,15 @@
 # ob-init: Scaffold a new obelisk project from the skeleton template.
 #
 # Replaces the old `ob init`. Copies obelisk's skeleton/ into a new directory,
-# renames the project, wires up deps/obelisk, and creates an initial git
-# commit.
+# renames the project, wires up the obelisk flake input, and creates an
+# initial git commit.
 #
-# deps/obelisk wiring: when OBELISK_PIN_REV and OBELISK_PIN_SHA256 are set
-# (the `nix run github:obsidiansystems/obelisk#init` app sets them to the
-# revision the flake was fetched at), deps/obelisk is written as a nix-thunk
-# pinning that revision, so the project is portable. Otherwise (or with
-# --link) it is an absolute symlink to the local obelisk source, which builds
-# only on this machine.
+# obelisk wiring: when OBELISK_PIN_REV is set (the
+# `nix run github:obsidiansystems/obelisk#init` app sets it to the revision
+# the flake was fetched at), the generated flake.nix pins
+# `obelisk.url = "github:OWNER/REPO/REV"`, so the project is portable.
+# Otherwise (or with --link) obelisk is referenced by an absolute path, which
+# builds only on this machine.
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -eq 0 ]]; then
@@ -20,13 +20,13 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -eq 0 ]]; then
   echo "  obelisk skeleton template, then:"
   echo "    * sets the project name in project.nix to NAME"
   echo "      (default: the basename of <project-dir>);"
-  echo "    * wires deps/obelisk so 'import ./deps/obelisk' resolves:"
-  echo "      as a nix-thunk pinning the obelisk revision scaffolded from"
+  echo "    * wires the obelisk flake input in flake.nix:"
+  echo "      pinned to github at the obelisk revision scaffolded from"
   echo "      (when pin info is available, e.g. under 'nix run ...#init'),"
-  echo "      else as a symlink to the local obelisk source;"
+  echo "      else an absolute path to the local obelisk source;"
   echo "    * runs 'git init' and creates an initial commit."
   echo ""
-  echo "  --link             always symlink deps/obelisk to the local source"
+  echo "  --link             always point obelisk at the local source"
   echo "                     (use when scaffolding from unpushed local commits;"
   echo "                     the project then builds only on this machine)"
   echo "  --from OWNER/REPO  github repository for the pin"
@@ -133,53 +133,34 @@ rm -rf "$DIR"/result "$DIR"/result-* "$DIR"/dist-newstyle "$DIR"/dist-wasm \
 # Rename the project in project.nix.
 sed -i "s/name = \"obelisk-skeleton\";/name = \"${NAME}\";/" "$DIR/project.nix"
 
-# Wire deps/obelisk (the skeleton's symlink is relative to the obelisk repo
-# and would dangle in the new location). Preferred: a nix-thunk pinning the
-# obelisk revision this scaffold came from; fallback: an absolute symlink to
-# the local obelisk source.
+# Wire the obelisk flake input (the skeleton's deps/obelisk symlink is
+# relative to the obelisk repo and would dangle in the new location).
+# Preferred: pin obelisk.url in flake.nix to the github revision this
+# scaffold came from; fallback (--link, or no pin info): point it at the
+# local obelisk source, which resolves only on this machine.
 rm -f "$DIR/deps/obelisk"
-if [[ "$LINK_MODE" == false && -n "${OBELISK_PIN_REV:-}" && -n "${OBELISK_PIN_SHA256:-}" ]]; then
-  PIN_OWNER="${PIN_FROM%%/*}"
-  PIN_REPO="${PIN_FROM#*/}"
-  mkdir -p "$DIR/deps/obelisk"
-  cat > "$DIR/deps/obelisk/github.json" <<EOF
-{
-  "owner": "$PIN_OWNER",
-  "repo": "$PIN_REPO",
-  "private": false,
-  "rev": "$OBELISK_PIN_REV",
-  "sha256": "$OBELISK_PIN_SHA256"
-}
-EOF
-  cat > "$DIR/deps/obelisk/default.nix" <<'EOF'
-# DO NOT HAND-EDIT THIS FILE
-import (import ./thunk.nix)
-EOF
-  cat > "$DIR/deps/obelisk/thunk.nix" <<'EOF'
-# DO NOT HAND-EDIT THIS FILE
-let fetch = { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:
-  if !fetchSubmodules && !private then builtins.fetchTarball {
-    url = "https://github.com/${owner}/${repo}/archive/${rev}.tar.gz"; inherit sha256;
-  } else (import (builtins.fetchTarball {
-  url = "https://github.com/NixOS/nixpkgs/archive/3aad50c30c826430b0270fcf8264c8c41b005403.tar.gz";
-  sha256 = "0xwqsf08sywd23x0xvw4c4ghq0l28w2ki22h0bdn766i16z9q2gr";
-}) {}).fetchFromGitHub {
-    inherit owner repo rev sha256 fetchSubmodules private;
-  };
-  json = builtins.fromJSON (builtins.readFile ./github.json);
-in fetch json
-EOF
-  echo "Pinned deps/obelisk to github:$PIN_FROM at ${OBELISK_PIN_REV:0:12}."
+if [[ "$LINK_MODE" == false && -n "${OBELISK_PIN_REV:-}" ]]; then
+  sed -i "s|obelisk.url = \".*\";|obelisk.url = \"github:${PIN_FROM}/${OBELISK_PIN_REV}?submodules=1\";|" \
+    "$DIR/flake.nix"
+  echo "Pinned the obelisk flake input to github:$PIN_FROM at ${OBELISK_PIN_REV:0:12}."
+  # Legacy nix-shell goes through flake-compat (inputs.nix), which needs a
+  # lock file; generate it now if nix is available.
+  if command -v nix >/dev/null 2>&1; then
+    nix --extra-experimental-features 'nix-command flakes' flake lock "$DIR" \
+      || echo "Note: 'nix flake lock' failed; run it (or 'nix develop') before 'nix-shell'." >&2
+  else
+    echo "Note: run 'nix flake lock' (or 'nix develop') once before 'nix-shell'."
+  fi
 else
+  # git+file sees committed state only; the deps/obelisk symlink (used by
+  # default.nix, hence legacy nix-shell) tracks the live working tree.
+  sed -i "s|obelisk.url = \".*\";|obelisk.url = \"git+file:${OBELISK_SRC}?submodules=1\";|" \
+    "$DIR/flake.nix"
   ln -s "$OBELISK_SRC" "$DIR/deps/obelisk"
   if [[ "$LINK_MODE" == false ]]; then
-    echo "Note: no pin info available (\$OBELISK_PIN_REV/\$OBELISK_PIN_SHA256 unset);"
-    echo "linked deps/obelisk to $OBELISK_SRC, which resolves only on this machine."
+    echo "Note: no pin info available (\$OBELISK_PIN_REV unset); pointed the"
+    echo "obelisk flake input at $OBELISK_SRC, which resolves only on this machine."
   fi
-  # Leave a clearly-marked TODO in the generated flake about consuming obelisk
-  # as a portable git input instead of the deps/obelisk path.
-  sed -i 's|^  inputs = {|  inputs = {\n    # TODO(ob-init): this project consumes obelisk via the deps/obelisk path\n    # (see deps/obelisk). For a portable project, replace the path-based\n    # wiring with a git flake input, e.g.:\n    #   obelisk.url = "github:obsidiansystems/obelisk";\n    #   nix-haskell.follows = "obelisk/nix-haskell";|' \
-    "$DIR/flake.nix"
 fi
 
 # Initialise a git repository with an initial commit.

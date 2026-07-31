@@ -50,18 +50,22 @@ Scaffold a project without cloning anything:
 
 ```bash
 nix run github:obsidiansystems/obelisk#init -- my-app
+# Nix < 2.27: nix run 'github:obsidiansystems/obelisk?submodules=1#init' -- my-app
 cd my-app
 nix-shell
 ob-run
 ```
 
-Open http://localhost:8000 in your browser. The generated project pins
-obelisk (as a nix-thunk under `deps/obelisk`) to the revision it was
-scaffolded from; bump it later with `nix-thunk update deps/obelisk`.
+Open http://localhost:8000 in your browser. The generated project pins the
+obelisk flake input to the revision it was scaffolded from; bump it later
+with `nix flake update obelisk`. obelisk's own dependencies are git
+submodules of the obelisk repo, fetched automatically on Nix 2.27+; on older
+Nix, add `?submodules=1` to the obelisk URL in the generated `flake.nix`.
 
 If you have an obelisk checkout (for example to hack on obelisk itself),
 `nix-shell` in it and run `ob-init my-app` instead; see `ob-init --help`
-for the pin-vs-symlink details.
+for the pin-vs-link details. Clone with `--recurse-submodules` (or run
+`git submodule update --init` after cloning) so the `deps/` pins resolve.
 
 ## Project Structure
 
@@ -202,10 +206,11 @@ source-repository-package
 Use `source-repository-packages` in `project.nix` for local packages, nix-thunks, or git submodules:
 
 ```nix
+{ obeliskLib, ... }:
 {
   source-repository-packages = {
-    some-local-package = ./deps/some-local-package;
-    some-remote-package = ./deps/some-remote-package;  # nix-thunk or git submodule
+    some-local-package = ./deps/some-local-package;      # local path or git submodule
+    some-remote-package = obeliskLib.thunkSource ./deps/some-remote-package;  # nix-thunk
   };
 }
 ```

@@ -13,6 +13,11 @@ flakes` in your Nix configuration.
 Note: obelisk's nix builds currently support Linux only (`x86_64-linux` and
 `aarch64-linux`).
 
+Note: obelisk's own dependencies are git submodules of the obelisk repo.
+Nix 2.27+ fetches them automatically (obelisk's flake declares
+`inputs.self.submodules = true`); on older Nix, add `?submodules=1` to the
+obelisk flake URL, and clone checkouts with `--recurse-submodules`.
+
 ## 2. Set up binary caches
 
 Without the caches below, your first build compiles the GHC 9.14 toolchain
@@ -61,7 +66,7 @@ on.
 
 If your project pins dependencies from private git repositories (as
 `source-repository-package` stanzas in `cabal.project`, or as nix-thunks
-under `deps/` consumed via `thunkSource`), the Nix builder fetches them over
+under `deps/` consumed via `obeliskLib.thunkSource`), the Nix builder fetches them over
 SSH, so the building user needs SSH access to the host:
 
 - [GitHub](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)

@@ -13,8 +13,8 @@ preserved `release/1.x` line.
 * **Frontend GHCJS to WASM.** WASM (`wasm32-unknown-wasi`) is the new default
   frontend target; GHCJS remains available via `obelisk.frontend.target = "js"`.
 * **Build system reflex-platform to nix-haskell.** Builds are now driven by
-  nix-haskell/haskell.nix with flakes (dependency pins vendored as nix-thunks
-  under `deps/`) instead of reflex-platform.
+  nix-haskell/haskell.nix with flakes and git submodules (`deps/nix-haskell`,
+  `deps/reflex-dom`) instead of reflex-platform.
 * **`ob` CLI removed.** The Haskell `ob` command-line tool is gone, replaced by
   shell scripts placed on `PATH` by the nix shell: `ob-run`, `ob-repl`,
   `ob-watch` (ghcid error-watch), `ob-hoogle`, and the new `ob-init` (also a flake app: `nix run github:obsidiansystems/obelisk#init -- my-app`) and

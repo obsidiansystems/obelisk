@@ -32,10 +32,11 @@ source-repository-package
 Use `source-repository-packages` in `project.nix` for local packages, nix-thunks, or git submodules:
 
 ```nix
+{ obeliskLib, ... }:
 {
   source-repository-packages = {
-    some-local-package = ./deps/some-local-package;
-    some-remote-package = ./deps/some-remote-package;  # nix-thunk or git submodule
+    some-local-package = ./deps/some-local-package;      # local path or git submodule
+    some-remote-package = obeliskLib.thunkSource ./deps/some-remote-package;  # nix-thunk
   };
 }
 ```

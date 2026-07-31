@@ -48,7 +48,9 @@ To go fully nix-free:
 - **Caveat:** the skeleton's default `static/generate` implementation runs
   `nix-build`, so an out-of-the-box scaffold touches nix on static-asset
   changes. The framework only requires that the script honor
-  `static/generate <output-path>`; swap in any implementation (see section 3).
+  `static/generate <output-path>`; any implementation works, including a
+  plain `cp -r static/src/. "$1"` or `rsync` for unprocessed assets (see
+  section 3).
 
 One more knob: `OBELISK_CROSS_CABAL_ARGS` passes extra arguments through to
 the cross cabal invocation. The dev scripts set it to `-O0` plus

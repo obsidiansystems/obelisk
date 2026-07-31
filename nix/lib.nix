@@ -3,15 +3,16 @@
 , pkgs ?
     if inputs ? nixpkgs
     then import inputs.nixpkgs { inherit system; }
-    else import ((import ./thunk.nix) ../deps/nix-haskell + "/pins/nixpkgs") { inherit system; }
+    else import ../deps/nix-haskell/pins/nixpkgs { inherit system; }
 }:
 
 let src = ../.;
 
     # Resolve nix-thunk dirs whether packed or unpacked (see nix/thunk.nix).
+    # Exported below so user projects can pin their own deps as nix-thunks.
     thunkSource = import ./thunk.nix;
 
-    reflex-dom-src = thunkSource (src + "/deps/reflex-dom");
+    reflex-dom-src = src + "/deps/reflex-dom";
 
     nix-haskell =
       if inputs ? nix-haskell
@@ -45,7 +46,7 @@ let src = ../.;
     serverModule = ./server.nix;
 
 in rec {
-  inherit src obelisk-asset-manifest-generate wasi-shim assets docs serverModule;
+  inherit src obelisk-asset-manifest-generate wasi-shim assets docs serverModule thunkSource;
 
   frontendJs = config:
     config.haskell-nix.project.projectCross.ghcjs.hsPkgs.frontend.components.exes.frontend;
