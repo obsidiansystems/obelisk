@@ -14,8 +14,9 @@
     reflex-platform.follows = "nix-haskell/reflex-platform";
   };
 
-  outputs = inputs@{ self, nixpkgs, ... }:
-    let eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
+  outputs = inputs@{ self, ... }:
+    let nixpkgs = if inputs ? "nixpkgs" then inputs.nixpkgs else builtins.getFlake "nixpkgs";
+        eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in {
       lib = eachSystem (system:
         import ./nix { inherit system inputs; }
@@ -30,10 +31,10 @@
         default = (import ./skeleton { inherit system inputs; }).shell;
       });
 
-      # Scaffold a new project without cloning obelisk:
+      # Scaffold a new project without cloning obelisk by hand:
       #   nix run github:obsidiansystems/obelisk#init -- my-app
-      # The generated project pins obelisk (as a flake input) to the exact
-      # revision this flake was fetched at.
+      # The generated project gets obelisk as a git submodule at deps/obelisk,
+      # pinned to the exact revision this flake was fetched at.
       apps = eachSystem (system:
         let pkgs = nixpkgs.legacyPackages.${system};
             ob-init = pkgs.writeShellApplication {

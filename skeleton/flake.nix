@@ -1,16 +1,20 @@
 {
   inputs = {
-    # ob-init rewrites this to pin the obelisk revision a project was
-    # scaffolded from. ?submodules=1 makes the fetch include obelisk's deps/
-    # submodules on any Nix version (on 2.27+ it is redundant with obelisk's
-    # inputs.self.submodules = true).
-    obelisk.url = "github:obsidiansystems/obelisk?submodules=1";
+    # obelisk lives at deps/obelisk as a git submodule, so the flake commands
+    # and plain nix-shell/nix-build (which go through default.nix) build from
+    # the same source. That makes obelisk part of this project's submodules:
+    # Nix 2.27+ fetches them from the line below, on older Nix add
+    # ?submodules=1 to this project's flake URL.
+    self.submodules = true;
+
+    obelisk.url = "path:./deps/obelisk";
 
     nixpkgs.follows = "obelisk/nixpkgs";
   };
 
-  outputs = inputs@{ self, obelisk, nixpkgs }:
-    let eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
+  outputs = inputs@{ self, ... }:
+    let nixpkgs = if inputs ? "nixpkgs" then inputs.nixpkgs else builtins.getFlake "nixpkgs";
+        eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in {
       legacyPackages = eachSystem (system:
         import ./default.nix { inherit system inputs; }

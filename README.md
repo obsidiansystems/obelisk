@@ -46,7 +46,7 @@ Prerequisites: Nix with the reflex-frp binary caches configured; see
 [docs/setup.md](docs/setup.md). Without the caches your first build compiles
 the toolchain from source.
 
-Scaffold a project without cloning anything:
+Scaffold a project without cloning anything by hand:
 
 ```bash
 nix run github:obsidiansystems/obelisk#init -- my-app
@@ -56,16 +56,36 @@ nix-shell
 ob-run
 ```
 
-Open http://localhost:8000 in your browser. The generated project pins the
-obelisk flake input to the revision it was scaffolded from; bump it later
-with `nix flake update obelisk`. obelisk's own dependencies are git
-submodules of the obelisk repo, fetched automatically on Nix 2.27+; on older
-Nix, add `?submodules=1` to the obelisk URL in the generated `flake.nix`.
+Open http://localhost:8000 in your browser. The generated project carries
+obelisk as a git submodule at `deps/obelisk`, pinned to the revision it was
+scaffolded from and checked out recursively (obelisk keeps its own
+dependencies as submodules). Bump it later with `git -C deps/obelisk fetch &&
+git -C deps/obelisk checkout <rev> && git -C deps/obelisk submodule update
+--init --recursive`.
+
+Both `nix-shell`/`nix-build` and the flake commands build from that
+submodule, so clone the project with `--recurse-submodules` (or run `git
+submodule update --init --recursive` afterwards); on Nix < 2.27, also add
+`?submodules=1` to the project's flake URL.
+
+> **Set this once, on any machine that works with submodule-pinned
+> dependencies:**
+>
+> ```bash
+> git config --global submodule.recurse true
+> git config --global diff.submodule log
+> ```
+>
+> `submodule.recurse` makes `clone`, `pull`, and `checkout` update submodules
+> for you, so switching branches or pulling can't silently leave `deps/` at
+> the wrong revision, the single most common way a submodule-pinned project
+> builds something you didn't expect. `diff.submodule log` shows a pin bump as
+> the commits it moves across instead of two opaque hashes. See
+> [docs/setup.md](docs/setup.md#2-git-submodules).
 
 If you have an obelisk checkout (for example to hack on obelisk itself),
 `nix-shell` in it and run `ob-init my-app` instead; see `ob-init --help`
-for the pin-vs-link details. Clone with `--recurse-submodules` (or run
-`git submodule update --init` after cloning) so the `deps/` pins resolve.
+for the pin-vs-link details.
 
 ## Project Structure
 
@@ -82,6 +102,8 @@ my-app/
     generate           # Static assets generation script
     generated/         # Generated static module (obelisk-generated-static)
       custom/          # Custom Setup.hs for static manifest generation
+  deps/
+    obelisk/           # obelisk itself, as a git submodule
   cabal.project        # Cabal project file
   project.nix          # Nix-haskell project configuration
   default.nix          # Nix entry point
@@ -277,9 +299,9 @@ nix-build -A containerImage.wasm
 
 > **Platform note:** the nix builds (and the nix dev shell, which provides
 > the cross-compilers) are supported on Linux only: `x86_64-linux` and
-> `aarch64-linux` are tested and served by the binary caches. The flake
-> exposes other systems, but they are untested; restoring macOS support is
-> tracked as a follow-up.
+> `aarch64-linux` are tested and served by the binary caches. Other systems
+> are exposed but untested; restoring macOS support is tracked as a
+> follow-up.
 
 ### With cabal
 
@@ -382,7 +404,7 @@ The skeleton includes:
 - Common route types
 - WASM and GHCJS cross-compilation wrappers
 - Static asset generation pipeline
-- Nix and flake configuration
+- Nix configuration (`default.nix`/`shell.nix`, plus an optional `flake.nix`)
 
 
 ## Frequently Asked Questions (FAQ)

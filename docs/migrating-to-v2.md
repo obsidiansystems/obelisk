@@ -17,15 +17,11 @@ project by hand.
   module that consumes obelisk's `nix/module.nix`; build outputs come from
   `nix/lib.nix` (`serverExe`, `containerImage`, `frontendWasm`/`frontendJs`).
   See [`docs/module.md`](module.md) for the full option reference.
-- **Flakes + git submodules.** The repo is a flake, and its dependencies
-  (`nix-haskell`, `reflex-dom`) are git submodules under `deps/`. The flake
-  declares `inputs.self.submodules = true`, so Nix 2.27+ fetches them
-  automatically; on older Nix add `?submodules=1` to flake URLs, and clone
-  with `--recurse-submodules` (or `git submodule update --init`) for local
-  checkouts. Bump a pin with `git -C deps/<name> fetch && git -C deps/<name>
-  checkout <rev>` (plain `git submodule update --remote` also works).
-  nix-thunks remain supported for *project* dependencies (see the `ob thunk`
-  rows below).
+- **Git submodules.** Obelisk keeps its own dependencies (`nix-haskell`,
+  `reflex-dom`) as git submodules under `deps/`, so it has to be pulled in
+  recursively. As a dependency it can be cloned with `--recurse-submodules`,
+  imported as a flake with `?submodules=1`, or imported as a nix-thunk with
+  `fetchSubmodules = true`.
 - **GHC 8.10 to 9.14.**
 - **GHCJS to WASM by default.** The default frontend target is now `"wasm"`
   (compiled with `wasm32-unknown-wasi-cabal`, run via jsaddle-wasm and a
@@ -49,7 +45,7 @@ project by hand.
 
 | v1 (`ob` / reflex-platform) | v2 replacement |
 |---|---|
-| `ob init` | `nix run github:obsidiansystems/obelisk#init -- my-app` (no clone or install needed; pins obelisk as a flake input), or `ob-init` from an obelisk shell. |
+| `ob init` | `nix run github:obsidiansystems/obelisk#init -- my-app` (nothing to clone or install by hand; the scaffold gets obelisk as a git submodule at `deps/obelisk`, pinned to that revision), or `ob-init` from an obelisk shell. |
 | `ob init --branch BRANCH` / `--symlink PATH` | No managed init source. Copy/point at the skeleton you want; obelisk's own libraries are injected via `obeliskLib.source-repository-packages` in `project.nix`. |
 | `ob run` | `ob-run` (`scripts/ob-run`): watch-and-rebuild dev server on `:8000`; rebuilds on `.hs`/`.cabal`/`.project` change or Enter, cross-compiling the frontend (incrementally) during each rebuild. **Reload model regression:** v1 reloaded interpreted code in-process via ghcid, with the frontend running natively over jsaddle-warp; v2 currently relinks and restarts per change, so dev iteration is slower than v1 for now. Restoring the interpreted dev loop (ghcid + jsaddle-warp, selectable against the real-WASM mode) is the flagship post-2.0 follow-up. v1's `config/common/route` interpretation and dev-TLS are also gone: pass Snap's `--port` after `--`, and use a local reverse proxy (e.g. caddy) for https in development. |
 | `ob watch` | `ob-watch` (`scripts/ob-watch`): ghcid over `cabal repl`; type errors on every save at GHCi speed, no server, no cross builds. |
@@ -279,8 +275,8 @@ These fail loudly; expect them:
 - **reflex-dom is a fork** (`ymeister/reflex-dom`, pinned as a git submodule under
   `deps/`). You cannot pin upstream `reflex-dom`/`reflex-dom-core` yet;
   upstreaming the fork is planned.
-- **nix builds are supported on Linux only.** The flake exposes outputs for
-  all standard systems, but only `x86_64-linux` and `aarch64-linux` are
+- **nix builds are supported on Linux only.** Outputs are exposed for all
+  standard systems, but only `x86_64-linux` and `aarch64-linux` are
   tested and served by the binary caches; v1's macOS (`aarch64-darwin`) nix
   support, and the iOS toolchain that depended on it, are gone. Restoring
   macOS support is tracked as a post-promotion follow-up.

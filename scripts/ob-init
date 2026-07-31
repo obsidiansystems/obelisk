@@ -1,40 +1,41 @@
 #!/usr/bin/env bash
 # ob-init: Scaffold a new obelisk project from the skeleton template.
 #
-# Replaces the old `ob init`. Copies obelisk's skeleton/ into a new directory,
-# renames the project, wires up the obelisk flake input, and creates an
-# initial git commit.
+# Copies obelisk's skeleton/ into a new directory, renames the project, wires
+# obelisk in under deps/, and creates an initial git commit.
 #
-# obelisk wiring: when OBELISK_PIN_REV is set (the
-# `nix run github:obsidiansystems/obelisk#init` app sets it to the revision
-# the flake was fetched at), the generated flake.nix pins
-# `obelisk.url = "github:OWNER/REPO/REV"`, so the project is portable.
-# Otherwise (or with --link) obelisk is referenced by an absolute path, which
+# obelisk wiring: when a revision is known (--rev, or OBELISK_PIN_REV, which
+# the `nix run github:obsidiansystems/obelisk#init` app sets to the revision
+# it was fetched at), obelisk is added as a git submodule at deps/obelisk,
+# checked out at that revision and initialised recursively (obelisk keeps its
+# own dependencies as submodules), so the project is portable. Otherwise (or
+# with --link) deps/obelisk is a symlink to the local obelisk source, which
 # builds only on this machine.
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -eq 0 ]]; then
-  echo "Usage: ob-init <project-dir> [--name NAME] [--link] [--from OWNER/REPO]"
+  echo "Usage: ob-init <project-dir> [--name NAME] [--link] [--rev REV] [--from OWNER/REPO]"
   echo ""
   echo "  Scaffolds a new obelisk project in <project-dir> by copying the"
   echo "  obelisk skeleton template, then:"
   echo "    * sets the project name in project.nix to NAME"
   echo "      (default: the basename of <project-dir>);"
-  echo "    * wires the obelisk flake input in flake.nix:"
-  echo "      pinned to github at the obelisk revision scaffolded from"
-  echo "      (when pin info is available, e.g. under 'nix run ...#init'),"
-  echo "      else an absolute path to the local obelisk source;"
+  echo "    * wires obelisk in at deps/obelisk: a git submodule pinned to the"
+  echo "      obelisk revision scaffolded from (when known, e.g. under"
+  echo "      'nix run ...#init'), else a symlink to the local obelisk source;"
   echo "    * runs 'git init' and creates an initial commit."
   echo ""
   echo "  --link             always point obelisk at the local source"
   echo "                     (use when scaffolding from unpushed local commits;"
   echo "                     the project then builds only on this machine)"
-  echo "  --from OWNER/REPO  github repository for the pin"
-  echo "                     (default: obsidiansystems/obelisk)"
+  echo "  --rev REV          obelisk revision to pin the submodule to"
+  echo "                     (default: \$OBELISK_PIN_REV, when set)"
+  echo "  --from OWNER/REPO  repository to add the submodule from; a full git"
+  echo "                     URL also works (default: obsidiansystems/obelisk)"
   echo ""
   echo "  The skeleton is read from \$OBELISK_SKELETON (exported by the obelisk"
-  echo "  nix-shell and by the flake app). A pinned scaffold fetches obelisk"
-  echo "  from github at build time: the pinned revision must exist there."
+  echo "  nix-shell and by the flake app). A pinned scaffold clones obelisk at"
+  echo "  scaffold time: the pinned revision must exist in that repository."
   exit 0
 fi
 
@@ -42,9 +43,22 @@ fi
 DIR=""
 NAME=""
 LINK_MODE=false
+REV="${OBELISK_PIN_REV:-}"
 PIN_FROM="obsidiansystems/obelisk"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --rev)
+      if [[ $# -lt 2 ]]; then
+        echo "ob-init: --rev requires an argument." >&2
+        exit 1
+      fi
+      REV="$2"
+      shift 2
+      ;;
+    --rev=*)
+      REV="${1#--rev=}"
+      shift
+      ;;
     --name)
       if [[ $# -lt 2 ]]; then
         echo "ob-init: --name requires an argument." >&2
@@ -133,38 +147,47 @@ rm -rf "$DIR"/result "$DIR"/result-* "$DIR"/dist-newstyle "$DIR"/dist-wasm \
 # Rename the project in project.nix.
 sed -i "s/name = \"obelisk-skeleton\";/name = \"${NAME}\";/" "$DIR/project.nix"
 
-# Wire the obelisk flake input (the skeleton's deps/obelisk symlink is
+# Wire obelisk in at deps/obelisk (the skeleton's own deps/obelisk symlink is
 # relative to the obelisk repo and would dangle in the new location).
-# Preferred: pin obelisk.url in flake.nix to the github revision this
-# scaffold came from; fallback (--link, or no pin info): point it at the
-# local obelisk source, which resolves only on this machine.
 rm -f "$DIR/deps/obelisk"
-if [[ "$LINK_MODE" == false && -n "${OBELISK_PIN_REV:-}" ]]; then
-  sed -i "s|obelisk.url = \".*\";|obelisk.url = \"github:${PIN_FROM}/${OBELISK_PIN_REV}?submodules=1\";|" \
-    "$DIR/flake.nix"
-  echo "Pinned the obelisk flake input to github:$PIN_FROM at ${OBELISK_PIN_REV:0:12}."
-  # Legacy nix-shell goes through flake-compat (inputs.nix), which needs a
-  # lock file; generate it now if nix is available.
-  if command -v nix >/dev/null 2>&1; then
-    nix --extra-experimental-features 'nix-command flakes' flake lock "$DIR" \
-      || echo "Note: 'nix flake lock' failed; run it (or 'nix develop') before 'nix-shell'." >&2
-  else
-    echo "Note: run 'nix flake lock' (or 'nix develop') once before 'nix-shell'."
+
+# The submodule is added into the project repository, so create it first.
+git -C "$DIR" init -q
+
+if [[ "$LINK_MODE" == false && -n "$REV" ]]; then
+  # Preferred: obelisk as a git submodule pinned to the revision this scaffold
+  # came from, so the project builds anywhere.
+  case "$PIN_FROM" in
+    *://*|*@*:*) OBELISK_URL="$PIN_FROM" ;;
+    *) OBELISK_URL="https://github.com/${PIN_FROM}.git" ;;
+  esac
+  echo "Adding obelisk as a git submodule from $OBELISK_URL at ${REV:0:12}..."
+  git -C "$DIR" submodule add -q -- "$OBELISK_URL" deps/obelisk
+  if ! git -C "$DIR/deps/obelisk" checkout -q --detach "$REV" 2>/dev/null; then
+    if git -C "$DIR/deps/obelisk" fetch -q origin "$REV" 2>/dev/null; then
+      git -C "$DIR/deps/obelisk" checkout -q --detach FETCH_HEAD
+    else
+      echo "ob-init: revision $REV not found in $OBELISK_URL." >&2
+      exit 1
+    fi
   fi
+  # obelisk keeps its own dependencies as submodules; pull those in too.
+  git -C "$DIR/deps/obelisk" submodule update --init --recursive -q
 else
-  # git+file sees committed state only; the deps/obelisk symlink (used by
-  # default.nix, hence legacy nix-shell) tracks the live working tree.
-  sed -i "s|obelisk.url = \".*\";|obelisk.url = \"git+file:${OBELISK_SRC}?submodules=1\";|" \
-    "$DIR/flake.nix"
+  # Fallback (--link, or no revision known): point at the local obelisk
+  # source, which resolves only on this machine. flake.nix has to name that
+  # source directly: its "path:./deps/obelisk" input would resolve through the
+  # symlink to an absolute path, which pure evaluation rejects.
   ln -s "$OBELISK_SRC" "$DIR/deps/obelisk"
+  sed -i "s|obelisk.url = \".*\";|obelisk.url = \"path:${OBELISK_SRC}\";|" \
+    "$DIR/flake.nix"
   if [[ "$LINK_MODE" == false ]]; then
-    echo "Note: no pin info available (\$OBELISK_PIN_REV unset); pointed the"
-    echo "obelisk flake input at $OBELISK_SRC, which resolves only on this machine."
+    echo "Note: no obelisk revision known (\$OBELISK_PIN_REV unset, no --rev);"
+    echo "symlinked deps/obelisk to $OBELISK_SRC, which resolves only on this machine."
   fi
 fi
 
-# Initialise a git repository with an initial commit.
-git -C "$DIR" init -q
+# Record the scaffold as the initial commit.
 git -C "$DIR" add -A
 git -C "$DIR" commit -q -m "Initial commit (scaffolded by ob-init)"
 
