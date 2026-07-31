@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # ob-deploy: Build a NixOS system closure and switch a remote host to it.
 #
-# This is a minimal v1 NixOS deploy helper. It builds the target host's
+# This is a minimal NixOS deploy helper. It builds the target host's
 # system.build.toplevel, copies the closure to the host, and atomically
-# activates it (system profile + switch-to-configuration switch), mirroring
-# the activation order used by master's `ob deploy`.
+# activates it (system profile + switch-to-configuration switch).
 #
-# NOT handled (intentionally, for v1):
+# NOT handled (intentionally, for now):
 #   - deploy staging directories (no on-disk deploy tree is created/managed)
 #   - ssh key generation / known-hosts management (use your ssh config)
 #   - config file rsync to the host
