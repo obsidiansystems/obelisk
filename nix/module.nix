@@ -316,7 +316,11 @@ in {
 
     shell.shellHook = ''
       export OBELISK_WASI_SHIM="${obeliskLib.wasi-shim}"
-      export OBELISK_SKELETON="${obeliskLib.src}/skeleton"
+      export OBELISK_SKELETON="${obeliskLib.skeleton}"
+      # Where `ob-init --link` points deps/obelisk: this working tree, so a
+      # linked scaffold tracks it. The skeleton above is a store copy of
+      # skeleton/ alone, so ob-init cannot derive obelisk from its parent.
+      export OBELISK_SRC="${toString obeliskLib.src}"
 
       echo ""
       echo "=== ob-run ==="

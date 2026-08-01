@@ -20,6 +20,19 @@ let src = ../.;
     thunkSource = import (nix-haskell-src + "/libs/thunk.nix");
     thunkSources = import (nix-haskell-src + "/libs/thunks.nix");
 
+    # Filter a tree through the .gitignore it carries before copying it into the
+    # store.
+    cleanSource = import (nix-haskell-src + "/libs/clean-source.nix") { inherit pkgs; };
+
+    # The skeleton alone, filtered through its .gitignore. Interpolating
+    # `${src}/skeleton` would copy the whole obelisk checkout into the store to
+    # hand ob-init a template: deps/nix-haskell/pins carries nixpkgs and
+    # haskell.nix, and no filter keeps the build artifacts out either.
+    skeleton = cleanSource {
+      src = src + "/skeleton";
+      name = "obelisk-skeleton";
+    };
+
     reflex-dom-src = src + "/deps/reflex-dom";
 
     nix-haskell = import nix-haskell-src { inherit system pkgs inputs; };
@@ -51,8 +64,8 @@ let src = ../.;
     serverModule = ./server.nix;
 
 in rec {
-  inherit src obelisk-asset-manifest-generate wasi-shim assets docs serverModule;
-  inherit thunkSource thunkSources;
+  inherit src skeleton obelisk-asset-manifest-generate wasi-shim assets docs serverModule;
+  inherit cleanSource thunkSource thunkSources;
 
   frontendJs = config:
     config.haskell-nix.project.projectCross.ghcjs.hsPkgs.frontend.components.exes.frontend;
