@@ -112,7 +112,6 @@ common common
     , OverloadedLabels
     , OverloadedLists
     , OverloadedRecordDot
-    , OverloadedRecordUpdate
     , OverloadedStrings
     , PackageImports
     , ParallelListComp
