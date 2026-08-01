@@ -170,7 +170,7 @@ in {
           in if jsexe == null then null
             else if config.obelisk.frontend.js.compress
             then assets.mkAssets jsexe
-            else jsexe;
+            else assets.mkAssetsWith assets.noEncodings jsexe;
         defaultText = lib.literalExpression "assets.mkAssets optimized";
         description = "Compressed frontend jsexe for obelisk-asset-serve-snap.";
       };
@@ -252,7 +252,7 @@ in {
           in if jsexe == null then null
             else if config.obelisk.frontend.wasm.compress
             then assets.mkAssets jsexe
-            else jsexe;
+            else assets.mkAssetsWith assets.noEncodings jsexe;
         defaultText = lib.literalExpression "assets.mkAssets optimized";
         description = "Compressed WASM frontend for obelisk-asset-serve-snap.";
       };
