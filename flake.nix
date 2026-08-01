@@ -48,6 +48,13 @@
               text = ''
                 export OBELISK_SKELETON="''${OBELISK_SKELETON:-${self}/skeleton}"
                 export OBELISK_PIN_REV="''${OBELISK_PIN_REV:-${self.rev or ""}}"
+                if [ -z "$OBELISK_PIN_REV" ]; then
+                  echo "obelisk#init: this flake was fetched without a revision" >&2
+                  echo "(dirty tree, or a path: URL). The scaffold would end up" >&2
+                  echo "pinned to a /nix/store snapshot instead of a submodule." >&2
+                  echo "Run ob-init from an obelisk checkout, or pass --rev." >&2
+                  exit 1
+                fi
                 exec ${ob-init}/bin/ob-init "$@"
               '';
             };
