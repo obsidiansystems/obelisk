@@ -90,7 +90,7 @@ on.
 
 If your project pins dependencies from private git repositories (as
 `source-repository-package` stanzas in `cabal.project`, or as nix-thunks
-under `deps/` consumed via `obeliskLib.thunkSource`), the Nix builder fetches them over
+under `deps/` given to `source-repository-packages`), the Nix builder fetches them over
 SSH, so the building user needs SSH access to the host:
 
 - [GitHub](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)

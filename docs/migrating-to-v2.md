@@ -60,8 +60,8 @@ project by hand.
 | `ob deploy update` | Bump your source pins by hand: update the `tag`/`rev` in `source-repository-package` stanzas (`cabal.project`) or update the relevant git submodule, then rebuild. There is no managed thunk to "update". |
 | `ob deploy test android` | CapacitorJS: wrap the WASM/JS frontend bundle in an Android WebView shell. See [`docs/mobile.md`](mobile.md). |
 | `ob deploy test ios` | CapacitorJS: wrap the same bundle in a WKWebView shell. No Apple `TEAMID` flag in obelisk anymore; signing is handled in Xcode/Capacitor. See [`docs/mobile.md`](mobile.md). |
-| `ob thunk pack` | The `nix-thunk` CLI: `nix-thunk pack deps/<name>`. Thunks remain first-class for project deps: keep them under `deps/` and consume them in `project.nix` with `source-repository-packages = { my-dep = obeliskLib.thunkSource ./deps/my-dep; };`. Plain `source-repository-package` stanzas in `cabal.project` (git `location` + `tag`) also work. |
-| `ob thunk unpack` | `nix-thunk unpack deps/<name>` checks the dep out in place; the nix side keeps working (`thunkSource` handles both packed and unpacked thunks). |
+| `ob thunk pack` | The `nix-thunk` CLI: `nix-thunk pack deps/<name>`. Thunks remain first-class for project deps: keep them under `deps/` and consume them in `project.nix` with `source-repository-packages = { my-dep = ./deps/my-dep; };`. Plain `source-repository-package` stanzas in `cabal.project` (git `location` + `tag`) also work. |
+| `ob thunk unpack` | `nix-thunk unpack deps/<name>` checks the dep out in place; the nix side keeps working (`source-repository-packages` handles both packed and unpacked thunks). |
 | `ob thunk update` | `nix-thunk update deps/<name>`, or edit the `tag`/`rev` in a `source-repository-package` stanza, then commit. |
 | `ob internal ...` | Removed. The dev scripts encapsulate the few internals that mattered (e.g. GHCi configuration is just `ob-repl`). |
 
@@ -315,8 +315,8 @@ These won't error; watch for them:
    `inherit (obeliskLib) source-repository-packages;`.
 3. Keep `ob thunk` dependencies as nix-thunks under `deps/` (managed with the
    `nix-thunk` CLI, consumed via `source-repository-packages = { my-dep =
-   obeliskLib.thunkSource ./deps/my-dep; };` in `project.nix`), or convert
-   them to `source-repository-package` stanzas in `cabal.project`.
+   ./deps/my-dep; };` in `project.nix`), or convert them to
+   `source-repository-package` stanzas in `cabal.project`.
 4. Pick a frontend target (`obelisk.frontend.target`, default `"wasm"`).
 5. Replace `ob run`/`ob repl`/`ob hoogle` muscle memory with
    `ob-run`/`ob-repl`/`ob-hoogle`.

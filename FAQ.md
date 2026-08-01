@@ -29,14 +29,20 @@ source-repository-package
   tag: abc123
 ```
 
-Use `source-repository-packages` in `project.nix` for local packages, nix-thunks, or git submodules:
+Use `source-repository-packages` in `project.nix` for local packages, git submodules, nix-thunks, and flake inputs. A packed nix-thunk is resolved to the source it pins, so it can be given as-is, and `subdir` selects packages within a source:
 
 ```nix
-{ obeliskLib, ... }:
+{ config, ... }:
 {
   source-repository-packages = {
-    some-local-package = ./deps/some-local-package;      # local path or git submodule
-    some-remote-package = obeliskLib.thunkSource ./deps/some-remote-package;  # nix-thunk
+    some-local-package = ./deps/some-local-package;   # local path, git submodule, or nix-thunk
+
+    some-flake-package = config.inputs.some-flake;    # flake input
+
+    some-repo = {
+      src = ./deps/some-repo;
+      subdir = [ "package-a" "package-b" ];
+    };
   };
 }
 ```
