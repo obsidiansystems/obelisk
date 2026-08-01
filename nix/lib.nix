@@ -33,7 +33,13 @@ let src = ../.;
       name = "obelisk-skeleton";
     };
 
-    reflex-dom-src = src + "/deps/reflex-dom";
+    # A flake input wins over the submodule, so a project that follows its own
+    # reflex-dom gets that one in the source-repository-packages below rather
+    # than a second copy of obelisk's.
+    reflex-dom-src =
+      if inputs ? reflex-dom
+      then inputs.reflex-dom
+      else src + "/deps/reflex-dom";
 
     nix-haskell = import nix-haskell-src { inherit system pkgs inputs; };
 
