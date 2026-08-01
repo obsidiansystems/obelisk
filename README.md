@@ -208,6 +208,39 @@ See [`docs/module.md`](docs/module.md) for obelisk-specific options and [`docs/n
 }
 ```
 
+### Inputs
+
+Dependencies live under `inputs`, keyed the way flake inputs are. An entry accepts whatever a flake input can be: a flake input, a store path, a checkout, or a packed nix-thunk.
+
+`nixpkgs`, `haskell-nix` and `reflex-platform` come from the submodules under `deps/nix-haskell/pins`. The project's own flake inputs are picked up automatically, so following one is enough to override it, and entries of your own are carried through the same way:
+
+```nix
+# flake.nix
+{
+  inputs = {
+    obelisk.url = "path:./deps/obelisk";
+
+    # Drop the `follows` to build against a different nixpkgs.
+    nixpkgs.follows = "obelisk/nixpkgs";
+
+    # Available in project.nix as config.inputs.some-flake.
+    some-flake.url = "github:someone/some-flake";
+  };
+}
+```
+
+An entry set in `project.nix` wins over both, and works without flakes:
+
+```nix
+{
+  inputs.haskell-nix = ./deps/haskell.nix;   # checkout, or a packed nix-thunk
+}
+```
+
+Precedence runs pins < flake inputs < `project.nix`. See [`docs/nix-haskell`](docs/nix-haskell) for the full option.
+
+The reflex-dom that obelisk builds against is separate: it comes from `deps/reflex-dom` in the obelisk checkout, and a `reflex-dom` flake input replaces it.
+
 ### Adding packages
 
 Add dependencies to the `build-depends` field in the appropriate `.cabal` file. Nix picks up the corresponding packages from the haskell.nix package set automatically.
@@ -225,14 +258,20 @@ source-repository-package
   tag: abc123
 ```
 
-Use `source-repository-packages` in `project.nix` for local packages, nix-thunks, or git submodules:
+Use `source-repository-packages` in `project.nix` for local packages, git submodules, nix-thunks, and flake inputs. A source is anything [`inputs`](#inputs) accepts, so a packed nix-thunk can be given as-is and is resolved to the source it pins; `subdir` selects packages within a source, so a multi-package repository takes one entry rather than one per package:
 
 ```nix
-{ obeliskLib, ... }:
+{ config, ... }:
 {
   source-repository-packages = {
-    some-local-package = ./deps/some-local-package;      # local path or git submodule
-    some-remote-package = obeliskLib.thunkSource ./deps/some-remote-package;  # nix-thunk
+    some-local-package = ./deps/some-local-package;   # local path, git submodule, or nix-thunk
+
+    some-flake-package = config.inputs.some-flake;    # flake input
+
+    some-repo = {
+      src = ./deps/some-repo;
+      subdir = [ "package-a" "package-b" ];
+    };
   };
 }
 ```
