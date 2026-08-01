@@ -8,10 +8,11 @@
     nix-haskell.url = ./deps/nix-haskell;
     reflex-dom.url = ./deps/reflex-dom;
 
-    flake-compat.follows = "nix-haskell/flake-compat";
     nixpkgs.follows = "nix-haskell/nixpkgs";
     haskell-nix.follows = "nix-haskell/haskell-nix";
     reflex-platform.follows = "nix-haskell/reflex-platform";
+
+    flake-compat.follows = "nix-haskell/flake-compat";
   };
 
   outputs = inputs@{ self, ... }:
