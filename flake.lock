@@ -954,11 +954,11 @@
         "reflex-platform": "reflex-platform"
       },
       "locked": {
-        "path": "deps/nix-haskell",
+        "path": "./deps/nix-haskell",
         "type": "path"
       },
       "original": {
-        "path": "deps/nix-haskell",
+        "path": "./deps/nix-haskell",
         "type": "path"
       },
       "parent": []
@@ -1296,11 +1296,11 @@
         ]
       },
       "locked": {
-        "path": "deps/reflex-dom",
+        "path": "./deps/reflex-dom",
         "type": "path"
       },
       "original": {
-        "path": "deps/reflex-dom",
+        "path": "./deps/reflex-dom",
         "type": "path"
       },
       "parent": []
