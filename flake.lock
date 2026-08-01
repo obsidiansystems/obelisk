@@ -338,16 +338,15 @@
       "locked": {
         "lastModified": 1777684310,
         "narHash": "sha256-UNcPqLFSmHa+HUSTj/7C5Hch2CB8QOEMXFf+dOxWzzU=",
-        "owner": "input-output-hk",
-        "repo": "haskell.nix",
         "rev": "07e888ef7c26b62c4f2a843ed305c6e09b0a6828",
-        "type": "github"
+        "shallow": true,
+        "type": "git",
+        "url": "file:./pins/haskell-nix"
       },
       "original": {
-        "owner": "input-output-hk",
-        "repo": "haskell.nix",
-        "rev": "07e888ef7c26b62c4f2a843ed305c6e09b0a6828",
-        "type": "github"
+        "shallow": true,
+        "type": "git",
+        "url": "file:./pins/haskell-nix"
       }
     },
     "haskell-nix_2": {
@@ -987,16 +986,15 @@
       "locked": {
         "lastModified": 1777673416,
         "narHash": "sha256-5c2POKPOjU40Kh0MirOdScBLG0bu9TAuPYAtPRNZMBs=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
         "rev": "26ef669cffa904b6f6832ab57b77892a37c1a671",
-        "type": "github"
+        "shallow": true,
+        "type": "git",
+        "url": "file:./pins/nixpkgs"
       },
       "original": {
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "26ef669cffa904b6f6832ab57b77892a37c1a671",
-        "type": "github"
+        "shallow": true,
+        "type": "git",
+        "url": "file:./pins/nixpkgs"
       }
     },
     "nixpkgs-2305": {
@@ -1312,16 +1310,15 @@
       "locked": {
         "lastModified": 1760924715,
         "narHash": "sha256-pUraGts8qa3R9jQqaVXevkC+nM07B8oF+LGF4xsyiJU=",
-        "owner": "reflex-frp",
-        "repo": "reflex-platform",
         "rev": "4482ecb04c5939ac77c26d769d149dee12051a13",
-        "type": "github"
+        "shallow": true,
+        "type": "git",
+        "url": "file:./pins/reflex-platform"
       },
       "original": {
-        "owner": "reflex-frp",
-        "repo": "reflex-platform",
-        "rev": "4482ecb04c5939ac77c26d769d149dee12051a13",
-        "type": "github"
+        "shallow": true,
+        "type": "git",
+        "url": "file:./pins/reflex-platform"
       }
     },
     "reflex-platform_2": {
