@@ -5,8 +5,8 @@
     # Nix, add ?submodules=1 to the flake URL).
     self.submodules = true;
 
-    nix-haskell.url = "path:./deps/nix-haskell";
-    reflex-dom.url = "path:./deps/reflex-dom";
+    nix-haskell.url = ./deps/nix-haskell;
+    reflex-dom.url = ./deps/reflex-dom;
 
     nixpkgs.follows = "nix-haskell/nixpkgs";
     haskell-nix.follows = "nix-haskell/haskell-nix";

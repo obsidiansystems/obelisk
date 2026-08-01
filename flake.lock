@@ -336,18 +336,16 @@
         "stackage": "stackage"
       },
       "locked": {
-        "lastModified": 1777684310,
-        "narHash": "sha256-UNcPqLFSmHa+HUSTj/7C5Hch2CB8QOEMXFf+dOxWzzU=",
-        "rev": "07e888ef7c26b62c4f2a843ed305c6e09b0a6828",
-        "shallow": true,
-        "type": "git",
-        "url": "file:./pins/haskell-nix"
+        "path": "pins/haskell-nix",
+        "type": "path"
       },
       "original": {
-        "shallow": true,
-        "type": "git",
-        "url": "file:./pins/haskell-nix"
-      }
+        "path": "pins/haskell-nix",
+        "type": "path"
+      },
+      "parent": [
+        "nix-haskell"
+      ]
     },
     "haskell-nix_2": {
       "inputs": {
@@ -954,11 +952,11 @@
         "reflex-platform": "reflex-platform"
       },
       "locked": {
-        "path": "./deps/nix-haskell",
+        "path": "deps/nix-haskell",
         "type": "path"
       },
       "original": {
-        "path": "./deps/nix-haskell",
+        "path": "deps/nix-haskell",
         "type": "path"
       },
       "parent": []
@@ -984,18 +982,16 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1777673416,
-        "narHash": "sha256-5c2POKPOjU40Kh0MirOdScBLG0bu9TAuPYAtPRNZMBs=",
-        "rev": "26ef669cffa904b6f6832ab57b77892a37c1a671",
-        "shallow": true,
-        "type": "git",
-        "url": "file:./pins/nixpkgs"
+        "path": "pins/nixpkgs",
+        "type": "path"
       },
       "original": {
-        "shallow": true,
-        "type": "git",
-        "url": "file:./pins/nixpkgs"
-      }
+        "path": "pins/nixpkgs",
+        "type": "path"
+      },
+      "parent": [
+        "nix-haskell"
+      ]
     },
     "nixpkgs-2305": {
       "locked": {
@@ -1296,11 +1292,11 @@
         ]
       },
       "locked": {
-        "path": "./deps/reflex-dom",
+        "path": "deps/reflex-dom",
         "type": "path"
       },
       "original": {
-        "path": "./deps/reflex-dom",
+        "path": "deps/reflex-dom",
         "type": "path"
       },
       "parent": []
@@ -1308,18 +1304,16 @@
     "reflex-platform": {
       "flake": false,
       "locked": {
-        "lastModified": 1760924715,
-        "narHash": "sha256-pUraGts8qa3R9jQqaVXevkC+nM07B8oF+LGF4xsyiJU=",
-        "rev": "4482ecb04c5939ac77c26d769d149dee12051a13",
-        "shallow": true,
-        "type": "git",
-        "url": "file:./pins/reflex-platform"
+        "path": "pins/reflex-platform",
+        "type": "path"
       },
       "original": {
-        "shallow": true,
-        "type": "git",
-        "url": "file:./pins/reflex-platform"
-      }
+        "path": "pins/reflex-platform",
+        "type": "path"
+      },
+      "parent": [
+        "nix-haskell"
+      ]
     },
     "reflex-platform_2": {
       "flake": false,

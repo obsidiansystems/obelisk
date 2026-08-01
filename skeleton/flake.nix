@@ -7,7 +7,7 @@
     # ?submodules=1 to this project's flake URL.
     self.submodules = true;
 
-    obelisk.url = "path:./deps/obelisk";
+    obelisk.url = ./deps/obelisk;
 
     nixpkgs.follows = "obelisk/nixpkgs";
   };
