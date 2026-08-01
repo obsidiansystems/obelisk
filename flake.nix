@@ -29,7 +29,7 @@
       });
 
       devShells = eachSystem (system: {
-        default = (import ./skeleton { inherit system inputs; }).shell;
+        default = import ./shell.nix { inherit system inputs; };
       });
 
       # Scaffold a new project without cloning obelisk by hand:
