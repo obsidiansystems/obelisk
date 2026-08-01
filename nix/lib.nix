@@ -8,16 +8,21 @@
 
 let src = ../.;
 
-    # Resolve nix-thunk dirs whether packed or unpacked (see nix/thunk.nix).
-    # Exported below so user projects can pin their own deps as nix-thunks.
-    thunkSource = import ./thunk.nix;
+    nix-haskell-src =
+      if inputs ? nix-haskell
+      then inputs.nix-haskell
+      else ../deps/nix-haskell;
+
+    # Resolve a nix-thunk dir whether packed or unpacked, and a whole directory
+    # of them at once. Exported below so user projects can pin their own deps as
+    # nix-thunks; `source-repository-packages` resolves thunks on its own, so
+    # these are for the places that take a plain source.
+    thunkSource = import (nix-haskell-src + "/libs/thunk.nix");
+    thunkSources = import (nix-haskell-src + "/libs/thunks.nix");
 
     reflex-dom-src = src + "/deps/reflex-dom";
 
-    nix-haskell =
-      if inputs ? nix-haskell
-      then import inputs.nix-haskell { inherit system pkgs inputs; }
-      else import ../deps/nix-haskell { inherit system; };
+    nix-haskell = import nix-haskell-src { inherit system pkgs inputs; };
 
     # Standalone project built only to produce the manifest generator executable.
     obelisk-asset-manifest = nix-haskell {
@@ -46,7 +51,8 @@ let src = ../.;
     serverModule = ./server.nix;
 
 in rec {
-  inherit src obelisk-asset-manifest-generate wasi-shim assets docs serverModule thunkSource;
+  inherit src obelisk-asset-manifest-generate wasi-shim assets docs serverModule;
+  inherit thunkSource thunkSources;
 
   frontendJs = config:
     config.haskell-nix.project.projectCross.ghcjs.hsPkgs.frontend.components.exes.frontend;
