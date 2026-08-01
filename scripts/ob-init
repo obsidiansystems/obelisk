@@ -34,8 +34,10 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -eq 0 ]]; then
   echo "                     URL also works (default: obsidiansystems/obelisk)"
   echo ""
   echo "  The skeleton is read from \$OBELISK_SKELETON (exported by the obelisk"
-  echo "  nix-shell and by the flake app). A pinned scaffold clones obelisk at"
-  echo "  scaffold time: the pinned revision must exist in that repository."
+  echo "  nix-shell and by the flake app), and --link points deps/obelisk at"
+  echo "  \$OBELISK_SRC (default: the skeleton's parent directory). A pinned"
+  echo "  scaffold clones obelisk at scaffold time: the pinned revision must"
+  echo "  exist in that repository."
   exit 0
 fi
 
@@ -130,8 +132,10 @@ if [[ -z "$NAME" ]]; then
   NAME="$(basename "$DIR")"
 fi
 
-# The obelisk source is the parent of the skeleton directory.
-OBELISK_SRC="$(dirname "$SKELETON")"
+# Where --link points deps/obelisk. The nix shell exports it, because the
+# skeleton it exports is a store copy of skeleton/ on its own; otherwise the
+# obelisk source is the parent of the skeleton directory.
+OBELISK_SRC="${OBELISK_SRC:-$(dirname "$SKELETON")}"
 
 echo "Scaffolding '$NAME' in '$DIR'..."
 
