@@ -60,6 +60,7 @@ common common
   default-extensions:
       GHC2024
       --
+    , AllowAmbiguousTypes
     , ApplicativeDo
     , Arrows
     , BangPatterns
@@ -159,6 +160,7 @@ common common
 
   ghc-options:    -Wall
                   -Wno-type-defaults
+                  -Wno-partial-type-signatures
                   -Wincomplete-record-updates -Werror=incomplete-record-updates
                   -Wincomplete-patterns -Werror=incomplete-patterns
                   -Wincomplete-uni-patterns -Werror=incomplete-uni-patterns
