@@ -44,7 +44,9 @@ DIR=""
 NAME=""
 LINK_MODE=false
 REV="${OBELISK_PIN_REV:-}"
-PIN_FROM="obsidiansystems/obelisk"
+# A fork's own `#init` app sets OBELISK_PIN_FROM: the flake cannot tell which
+# repository it was fetched from, and the pinned revision only exists there.
+PIN_FROM="${OBELISK_PIN_FROM:-obsidiansystems/obelisk}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --rev)
