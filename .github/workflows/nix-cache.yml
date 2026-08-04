@@ -1,0 +1,49 @@
+name: nix cache
+
+on:
+  pull_request:
+  push:
+    branches: [ next, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NIX_CACHE_URL: ${{ vars.NIX_CACHE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The repo pulls deps/nix-haskell and deps/reflex-dom in as
+          # submodules, and nix-haskell carries its own pins.
+          submodules: recursive
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            allow-import-from-derivation = true
+            extra-substituters = https://cache.iog.io https://nixcache.reflex-frp.org
+            extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI= ${{ vars.NIX_CACHE_PUBLIC_KEY }}
+      - name: Build
+        run: |
+          nix-build release.nix -A all \
+            --no-out-link \
+            > "$RUNNER_TEMP/nix-build-outputs"
+          mapfile -t outputs < "$RUNNER_TEMP/nix-build-outputs"
+          nix-store --query --deriver "${outputs[@]}" > "$RUNNER_TEMP/nix-build-derivations"
+          mapfile -t derivations < "$RUNNER_TEMP/nix-build-derivations"
+          nix-store --query --requisites --include-outputs "${derivations[@]}" \
+            | sort -u > "$RUNNER_TEMP/nix-build-paths"
+      - name: Upload to S3 binary cache
+        if: github.event_name == 'push'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          NIX_CACHE_PRIVATE_KEY: ${{ secrets.NIX_CACHE_PRIVATE_KEY }}
+        run: |
+          key_file="$RUNNER_TEMP/nix-cache-private-key"
+          printf '%s\n' "$NIX_CACHE_PRIVATE_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          mapfile -t paths < "$RUNNER_TEMP/nix-build-paths"
+          nix store sign --recursive --key-file "$key_file" "${paths[@]}"
+          nix copy --to "$NIX_CACHE_URL" "${paths[@]}"
