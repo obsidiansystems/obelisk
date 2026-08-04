@@ -25,36 +25,46 @@ in lib // {
             userModule
           ];
         };
-        proj = eval.haskell-nix.project;
-        pkgs = eval.nixpkgs;
-        serverExe = {
-          wasm = lib.mkServerExe { inherit proj; target = "wasm"; };
-          js = lib.mkServerExe { inherit proj; target = "js"; };
-        };
-    in proj // {
-      config = eval.config;
-      nixpkgs = eval.nixpkgs;
 
-      exe = {
-        wasm = (proj.override { obelisk.frontend.target = "wasm"; }).hsPkgs.backend.components.exes.backend;
-        js = (proj.override { obelisk.frontend.target = "js"; }).hsPkgs.backend.components.exes.backend;
-      };
+        outputs = { proj, targets, defaultTarget }:
+          let serverExe = pkgs.lib.genAttrs targets (target:
+                lib.mkServerExe { inherit proj target; });
+          in proj // {
+            exe = pkgs.lib.genAttrs targets (target:
+              lib.perDriver proj.config lib.backendExe
+                (proj.override { obelisk.frontend.target = target; }));
 
-      inherit serverExe;
+            inherit serverExe;
 
-      containerImage = {
-        wasm = lib.mkContainerImage { inherit proj; target = "wasm"; };
-        js = lib.mkContainerImage { inherit proj; target = "js"; };
-      };
+            containerImage = pkgs.lib.genAttrs targets (target:
+              lib.mkContainerImage { inherit proj target; });
 
-      server = { exe ? serverExe.wasm, ... }@args:
-        let nixos = import (pkgs.path + /nixos);
-        in nixos {
-          inherit system;
-          configuration = {
-            imports = [ lib.serverModule ];
-            services.obelisk = { enable = true; } // args;
+            server = { exe ? serverExe.${defaultTarget}, ... }@args:
+              let nixos = import (eval.pkgs.path + /nixos);
+              in nixos {
+                inherit system;
+                configuration = {
+                  imports = [ lib.serverModule ];
+                  services.obelisk = { enable = true; } // args;
+                };
+              };
           };
-        };
+
+    in {
+      config = eval.config;
+      pkgs = eval.pkgs;
+      inherit (lib) serverModule;
+
+      haskell-nix = outputs {
+        proj = eval.haskell-nix.project;
+        targets = [ "wasm" "js" ];
+        defaultTarget = "wasm";
+      };
+
+      nixpkgs = outputs {
+        proj = eval.nixpkgs.project.override { obelisk.driver = "nixpkgs"; };
+        targets = [ "js" ];
+        defaultTarget = "js";
+      };
     };
 }

@@ -72,17 +72,21 @@ jobs:
           extra-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
 
     # WASM is the default frontend target on `next`, so it is the headline smoke
-    # build. release.nix evaluates to a single linkFarm (no -A attrs); the
-    # per-target attrs live on the skeleton project, so build those directly.
-    - name: Build server + WASM frontend (skeleton -A serverExe.wasm)
-      run: nix-build skeleton -A serverExe.wasm
+    # build. The per-driver attrs live on the skeleton project; release.nix
+    # aggregates the same jobs (nix-build release.nix -A all).
+    - name: Build server + WASM frontend (skeleton -A haskell-nix.serverExe.wasm)
+      run: nix-build skeleton -A haskell-nix.serverExe.wasm
 
     # GHCJS frontend smoke build (the alternative `js` target).
-    - name: Build server + GHCJS frontend (skeleton -A serverExe.js)
-      run: nix-build skeleton -A serverExe.js
+    - name: Build server + GHCJS frontend (skeleton -A haskell-nix.serverExe.js)
+      run: nix-build skeleton -A haskell-nix.serverExe.js
+
+    # The same js target built through the nixpkgs driver.
+    - name: Build server + GHCJS frontend, nixpkgs driver (skeleton -A nixpkgs.serverExe.js)
+      run: nix-build skeleton -A nixpkgs.serverExe.js
 
     # Optional / allowed-to-be-slow stretch build of the deployable container
     # image. continue-on-error keeps it from blocking the smoke gate.
-    - name: Build container image (skeleton -A containerImage.wasm) [optional, slow]
+    - name: Build container image (skeleton -A haskell-nix.containerImage.wasm) [optional, slow]
       continue-on-error: true
-      run: nix-build skeleton -A containerImage.wasm
+      run: nix-build skeleton -A haskell-nix.containerImage.wasm

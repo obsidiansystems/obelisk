@@ -10,7 +10,6 @@
 
     nixpkgs.follows = "nix-haskell/nixpkgs";
     haskell-nix.follows = "nix-haskell/haskell-nix";
-    reflex-platform.follows = "nix-haskell/reflex-platform";
 
     flake-compat.follows = "nix-haskell/flake-compat";
   };
@@ -25,12 +24,15 @@
 
       packages = eachSystem (system: {
         docs = (import ./nix/docs.nix { inherit system inputs; }).md;
-        release = import ./release.nix { inherit system inputs; };
+        release = (import ./release.nix { inherit system inputs; }).all;
       });
 
-      devShells = eachSystem (system: {
-        default = import ./shell.nix { inherit system inputs; };
-      });
+      devShells = eachSystem (system:
+        let shells = import ./shell.nix { inherit system inputs; };
+        in {
+          default = shells.haskell-nix;
+          inherit (shells) nixpkgs;
+        });
 
       # Scaffold a new project without cloning obelisk by hand:
       #   nix run github:obsidiansystems/obelisk#init -- my-app

@@ -9,6 +9,8 @@ backend/data/*
 !backend/data/.keep
 frontend/data/*
 !frontend/data/.keep
+static/generated/data/*
+!static/generated/data/.keep
 frontend.jsexe
 frontend/frontend.jsexe
 frontend.jsexe.assets

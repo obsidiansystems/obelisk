@@ -38,9 +38,9 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -eq 0 ]]; then
   echo "  Activation is always 'switch' (never 'boot'): if the deploy changed"
   echo "  the kernel or initrd you must reboot the host yourself."
   echo ""
-  echo "  OCI alternative: instead of a NixOS host you can build"
-  echo "  containerImage.{wasm,js} and load it into a container runtime, e.g."
-  echo "    nix-build release.nix -A containerImage.wasm"
+  echo "  OCI alternative: instead of a NixOS host you can build a"
+  echo "  containerImage and load it into a container runtime, e.g."
+  echo "    nix-build -A haskell-nix.containerImage.wasm"
   echo "    podman load < result   # or: docker load < result"
   exit 0
 fi

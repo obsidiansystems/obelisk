@@ -5,6 +5,8 @@
 
 let obeliskLib = import ./lib.nix { inherit system; };
 
+    perDriver = obeliskLib.perDriver config;
+
     assets = import ./assets.nix { nixpkgs = pkgs; };
 
     rawStatic = config.obelisk.static.path;
@@ -15,7 +17,7 @@ let obeliskLib = import ./lib.nix { inherit system; };
         LANG = "en_US.UTF-8";
         LOCALE_ARCHIVE = "${pkgs.glibcLocales}/lib/locale/locale-archive";
       } ''
-        ${obeliskLib.obelisk-asset-manifest-generate} --module-only ${rawStatic} "$TMPDIR" Obelisk.Generated.Static $out
+        ${perDriver obeliskLib.obelisk-asset-manifest-generate} --module-only ${rawStatic} "$TMPDIR" Obelisk.Generated.Static $out
       ''
       else null;
 
@@ -35,8 +37,8 @@ let obeliskLib = import ./lib.nix { inherit system; };
 
 in {
   imports = [
-    "${nix-haskell-patches}/js/splitmix"
-    "${nix-haskell-patches}/wasm/jsaddle-wasm"
+    (import "${nix-haskell-patches}/js/splitmix" { drivers = [ "haskell-nix" ]; })
+    (import "${nix-haskell-patches}/wasm/jsaddle-wasm" { })
   ];
 
   options.obelisk = {
@@ -84,9 +86,16 @@ in {
       '';
     };
 
+    driver = lib.mkOption {
+      type = lib.types.enum [ "haskell-nix" "nixpkgs" ];
+      default = "haskell-nix";
+      description = "The nix-haskell driver the project is built with. The nixpkgs driver only supports the js frontend target.";
+    };
+
     frontend.target = lib.mkOption {
       type = lib.types.enum [ "js" "wasm" ];
-      default = "wasm";
+      default = perDriver { haskell-nix = "wasm"; nixpkgs = "js"; };
+      defaultText = lib.literalExpression ''perDriver { haskell-nix = "wasm"; nixpkgs = "js"; }'';
       description = "Frontend compilation target.";
     };
 
@@ -94,8 +103,8 @@ in {
       package = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
         # Skip in nix-shell to avoid triggering cross-compilation builds.
-        default = if lib.inNixShell then null else obeliskLib.frontendJs config;
-        defaultText = lib.literalExpression "obeliskLib.frontendJs config";
+        default = if lib.inNixShell then null else perDriver obeliskLib.frontendJs config;
+        defaultText = lib.literalExpression "perDriver obeliskLib.frontendJs config";
         description = "GHCJS-compiled frontend derivation.";
       };
 
@@ -180,8 +189,8 @@ in {
       package = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
         # Skip in nix-shell to avoid triggering cross-compilation builds.
-        default = if lib.inNixShell then null else obeliskLib.frontendWasm config;
-        defaultText = lib.literalExpression "obeliskLib.frontendWasm config";
+        default = if lib.inNixShell then null else perDriver obeliskLib.frontendWasm config;
+        defaultText = lib.literalExpression "perDriver obeliskLib.frontendWasm config";
         description = "WASM-compiled frontend derivation.";
       };
 
@@ -210,7 +219,10 @@ in {
         default =
           let opt = config.obelisk.frontend.wasm.optimization;
               wasmBin = "${frontendWasm}/bin/frontend.wasm";
-              ghc = config.haskell-nix.project.projectCross.wasi32.pkg-set.config.ghc.package;
+              ghc = perDriver {
+                haskell-nix = config.haskell-nix.project.projectCross.wasi32.pkg-set.config.ghc.package;
+                nixpkgs = config.nixpkgs.project.projectCross.wasi32.haskellPackages.ghc;
+              };
               flags = lib.concatStringsSep " " ([ "-all" "-O${opt.level}" ] ++ opt.extraFlags);
           in if frontendWasm == null then null
             else pkgs.runCommand "frontend.jsexe.wasm" {
@@ -270,18 +282,52 @@ in {
 
     optimizations.all = lib.mkDefault true;
 
-    overrides = [
-      obeliskLib.buildTypeOverride
-      obeliskLib.jsexeOverride
-      (obeliskLib.frontendDataOverride { static = hashedStatic; compressedStatic = static; })
-      (obeliskLib.backendDataOverride {
+    haskell-nix.overrides = [
+      obeliskLib.buildTypeOverride.haskell-nix
+      obeliskLib.jsexeOverride.haskell-nix
+      (obeliskLib.frontendDataOverride.haskell-nix { static = hashedStatic; compressedStatic = static; })
+      (obeliskLib.backendDataOverride.haskell-nix {
         static = hashedStatic;
         compressedStatic = static;
         frontendJs = frontendOutput.optimized;
         inherit compressedFrontendJs;
       })
-      (obeliskLib.staticManifestOverride { static = rawStatic; })
+      (obeliskLib.staticManifestOverride.haskell-nix { static = rawStatic; })
     ];
+
+    nixpkgs.packages = lib.mkMerge [
+      obeliskLib.buildTypeOverride.nixpkgs
+      (obeliskLib.frontendDataOverride.nixpkgs { static = hashedStatic; compressedStatic = static; })
+      (obeliskLib.backendDataOverride.nixpkgs {
+        static = hashedStatic;
+        compressedStatic = static;
+        frontendJs = frontendOutput.optimized;
+        inherit compressedFrontendJs;
+      })
+      (obeliskLib.staticManifestOverride.nixpkgs { static = rawStatic; })
+      {
+        # without a solver, the arch-conditional flag stanzas of cabal.project
+        # cannot be followed; assign the flags for this driver directly
+        reflex-dom.flags = {
+          use-warp = true;
+          webkit2gtk = false;
+        };
+      }
+    ];
+
+    # the nixpkgs driver does not interpret the `packages:` field of
+    # cabal.project; the skeleton layout every obelisk project starts from
+    nixpkgs.options.packages =
+      let packages = config.nixpkgs.options.packages;
+      in {
+        common.subdir = lib.mkDefault "common";
+        frontend.subdir = lib.mkDefault "frontend";
+        backend.subdir = lib.mkDefault "backend";
+        frontend-js.subdir = lib.mkDefault "${packages.frontend.subdir}/js";
+        frontend-wasm.subdir = lib.mkDefault "${packages.frontend.subdir}/wasm";
+        obelisk-generated-static.subdir = lib.mkDefault "static/generated";
+        obelisk-generated-static-custom.subdir = lib.mkDefault "${packages.obelisk-generated-static.subdir}/custom";
+      };
 
     shell.nativeBuildInputs = [
       (pkgs.writeShellApplication {

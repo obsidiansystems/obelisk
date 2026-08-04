@@ -2,4 +2,7 @@
 
 let project = import ./default.nix { inherit system inputs; };
 
-in project.shell
+in {
+  haskell-nix = project.haskell-nix.shell;
+  nixpkgs = project.nixpkgs.shell;
+}

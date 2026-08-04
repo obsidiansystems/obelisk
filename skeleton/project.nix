@@ -27,4 +27,6 @@
     withHoogle = true;
   };
 
+  nixpkgs.shell.crossPlatforms = ps: with ps; [ ghcjs ];
+
 }

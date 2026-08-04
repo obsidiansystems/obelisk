@@ -16,13 +16,24 @@
     let nixpkgs = if inputs ? "nixpkgs" then inputs.nixpkgs else builtins.getFlake "nixpkgs";
         eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
     in {
-      legacyPackages = eachSystem (system: {
-        default = import ./default.nix { inherit system inputs; };
-      });
+      legacyPackages = eachSystem (system:
+        import ./default.nix { inherit system inputs; }
+      );
 
-      devShells = eachSystem (system: {
-        default = import ./shell.nix { inherit system inputs; };
-      });
+      packages = eachSystem (system:
+        let project = import ./default.nix { inherit system inputs; };
+        in rec {
+          default = haskell-nix;
+          haskell-nix = project.haskell-nix.serverExe.wasm;
+          nixpkgs = project.nixpkgs.serverExe.js;
+        });
+
+      devShells = eachSystem (system:
+        let shells = import ./shell.nix { inherit system inputs; };
+        in {
+          default = shells.haskell-nix;
+          inherit (shells) nixpkgs;
+        });
     };
 
   nixConfig = {
