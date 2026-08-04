@@ -8,7 +8,7 @@ processing uses nix. This guide covers the whole path: what you need, the
 edit loop, static assets, production builds, and deployment.
 
 In short: the edit loop works with cabal alone once the cross-toolchain is on
-`PATH`; production builds should use `nix-build -A serverExe.wasm`.
+`PATH`; production builds should use `nix-build -A haskell-nix.serverExe.wasm`.
 
 ## 1. Prerequisites
 
@@ -114,9 +114,14 @@ custom `Setup.hs` (`Obelisk.Setup.Static`) which, on every native build:
 `cabal build backend` re-runs the pipeline), and reference it with
 `static @"path/to/file"`. A typo in the path is a compile error.
 
-**Gotcha:** `static/generated/src/Obelisk/Generated/Static.hs` and
-`static/generated/data/static` are tracked placeholders that builds
-overwrite, so they can show as modified in `git status`.
+**Gotcha:** `static/generated/src/Obelisk/Generated/Static.hs` is a tracked
+placeholder that builds overwrite, so it can show as modified in
+`git status`. `static/generated/data/static` is a build artifact and
+gitignored; keep it (and any other in-tree build output) that way. Nix
+builds copy the project source filtered through its `.gitignore`, so an
+unignored or committed artifact lands inside every nix build sandbox: a
+stale `data/static` store symlink there breaks the static manifest
+generation, for example.
 
 **Going nix-free:** if your `static/` needs no build step, replace the
 `nix-build` line in `static/generate` with a plain copy:
@@ -145,7 +150,7 @@ Plain `cabal build backend` produces everything needed to serve the app:
 The backend serves these unprocessed directories directly (its
 `StaticAssets` configuration carries both a processed and an unprocessed
 path, and falls back to the unprocessed one). `wasm-opt` has been applied
-if it was on `PATH`. Compared to `nix-build -A serverExe.wasm`, you do not
+if it was on `PATH`. Compared to `nix-build -A haskell-nix.serverExe.wasm`, you do not
 get:
 
 - brotli/gzip precompression of assets (the nix `mkAssets` pipeline);

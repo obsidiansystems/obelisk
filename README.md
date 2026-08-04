@@ -52,7 +52,7 @@ Scaffold a project without cloning anything by hand:
 nix run github:obsidiansystems/obelisk#init -- my-app
 # Nix < 2.27: nix run 'github:obsidiansystems/obelisk?submodules=1#init' -- my-app
 cd my-app
-nix-shell
+nix-shell -A haskell-nix
 ob-run
 ```
 
@@ -84,7 +84,7 @@ submodule update --init --recursive` afterwards); on Nix < 2.27, also add
 > [docs/setup.md](docs/setup.md#2-git-submodules).
 
 If you have an obelisk checkout (for example to hack on obelisk itself),
-`nix-shell` in it and run `ob-init my-app` instead; see `ob-init --help`
+`nix-shell -A haskell-nix` in it and run `ob-init my-app` instead; see `ob-init --help`
 for the pin-vs-link details.
 
 ## Project Structure
@@ -115,7 +115,7 @@ my-app/
 Enter the nix shell to get all build tools (GHC, cabal, cross-compilers, hoogle):
 
 ```bash
-nix-shell  # or: nix develop
+nix-shell -A haskell-nix  # or: nix develop
 ```
 
 ### ob-init
@@ -212,7 +212,7 @@ See [`docs/module.md`](docs/module.md) for obelisk-specific options and [`docs/n
 
 Dependencies live under `inputs`, keyed the way flake inputs are. An entry accepts whatever a flake input can be: a flake input, a store path, a checkout, or a packed nix-thunk.
 
-`nixpkgs`, `haskell-nix` and `reflex-platform` come from the submodules under `deps/nix-haskell/pins`. The project's own flake inputs are picked up automatically, so following one is enough to override it, and entries of your own are carried through the same way:
+`nixpkgs` and `haskell-nix` come from the pins under `deps/nix-haskell/pins`. The project's own flake inputs are picked up automatically, so following one is enough to override it, and entries of your own are carried through the same way:
 
 ```nix
 # flake.nix
@@ -295,14 +295,32 @@ Use `hackage-overlays` in `project.nix` to make custom packages visible to the n
 }
 ```
 
-Use `overrides` for haskell.nix module-level overrides (flags, patches, etc.):
+Set per-package options (flags, patches, build hooks) directly in
+`project.nix`; they apply to every driver, or under a driver namespace
+(`nixpkgs.packages...`, `haskell-nix.packages...`) to that driver only:
 
 ```nix
 {
-  overrides = [
+  packages.some-package.flags.some-flag = true;
+
+  nixpkgs.packages.other-package.patches = [];
+}
+```
+
+Use `haskell-nix.overrides` (raw haskell.nix modules) and
+`nixpkgs.options.overrides` (raw overlays over the Haskell package set) for
+anything the common options do not cover:
+
+```nix
+{
+  haskell-nix.overrides = [
     ({ config, lib, ... }: {
-      packages.some-package.flags.some-flag = true;
+      packages.some-package.components.library.preBuild = "...";
     })
+  ];
+
+  nixpkgs.options.overrides = [
+    (self: super: { some-package = pkgs.haskell.lib.dontCheck super.some-package; })
   ];
 }
 ```
@@ -313,9 +331,10 @@ Key module options (see [`docs/module.md`](docs/module.md) for full reference):
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `obelisk.driver` | `"haskell-nix"` | `"haskell-nix"` or `"nixpkgs"` |
 | `obelisk.static.path` | `null` | Static assets path or derivation |
 | `obelisk.static.compress` | `true` | Compress with brotli + gzip |
-| `obelisk.frontend.target` | `"wasm"` | `"wasm"` or `"js"` |
+| `obelisk.frontend.target` | `"wasm"` (`"js"` under nixpkgs) | `"wasm"` or `"js"` |
 | `obelisk.frontend.js.optimization.enable` | `true` | Run closure-compiler |
 | `obelisk.frontend.js.optimization.level` | `"ADVANCED"` | Closure optimization level |
 | `obelisk.frontend.wasm.optimization.enable` | `true` | Run wasm-opt |
@@ -325,15 +344,23 @@ Key module options (see [`docs/module.md`](docs/module.md) for full reference):
 
 ### With nix
 
+Every output is namespaced by the nix-haskell driver that builds it:
+`haskell-nix` (the default: haskell.nix toolchain, `wasm` and `js` targets)
+or `nixpkgs` (the Haskell infrastructure of nixpkgs, `js` only since nixpkgs
+has no buildable wasm GHC).
+
 ```bash
 # Full production build (backend + optimized/compressed frontend)
-nix-build -A serverExe.wasm
-nix-build -A serverExe.js
-# or: nix build .#serverExe.wasm
+nix-build -A haskell-nix.serverExe.wasm
+nix-build -A haskell-nix.serverExe.js
+# or: nix build .#haskell-nix.serverExe.wasm
+
+# The js target built with the nixpkgs driver
+nix-build -A nixpkgs.serverExe.js
 
 # OCI container image
-nix-build -A containerImage.wasm
-# or: nix build .#containerImage.wasm
+nix-build -A haskell-nix.containerImage.wasm
+# or: nix build .#haskell-nix.containerImage.wasm
 ```
 
 > **Platform note:** the nix builds (and the nix dev shell, which provides
@@ -372,7 +399,7 @@ in {
 
   services.obelisk = {
     enable = true;
-    exe = app.serverExe.wasm;
+    exe = app.haskell-nix.serverExe.wasm;
     routeHost = "myapp.example.com";
     enableHttps = true;
     adminEmail = "admin@example.com";
@@ -390,7 +417,7 @@ For hosts running multiple obelisk apps, or for user-level (home-manager) deploy
 let app = import ./path/to/my-app { system = "x86_64-linux"; };
 in {
   obelisks."my-app" = {
-    obelisk = app.serverExe.wasm;          # a directory, not a bare binary
+    obelisk = app.haskell-nix.serverExe.wasm;   # a directory, not a bare binary
     configSource = "/var/lib/my-app/config";
     port = 8000;
     enableNginxReverseProxy = true;
@@ -406,8 +433,8 @@ Here `configSource` is the authoritative runtime config directory on the host (t
 ### OCI Container
 
 ```bash
-nix-build -A containerImage.wasm
-# or: nix build .#containerImage.wasm
+nix-build -A haskell-nix.containerImage.wasm
+# or: nix build .#haskell-nix.containerImage.wasm
 
 # Load and run with podman or docker
 podman load < result

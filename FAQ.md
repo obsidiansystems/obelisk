@@ -66,17 +66,20 @@ Use `hackage-overlays` in `project.nix` to make custom packages visible to the n
 }
 ```
 
-Use `overrides` for haskell.nix module-level overrides (flags, patches, etc.):
+Set per-package options (flags, patches, build hooks) directly in
+`project.nix`; under a driver namespace they apply to that driver only:
 
 ```nix
 {
-  overrides = [
-    ({ config, lib, ... }: {
-      packages.some-package.flags.some-flag = true;
-    })
-  ];
+  packages.some-package.flags.some-flag = true;
+
+  nixpkgs.packages.other-package.patches = [];
 }
 ```
+
+Use `haskell-nix.overrides` (raw haskell.nix modules) and
+`nixpkgs.options.overrides` (raw overlays over the Haskell package set) for
+anything the common options do not cover.
 
 ### How do I add more local packages?
 
@@ -93,7 +96,7 @@ In `project.nix`:
 }
 ```
 
-For nix builds, `serverExe.wasm` and `serverExe.js` are always both available regardless of the default target.
+For nix builds, `haskell-nix.serverExe.wasm`, `haskell-nix.serverExe.js` and `nixpkgs.serverExe.js` are always available regardless of the default target.
 
 ### How do I disable frontend optimization?
 
@@ -179,13 +182,13 @@ Create a `release.nix` that lists the attributes you want to cache:
 let
   project = import ./. {};
 in {
-  serverExe = project.serverExe.wasm;
-  containerImage = project.containerImage.wasm;
-  shell = project.shell;
+  serverExe = project.haskell-nix.serverExe.wasm;
+  containerImage = project.haskell-nix.containerImage.wasm;
+  shell = project.haskell-nix.shell;
 }
 ```
 
-Then build with `nix-build skeleton -A serverExe` etc. Use `nix repl` to explore available attributes.
+Then build with `nix-build release.nix -A serverExe` etc. Use `nix repl` to explore available attributes.
 
 ### How do I fix "Ambiguous module name" errors?
 

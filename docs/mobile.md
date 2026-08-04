@@ -70,7 +70,7 @@ For a production-optimized bundle, build the server exe and take its embedded
 frontend assets:
 
 ```bash
-nix-build skeleton -A serverExe.wasm   # or serverExe.js for GHCJS
+nix-build skeleton -A haskell-nix.serverExe.wasm   # or .js for GHCJS
 # the result's frontend.jsexe + static dirs are the optimized/compressed bundle
 ```
 

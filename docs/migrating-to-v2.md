@@ -51,12 +51,12 @@ project by hand.
 | `ob watch` | `ob-watch` (`scripts/ob-watch`): ghcid over `cabal repl`; type errors on every save at GHCi speed, no server, no cross builds. |
 | `ob repl` | `ob-repl` (`scripts/ob-repl`): GHCi for `backend`+`common`+`frontend`, `-O0`, cross builds skipped (`-f native`). `ob-repl lib:common` for a single target. |
 | `ob hoogle` | `ob-hoogle` (`scripts/ob-hoogle`): `ob-hoogle start [PORT]` / `stop` / `restart`. |
-| `ob shell` | `nix-shell` (or `nix develop`). Run a one-off command with `nix-shell --run '...'` / `nix develop -c '...'`. |
+| `ob shell` | `nix-shell -A haskell-nix` (or `nix develop`). Run a one-off command with `nix-shell -A haskell-nix --run '...'` / `nix develop -c '...'`. |
 | `ob shell --ghcjs` | Cross toolchains are selected by `shell.crossPlatforms` in `project.nix` (e.g. `ps: with ps; [ ghcjs wasi32 ]`) and by `obelisk.frontend.target`. There is no per-invocation `--ghcjs` flag. |
 | `ob profile` | Removed. Build with profiling through cabal/nix directly (e.g. a profiling-enabled `cabal build` in the nix shell, or a `--enable-profiling` cabal config). |
 | `ob doc` | Removed. Use `ob-hoogle` for searchable docs, or `cabal haddock` / the nix `docs` output. |
 | `ob deploy init` | `scripts/ob-deploy` (sets up a deploy directory), or wire the `services.obelisk` NixOS module into your host config directly. No managed deploy repo. |
-| `ob deploy push` | `scripts/ob-deploy` push step, or `nixos-rebuild switch` against a config that imports `serverModule` and sets `services.obelisk.exe = app.serverExe.wasm`. For containers, push the OCI image from `containerImage.wasm`. |
+| `ob deploy push` | `scripts/ob-deploy` push step, or `nixos-rebuild switch` against a config that imports `serverModule` and sets `services.obelisk.exe = app.haskell-nix.serverExe.wasm`. For containers, push the OCI image from `haskell-nix.containerImage.wasm`. |
 | `ob deploy update` | Bump your source pins by hand: update the `tag`/`rev` in `source-repository-package` stanzas (`cabal.project`) or update the relevant git submodule, then rebuild. There is no managed thunk to "update". |
 | `ob deploy test android` | CapacitorJS: wrap the WASM/JS frontend bundle in an Android WebView shell. See [`docs/mobile.md`](mobile.md). |
 | `ob deploy test ios` | CapacitorJS: wrap the same bundle in a WKWebView shell. No Apple `TEAMID` flag in obelisk anymore; signing is handled in Xcode/Capacitor. See [`docs/mobile.md`](mobile.md). |
@@ -69,9 +69,9 @@ project by hand.
 
 | v1 | v2 |
 |---|---|
-| `nix-build -A exe` (reflex-platform) | `nix-build skeleton -A serverExe.wasm` (or `.js`) |
-| reflex-platform `ghcjs` shell build | `nix-build skeleton -A serverExe.js`, or `cabal build` with `obelisk.frontend.target = "js"` |
-| (new) | `nix-build skeleton -A containerImage.wasm` for an OCI image |
+| `nix-build -A exe` (reflex-platform) | `nix-build skeleton -A haskell-nix.serverExe.wasm` (or `.js`) |
+| reflex-platform `ghcjs` shell build | `nix-build skeleton -A haskell-nix.serverExe.js` (or `-A nixpkgs.serverExe.js`), or `cabal build` with `obelisk.frontend.target = "js"` |
+| (new) | `nix-build skeleton -A haskell-nix.containerImage.wasm` for an OCI image |
 | `ob run` triggering a JS build | `cabal build backend` / `cabal run backend` transparently cross-builds the frontend via the custom `Setup.hs` hooks (`OBELISK_CROSS_CABAL_ARGS` passes ghc-options through). |
 
 The nix shell is no longer mandatory for `cabal build`, but the cross-build
@@ -101,7 +101,7 @@ in {
 
   services.obelisk = {
     enable = true;
-    exe = app.serverExe.wasm;       # or app.serverExe.js
+    exe = app.haskell-nix.serverExe.wasm;   # or .js, or app.nixpkgs.serverExe.js
     routeHost = "myapp.example.com";
     enableHttps = true;
     adminEmail = "admin@example.com";

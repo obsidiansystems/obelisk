@@ -1,3 +1,46 @@
+## obelisk\.config\.path
+
+Project config directory (with common/, frontend/, backend/ subtrees)\.
+Its common/ and frontend/ subtrees are bundled into the production
+server as public configs; backend/ is never bundled (it may hold
+secrets; supply those to the running server at runtime)\.
+
+
+
+*Type:*
+null or absolute path
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+## obelisk\.driver
+
+
+
+The nix-haskell driver the project is built with\. The nixpkgs driver only supports the js frontend target\.
+
+
+
+*Type:*
+one of “haskell-nix”, “nixpkgs”
+
+
+
+*Default:*
+
+```nix
+"haskell-nix"
+```
+
+
+
 ## obelisk\.frontend\.js\.package
 
 
@@ -12,11 +55,16 @@ null or package
 
 
 *Default:*
-` obeliskLib.frontendJs config `
+
+```nix
+perDriver obeliskLib.frontendJs config
+```
 
 
 
 ## obelisk\.frontend\.js\.compress
+
+
 
 Whether to compress frontend JS with brotli/gzip\.
 
@@ -28,7 +76,10 @@ boolean
 
 
 *Default:*
-` true `
+
+```nix
+true
+```
 
 
 
@@ -46,7 +97,10 @@ null or package
 
 
 *Default:*
-` assets.mkAssets optimized `
+
+```nix
+assets.mkAssets optimized
+```
 
 
 
@@ -64,7 +118,10 @@ boolean
 
 
 *Default:*
-` true `
+
+```nix
+true
+```
 
 
 
@@ -82,7 +139,10 @@ list of absolute path
 
 
 *Default:*
-` [ ] `
+
+```nix
+[ ]
+```
 
 
 
@@ -100,7 +160,10 @@ list of string
 
 
 *Default:*
-` [ ] `
+
+```nix
+[ ]
+```
 
 
 
@@ -118,7 +181,10 @@ one of “BUNDLE”, “WHITESPACE_ONLY”, “SIMPLE”, “TRANSPILE_ONLY”, 
 
 
 *Default:*
-` "ADVANCED" `
+
+```nix
+"ADVANCED"
+```
 
 
 
@@ -136,7 +202,10 @@ null or package
 
 
 *Default:*
-` closure-compiler frontendJs `
+
+```nix
+closure-compiler frontendJs
+```
 
 
 
@@ -154,7 +223,10 @@ one of “js”, “wasm”
 
 
 *Default:*
-` "wasm" `
+
+```nix
+perDriver { haskell-nix = "wasm"; nixpkgs = "js"; }
+```
 
 
 
@@ -172,7 +244,10 @@ null or package
 
 
 *Default:*
-` obeliskLib.frontendWasm config `
+
+```nix
+perDriver obeliskLib.frontendWasm config
+```
 
 
 
@@ -190,7 +265,10 @@ boolean
 
 
 *Default:*
-` true `
+
+```nix
+true
+```
 
 
 
@@ -208,7 +286,10 @@ null or package
 
 
 *Default:*
-` assets.mkAssets optimized `
+
+```nix
+assets.mkAssets optimized
+```
 
 
 
@@ -226,7 +307,10 @@ boolean
 
 
 *Default:*
-` true `
+
+```nix
+true
+```
 
 
 
@@ -245,7 +329,7 @@ list of string
 
 *Default:*
 
-```
+```nix
 [
   "-ol"
   "2"
@@ -273,7 +357,10 @@ one of “0”, “1”, “2”, “3”, “4”, “s”, “z”
 
 
 *Default:*
-` "2" `
+
+```nix
+"2"
+```
 
 
 
@@ -291,7 +378,10 @@ null or package
 
 
 *Default:*
-` wasm-opt + post-link.mjs `
+
+```nix
+wasm-opt + post-link.mjs
+```
 
 
 
@@ -309,7 +399,10 @@ boolean
 
 
 *Default:*
-` true `
+
+```nix
+true
+```
 
 
 
@@ -317,7 +410,7 @@ boolean
 
 
 
-Hashed static assets after optional compression\. Used by overrides\.
+Static assets preprocessed for obelisk-asset-serve-snap, with optional compression\.
 
 
 
@@ -327,7 +420,10 @@ null or package
 
 
 *Default:*
-` assets.mkAssets hashedStatic `
+
+```nix
+assets.mkAssets rawStatic
+```
 
 
 
@@ -345,6 +441,9 @@ null or absolute path or package
 
 
 *Default:*
-` null `
+
+```nix
+null
+```
 
 

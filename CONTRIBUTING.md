@@ -67,15 +67,16 @@ cd lib && cabal build all
 cd lib && cabal test all
 ```
 
-Build the skeleton with both frontend targets:
+Build the skeleton with both drivers and frontend targets:
 ```bash
-nix-build release.nix
+nix-build release.nix -A all
 ```
 
 Or build individual targets:
 ```bash
-nix-build skeleton -A serverExe.wasm
-nix-build skeleton -A serverExe.js
+nix-build skeleton -A haskell-nix.serverExe.wasm
+nix-build skeleton -A haskell-nix.serverExe.js
+nix-build skeleton -A nixpkgs.serverExe.js
 ```
 
 
@@ -102,7 +103,7 @@ Enter the skeleton's nix shell to get a development environment with all obelisk
 
 ```bash
 cd skeleton
-nix-shell  # or: nix develop
+nix-shell -A haskell-nix  # or: nix develop
 ```
 
 From within the shell, uncomment the obelisk `optional-packages` stanzas in `cabal.project` to develop obelisk libraries alongside the skeleton:
@@ -126,11 +127,11 @@ The skeleton serves as the integration test for obelisk. To verify your changes 
 
 ```bash
 cd skeleton
-nix-shell
+nix-shell -A haskell-nix
 ob-run       # test development workflow
 ```
 
 For a full production build test:
 ```bash
-nix-build release.nix
+nix-build release.nix -A all
 ```

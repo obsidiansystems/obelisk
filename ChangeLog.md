@@ -15,8 +15,8 @@ preserved `release/1.x` line.
 * **Build system reflex-platform to nix-haskell.** Builds are now driven by
   nix-haskell/haskell.nix instead of reflex-platform, with obelisk's own
   dependencies (`deps/nix-haskell`, `deps/reflex-dom`) as git submodules.
-  nix-haskell in turn pins nixpkgs, haskell.nix and reflex-platform as
-  submodules of its own, so a recursive clone fetches those too (shallow).
+  nix-haskell in turn carries its own nixpkgs and haskell.nix pins under
+  `pins/`.
   Flakes are supported but optional: `nix-shell`/`nix-build` work throughout.
 * **`ob` CLI removed.** The Haskell `ob` command-line tool is gone, replaced by
   shell scripts placed on `PATH` by the nix shell: `ob-run`, `ob-repl`,
@@ -59,11 +59,36 @@ target alongside GHCJS and GHC 9.14 support.
   * `obelisk.frontend.wasm.{package,optimization,optimized,compress,compressed}`: WASM pipeline with wasm-opt + wasm-tools strip
 * New `nix/lib.nix` with composable haskell.nix overrides: `buildTypeOverride`, `staticManifestOverride`, `frontendDataOverride`, `backendDataOverride`, `jsexeOverride`, and the `cleanSource` / `thunkSource` / `thunkSources` source helpers
 * All overrides use `mkOptionalPackages` to safely skip absent packages in cross-compilation projects
-* Dependency sources are declared as `inputs`: `nixpkgs`, `haskell-nix` and `reflex-platform` come from the submodules under `deps/nix-haskell/pins`, the project's own flake inputs override them automatically (and are carried through to `config.inputs`), and `inputs.<name>` in `project.nix` wins over both
+* Dependency sources are declared as `inputs`: `nixpkgs` and `haskell-nix` come from the submodules under `deps/nix-haskell/pins`, the project's own flake inputs override them automatically (and are carried through to `config.inputs`), and `inputs.<name>` in `project.nix` wins over both
 * `source-repository-packages` takes a packed nix-thunk directly (no `obeliskLib.thunkSource` wrapper), and a `subdir` list, so a multi-package repository needs one entry rather than one per package
 * Project sources are filtered through the `.gitignore` they carry before being copied into the nix store (`clean-src`), so `dist-newstyle`, `result` and `.git` no longer land in every derivation that names the project source, or force a rehash after each build
 * Default compiler: GHC 9.14 (`compiler-nix-name = "ghc914"`)
 * `nix/assets.nix` asset compression pipeline with brotli (quality 11) + gzip via `mkAssets` / `unionEncodings`
+
+### Two nix-haskell drivers
+
+* Projects build through either of nix-haskell's drivers: `haskell-nix` (the
+  default) or `nixpkgs` (the Haskell infrastructure of nixpkgs), selected by
+  the new `obelisk.driver` option. The nixpkgs driver supports the `js`
+  frontend target only (nixpkgs has no buildable wasm GHC), and
+  `obelisk.frontend.target` defaults to `"js"` under it.
+* The project result is per-driver: `{ haskell-nix, nixpkgs, config, pkgs,
+  serverModule }`, with `exe`, `serverExe`, `containerImage`, `server` and
+  `shell` under each driver namespace: `nix-build -A haskell-nix.serverExe.wasm`,
+  `nix-build -A nixpkgs.serverExe.js`, `nix-shell -A haskell-nix`. The raw
+  package set moved from `.nixpkgs` (now the driver namespace) to `.pkgs`.
+* `release.nix` is an attrset of per-driver jobs plus an `all` aggregate:
+  `nix-build release.nix -A all` (the flake's `packages.<system>.release`).
+* The skeleton flake exposes the project directly as
+  `legacyPackages.<system>`, so `nix build .#haskell-nix.serverExe.wasm`
+  works without a `default` segment.
+* The `nix/lib.nix` overrides are per-driver attrsets
+  (`buildTypeOverride.haskell-nix`, `staticManifestOverride.nixpkgs`, ...);
+  the `overrides` list in `project.nix` is now `haskell-nix.overrides`, and
+  per-package flags/patches/hooks are driver-neutral options
+  (`packages.<name>.*`, scoped per driver via `nixpkgs.packages.<name>.*`).
+* nix-haskell's `reflex-platform` pin is gone; obelisk no longer exposes a
+  `reflex-platform` flake input.
 
 ### WASM frontend
 

@@ -17,7 +17,7 @@ Prerequisites:
 From your project root:
 
 ```bash
-nix-build . -A serverExe.wasm    # or serverExe.js for the GHCJS frontend
+nix-build . -A haskell-nix.serverExe.wasm    # or .js for the GHCJS frontend
 ```
 
 The result is a directory: the `backend` binary plus the compressed frontend
@@ -54,7 +54,7 @@ in {
 
   services.obelisk = {
     enable = true;
-    exe = app.serverExe.wasm;
+    exe = app.haskell-nix.serverExe.wasm;
     routeHost = "myapp.example.com";
     enableHttps = true;
     adminEmail = "admin@example.com";
@@ -135,7 +135,7 @@ secret files. If your backend reads `config/backend/*`:
 If the host runs containers instead of NixOS services:
 
 ```bash
-nix-build . -A containerImage.wasm
+nix-build . -A haskell-nix.containerImage.wasm
 podman load < result
 podman run -p 8000:8000 my-app:latest
 ```
