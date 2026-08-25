@@ -85,6 +85,11 @@ jobs:
     - name: Build server + GHCJS frontend, nixpkgs driver (skeleton -A nixpkgs.serverExe.js)
       run: nix-build skeleton -A nixpkgs.serverExe.js
 
+    # The nixpkgs driver reaches wasm through the ghc-wasm-meta bindist the
+    # skeleton imports for it.
+    - name: Build server + WASM frontend, nixpkgs driver (skeleton -A nixpkgs.serverExe.wasm)
+      run: nix-build skeleton -A nixpkgs.serverExe.wasm
+
     # Optional / allowed-to-be-slow stretch build of the deployable container
     # image. continue-on-error keeps it from blocking the smoke gate.
     - name: Build container image (skeleton -A haskell-nix.containerImage.wasm) [optional, slow]

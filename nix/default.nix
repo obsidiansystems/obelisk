@@ -50,6 +50,11 @@ in lib // {
               };
           };
 
+        # The nixpkgs driver has no wasm compiler of its own. It builds the
+        # target only where the project supplies one.
+        nixpkgsTargets = [ "js" ]
+          ++ pkgs.lib.optional (eval.config.nixpkgs.pkgsCross ? wasi32) "wasm";
+
     in {
       config = eval.config;
       pkgs = eval.pkgs;
@@ -63,7 +68,7 @@ in lib // {
 
       nixpkgs = outputs {
         proj = eval.nixpkgs.project.override { obelisk.driver = "nixpkgs"; };
-        targets = [ "js" ];
+        targets = nixpkgsTargets;
         defaultTarget = "js";
       };
     };

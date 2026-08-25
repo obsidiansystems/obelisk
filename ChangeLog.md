@@ -57,28 +57,34 @@ target alongside GHCJS and GHC 9.14 support.
   * `obelisk.frontend.target`: select `"js"` (GHCJS) or `"wasm"` (default) frontend compilation target
   * `obelisk.frontend.js.{package,optimization,optimized,compress,compressed}`: GHCJS pipeline with closure-compiler (ADVANCED mode by default)
   * `obelisk.frontend.wasm.{package,optimization,optimized,compress,compressed}`: WASM pipeline with wasm-opt + wasm-tools strip
-* New `nix/lib.nix` with composable haskell.nix overrides: `buildTypeOverride`, `staticManifestOverride`, `frontendDataOverride`, `backendDataOverride`, `jsexeOverride`, and the `cleanSource` / `thunkSource` / `thunkSources` source helpers
+* The frontend bundle pipeline runs nix-haskell's `js-optimize`, `wasm-optimize` and `wasm-jsffi`. The `obelisk.frontend.{js,wasm}.optimization.*` options set the top layer of the `closure-compiler` and `wasm-opt` settings, so a project can still state any field at any layer. `obelisk.frontend.js.optimization.extraFlags` adds to the declared flags, while a direct `closure-compiler.extraFlags` replaces them
+* New `nix/lib.nix` with composable haskell.nix overrides: `buildTypeOverride`, `staticManifestOverride`, `frontendDataOverride`, `backendDataOverride`, and the `cleanSource` / `thunkSource` / `thunkSources` source helpers
 * All overrides use `mkOptionalPackages` to safely skip absent packages in cross-compilation projects
 * Dependency sources are declared as `inputs`: `nixpkgs` and `haskell-nix` come from the submodules under `deps/nix-haskell/pins`, the project's own flake inputs override them automatically (and are carried through to `config.inputs`), and `inputs.<name>` in `project.nix` wins over both
 * `source-repository-packages` takes a packed nix-thunk directly (no `obeliskLib.thunkSource` wrapper), and a `subdir` list, so a multi-package repository needs one entry rather than one per package
 * Project sources are filtered through the `.gitignore` they carry before being copied into the nix store (`clean-src`), so `dist-newstyle`, `result` and `.git` no longer land in every derivation that names the project source, or force a rehash after each build
-* Default compiler: GHC 9.14 (`compiler-nix-name = "ghc914"`)
+* Default compiler: each driver's own, GHC 9.14 for haskell.nix and GHC 9.12 for nixpkgs. Set `compiler.name` to change both drivers, or `<driver>.compiler.name` to change one
 * `nix/assets.nix` asset compression pipeline with brotli (quality 11) + gzip via `mkAssets` / `unionEncodings`
 
 ### Two nix-haskell drivers
 
 * Projects build through either of nix-haskell's drivers: `haskell-nix` (the
   default) or `nixpkgs` (the Haskell infrastructure of nixpkgs), selected by
-  the new `obelisk.driver` option. The nixpkgs driver supports the `js`
-  frontend target only (nixpkgs has no buildable wasm GHC), and
-  `obelisk.frontend.target` defaults to `"js"` under it.
+  the new `obelisk.driver` option. The nixpkgs driver builds no wasm GHC of
+  its own. It reaches the wasm target through a ghc-wasm-meta bindist, which
+  the skeleton imports for it, and `obelisk.frontend.target` still defaults
+  to `"js"` under it.
 * The project result is per-driver: `{ haskell-nix, nixpkgs, config, pkgs,
   serverModule }`, with `exe`, `serverExe`, `containerImage`, `server` and
   `shell` under each driver namespace: `nix-build -A haskell-nix.serverExe.wasm`,
   `nix-build -A nixpkgs.serverExe.js`, `nix-shell -A haskell-nix`. The raw
   package set moved from `.nixpkgs` (now the driver namespace) to `.pkgs`.
-* `release.nix` is an attrset of per-driver jobs plus an `all` aggregate:
-  `nix-build release.nix -A all` (the flake's `packages.<system>.release`).
+* `release.nix` is a matrix of driver, wasm-meta and frontend target, with
+  a leaf for each of `serverExe`, `containerImage`, `shell` and
+  `shell-build`, plus an `all` aggregate: `nix-build release.nix -A all`,
+  `nix-build release.nix -A serverExe.haskell-nix.wasm` (the flake's
+  `packages.<system>.release`). `shell-build` builds the skeleton with plain
+  cabal inside the project's shell.
 * The skeleton flake exposes the project directly as
   `legacyPackages.<system>`, so `nix build .#haskell-nix.serverExe.wasm`
   works without a `default` segment.
@@ -99,6 +105,7 @@ target alongside GHCJS and GHC 9.14 support.
 * Vendored `@bjorn3/browser_wasi_shim` for WASI browser support
 * `wasm-opt` optimization and `wasm-tools strip` for production builds
 * GHC JSFFI extraction via `post-link.mjs`
+* The wasm Setup hook finds the cross toolchain under either target prefix: `wasm32-unknown-wasi`, which haskell.nix builds, and `wasm32-wasi`, which a ghc-wasm-meta bindist carries. A cabal build of the wasm frontend therefore works under both
 
 ### obelisk-setup
 

@@ -14,9 +14,16 @@ secrets; supply those to the running server at runtime).
 .EX
 null
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+\&./config
+.EE
 .SS obelisk.driver
 The nix\-haskell driver the project is built with.
-The nixpkgs driver only supports the js frontend target.
+The nixpkgs driver has no wasm compiler of its own.
+It reaches the wasm target only through a ghc\-wasm\-meta bindist.
 .PP
 \f[I]Type:\f[R] one of \(lqhaskell\-nix\(rq, \(lqnixpkgs\(rq
 .PP
@@ -24,6 +31,12 @@ The nixpkgs driver only supports the js frontend target.
 .IP
 .EX
 \(dqhaskell\-nix\(dq
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+\(dqnixpkgs\(dq
 .EE
 .SS obelisk.frontend.js.package
 GHCJS\-compiled frontend derivation.
@@ -33,7 +46,13 @@ GHCJS\-compiled frontend derivation.
 \f[I]Default:\f[R]
 .IP
 .EX
-perDriver obeliskLib.frontendJs config
+cross\-exe { platform = \(dqghcjs\(dq; package = \(dqfrontend\(dq; exe = \(dqfrontend\(dq; }
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+config.haskell\-nix.cross\-exe { platform = \(dqghcjs\(dq; package = \(dqadmin\(dq; exe = \(dqadmin\(dq; }
 .EE
 .SS obelisk.frontend.js.compress
 Whether to compress frontend JS with brotli/gzip.
@@ -45,6 +64,12 @@ Whether to compress frontend JS with brotli/gzip.
 .EX
 true
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+false
+.EE
 .SS obelisk.frontend.js.compressed
 Compressed frontend jsexe for obelisk\-asset\-serve\-snap.
 .PP
@@ -54,6 +79,12 @@ Compressed frontend jsexe for obelisk\-asset\-serve\-snap.
 .IP
 .EX
 assets.mkAssets optimized
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+assets.mkAssetsWith assets.noEncodings config.obelisk.frontend.js.optimized
 .EE
 .SS obelisk.frontend.js.optimization.enable
 Whether to run closure\-compiler on frontend JS.
@@ -65,8 +96,15 @@ Whether to run closure\-compiler on frontend JS.
 .EX
 true
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+false
+.EE
 .SS obelisk.frontend.js.optimization.externs
-Extern files passed to closure\-compiler via \(enexterns.
+Files passed as \(enexterns.
+The jsexe\(cqs own all.externs.js goes first.
 .PP
 \f[I]Type:\f[R] list of absolute path
 .PP
@@ -75,8 +113,14 @@ Extern files passed to closure\-compiler via \(enexterns.
 .EX
 [ ]
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+[ ./externs.js ]
+.EE
 .SS obelisk.frontend.js.optimization.extraFlags
-Extra flags passed to closure\-compiler.
+Flags added after the flags closure\-compiler declares.
 .PP
 \f[I]Type:\f[R] list of string
 .PP
@@ -84,6 +128,14 @@ Extra flags passed to closure\-compiler.
 .IP
 .EX
 [ ]
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+[
+  \(dq\-\-formatting PRETTY_PRINT\(dq
+]
 .EE
 .SS obelisk.frontend.js.optimization.level
 Closure\-compiler optimization level.
@@ -96,6 +148,12 @@ Closure\-compiler optimization level.
 .EX
 \(dqADVANCED\(dq
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+\(dqSIMPLE\(dq
+.EE
 .SS obelisk.frontend.js.optimized
 Closure\-compiled frontend jsexe.
 .PP
@@ -104,7 +162,13 @@ Closure\-compiled frontend jsexe.
 \f[I]Default:\f[R]
 .IP
 .EX
-closure\-compiler frontendJs
+js\-optimize { jsexe = \(dq${package}/bin/frontend.jsexe\(dq; }
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+config.js\-optimize { platform = \(dqghcjs\(dq; package = \(dqadmin\(dq; exe = \(dqadmin\(dq; jsexe = \(dq${adminJs}/bin/admin.jsexe\(dq; }
 .EE
 .SS obelisk.frontend.target
 Frontend compilation target.
@@ -116,6 +180,12 @@ Frontend compilation target.
 .EX
 perDriver { haskell\-nix = \(dqwasm\(dq; nixpkgs = \(dqjs\(dq; }
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+\(dqjs\(dq
+.EE
 .SS obelisk.frontend.wasm.package
 WASM\-compiled frontend derivation.
 .PP
@@ -124,7 +194,13 @@ WASM\-compiled frontend derivation.
 \f[I]Default:\f[R]
 .IP
 .EX
-perDriver obeliskLib.frontendWasm config
+cross\-exe { platform = \(dqwasi32\(dq; package = \(dqfrontend\(dq; exe = \(dqfrontend\(dq; }
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+config.haskell\-nix.cross\-exe { platform = \(dqwasi32\(dq; package = \(dqadmin\(dq; exe = \(dqadmin\(dq; }
 .EE
 .SS obelisk.frontend.wasm.compress
 Whether to compress frontend WASM with brotli/gzip.
@@ -136,6 +212,12 @@ Whether to compress frontend WASM with brotli/gzip.
 .EX
 true
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+false
+.EE
 .SS obelisk.frontend.wasm.compressed
 Compressed WASM frontend for obelisk\-asset\-serve\-snap.
 .PP
@@ -145,6 +227,12 @@ Compressed WASM frontend for obelisk\-asset\-serve\-snap.
 .IP
 .EX
 assets.mkAssets optimized
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+assets.mkAssetsWith assets.noEncodings config.obelisk.frontend.wasm.optimized
 .EE
 .SS obelisk.frontend.wasm.optimization.enable
 Whether to run wasm\-opt on frontend WASM.
@@ -156,8 +244,15 @@ Whether to run wasm\-opt on frontend WASM.
 .EX
 true
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+false
+.EE
 .SS obelisk.frontend.wasm.optimization.extraFlags
-Extra flags passed to wasm\-opt.
+Flags passed to wasm\-opt after the level.
+They replace the declared flags.
 .PP
 \f[I]Type:\f[R] list of string
 .PP
@@ -165,12 +260,18 @@ Extra flags passed to wasm\-opt.
 .IP
 .EX
 [
-  \(dq\-ol\(dq
-  \(dq2\(dq
-  \(dq\-s\(dq
-  \(dq1\(dq
+  \(dq\-ol 2\(dq
+  \(dq\-s 1\(dq
   \(dq\-\-low\-memory\-unused\(dq
   \(dq\-\-strip\-dwarf\(dq
+  \(dq\-\-converge\(dq
+]
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+[
   \(dq\-\-converge\(dq
 ]
 .EE
@@ -185,6 +286,12 @@ wasm\-opt optimization level (\-O).
 .EX
 \(dq2\(dq
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+\(dqz\(dq
+.EE
 .SS obelisk.frontend.wasm.optimized
 Optimized WASM frontend jsexe directory.
 .PP
@@ -193,7 +300,13 @@ Optimized WASM frontend jsexe directory.
 \f[I]Default:\f[R]
 .IP
 .EX
-wasm\-opt + post\-link.mjs
+wasm\-optimize \f[B]and\f[R] wasm\-jsffi, \f[B]with\f[R] the wasi shim
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+pkgs.runCommand \(dqfrontend.jsexe.wasm\(dq {} \(dqcp \-r ${./dist\-wasm} $out\(dq
 .EE
 .SS obelisk.static.compress
 Whether to compress static assets with zopfli/gzip.
@@ -204,6 +317,12 @@ Whether to compress static assets with zopfli/gzip.
 .IP
 .EX
 true
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+false
 .EE
 .SS obelisk.static.compressed
 Static assets preprocessed for obelisk\-asset\-serve\-snap, with
@@ -216,6 +335,12 @@ optional compression.
 .EX
 assets.mkAssets rawStatic
 .EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+pkgs.runCommand \(dqstatic\(dq {} \(dqcp \-r ${./static\-prebuilt} $out\(dq
+.EE
 .SS obelisk.static.path
 Static assets path or derivation.
 .PP
@@ -225,4 +350,10 @@ Static assets path or derivation.
 .IP
 .EX
 null
+.EE
+.PP
+\f[I]Example:\f[R]
+.IP
+.EX
+import ./static { \f[B]inherit\f[R] pkgs; }
 .EE

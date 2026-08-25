@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 -- | Frontend Setup.hs hook for WASM. Cross-compiles the frontend with
 -- wasm32-wasi in a background thread during pre-build, assembles the jsexe
 -- directory (post-link.mjs, shim, wasi-shim), then symlinks the output and
@@ -50,30 +52,33 @@ main = defaultMainWithHooks simpleUserHooks
           assembleAndLinkFrontend optFlags
   }
 
--- | Find the wasm32 cross cabal: either the @wasm32-unknown-wasi@ wrapper
--- (which takes @cabal@ as first arg) or the direct @wasm32-unknown-wasi-cabal@.
+-- | Find one tool of the first wasm32 toolchain on PATH. For each prefix the
+-- @\<prefix\>@ wrapper comes first, which takes the tool name as its first
+-- argument, and @\<prefix\>-\<tool\>@ names the tool itself.
+findWasmTool :: String -> [String] -> IO (String, [String] -> [String])
+findWasmTool tool = \case
+  [] -> fail $
+    "[Setup] No wasm32 " <> tool <> " found on PATH. Tried the prefixes "
+      <> unwords wasmTargetPrefixes <> ". Are you in a nix shell?"
+
+  prefix : rest ->
+    findExecutable prefix >>= \case
+      Just _ -> pure (prefix, (tool :))
+      Nothing -> do
+        let direct = prefix <> "-" <> tool
+        findExecutable direct >>= \case
+          Just _ -> pure (direct, id)
+          Nothing -> findWasmTool tool rest
+
+-- | The cross cabal of whichever wasm32 toolchain is on PATH.
 findWasmCabal :: IO (String, [String] -> [String])
-findWasmCabal = do
-  wrapper <- findExecutable "wasm32-unknown-wasi"
-  case wrapper of
-    Just _ -> pure ("wasm32-unknown-wasi", ("cabal" :))
-    Nothing -> do
-      direct <- findExecutable "wasm32-unknown-wasi-cabal"
-      case direct of
-        Just _ -> pure ("wasm32-unknown-wasi-cabal", id)
-        Nothing -> fail "[Setup] Neither wasm32-unknown-wasi nor wasm32-unknown-wasi-cabal found on PATH. Are you in a nix shell?"
+findWasmCabal = findWasmTool "cabal" wasmTargetPrefixes
 
 -- | Get the GHC libdir for the wasm32 cross-compiler (contains post-link.mjs).
 getWasmGhcLibdir :: IO FilePath
 getWasmGhcLibdir = do
-  wrapper <- findExecutable "wasm32-unknown-wasi"
-  raw <- case wrapper of
-    Just _ -> readCreateProcess (proc "wasm32-unknown-wasi" ["ghc", "--print-libdir"]) ""
-    Nothing -> do
-      direct <- findExecutable "wasm32-unknown-wasi-ghc"
-      case direct of
-        Just _ -> readCreateProcess (proc "wasm32-unknown-wasi-ghc" ["--print-libdir"]) ""
-        Nothing -> fail "[Setup] wasm32-unknown-wasi-ghc not found on PATH."
+  (wasmGhc, mkArgs) <- findWasmTool "ghc" wasmTargetPrefixes
+  raw <- readCreateProcess (proc wasmGhc (mkArgs ["--print-libdir"])) ""
   pure (strip raw)
 
 -- | Build the frontend executable with the wasm32 cross-compiler.
@@ -190,4 +195,10 @@ optimizeWasm wasmFile = do
             removeFile stripped
           ExitFailure _ ->
             hPutStrLn stderr "[Setup] wasm-tools strip failed; continuing"
+
+-- | The target prefixes a wasm32 toolchain names its tools with. haskell.nix
+-- builds its own compiler for @wasm32-unknown-wasi@, and a ghc-wasm-meta
+-- bindist is built for @wasm32-wasi@.
+wasmTargetPrefixes :: [String]
+wasmTargetPrefixes = ["wasm32-unknown-wasi", "wasm32-wasi"]
 

@@ -77,6 +77,13 @@ Or build individual targets:
 nix-build skeleton -A haskell-nix.serverExe.wasm
 nix-build skeleton -A haskell-nix.serverExe.js
 nix-build skeleton -A nixpkgs.serverExe.js
+nix-build skeleton -A nixpkgs.serverExe.wasm
+```
+
+Or one cell of the release matrix:
+```bash
+nix-build release.nix -A serverExe.haskell-nix.wasm
+nix-build release.nix -A shell-build.nixpkgs.wasm
 ```
 
 

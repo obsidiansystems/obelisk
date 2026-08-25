@@ -78,20 +78,6 @@ in rec {
 
   serverModule = ./server.nix;
 
-  frontendJs = {
-    haskell-nix = config:
-      config.haskell-nix.project.projectCross.ghcjs.hsPkgs.frontend.components.exes.frontend;
-    nixpkgs = config:
-      config.nixpkgs.project.projectCross.ghcjs.packages.frontend;
-  };
-
-  frontendWasm = {
-    haskell-nix = config:
-      config.haskell-nix.project.projectCross.wasi32.hsPkgs.frontend.components.exes.frontend;
-    nixpkgs = config:
-      config.nixpkgs.project.projectCross.wasi32.packages.frontend;
-  };
-
   backendExe = {
     haskell-nix = proj: proj.hsPkgs.backend.components.exes.backend;
     nixpkgs = proj: proj.packages.backend;
@@ -181,24 +167,6 @@ in rec {
         frontend-wasm.postPatch = unCustom;
         obelisk-generated-static.postPatch = unCustom;
         obelisk-generated-static-custom.postPatch = unCustom;
-      };
-
-  };
-
-  # Copy frontend.jsexe directory into $out/bin after GHCJS build.
-  # The nixpkgs generic builder does this on its own, so no nixpkgs case.
-  jsexeOverride = {
-
-    haskell-nix = { config, lib, ... }:
-      let optional = mkOptionalPackages { inherit config lib; };
-      in {
-        packages = optional {
-          frontend.components.exes.frontend.postInstall = ''
-            if [ -d dist/build/frontend/frontend.jsexe ]; then
-              cp -r dist/build/frontend/frontend.jsexe $out/bin/
-            fi
-          '';
-        };
       };
 
   };

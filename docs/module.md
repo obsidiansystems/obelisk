@@ -20,11 +20,21 @@ null
 
 
 
+*Example:*
+
+```nix
+./config
+```
+
+
+
 ## obelisk\.driver
 
 
 
-The nix-haskell driver the project is built with\. The nixpkgs driver only supports the js frontend target\.
+The nix-haskell driver the project is built with\. The nixpkgs driver
+has no wasm compiler of its own\. It reaches the wasm target only
+through a ghc-wasm-meta bindist\.
 
 
 
@@ -37,6 +47,14 @@ one of “haskell-nix”, “nixpkgs”
 
 ```nix
 "haskell-nix"
+```
+
+
+
+*Example:*
+
+```nix
+"nixpkgs"
 ```
 
 
@@ -57,7 +75,15 @@ null or package
 *Default:*
 
 ```nix
-perDriver obeliskLib.frontendJs config
+cross-exe { platform = "ghcjs"; package = "frontend"; exe = "frontend"; }
+```
+
+
+
+*Example:*
+
+```nix
+config.haskell-nix.cross-exe { platform = "ghcjs"; package = "admin"; exe = "admin"; }
 ```
 
 
@@ -83,6 +109,14 @@ true
 
 
 
+*Example:*
+
+```nix
+false
+```
+
+
+
 ## obelisk\.frontend\.js\.compressed
 
 
@@ -100,6 +134,14 @@ null or package
 
 ```nix
 assets.mkAssets optimized
+```
+
+
+
+*Example:*
+
+```nix
+assets.mkAssetsWith assets.noEncodings config.obelisk.frontend.js.optimized
 ```
 
 
@@ -125,11 +167,19 @@ true
 
 
 
+*Example:*
+
+```nix
+false
+```
+
+
+
 ## obelisk\.frontend\.js\.optimization\.externs
 
 
 
-Extern files passed to closure-compiler via --externs\.
+Files passed as --externs\. The jsexe’s own all\.externs\.js goes first\.
 
 
 
@@ -146,11 +196,19 @@ list of absolute path
 
 
 
+*Example:*
+
+```nix
+[ ./externs.js ]
+```
+
+
+
 ## obelisk\.frontend\.js\.optimization\.extraFlags
 
 
 
-Extra flags passed to closure-compiler\.
+Flags added after the flags closure-compiler declares\.
 
 
 
@@ -163,6 +221,16 @@ list of string
 
 ```nix
 [ ]
+```
+
+
+
+*Example:*
+
+```nix
+[
+  "--formatting PRETTY_PRINT"
+]
 ```
 
 
@@ -188,6 +256,14 @@ one of “BUNDLE”, “WHITESPACE_ONLY”, “SIMPLE”, “TRANSPILE_ONLY”, 
 
 
 
+*Example:*
+
+```nix
+"SIMPLE"
+```
+
+
+
 ## obelisk\.frontend\.js\.optimized
 
 
@@ -204,7 +280,15 @@ null or package
 *Default:*
 
 ```nix
-closure-compiler frontendJs
+js-optimize { jsexe = "${package}/bin/frontend.jsexe"; }
+```
+
+
+
+*Example:*
+
+```nix
+config.js-optimize { platform = "ghcjs"; package = "admin"; exe = "admin"; jsexe = "${adminJs}/bin/admin.jsexe"; }
 ```
 
 
@@ -230,6 +314,14 @@ perDriver { haskell-nix = "wasm"; nixpkgs = "js"; }
 
 
 
+*Example:*
+
+```nix
+"js"
+```
+
+
+
 ## obelisk\.frontend\.wasm\.package
 
 
@@ -246,7 +338,15 @@ null or package
 *Default:*
 
 ```nix
-perDriver obeliskLib.frontendWasm config
+cross-exe { platform = "wasi32"; package = "frontend"; exe = "frontend"; }
+```
+
+
+
+*Example:*
+
+```nix
+config.haskell-nix.cross-exe { platform = "wasi32"; package = "admin"; exe = "admin"; }
 ```
 
 
@@ -272,6 +372,14 @@ true
 
 
 
+*Example:*
+
+```nix
+false
+```
+
+
+
 ## obelisk\.frontend\.wasm\.compressed
 
 
@@ -289,6 +397,14 @@ null or package
 
 ```nix
 assets.mkAssets optimized
+```
+
+
+
+*Example:*
+
+```nix
+assets.mkAssetsWith assets.noEncodings config.obelisk.frontend.wasm.optimized
 ```
 
 
@@ -314,11 +430,19 @@ true
 
 
 
+*Example:*
+
+```nix
+false
+```
+
+
+
 ## obelisk\.frontend\.wasm\.optimization\.extraFlags
 
 
 
-Extra flags passed to wasm-opt\.
+Flags passed to wasm-opt after the level\. They replace the declared flags\.
 
 
 
@@ -331,12 +455,20 @@ list of string
 
 ```nix
 [
-  "-ol"
-  "2"
-  "-s"
-  "1"
+  "-ol 2"
+  "-s 1"
   "--low-memory-unused"
   "--strip-dwarf"
+  "--converge"
+]
+```
+
+
+
+*Example:*
+
+```nix
+[
   "--converge"
 ]
 ```
@@ -364,6 +496,14 @@ one of “0”, “1”, “2”, “3”, “4”, “s”, “z”
 
 
 
+*Example:*
+
+```nix
+"z"
+```
+
+
+
 ## obelisk\.frontend\.wasm\.optimized
 
 
@@ -380,7 +520,15 @@ null or package
 *Default:*
 
 ```nix
-wasm-opt + post-link.mjs
+wasm-optimize and wasm-jsffi, with the wasi shim
+```
+
+
+
+*Example:*
+
+```nix
+pkgs.runCommand "frontend.jsexe.wasm" {} "cp -r ${./dist-wasm} $out"
 ```
 
 
@@ -406,6 +554,14 @@ true
 
 
 
+*Example:*
+
+```nix
+false
+```
+
+
+
 ## obelisk\.static\.compressed
 
 
@@ -427,6 +583,14 @@ assets.mkAssets rawStatic
 
 
 
+*Example:*
+
+```nix
+pkgs.runCommand "static" {} "cp -r ${./static-prebuilt} $out"
+```
+
+
+
 ## obelisk\.static\.path
 
 
@@ -444,6 +608,14 @@ null or absolute path or package
 
 ```nix
 null
+```
+
+
+
+*Example:*
+
+```nix
+import ./static { inherit pkgs; }
 ```
 
 

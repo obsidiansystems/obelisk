@@ -346,8 +346,9 @@ Key module options (see [`docs/module.md`](docs/module.md) for full reference):
 
 Every output is namespaced by the nix-haskell driver that builds it:
 `haskell-nix` (the default: haskell.nix toolchain, `wasm` and `js` targets)
-or `nixpkgs` (the Haskell infrastructure of nixpkgs, `js` only since nixpkgs
-has no buildable wasm GHC).
+or `nixpkgs` (the Haskell infrastructure of nixpkgs). nixpkgs builds no wasm
+GHC of its own, so the skeleton gives that driver one from the ghc-wasm-meta
+pin. Both drivers then build both targets.
 
 ```bash
 # Full production build (backend + optimized/compressed frontend)
@@ -355,8 +356,9 @@ nix-build -A haskell-nix.serverExe.wasm
 nix-build -A haskell-nix.serverExe.js
 # or: nix build .#haskell-nix.serverExe.wasm
 
-# The js target built with the nixpkgs driver
+# The same targets built with the nixpkgs driver
 nix-build -A nixpkgs.serverExe.js
+nix-build -A nixpkgs.serverExe.wasm
 
 # OCI container image
 nix-build -A haskell-nix.containerImage.wasm

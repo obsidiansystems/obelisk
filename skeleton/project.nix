@@ -1,6 +1,17 @@
-{ pkgs, obeliskLib, ... }:
+{ pkgs, obeliskLib, nix-haskell-compilers, ... }:
 
 {
+
+  # The nixpkgs driver has no wasm compiler of its own. The ghc-wasm-meta
+  # bindist gives it one. The haskell.nix driver builds its own, so the
+  # bindist is scoped to the driver that needs it. The series matches that
+  # driver's own compiler.
+  imports = [
+    (import "${nix-haskell-compilers}/ghc-wasm-meta" {
+      flavour = "9.12";
+      drivers = [ "nixpkgs" ];
+    })
+  ];
 
   name = "obelisk-skeleton";
   src = ./.;
@@ -26,7 +37,5 @@
     ];
     withHoogle = true;
   };
-
-  nixpkgs.shell.crossPlatforms = ps: with ps; [ ghcjs ];
 
 }
