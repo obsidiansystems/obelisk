@@ -7,7 +7,8 @@ module Obelisk.Setup.Frontend.Wasm (main) where
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Exception (SomeException, try)
-import Control.Monad (forM_, unless)
+import Control.Monad (unless)
+import Data.Foldable (for_)
 import Distribution.Simple
 import Distribution.Simple.LocalBuildInfo (withOptimization)
 import Paths_obelisk_setup (getDataFileName)
@@ -164,7 +165,7 @@ copyWasiShim jsexeDir = do
       "[Setup] OBELISK_WASI_SHIM dist directory not found: " <> distDir
   files <- listDirectory distDir
   let jsFiles = filter (\f -> takeExtension f == ".js") files
-  forM_ jsFiles $ \f -> do
+  for_ jsFiles $ \f -> do
     let dest = if f == "index.js" then "wasi-shim.js" else f
     copyFile (distDir </> f) (jsexeDir </> dest)
   hPutStrLn stderr $ "[Setup] Copied " <> show (length jsFiles) <> " wasi-shim files"

@@ -9,7 +9,8 @@ module Obelisk.Asset.Serve.Snap
 
 import Control.Applicative ((<|>))
 import Control.Exception (handleJust, throwIO, try)
-import Control.Monad (forM, unless)
+import Control.Monad (unless)
+import Data.Traversable (for)
 import Obelisk.Snap.Extras
 import Snap
   ( MonadSnap
@@ -94,7 +95,7 @@ serveAsset' doRedirect base fallback p = do
       case conditionalOnModification of
         Nothing -> do
           encodedFiles <- fmap (filter (`notElem` [".", ".."])) $ liftIO $ getDirectoryContents $ base </> p </> "encodings"
-          availableEncodings <- fmap (map snd . sort) $ forM encodedFiles $ \f -> do
+          availableEncodings <- fmap (fmap snd . sort) $ for encodedFiles $ \f -> do
             stat <- liftIO $ getFileStatus $ base </> p </> "encodings" </> f
             pure (fileSize stat, Encoding $ encodeUtf8 $ T.pack f)
           acceptEncodingRaw <- getsRequest $ getHeader "Accept-Encoding"

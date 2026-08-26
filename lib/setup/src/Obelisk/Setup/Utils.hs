@@ -49,7 +49,7 @@ symlink target linkName = do
 
 -- | Read extra cabal arguments for cross builds from @OBELISK_CROSS_CABAL_ARGS@.
 crossCabalArgs :: IO [String]
-crossCabalArgs = maybe [] words <$> lookupEnv "OBELISK_CROSS_CABAL_ARGS"
+crossCabalArgs = foldMap words <$> lookupEnv "OBELISK_CROSS_CABAL_ARGS"
 
 -- | Map a Cabal 'OptimisationLevel' to cabal-level optimization flags.
 -- Uses @-O@ rather than @--ghc-options=-O@ so that cabal's build directory

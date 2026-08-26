@@ -113,14 +113,14 @@ acceptEncodingBody = do
       qvalue
     let q = fromMaybe (QValue 1) mq
     pure (c, q)
-  let (stars, specificEncodings) = partitionEithers $ flip map l $ \(c, q) -> case c of
+  let (stars, specificEncodings) = partitionEithers $ flip fmap l $ \(c, q) -> case c of
         Nothing -> Left q
         Just n -> Right (n, q)
   starQValue <- case stars of
     [] -> pure Nothing
     [q] -> pure $ Just q
     _ -> fail "acceptEncodingBody: multiple * values provided"
-  byEncodingProvided <- sequence $ Map.fromListWithKey (\k _ _ -> fail $ "acceptEncodingBody: encoding " <> show k <> " repeated multiple times") $ map (second pure) specificEncodings
+  byEncodingProvided <- sequence $ Map.fromListWithKey (\k _ _ -> fail $ "acceptEncodingBody: encoding " <> show k <> " repeated multiple times") $ fmap (second pure) specificEncodings
   let defaultIdentityQValue = fromMaybe (QValue 1) starQValue -- identity has a default qvalue of 1 unless * is given a different qvalue explicitly
       defaultQValue = fromMaybe (QValue 0) starQValue
       byEncoding =

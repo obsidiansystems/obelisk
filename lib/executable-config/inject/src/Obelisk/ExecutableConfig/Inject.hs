@@ -2,13 +2,13 @@ module Obelisk.ExecutableConfig.Inject where
 
 #ifdef __GLASGOW_HASKELL__
 #if __GLASGOW_HASKELL__ < 810
-import Control.Monad (mapM_)
 import Data.Semigroup ((<>))
 #endif
 #endif
 import Control.Monad.IO.Class (MonadIO)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base64 qualified as B64
+import Data.Foldable (traverse_)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
@@ -25,4 +25,4 @@ injectPure key value =
 -- | Produces injectable @<script>@ tags containing the configuration keys
 -- (filepaths) and values.
 injectExecutableConfigs :: (MonadIO m, DomBuilder t m) => Map Text ByteString -> m ()
-injectExecutableConfigs = mapM_ (uncurry injectPure) . Map.toList
+injectExecutableConfigs = traverse_ (uncurry injectPure) . Map.toList

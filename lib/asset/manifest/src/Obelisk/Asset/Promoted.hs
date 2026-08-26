@@ -91,14 +91,14 @@ declareStatic root = do
   paths <- runIO $ gatherHashedPaths root
   -- TODO: If https://ghc.haskell.org/trac/ghc/ticket/14623 is implemented, use
   -- qAddDependentFile to watch the directories as well as the files
-  forM_ (Map.keys paths) $ \original -> do
+  for_ (Map.keys paths) $ \original -> do
     qAddDependentFile $ root </> original
   fmap toList $ execWriterT $ staticClassWithInstances paths
 
 staticClassWithInstances :: Map FilePath FilePath -> WriterT (Seq Dec) Q ()
 staticClassWithInstances paths = do
   ctx <- staticClass
-  forM_ (Map.toList paths) $ \(original, hashed) -> do
+  for_ (Map.toList paths) $ \(original, hashed) -> do
     staticInstance ctx original hashed
 
 staticClass :: WriterT (Seq Dec) Q StaticContext

@@ -2,7 +2,7 @@ module Obelisk.Asset.Symlink
   ( copyAndSymlink
   ) where
 
-import Control.Monad
+import Data.Foldable (for_)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import System.Directory
@@ -16,7 +16,7 @@ copyAndSymlink
   -> FilePath
   -> FilePath
   -> IO ()
-copyAndSymlink paths source destination = forM_ (Map.toList paths) $ \(original, hashed) -> do
+copyAndSymlink paths source destination = for_ (Map.toList paths) $ \(original, hashed) -> do
   createDirectoryIfMissing True $ destination </> takeDirectory hashed
   copyFile (source </> original) (destination </> hashed)
   createSymbolicLink (takeFileName hashed) $ destination </> original

@@ -16,7 +16,7 @@ main = do
       { _simplePkg_name = T.pack packageName
       , _simplePkg_moduleName = T.pack moduleName
       , _simplePkg_dependencies =
-          map
+          fmap
             T.pack
             [ "base"
             , "obelisk-asset-manifest"

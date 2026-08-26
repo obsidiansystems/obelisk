@@ -388,7 +388,7 @@ delayedGhcjsScript n allJsUrl =
         ]
 
 instance HasCookies Snap where
-  askCookies = map (\c -> (cookieName c, cookieValue c)) <$> getsRequest rqCookies
+  askCookies = fmap (\c -> (cookieName c, cookieValue c)) <$> getsRequest rqCookies
 
 -- | Get configs from the canonical "public" locations (i.e., locations that obelisk expects to make available
 -- to frontend applications, and hence visible to end users).

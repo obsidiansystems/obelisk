@@ -1,6 +1,7 @@
 module Obelisk.Route.TH (deriveRouteComponent) where
 
 import Data.Constraint.Extras.TH
+import Data.Foldable (fold)
 import Data.GADT.Compare.TH
 import Data.GADT.Show.TH
 import Data.Universe.Some.TH
@@ -9,7 +10,7 @@ import Language.Haskell.TH
 -- | Derive all the typeclasses needed for a RouteComponent type.  The argument should be the name of a type of kind @k -> *@
 deriveRouteComponent :: Name -> Q [Dec]
 deriveRouteComponent x =
-  concat
+  fold
     <$> traverse
       ($ x)
       [ deriveGShow

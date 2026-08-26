@@ -138,7 +138,7 @@ import Control.Monad.Trans (lift)
 import Data.Monoid ((<>))
 #endif
 #if __GLASGOW_HASKELL__ >= 906
-import Control.Monad (forM, (<=<))
+import Control.Monad ((<=<))
 import Control.Monad.Trans (lift)
 #endif
 #endif
@@ -175,6 +175,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Text.Lens (IsText, packed, unpacked)
+import Data.Traversable (for)
 import Data.Type.Equality
 import Data.Universe
 import Data.Universe.Some
@@ -703,7 +704,7 @@ shadowEncoder f g = Encoder $ do
   vf <- unEncoder f
   vg <- unEncoder g
   let gCanParse c = catchError (Just <$> _encoderImpl_decode vg c) (\_ -> pure Nothing)
-  overlaps <- fmap catMaybes $ forM universe $ \a -> do
+  overlaps <- fmap catMaybes $ for universe $ \a -> do
     let c = _encoderImpl_encode vf a
     mb <- gCanParse c
     pure $ fmap (a,,c) mb
@@ -751,7 +752,7 @@ enumEncoder f = Encoder $ do
     Failure ambiguousEntries ->
       throwError $
         T.unlines $
-          "enumEncoder: ambiguous encodings detected:" : concat (Map.elems $ imap showRedundant ambiguousEntries)
+          "enumEncoder: ambiguous encodings detected:" : fold (imap showRedundant ambiguousEntries)
     Success m ->
       pure $
         EncoderImpl
@@ -864,7 +865,7 @@ prefixTextEncoder p =
   Encoder $
     pure $
       EncoderImpl
-        { _encoderImpl_encode = mappend p
+        { _encoderImpl_encode = (p <>)
         , _encoderImpl_decode = \v -> case T.stripPrefix p v of
             Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> tshow p <> ", got " <> tshow (T.take (T.length p) v)
             Just stripped -> pure stripped
@@ -1041,8 +1042,8 @@ data JSaddleWarpRoute :: Type -> Type where
 data IndexOnlyRoute :: Type -> Type where
   IndexOnlyRoute :: IndexOnlyRoute ()
 
-concat
-  <$> mapM
+fold
+  <$> traverse
     deriveRouteComponent
     [ ''ResourceRoute
     , ''JSaddleWarpRoute
@@ -1088,7 +1089,7 @@ mkFullRouteEncoder missing backendSegment frontendSegment = handleEncoder (const
 
 instance UniverseSome f => UniverseSome (ObeliskRoute f) where
   universeSome =
-    concat
+    fold
       [ (\(Some x) -> Some (ObeliskRoute_App x)) <$> universe
       , (\(Some x) -> Some (ObeliskRoute_Resource x)) <$> (universe @(Some ResourceRoute))
       ]
@@ -1277,7 +1278,7 @@ dmapEncoder
   -> Encoder check parse (DMap k' Identity) (Map k v)
 dmapEncoder keyEncoder' valueEncoderFor = unsafeEncoder $ do
   keyEncoder :: Encoder Identity parse (Some k') k <- checkEncoder keyEncoder'
-  valueDecoders :: DMap k' (Decoder Identity parse v) <- fmap DMap.fromList . forM universe $ \(Some (k' :: k' t)) -> do
+  valueDecoders :: DMap k' (Decoder Identity parse v) <- fmap DMap.fromList . for universe $ \(Some (k' :: k' t)) -> do
     ve :: Encoder Identity parse t v <- checkEncoder (valueEncoderFor k')
     pure $ (k' :: k' t) :=> (Decoder ve :: Decoder Identity parse v t)
   let keyError k = "dmapEncoder: key `" <> k <> "' was missing from the Universe instance for its type."
@@ -1289,7 +1290,7 @@ dmapEncoder keyEncoder' valueEncoderFor = unsafeEncoder $ do
             ( encode keyEncoder (Some k')
             , encode (toEncoder (DMap.findWithDefault (error . keyError $ gshow k') k' valueDecoders)) v'
             )
-      , _encoderImpl_decode = \m -> fmap DMap.fromList . forM (Map.toList m) $ \(k, v) -> do
+      , _encoderImpl_decode = \m -> fmap DMap.fromList . for (Map.toList m) $ \(k, v) -> do
           tryDecode keyEncoder k >>= \case
             Some (k' :: k' t) -> case DMap.lookup k' valueDecoders of
               Nothing -> throwError . T.pack . keyError $ gshow k'
