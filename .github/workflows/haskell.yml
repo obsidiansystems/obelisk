@@ -7,7 +7,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ['8.6', '8.8', '8.10', '9.0', '9.2', '9.4', '9.6', '9.8', '9.10', '9.12', '9.14']
+        ghc: ['8.10', '9.0', '9.2', '9.4', '9.6', '9.8', '9.10', '9.12', '9.14']
         os: ['ubuntu-latest', 'macos-13'] # https://github.com/haskell-actions/setup/issues/77
     runs-on: ${{ matrix.os }}
 
@@ -50,6 +50,28 @@ jobs:
       run: cd lib && cabal build --enable-tests --enable-benchmarks all
     - name: Run tests
       run: cd lib && cabal test all
+
+  # The shared Obsidian style, from deps/style.hs. Its own job so a formatting
+  # failure reports on its own rather than behind the cross builds, and it needs
+  # neither haskell.nix nor import-from-derivation.
+  style:
+    runs-on: ubuntu-latest
+    name: style (fourmolu + hlint)
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # release.nix imports deps/style.hs at evaluation time, so a
+        # non-recursive clone cannot read the style checks at all.
+        submodules: recursive
+    - name: Install Nix
+      uses: cachix/install-nix-action@v27
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          extra-substituters = https://cache.nixos.org
+          extra-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+    - name: Check formatting and lint (release.nix -A lib.checks)
+      run: nix-build release.nix -A lib.checks
 
   # Smoke-test the GHC 9.14 + WASM/GHCJS nix-haskell pipeline that the `next`
   # branch is built around. This exercises nix, the cross-compiled frontends and
