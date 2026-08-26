@@ -3,6 +3,10 @@
 -- assets into @frontend\/data\/@ after build completes.
 module Obelisk.Setup.Frontend.Js (main) where
 
+import Control.Concurrent (forkIO)
+import Control.Concurrent.MVar
+import Control.Exception (SomeException, try)
+import Control.Monad (unless)
 import Distribution.Simple
 import Distribution.Simple.LocalBuildInfo (withOptimization)
 import System.Directory
@@ -10,39 +14,36 @@ import System.Directory
   , doesDirectoryExist
   , findExecutable
   )
+import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath ((</>))
 import System.IO (hPutStrLn, stderr)
 import System.Process (CreateProcess (..), proc, readCreateProcess, waitForProcess, withCreateProcess)
-import System.Exit (ExitCode (..), exitFailure)
-
-import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar
-import Control.Exception (SomeException, try)
-import Control.Monad (unless)
 
 import Obelisk.Setup.Utils (crossCabalArgs, findProjectRoot, optLevelFlags, strip, symlink)
 
 main :: IO ()
-main = defaultMainWithHooks simpleUserHooks
-  { buildHook = \pd lbi hooks flags -> do
-      envArgs <- crossCabalArgs
-      let optFlags = optLevelFlags (withOptimization lbi)
-          extraFlags = optFlags <> envArgs
-      resultVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
-      _ <- forkIO $ do
-        result <- try (buildFrontendWithGhcjs extraFlags)
-        putMVar resultVar result
-      buildHook simpleUserHooks pd lbi hooks flags
-      hPutStrLn stderr "[Setup] Waiting for GHCJS frontend build..."
-      result <- takeMVar resultVar
-      case result of
-        Left e -> do
-          hPutStrLn stderr $ "[Setup] GHCJS build failed: " <> show e
-          exitFailure
-        Right () -> do
-          hPutStrLn stderr "[Setup] GHCJS frontend build complete."
-          linkFrontendAssets optFlags
-  }
+main =
+  defaultMainWithHooks
+    simpleUserHooks
+      { buildHook = \pd lbi hooks flags -> do
+          envArgs <- crossCabalArgs
+          let optFlags = optLevelFlags (withOptimization lbi)
+              extraFlags = optFlags <> envArgs
+          resultVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
+          _ <- forkIO $ do
+            result <- try (buildFrontendWithGhcjs extraFlags)
+            putMVar resultVar result
+          buildHook simpleUserHooks pd lbi hooks flags
+          hPutStrLn stderr "[Setup] Waiting for GHCJS frontend build..."
+          result <- takeMVar resultVar
+          case result of
+            Left e -> do
+              hPutStrLn stderr $ "[Setup] GHCJS build failed: " <> show e
+              exitFailure
+            Right () -> do
+              hPutStrLn stderr "[Setup] GHCJS frontend build complete."
+              linkFrontendAssets optFlags
+      }
 
 findGhcjsCabal :: IO (String, [String] -> [String])
 findGhcjsCabal = do
@@ -63,7 +64,7 @@ buildFrontendWithGhcjs extraFlags = do
   (ghcjsCabal, mkArgs) <- findGhcjsCabal
   let distJs = projectRoot </> "dist-js"
 
-  let inRoot cmd args = (proc cmd args) { cwd = Just projectRoot }
+  let inRoot cmd args = (proc cmd args) {cwd = Just projectRoot}
       callInRoot cmd args =
         withCreateProcess (inRoot cmd args) $ \_ _ _ ph -> do
           ec <- waitForProcess ph
@@ -83,7 +84,7 @@ linkFrontendAssets extraFlags = do
 
   createDirectoryIfMissing True dataDir
 
-  let inRoot cmd args = (proc cmd args) { cwd = Just projectRoot }
+  let inRoot cmd args = (proc cmd args) {cwd = Just projectRoot}
 
   binPathRaw <- readCreateProcess (inRoot ghcjsCabal (mkArgs (["list-bin", "frontend", "--builddir=" <> distJs] <> extraFlags))) ""
   let binPath = strip binPathRaw
@@ -91,8 +92,8 @@ linkFrontendAssets extraFlags = do
 
   jsexeExists <- doesDirectoryExist jsexeDir
   unless jsexeExists $
-    fail $ "[Setup] GHCJS output directory not found: " <> jsexeDir
+    fail $
+      "[Setup] GHCJS output directory not found: " <> jsexeDir
 
   symlink jsexeDir (dataDir </> "frontend.jsexe")
   symlink (projectRoot </> "static" </> "generated" </> "data" </> "static") (dataDir </> "static")
-

@@ -4,7 +4,7 @@ module Obelisk.Asset.Symlink
 
 import Control.Monad
 import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import System.Directory
 import System.FilePath.Posix
 import System.PosixCompat.Files

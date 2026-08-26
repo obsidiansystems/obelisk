@@ -1,8 +1,9 @@
-import qualified Data.Text as T
+import Data.Text qualified as T
+import System.Environment
+
 import Obelisk.Asset.Gather
 import Obelisk.Asset.Promoted
 import Obelisk.Asset.Symlink
-import System.Environment
 
 main :: IO ()
 main = do
@@ -14,8 +15,10 @@ main = do
   paths <- gatherHashedPaths root
   if moduleOnly
     then writeStaticModule paths haskellTarget (T.pack moduleName)
-    else writeStaticProject paths haskellTarget $ StaticConfig
-      { _staticConfig_packageName = T.pack packageName
-      , _staticConfig_moduleName = T.pack moduleName
-      }
+    else
+      writeStaticProject paths haskellTarget $
+        StaticConfig
+          { _staticConfig_packageName = T.pack packageName
+          , _staticConfig_moduleName = T.pack moduleName
+          }
   copyAndSymlink paths root fileTarget

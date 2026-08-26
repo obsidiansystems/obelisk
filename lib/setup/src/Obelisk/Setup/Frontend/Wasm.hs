@@ -1,13 +1,16 @@
-{-# LANGUAGE LambdaCase #-}
-
 -- | Frontend Setup.hs hook for WASM. Cross-compiles the frontend with
 -- wasm32-wasi in a background thread during pre-build, assembles the jsexe
 -- directory (post-link.mjs, shim, wasi-shim), then symlinks the output and
 -- static assets into @frontend\/data\/@ after build completes.
 module Obelisk.Setup.Frontend.Wasm (main) where
 
+import Control.Concurrent (forkIO)
+import Control.Concurrent.MVar
+import Control.Exception (SomeException, try)
+import Control.Monad (forM_, unless)
 import Distribution.Simple
 import Distribution.Simple.LocalBuildInfo (withOptimization)
+import Paths_obelisk_setup (getDataFileName)
 import System.Directory
   ( copyFile
   , createDirectoryIfMissing
@@ -17,50 +20,49 @@ import System.Directory
   , removeFile
   )
 import System.Environment (lookupEnv)
-import System.FilePath ((</>), takeExtension)
+import System.Exit (ExitCode (..), exitFailure)
+import System.FilePath (takeExtension, (</>))
 import System.IO (hPutStrLn, stderr)
 import System.Process (CreateProcess (..), proc, readCreateProcess, waitForProcess, withCreateProcess)
-import System.Exit (ExitCode (..), exitFailure)
-
-import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar
-import Control.Exception (SomeException, try)
-import Control.Monad (forM_, unless)
 
 import Obelisk.Setup.Utils (crossCabalArgs, findProjectRoot, optLevelFlags, strip, symlink)
-import Paths_obelisk_setup (getDataFileName)
 
 main :: IO ()
-main = defaultMainWithHooks simpleUserHooks
-  { buildHook = \pd lbi hooks flags -> do
-      envArgs <- crossCabalArgs
-      let optFlags = optLevelFlags (withOptimization lbi)
-          extraFlags = optFlags <> envArgs
-      resultVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
-      _ <- forkIO $ do
-        result <- try (buildFrontendWithWasm extraFlags)
-        putMVar resultVar result
-      buildHook simpleUserHooks pd lbi hooks flags
-      hPutStrLn stderr "[Setup] Waiting for WASM frontend build..."
-      result <- takeMVar resultVar
-      case result of
-        Left e -> do
-          hPutStrLn stderr $ "[Setup] WASM build failed: " <> show e
-          exitFailure
-        Right () -> do
-          hPutStrLn stderr "[Setup] WASM frontend build complete."
-          assembleAndLinkFrontend optFlags
-  }
+main =
+  defaultMainWithHooks
+    simpleUserHooks
+      { buildHook = \pd lbi hooks flags -> do
+          envArgs <- crossCabalArgs
+          let optFlags = optLevelFlags (withOptimization lbi)
+              extraFlags = optFlags <> envArgs
+          resultVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
+          _ <- forkIO $ do
+            result <- try (buildFrontendWithWasm extraFlags)
+            putMVar resultVar result
+          buildHook simpleUserHooks pd lbi hooks flags
+          hPutStrLn stderr "[Setup] Waiting for WASM frontend build..."
+          result <- takeMVar resultVar
+          case result of
+            Left e -> do
+              hPutStrLn stderr $ "[Setup] WASM build failed: " <> show e
+              exitFailure
+            Right () -> do
+              hPutStrLn stderr "[Setup] WASM frontend build complete."
+              assembleAndLinkFrontend optFlags
+      }
 
 -- | Find one tool of the first wasm32 toolchain on PATH. For each prefix the
 -- @\<prefix\>@ wrapper comes first, which takes the tool name as its first
 -- argument, and @\<prefix\>-\<tool\>@ names the tool itself.
 findWasmTool :: String -> [String] -> IO (String, [String] -> [String])
 findWasmTool tool = \case
-  [] -> fail $
-    "[Setup] No wasm32 " <> tool <> " found on PATH. Tried the prefixes "
-      <> unwords wasmTargetPrefixes <> ". Are you in a nix shell?"
-
+  [] ->
+    fail $
+      "[Setup] No wasm32 "
+        <> tool
+        <> " found on PATH. Tried the prefixes "
+        <> unwords wasmTargetPrefixes
+        <> ". Are you in a nix shell?"
   prefix : rest ->
     findExecutable prefix >>= \case
       Just _ -> pure (prefix, (tool :))
@@ -88,7 +90,7 @@ buildFrontendWithWasm extraFlags = do
   projectRoot <- findProjectRoot
   (wasmCabal, mkArgs) <- findWasmCabal
   let distWasm = projectRoot </> "dist-wasm"
-      inRoot cmd args = (proc cmd args) { cwd = Just projectRoot }
+      inRoot cmd args = (proc cmd args) {cwd = Just projectRoot}
       callInRoot cmd args =
         withCreateProcess (inRoot cmd args) $ \_ _ _ ph -> do
           ec <- waitForProcess ph
@@ -106,11 +108,13 @@ assembleAndLinkFrontend extraFlags = do
   let distWasm = projectRoot </> "dist-wasm"
       jsexeDir = distWasm </> "frontend.jsexe"
       dataDir = projectRoot </> "frontend" </> "data"
-      inRoot cmd args = (proc cmd args) { cwd = Just projectRoot }
+      inRoot cmd args = (proc cmd args) {cwd = Just projectRoot}
 
   -- Find the compiled .wasm binary
-  binPathRaw <- readCreateProcess
-    (inRoot wasmCabal (mkArgs (["list-bin", "frontend", "--builddir=" <> distWasm] <> extraFlags))) ""
+  binPathRaw <-
+    readCreateProcess
+      (inRoot wasmCabal (mkArgs (["list-bin", "frontend", "--builddir=" <> distWasm] <> extraFlags)))
+      ""
   let wasmBin = strip binPathRaw
 
   -- Create jsexe assembly directory
@@ -156,7 +160,8 @@ copyWasiShim jsexeDir = do
   let distDir = shimPath </> "dist"
   distExists <- doesDirectoryExist distDir
   unless distExists $
-    fail $ "[Setup] OBELISK_WASI_SHIM dist directory not found: " <> distDir
+    fail $
+      "[Setup] OBELISK_WASI_SHIM dist directory not found: " <> distDir
   files <- listDirectory distDir
   let jsFiles = filter (\f -> takeExtension f == ".js") files
   forM_ jsFiles $ \f -> do
@@ -201,4 +206,3 @@ optimizeWasm wasmFile = do
 -- bindist is built for @wasm32-wasi@.
 wasmTargetPrefixes :: [String]
 wasmTargetPrefixes = ["wasm32-unknown-wasi", "wasm32-wasi"]
-

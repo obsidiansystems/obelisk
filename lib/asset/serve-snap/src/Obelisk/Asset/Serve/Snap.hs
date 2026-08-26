@@ -1,5 +1,3 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE OverloadedStrings #-}
 -- | Serve preprocessed assets using Snap.
 module Obelisk.Asset.Serve.Snap
   ( serveAssets
@@ -9,34 +7,45 @@ module Obelisk.Asset.Serve.Snap
   , getAssetPath
   ) where
 
-import Obelisk.Asset.Accept (Encoding (..), acceptEncodingBody, chooseEncoding, missingAcceptableEncodings)
-import Obelisk.Snap.Extras
-
-import Snap
-  (MonadSnap, getHeader, getRequest, getsRequest, modifyResponse, pass, redirect, sendFile, setContentLength, setContentType, setHeader, setResponseCode)
-import Snap.Util.FileServe (fileType, getSafePath, serveFile)
-import Snap.Internal.Util.FileServe (checkRangeReq)
-
 import Control.Applicative ((<|>))
-import Control.Exception (handleJust, try, throwIO)
-import Control.Monad (forM, liftM, unless)
+import Control.Exception (handleJust, throwIO, try)
+import Control.Monad (forM, unless)
+import Obelisk.Snap.Extras
+import Snap
+  ( MonadSnap
+  , getHeader
+  , getRequest
+  , getsRequest
+  , modifyResponse
+  , pass
+  , redirect
+  , sendFile
+  , setContentLength
+  , setContentType
+  , setHeader
+  , setResponseCode
+  )
+import Snap.Internal.Util.FileServe (checkRangeReq)
+import Snap.Util.FileServe (fileType, getSafePath, serveFile)
+
+import Obelisk.Asset.Accept (Encoding (..), acceptEncodingBody, chooseEncoding, missingAcceptableEncodings)
 #if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail
 #endif
 import Control.Monad.IO.Class (liftIO)
-import Data.Attoparsec.ByteString (parseOnly, endOfInput)
+import Data.Attoparsec.ByteString (endOfInput, parseOnly)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+import Data.ByteString qualified as BS
 import Data.List (isSuffixOf, sort)
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
 #endif
-import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.Text qualified as T
+import Data.Text.Encoding (decodeUtf8Lenient, encodeUtf8)
 import System.Directory (getDirectoryContents)
-import System.FilePath ((</>), splitFileName, takeDirectory)
+import System.FilePath (splitFileName, takeDirectory, (</>))
 import System.IO.Error (isDoesNotExistError)
-import System.PosixCompat.Files (getFileStatus, fileSize)
+import System.PosixCompat.Files (fileSize, getFileStatus)
 
 -- | Serve static assets from an asset directory generated via @assets.nix@ or, failing that, from a regular directory.
 --
@@ -84,24 +93,25 @@ serveAsset' doRedirect base fallback p = do
       conditionalOnModification <- getsRequest $ getHeader "If-Modified-Since"
       case conditionalOnModification of
         Nothing -> do
-          encodedFiles <- liftM (filter (`notElem` [".", ".."])) $ liftIO $ getDirectoryContents $ base </> p </> "encodings"
-          availableEncodings <- liftM (map snd . sort) $ forM encodedFiles $ \f -> do
+          encodedFiles <- fmap (filter (`notElem` [".", ".."])) $ liftIO $ getDirectoryContents $ base </> p </> "encodings"
+          availableEncodings <- fmap (map snd . sort) $ forM encodedFiles $ \f -> do
             stat <- liftIO $ getFileStatus $ base </> p </> "encodings" </> f
-            return (fileSize stat, Encoding $ encodeUtf8 $ T.pack f)
+            pure (fileSize stat, Encoding $ encodeUtf8 $ T.pack f)
           acceptEncodingRaw <- getsRequest $ getHeader "Accept-Encoding"
           ae <- case acceptEncodingRaw of
-            Nothing -> return missingAcceptableEncodings
+            Nothing -> pure missingAcceptableEncodings
             Just aer -> case parseOnly (acceptEncodingBody <* endOfInput) aer of
-              Right ae -> return ae
+              Right ae -> pure ae
               Left err -> error err
-          Just (Encoding e) <- return $ chooseEncoding availableEncodings ae
+          Just (Encoding e) <- pure $ chooseEncoding availableEncodings ae
           modifyResponse $ setHeader "Content-Encoding" e . setHeader "Vary" "Accept-Encoding"
-          if doRedirect then cachePermanently else doNotCache --TODO: Use Etags when not redirecting
-          let finalFilename = base </> p </> "encodings" </> T.unpack (decodeUtf8 e)
+          if doRedirect then cachePermanently else doNotCache -- TODO: Use Etags when not redirecting
+          let finalFilename = base </> p </> "encodings" </> T.unpack (decodeUtf8Lenient e)
           stat <- liftIO $ getFileStatus finalFilename
-          modifyResponse $ setHeader "Last-Modified" "Thu, 1 Jan 1970 00:00:00 GMT"
-            . setHeader "Accept-Ranges" "bytes"
-            . setContentType (fileType modernMimeTypes p)
+          modifyResponse $
+            setHeader "Last-Modified" "Thu, 1 Jan 1970 00:00:00 GMT"
+              . setHeader "Accept-Ranges" "bytes"
+              . setContentType (fileType modernMimeTypes p)
           let size = fromIntegral $ fileSize stat
           req <- getRequest
           -- Despite the name, this function actually does all of the work for
@@ -116,32 +126,40 @@ serveAsset' doRedirect base fallback p = do
     Right "redirect" -> do
       mtarget <- liftIO $ getAssetTarget $ base </> p
       case mtarget of
-        Just target -> if doRedirect
-                       then do
-                         doNotCache
-                         redirect target
-                       else do
-                         serveAsset' doRedirect base fallback $ takeDirectory p </> T.unpack (decodeUtf8 target)
+        Just target ->
+          if doRedirect
+            then do
+              doNotCache
+              redirect target
+            else do
+              serveAsset' doRedirect base fallback $ takeDirectory p </> T.unpack (decodeUtf8Lenient target)
         Nothing -> do
           serveFile $ fallback </> p
-    Right unknown -> error $ T.unpack ("serveAssets': Unknown asset " <> decodeUtf8 unknown)
-    Left err | isDoesNotExistError err -> (doNotCache >> serveFileIfExists (fallback </> p)) <|> do
-                 let (dirname, filename) = splitFileName p
-                     unhashedFilename = drop 1 $ dropWhile (/= '-') filename
-                 if null unhashedFilename then pass else do
-                   doNotCache
-                   serveFileIfExists $ fallback </> dirname </> unhashedFilename
-             | otherwise -> liftIO $ throwIO err
+    Right unknown -> error $ T.unpack ("serveAssets': Unknown asset " <> decodeUtf8Lenient unknown)
+    Left err
+      | isDoesNotExistError err ->
+          (doNotCache >> serveFileIfExists (fallback </> p)) <|> do
+            let (dirname, filename) = splitFileName p
+                unhashedFilename = drop 1 $ dropWhile (/= '-') filename
+            if null unhashedFilename
+              then pass
+              else do
+                doNotCache
+                serveFileIfExists $ fallback </> dirname </> unhashedFilename
+      | otherwise -> liftIO $ throwIO err
 
 -- | If the given file exists in a hashed location, return that location.  The
 -- resulting FilePath will be relative to @base@, just like @assetPath@ is.
 getAssetPath
-  :: FilePath -- ^ @base@: Path to asset directory
-  -> FilePath -- ^ @assetPath@: Path to non-hashed asset within the asset directory
-  -> IO (Maybe FilePath) -- ^ Path to hashed asset within the asset directory, if it exists
+  :: FilePath
+  -- ^ @base@: Path to asset directory
+  -> FilePath
+  -- ^ @assetPath@: Path to non-hashed asset within the asset directory
+  -> IO (Maybe FilePath)
+  -- ^ Path to hashed asset within the asset directory, if it exists
 getAssetPath base p = do
   target <- getAssetTarget $ base </> p
-  return $ fmap ((takeDirectory p </>) . T.unpack . decodeUtf8) target
+  pure $ fmap ((takeDirectory p </>) . T.unpack . decodeUtf8Lenient) target
 
 -- | Given a file path into an asset directory prepared by @assets.nix@, read
 -- the target path from the metadata if it exists. Returns @Nothing@ when the
@@ -149,6 +167,6 @@ getAssetPath base p = do
 getAssetTarget :: FilePath -> IO (Maybe ByteString)
 getAssetTarget p =
   handleJust
-    (\ e  -> if isDoesNotExistError e then Just () else Nothing)
-    (\ () -> return Nothing)
-    (liftM Just $ BS.readFile $ p </> "target")
+    (\e -> if isDoesNotExistError e then Just () else Nothing)
+    (\() -> pure Nothing)
+    (fmap Just $ BS.readFile $ p </> "target")

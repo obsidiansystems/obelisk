@@ -9,11 +9,13 @@ import System.FilePath ((</>))
 import Obelisk.Setup.Utils (findProjectRoot, symlink)
 
 main :: IO ()
-main = defaultMainWithHooks simpleUserHooks
-  { preBuild = \args flags -> do
-      linkAssets
-      preBuild simpleUserHooks args flags
-  }
+main =
+  defaultMainWithHooks
+    simpleUserHooks
+      { preBuild = \args flags -> do
+          linkAssets
+          preBuild simpleUserHooks args flags
+      }
 
 linkAssets :: IO ()
 linkAssets = do

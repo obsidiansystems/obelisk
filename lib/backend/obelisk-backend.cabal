@@ -1,9 +1,52 @@
+cabal-version: 2.2
 name: obelisk-backend
 version: 0.1
-cabal-version: >= 1.2
 build-type: Simple
 
+common common
+  default-language: Haskell2010
+
+  default-extensions:
+      ApplicativeDo
+    , BangPatterns
+    , CPP
+    , ConstraintKinds
+    , DataKinds
+    , DefaultSignatures
+    , DeriveFunctor
+    , DeriveGeneric
+    , EmptyCase
+    , EmptyDataDecls
+    , FlexibleContexts
+    , FlexibleInstances
+    , FunctionalDependencies
+    , GADTs
+    , GeneralizedNewtypeDeriving
+    , ImportQualifiedPost
+    , KindSignatures
+    , LambdaCase
+    , LiberalTypeSynonyms
+    , MultiParamTypeClasses
+    , NumDecimals
+    , OverloadedStrings
+    , PackageImports
+    , PatternSynonyms
+    , QuantifiedConstraints
+    , RankNTypes
+    , RecursiveDo
+    , ScopedTypeVariables
+    , StandaloneDeriving
+    , TemplateHaskell
+    , TemplateHaskellQuotes
+    , TupleSections
+    , TypeApplications
+    , TypeFamilies
+    , TypeOperators
+    , UndecidableInstances
+    , ViewPatterns
+
 library
+  import: common
   hs-source-dirs: src
   build-depends: base,
                  bytestring,

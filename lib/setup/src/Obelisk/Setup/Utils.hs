@@ -1,4 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 -- | Shared utilities for Obelisk Setup.hs hooks.
 module Obelisk.Setup.Utils
   ( findProjectRoot
@@ -11,8 +10,6 @@ module Obelisk.Setup.Utils
 import Control.Exception (IOException, catch)
 import Control.Monad (unless, when)
 import Distribution.Simple.Compiler (OptimisationLevel (..))
-import System.Environment (lookupEnv)
-
 import System.Directory
   ( createFileLink
   , doesDirectoryExist
@@ -21,6 +18,7 @@ import System.Directory
   , pathIsSymbolicLink
   , removeFile
   )
+import System.Environment (lookupEnv)
 import System.FilePath (takeDirectory, (</>))
 import System.IO (hPutStrLn, stderr)
 
@@ -32,10 +30,11 @@ findProjectRoot = getCurrentDirectory >>= go
       exists <- doesFileExist (dir </> "cabal.project")
       if exists
         then pure dir
-        else let parent = takeDirectory dir
-             in if parent == dir
-                then fail "[Setup] Could not find cabal.project (project root)"
-                else go parent
+        else
+          let parent = takeDirectory dir
+          in if parent == dir
+               then fail "[Setup] Could not find cabal.project (project root)"
+               else go parent
 
 -- | Create a symlink idempotently. Removes stale symlinks; skips if a real
 -- directory already exists at the target location.
@@ -56,11 +55,12 @@ crossCabalArgs = maybe [] words <$> lookupEnv "OBELISK_CROSS_CABAL_ARGS"
 -- Uses @-O@ rather than @--ghc-options=-O@ so that cabal's build directory
 -- layout (e.g. @noopt/@) matches the optimization level.
 optLevelFlags :: OptimisationLevel -> [String]
-optLevelFlags NoOptimisation      = ["-O0"]
-optLevelFlags NormalOptimisation   = ["-O1"]
-optLevelFlags MaximumOptimisation  = ["-O2"]
+optLevelFlags NoOptimisation = ["-O0"]
+optLevelFlags NormalOptimisation = ["-O1"]
+optLevelFlags MaximumOptimisation = ["-O2"]
 
 -- | Strip leading and trailing whitespace.
 strip :: String -> String
 strip = reverse . dropWhile isSpace . reverse . dropWhile isSpace
-  where isSpace c = c == ' ' || c == '\n' || c == '\r' || c == '\t'
+  where
+    isSpace c = c == ' ' || c == '\n' || c == '\r' || c == '\t'

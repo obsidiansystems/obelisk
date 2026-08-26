@@ -1,19 +1,3 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
-
 module Obelisk.Frontend
   ( ObeliskWidget
   , Frontend (..)
@@ -26,7 +10,6 @@ module Obelisk.Frontend
   , module Obelisk.Frontend.Cookie
   ) where
 
-
 #ifdef __GLASGOW_HASKELL__
 #if __GLASGOW_HASKELL__ < 810
 import Data.Monoid ((<>))
@@ -37,8 +20,6 @@ import Data.Functor (void)
 #endif
 #endif
 
-import Prelude hiding ((.))
-
 import Control.Category
 import Control.Lens
 import Control.Monad.Fix
@@ -46,30 +27,32 @@ import Control.Monad.IO.Class
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
-import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
+import Control.Monad.Trans.Maybe (MaybeT (..), runMaybeT)
 import Data.ByteString (ByteString)
 import Data.Foldable (for_)
 import Data.Map (Map)
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
-import qualified GHCJS.DOM as DOM
-import qualified GHCJS.DOM.Types as DOM
-import qualified GHCJS.DOM.History as DOM
-import qualified GHCJS.DOM.Window as DOM
-import Language.Javascript.JSaddle (MonadJSM, JSM, jsNull)
 import GHCJS.DOM (currentDocument)
-import "ghcjs-dom" GHCJS.DOM.Document (getHead)
+import GHCJS.DOM qualified as DOM
+import GHCJS.DOM.History qualified as DOM
 import GHCJS.DOM.Node (Node, removeChild_)
-import GHCJS.DOM.NodeList (IsNodeList, item, getLength)
+import GHCJS.DOM.NodeList (IsNodeList, getLength, item)
 import GHCJS.DOM.ParentNode (querySelectorAll)
-import Obelisk.Frontend.Cookie
+import GHCJS.DOM.Types qualified as DOM
+import GHCJS.DOM.Window qualified as DOM
+import Language.Javascript.JSaddle (JSM, MonadJSM, jsNull)
+import Obelisk.Configs
+import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
+import Obelisk.ExecutableConfig.Lookup qualified as Lookup
 import Obelisk.Route.Frontend
 import Reflex.Dom.Core
 import Reflex.Host.Class
-import Obelisk.Configs
-import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
-import qualified Obelisk.ExecutableConfig.Lookup as Lookup
 import Web.Cookie
+import "ghcjs-dom" GHCJS.DOM.Document (getHead)
+import Prelude hiding ((.))
+
+import Obelisk.Frontend.Cookie
 
 type ObeliskWidget t route m =
   ( DomBuilder t m
@@ -110,7 +93,7 @@ data Frontend route = Frontend
 
 baseTag :: forall route t m. ObeliskWidget t route m => RoutedT t route m ()
 baseTag =
-  elAttr "base" ("href" =: "/") blank --TODO: Figure out the base URL from the routes
+  elAttr "base" ("href" =: "/") blank -- TODO: Figure out the base URL from the routes
 
 removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
@@ -128,7 +111,7 @@ nodeListNodes es = do
   len <- getLength es
   -- Warning! len is unsigned. If the NodeList is empty, we must avoid
   -- accidentally traversing over [0..maxBound::Word]
-  nodes <- traverse (item es) $ if len == 0 then [] else [0..len-1]
+  nodes <- traverse (item es) $ if len == 0 then [] else [0 .. len - 1]
   pure $ catMaybes nodes
 
 setInitialRoute :: Bool -> JSM ()
@@ -137,16 +120,18 @@ setInitialRoute useHash = do
   initialLocation <- DOM.getLocation window
   initialUri <- getLocationUri initialLocation
   history <- DOM.getHistory window
-  DOM.replaceState history jsNull ("" :: Text) $ Just $
-    show $ setAdaptedUriPath useHash "/" initialUri
+  DOM.replaceState history jsNull ("" :: Text) $
+    Just $
+      show $
+        setAdaptedUriPath useHash "/" initialUri
 
 data FrontendMode = FrontendMode
   { _frontendMode_hydrate :: Bool
-    -- ^ There is already a rendering of the DOM in place; hydrate it rather
-    -- than building new DOM
+  -- ^ There is already a rendering of the DOM in place; hydrate it rather
+  -- than building new DOM
   , _frontendMode_adjustRoute :: Bool
-    -- ^ The page can't use regular routes, so encode routes into the hash
-    -- instead
+  -- ^ The page can't use regular routes, so encode routes into the hash
+  -- instead
   }
 
 -- | Run the frontend, setting the initial route to "/" on platforms where no
@@ -154,29 +139,12 @@ data FrontendMode = FrontendMode
 -- Selects FrontendMode based on platform; this doesn't work for jsaddle-warp
 runFrontend
   :: forall backendRoute route
-  .  Encoder Identity Identity (R (FullRoute backendRoute route)) PageName
+   . Encoder Identity Identity (R (FullRoute backendRoute route)) PageName
   -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
-  let mode = FrontendMode
-        { _frontendMode_hydrate =
-#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
-          True
-#else
-          False
-#endif
-        , _frontendMode_adjustRoute =
-#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
-          False
-#else
-          True
-#endif
-        }
-#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
-  configs <- Lookup.getConfigs
-#else
-  configs <- liftIO Lookup.getConfigs
-#endif
+  let mode = platformFrontendMode
+  configs <- lookupConfigs
   when (_frontendMode_hydrate mode) removeHTMLConfigs
   -- There's no fundamental reason that adjustRoute needs to control setting the
   -- initial route and *also* the useHash parameter; that's why these are
@@ -185,9 +153,32 @@ runFrontend validFullEncoder frontend = do
     setInitialRoute $ _frontendMode_adjustRoute mode
   runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
 
+-- A browser build arrives with server-rendered markup, a route already in the
+-- page, and configs reachable from JSM, so it hydrates and leaves the route
+-- alone. Every other platform renders from scratch and reads configs in IO.
+#if defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)
+platformFrontendMode :: FrontendMode
+platformFrontendMode = FrontendMode
+  { _frontendMode_hydrate = True
+  , _frontendMode_adjustRoute = False
+  }
+
+lookupConfigs :: JSM (Map Text ByteString)
+lookupConfigs = Lookup.getConfigs
+#else
+platformFrontendMode :: FrontendMode
+platformFrontendMode = FrontendMode
+  { _frontendMode_hydrate = False
+  , _frontendMode_adjustRoute = True
+  }
+
+lookupConfigs :: JSM (Map Text ByteString)
+lookupConfigs = liftIO Lookup.getConfigs
+#endif
+
 runFrontendWithConfigsAndCurrentRoute
   :: forall backendRoute frontendRoute
-  .  FrontendMode
+   . FrontendMode
   -> Map Text ByteString
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName
   -> Frontend (R frontendRoute)
@@ -197,7 +188,8 @@ runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend = d
       errorLeft = \case
         Left _ -> error "runFrontend: Unexpected non-app ObeliskRoute reached the frontend. This shouldn't happen."
         Right x -> Identity x
-      w :: ( RawDocument (DomBuilderSpace (HydrationDomBuilderT s DomTimeline m)) ~ DOM.Document
+      w
+        :: ( RawDocument (DomBuilderSpace (HydrationDomBuilderT s DomTimeline m)) ~ DOM.Document
            , Ref (Performable m) ~ Ref IO
            , Ref m ~ Ref IO
            , DomBuilder DomTimeline (HydrationDomBuilderT s DomTimeline m)
@@ -250,17 +242,26 @@ renderFrontendHtml
   -> FrontendWidgetT r ()
   -> m ByteString
 renderFrontendHtml configs cookies urlEnc route frontend headExtra bodyExtra = do
-  --TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
-  html <- fmap snd $ liftIO $ renderStatic $ runHydratableT $ fmap fst $ runCookiesT cookies $ runConfigsT configs $ flip runRouteToUrlT urlEnc $ runSetRouteT $ flip runRoutedT (pure route) $
-    -- The lang attribute only needs to exist server-side: hydration appends
-    -- into the existing head/body and never replaces the html element.
-    elAttr "html" ("lang" =: "en") $ do
-      el "head" $ do
-        baseTag
-        injectExecutableConfigs configs
-        _frontend_head frontend
-        headExtra
-      el "body" $ do
-        _frontend_body frontend
-        bodyExtra
-  return $ "<!DOCTYPE html>" <> html
+  -- TODO: We should probably have a "NullEventWriterT" or a frozen reflex timeline
+  html <- fmap snd $
+    liftIO $
+      renderStatic $
+        runHydratableT $
+          fmap fst $
+            runCookiesT cookies $
+              runConfigsT configs $
+                flip runRouteToUrlT urlEnc $
+                  runSetRouteT $
+                    flip runRoutedT (pure route) $
+                      -- The lang attribute only needs to exist server-side: hydration appends
+                      -- into the existing head/body and never replaces the html element.
+                      elAttr "html" ("lang" =: "en") $ do
+                        el "head" $ do
+                          baseTag
+                          injectExecutableConfigs configs
+                          _frontend_head frontend
+                          headExtra
+                        el "body" $ do
+                          _frontend_body frontend
+                          bodyExtra
+  pure $ "<!DOCTYPE html>" <> html
