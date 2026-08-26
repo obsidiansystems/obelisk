@@ -188,7 +188,7 @@ in {
 }
 ```
 
-Then build with `nix-build release.nix -A serverExe` etc. Use `nix repl` to explore available attributes.
+Then build with `nix-build release.nix -A skeleton.serverExe` etc. Use `nix repl` to explore available attributes.
 
 ### How do I fix "Ambiguous module name" errors?
 

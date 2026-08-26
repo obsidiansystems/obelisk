@@ -57,6 +57,26 @@ Wherever possible, pull requests should add a single feature or fix a single bug
 
 Your pull request should add no new warnings to the project. It should also generally not disable any warnings.
 
+#### Formatting and lint
+
+`lib/` follows the shared Obsidian Haskell style. It lives in the `deps/style.hs` submodule, and `lib/fourmolu.yaml` and `lib/.hlint.yaml` symlink to it, so an editor or a bare `fourmolu` run inside `lib/` picks it up with no flags.
+
+Both config files are also runnable Nix shebang scripts, so each formats or lints using itself as the config:
+```bash
+./lib/fourmolu.yaml --mode inplace lib
+./lib/.hlint.yaml lib
+```
+
+CI checks the same two tools through nix:
+```bash
+nix-build release.nix -A lib.checks
+```
+
+Two things to know:
+
+- Neither tool typechecks. A green `-A lib.checks` does not mean the code compiles, so run the builds below as well.
+- fourmolu cannot parse a CPP directive inside a list or a record, and it silently mis-indents the statements after one in a `do` block. Keep `#if` between top-level declarations.
+
 #### Build and Test
 
 Make sure the project builds and that the tests pass! This will generally also be checked by CI before merge, but trying it yourself first means you'll catch problems earlier and your contribution can be merged that much sooner!
@@ -82,8 +102,15 @@ nix-build skeleton -A nixpkgs.serverExe.wasm
 
 Or one cell of the release matrix:
 ```bash
-nix-build release.nix -A serverExe.haskell-nix.wasm
-nix-build release.nix -A shell-build.nixpkgs.wasm
+nix-build release.nix -A skeleton.serverExe.haskell-nix.wasm
+nix-build release.nix -A skeleton.shell-build.nixpkgs.wasm
+nix-build release.nix -A lib.build.haskell-nix.wasi32.obelisk-route
+```
+
+Each part of the release also builds on its own:
+```bash
+nix-build lib/release.nix -A all
+nix-build skeleton/release.nix -A all
 ```
 
 
