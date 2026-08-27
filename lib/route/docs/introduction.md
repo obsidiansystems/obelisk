@@ -212,7 +212,7 @@ codebase then resolving the typed hole may be slow.
 
 ----
 
-If you're following along with either `ob run`, [`ghcid`](https://github.com/ndmitchell/ghcid), or
+If you're following along with either `ob-run`, [`ghcid`](https://github.com/ndmitchell/ghcid), or
 building as you go, the output will now contain two errors relating to our use of `enumEncoder`.
 
 The first is related to the `Universe` constraint from the [`universe` package](https://hackage.haskell.org/package/universe):

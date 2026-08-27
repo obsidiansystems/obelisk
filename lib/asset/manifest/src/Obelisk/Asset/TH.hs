@@ -1,7 +1,6 @@
-{-|
-Description:
-  Template Haskell for generating asset paths.
--}
+-- |
+-- Description:
+--   Template Haskell for generating asset paths.
 module Obelisk.Asset.TH
   ( assetPath
   , staticAssetRaw
@@ -10,13 +9,13 @@ module Obelisk.Asset.TH
   , staticAssetFilePathRaw
   ) where
 
-import Obelisk.Asset.Gather
-
 import Control.Monad
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import System.Directory
 import System.FilePath.Posix
+
+import Obelisk.Asset.Gather
 
 -- | Produces the hashed path of a file
 hashedAssetFilePath :: FilePath -> FilePath -> Q FilePath
@@ -85,5 +84,6 @@ staticAssetWorker
 staticAssetWorker root staticOut fp = do
   exists <- runIO $ doesFileExist $ staticOut </> fp
   when (not exists) $
-    fail $ "The file " <> fp <> " was not found in " <> staticOut
-  return $ LitE $ StringL $ root </> fp
+    fail $
+      "The file " <> fp <> " was not found in " <> staticOut
+  pure $ LitE $ StringL $ root </> fp

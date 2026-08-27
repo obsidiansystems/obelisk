@@ -9,31 +9,22 @@ Obelisk.ExecutableConfig serves two related purposes:
 
 ## Supported Platforms
 
-| Function | iOS | Android | Warp |Web backend + GHCJS |
-|----------|:---:|:-------:|:----:|:------------------:|
-| inject   | ✔   | ✔       |      | ✔                  |
-| get      | ✔   | ✔       | ✔    | ✔                  |
+The lookup library (`obelisk-executable-config-lookup`) provides two implementations of `get`, selected at build time:
 
-### iOS and Android
+- **Native / other** (`src-other`, used for the backend and `jsaddle-warp`): reads the configuration files from the `config` directory relative to the current directory.
+- **Frontend** (`src-js`, used for the cross-compiled `javascript`/`ghcjs`/`wasm32` frontend): retrieves the injected configuration data from the served `<head>`.
 
-`inject` is a Nix function that copies the specified configuration folder to a canonical location on the device.
+| Function | Native backend / Warp | Cross-compiled frontend (JS/GHCJS/WASM) |
+|----------|:---------------------:|:---------------------------------------:|
+| inject   | x                     |                                         |
+| get      | x                     | x                                       |
 
-`get` is a Haskell function that retrieves configuration files from the canonical location.
+### Native backend / Warp
 
-### Warp
+`inject` is a Haskell function that produces a snippet of HTML that must be appended to the `<head>` of the page that the backend serves (i.e., the entry point for the frontend application).
 
-There is currently no `inject` function for `jsaddle-warp`-based frontends.
+`get` is a Haskell function that reads the configuration files from the `config` directory relative to the current directory.
 
-`get` is a Haskell function that simply reads the configuration files relative to the current directory.
+### Cross-compiled frontend (JS/GHCJS/WASM)
 
-### Web backend + GHCJS
-
-#### Backend
-
-`inject` is a Haskell function that produces a snippet of HTML that must be appended to the `<head>` of the page that the backend serves (i.e., the entry point for the GHCJS application).
-
-`get` is a Haskell function that reads the configuration files relative to the current directory.
-
-#### GHCJS
-
-`get` is a Haskell function that can be run by the GHCJS frontend to retrieve the injected configuration data from the served `<head>`. There is no `inject` that is run in GHCJS.
+`get` is a Haskell function that runs in the frontend to retrieve the injected configuration data from the served `<head>`. There is no `inject` that runs in the frontend.

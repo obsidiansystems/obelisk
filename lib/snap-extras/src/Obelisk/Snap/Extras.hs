@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Snap.Extras
   ( cachePermanently
   , doNotCache
@@ -10,24 +9,22 @@ module Obelisk.Snap.Extras
 
 import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
+import Data.HashMap.Strict qualified as Map
 import Data.String
 import Snap.Core
 import Snap.Util.FileServe
 import System.Directory
 
-import qualified Data.HashMap.Strict as Map
-
-
 -- | Default mime types with some modern extras
 modernMimeTypes :: MimeMap
 modernMimeTypes =
-  defaultMimeTypes <> Map.fromList [ (".wasm", "application/wasm") ]
+  defaultMimeTypes <> Map.fromList [(".wasm", "application/wasm")]
 
 -- | Set response header for "permanent" caching
 cachePermanently :: MonadSnap m => m ()
 cachePermanently = do
   modifyResponse $ setHeader "Cache-Control" "public, max-age=315360000, immutable"
-  modifyResponse $ setHeader "Expires" "Tue, 01 Feb 2050 00:00:00 GMT" --TODO: This should be set to "approximately one year from the time the response is sent"
+  modifyResponse $ setHeader "Expires" "Tue, 01 Feb 2050 00:00:00 GMT" -- TODO: This should be set to "approximately one year from the time the response is sent"
 
 -- | Set response header to not cache
 doNotCache :: MonadSnap m => m ()
@@ -52,12 +49,16 @@ serveFileIfExistsAs mimeType f = do
 -- | Only run the given handler when the connection is "secure" (i.e. made with HTTPS)
 ensureSecure
   :: MonadSnap m
-  => Int -- ^ The port where this server answers HTTPS requests
-  -> m () -- ^ A handler to be run only when the connection is secure
+  => Int
+  -- ^ The port where this server answers HTTPS requests
+  -> m ()
+  -- ^ A handler to be run only when the connection is secure
   -> m ()
 ensureSecure port h = do
   s <- getsRequest rqIsSecure
-  if s then h else do
-    uri <- getsRequest rqURI
-    host <- getsRequest rqHostName --TODO: It might be better to use the canonical base of the server
-    redirect $ "https://" <> host <> (if port == 443 then "" else ":" <> fromString (show port)) <> uri
+  if s
+    then h
+    else do
+      uri <- getsRequest rqURI
+      host <- getsRequest rqHostName -- TODO: It might be better to use the canonical base of the server
+      redirect $ "https://" <> host <> (if port == 443 then "" else ":" <> fromString (show port)) <> uri

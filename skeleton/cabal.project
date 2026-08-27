@@ -1,3 +1,45 @@
+packages:
+  common
+  frontend
+
 optional-packages:
-  *
-write-ghc-environment-files: never
+  static/generated
+
+if !(arch(javascript) || arch(wasm32))
+  packages:
+    backend
+
+  optional-packages:
+    frontend/js
+    frontend/wasm
+    static/generated/custom
+
+-- Uncomment to develop obelisk libraries and reflex-dom locally.
+-- Not needed for normal development; nix provides these via source-repository-packages.
+--optional-packages:
+--  deps/obelisk/lib/*
+--  deps/obelisk/lib/*/*
+--
+--optional-packages:
+--  deps/obelisk/deps/reflex-dom/*
+
+multi-repl: True
+
+-- Mirrors the nix module's `optimizations.all = true`, so plain-cabal builds
+-- get the same flags as `nix-build`. ob-run/ob-repl override these with
+-- -O0 -fno-* on the command line for fast rebuilds.
+package *
+  ghc-options:
+    -O2
+    -fexpose-all-unfoldings
+    -fspecialise
+    -fspecialise-aggressively
+    -flate-specialise
+    -fcross-module-specialise
+
+if !(arch(javascript) || arch(wasm32))
+  package reflex-dom
+    flags: +use-warp -webkit2gtk
+
+if arch(wasm32)
+  shared: True

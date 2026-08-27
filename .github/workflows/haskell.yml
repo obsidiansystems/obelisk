@@ -7,7 +7,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ['8.6', '8.8', '8.10', '9.0', '9.2', '9.4', '9.6', '9.8', '9.10', '9.12']
+        ghc: ['8.10', '9.0', '9.2', '9.4', '9.6', '9.8', '9.10', '9.12', '9.14']
         os: ['ubuntu-latest', 'macos-13'] # https://github.com/haskell-actions/setup/issues/77
     runs-on: ${{ matrix.os }}
 
@@ -42,9 +42,6 @@ jobs:
         brew update
         brew install libsodium
 
-    - name: Set up cabal project file for CI
-      run: cd lib && cp cabal.project.ci cabal.project
-
     - name: Install dependencies
       run: |
         cabal update
@@ -53,3 +50,70 @@ jobs:
       run: cd lib && cabal build --enable-tests --enable-benchmarks all
     - name: Run tests
       run: cd lib && cabal test all
+
+  # The shared Obsidian style, from deps/style.hs. Its own job so a formatting
+  # failure reports on its own rather than behind the cross builds, and it needs
+  # neither haskell.nix nor import-from-derivation.
+  style:
+    runs-on: ubuntu-latest
+    name: style (fourmolu + hlint)
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # release.nix imports deps/style.hs at evaluation time, so a
+        # non-recursive clone cannot read the style checks at all.
+        submodules: recursive
+    - name: Install Nix
+      uses: cachix/install-nix-action@v27
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          extra-substituters = https://cache.nixos.org
+          extra-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+    - name: Check formatting and lint (release.nix -A lib.checks)
+      run: nix-build release.nix -A lib.checks
+
+  # Smoke-test the GHC 9.14 + WASM/GHCJS nix-haskell pipeline that the `next`
+  # branch is built around. This exercises nix, the cross-compiled frontends and
+  # the skeleton (the integration test).
+  nix-smoke:
+    runs-on: ubuntu-latest
+    name: nix smoke (x86_64-linux)
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # The repo pulls deps/nix-haskell and deps/reflex-dom in as submodules.
+        submodules: recursive
+    - name: Install Nix
+      uses: cachix/install-nix-action@v27
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          allow-import-from-derivation = true
+          extra-substituters = https://cache.nixos.org https://nixcache.reflex-frp.org https://cache.iog.io
+          extra-trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+
+    # WASM is the default frontend target on `next`, so it is the headline smoke
+    # build. The per-driver attrs live on the skeleton project; release.nix
+    # aggregates the same jobs (nix-build release.nix -A all).
+    - name: Build server + WASM frontend (skeleton -A haskell-nix.serverExe.wasm)
+      run: nix-build skeleton -A haskell-nix.serverExe.wasm
+
+    # GHCJS frontend smoke build (the alternative `js` target).
+    - name: Build server + GHCJS frontend (skeleton -A haskell-nix.serverExe.js)
+      run: nix-build skeleton -A haskell-nix.serverExe.js
+
+    # The same js target built through the nixpkgs driver.
+    - name: Build server + GHCJS frontend, nixpkgs driver (skeleton -A nixpkgs.serverExe.js)
+      run: nix-build skeleton -A nixpkgs.serverExe.js
+
+    # The nixpkgs driver reaches wasm through the ghc-wasm-meta bindist the
+    # skeleton imports for it.
+    - name: Build server + WASM frontend, nixpkgs driver (skeleton -A nixpkgs.serverExe.wasm)
+      run: nix-build skeleton -A nixpkgs.serverExe.wasm
+
+    # Optional / allowed-to-be-slow stretch build of the deployable container
+    # image. continue-on-error keeps it from blocking the smoke gate.
+    - name: Build container image (skeleton -A haskell-nix.containerImage.wasm) [optional, slow]
+      continue-on-error: true
+      run: nix-build skeleton -A haskell-nix.containerImage.wasm

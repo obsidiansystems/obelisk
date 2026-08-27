@@ -1,23 +1,15 @@
-{ system ? builtins.currentSystem
-, obelisk ? import ./.obelisk/impl {
-    inherit system;
-    iosSdkVersion = "16.1";
+{ system ? builtins.currentSystem, inputs ? {} }:
 
-    # You must accept the Android Software Development Kit License Agreement at
-    # https://developer.android.com/studio/terms in order to build Android apps.
-    # Uncomment and set this to `true` to indicate your acceptance:
-    # config.android_sdk.accept_license = false;
+# obelisk lives at deps/obelisk: a git submodule in a scaffolded project, and
+# a symlink in the obelisk repo (pointing at the repo root) and in --link
+# scaffolds (pointing at a local obelisk checkout, so it tracks that working
+# tree). Flake inputs win when present; flake.nix passes inputs.obelisk, which
+# is itself a path to deps/obelisk.
+let obeliskSrc =
+      if inputs ? obelisk
+      then inputs.obelisk
+      else ./deps/obelisk;
 
-    # In order to use Let's Encrypt for HTTPS deployments you must accept
-    # their terms of service at https://letsencrypt.org/repository/.
-    # Uncomment and set this to `true` to indicate your acceptance:
-    # terms.security.acme.acceptTerms = false;
-  }
-}:
-with obelisk;
-project ./. ({ ... }: {
-  android.applicationId = "systems.obsidian.obelisk.examples.minimal";
-  android.displayName = "Obelisk Minimal Example";
-  ios.bundleIdentifier = "systems.obsidian.obelisk.examples.minimal";
-  ios.bundleName = "Obelisk Minimal Example";
-})
+    obelisk = import obeliskSrc { inherit system inputs; };
+
+in obelisk.project (import ./project.nix)

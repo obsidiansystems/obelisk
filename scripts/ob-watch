@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# ob-watch: Continuous type-error feedback via ghcid, no server, no cross builds.
+set -euo pipefail
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  echo "Usage: ob-watch [TARGETS...] [-- GHCID_ARGS...]"
+  echo ""
+  echo "  Runs ghcid over 'cabal repl' with optimizations disabled and cross"
+  echo "  builds skipped, reporting type errors on every save at GHCi speed."
+  echo "  No server is started and the frontend is not cross-compiled."
+  echo "  TARGETS defaults to 'lib:backend lib:common lib:frontend'. Examples:"
+  echo "    ob-watch                       # watch backend, common, and frontend"
+  echo "    ob-watch lib:common            # watch the common library only"
+  echo "    ob-watch -- --warnings         # pass extra flags through to ghcid"
+  exit 0
+fi
+
+# Split arguments at '--' into targets and extra ghcid args.
+TARGETS=()
+EXTRA_ARGS=()
+SEEN_DASHDASH=false
+for arg in "$@"; do
+  if [[ "$arg" == "--" ]]; then
+    SEEN_DASHDASH=true
+  elif $SEEN_DASHDASH; then
+    EXTRA_ARGS+=("$arg")
+  else
+    TARGETS+=("$arg")
+  fi
+done
+
+if [[ ${#TARGETS[@]} -eq 0 ]]; then
+  TARGETS=(lib:backend lib:common lib:frontend)
+fi
+
+DEV_GHC_OPTIONS=(
+  --ghc-options=-O0
+  --ghc-options=-fno-specialise
+  --ghc-options=-fno-expose-all-unfoldings
+  --ghc-options=-fno-specialise-aggressively
+  --ghc-options=-fno-late-specialise
+  --ghc-options=-fno-cross-module-specialise
+)
+
+export OBELISK_CROSS_CABAL_ARGS="-O0 ${DEV_GHC_OPTIONS[*]}"
+exec ghcid -c "cabal repl ${TARGETS[*]} -O0 -f native ${DEV_GHC_OPTIONS[*]}" "${EXTRA_ARGS[@]}"

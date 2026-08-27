@@ -2,7 +2,161 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
-## Unreleased
+## 2.0.0.0
+
+Obelisk v2.0.0 promotes the `next` line to the mainline release. It is a
+breaking rewrite: v1 projects do not build against v2 unchanged. See
+`docs/migrating-to-v2.md` for the full migration mapping. Projects that need the old stack should stay on the
+preserved `release/1.x` line.
+
+* **GHC 8.10 to 9.14.** The toolchain moves to GHC 9.14.
+* **Frontend GHCJS to WASM.** WASM (`wasm32-unknown-wasi`) is the new default
+  frontend target; GHCJS remains available via `obelisk.frontend.target = "js"`.
+* **Build system reflex-platform to nix-haskell.** Builds are now driven by
+  nix-haskell/haskell.nix instead of reflex-platform, with obelisk's own
+  dependencies (`deps/nix-haskell`, `deps/reflex-dom`) as git submodules.
+  nix-haskell in turn carries its own nixpkgs and haskell.nix pins under
+  `pins/`.
+  Flakes are supported but optional: `nix-shell`/`nix-build` work throughout.
+* **`ob` CLI removed.** The Haskell `ob` command-line tool is gone, replaced by
+  shell scripts placed on `PATH` by the nix shell: `ob-run`, `ob-repl`,
+  `ob-watch` (ghcid error-watch), `ob-hoogle`, and the new `ob-init` (which
+  scaffolds a project with obelisk as a git submodule; also reachable as a
+  flake app: `nix run github:obsidiansystems/obelisk#init -- my-app`) and
+  `ob-deploy`. `ob-run` is a watch-and-rebuild dev server; v1's interpreted
+  in-process reload (ghcid + jsaddle-warp) is not yet restored and is the
+  flagship follow-up; see `docs/migrating-to-v2.md`. Plain-cabal workflows
+  (no nix shell) are documented in `docs/cabal.md`.
+* **Deployment model changed.** The managed `ob deploy` workflow
+  (`init`/`push`/`test`) is removed. Deploy via the `services.obelisk` NixOS
+  module, the produced OCI container image, or the minimal `ob-deploy` script.
+* **Mobile pipeline changed.** The native iOS/Android build pipeline is removed.
+  CapacitorJS is the new path to mobile apps; Reflex-Lynx is an ongoing research
+  direction.
+
+The sections below detail the rewrite summarized above: the nix build system
+is rebuilt around nix-haskell and a NixOS-style module system, replacing
+reflex-platform with direct haskell.nix integration, adding the WASM frontend
+target alongside GHCJS and GHC 9.14 support.
+
+### Vanilla cabal builds
+
+* Projects can now be built with plain `cabal build` / `cabal run` without any
+  nix wrapper. The `ob` CLI tool is no longer required for development.
+* `ob-run` development script uses `cabal run backend` directly with inotifywait
+  for file watching, forwarding optimization flags to cross-compilation builds.
+* `ob-repl` starts `cabal repl` with optimizations disabled for fast iteration.
+* Custom Setup.hs hooks (`obelisk-setup`) handle cross-compilation of the
+  frontend (WASM or GHCJS) and static asset generation transparently during
+  a normal `cabal build`, with no nix involvement at build time.
+
+### Nix module system
+
+* New `nix/module.nix` module with declarative options:
+  * `obelisk.static.path` / `obelisk.static.compress` / `obelisk.static.compressed`: static asset pipeline with cache-busting hashes, brotli + gzip compression
+  * `obelisk.frontend.target`: select `"js"` (GHCJS) or `"wasm"` (default) frontend compilation target
+  * `obelisk.frontend.js.{package,optimization,optimized,compress,compressed}`: GHCJS pipeline with closure-compiler (ADVANCED mode by default)
+  * `obelisk.frontend.wasm.{package,optimization,optimized,compress,compressed}`: WASM pipeline with wasm-opt + wasm-tools strip
+* The frontend bundle pipeline runs nix-haskell's `js-optimize`, `wasm-optimize` and `wasm-jsffi`. The `obelisk.frontend.{js,wasm}.optimization.*` options set the top layer of the `closure-compiler` and `wasm-opt` settings, so a project can still state any field at any layer. `obelisk.frontend.js.optimization.extraFlags` adds to the declared flags, while a direct `closure-compiler.extraFlags` replaces them
+* New `nix/lib.nix` with composable haskell.nix overrides: `buildTypeOverride`, `staticManifestOverride`, `frontendDataOverride`, `backendDataOverride`, and the `cleanSource` / `thunkSource` / `thunkSources` source helpers
+* All overrides use `mkOptionalPackages` to safely skip absent packages in cross-compilation projects
+* Dependency sources are declared as `inputs`: `nixpkgs` and `haskell-nix` come from the submodules under `deps/nix-haskell/pins`, the project's own flake inputs override them automatically (and are carried through to `config.inputs`), and `inputs.<name>` in `project.nix` wins over both
+* `source-repository-packages` takes a packed nix-thunk directly (no `obeliskLib.thunkSource` wrapper), and a `subdir` list, so a multi-package repository needs one entry rather than one per package
+* Project sources are filtered through the `.gitignore` they carry before being copied into the nix store (`clean-src`), so `dist-newstyle`, `result` and `.git` no longer land in every derivation that names the project source, or force a rehash after each build
+* Default compiler: each driver's own, GHC 9.14 for haskell.nix and GHC 9.12 for nixpkgs. Set `compiler.name` to change both drivers, or `<driver>.compiler.name` to change one
+* `nix/assets.nix` asset compression pipeline with brotli (quality 11) + gzip via `mkAssets` / `unionEncodings`
+
+### Two nix-haskell drivers
+
+* Projects build through either of nix-haskell's drivers: `haskell-nix` (the
+  default) or `nixpkgs` (the Haskell infrastructure of nixpkgs), selected by
+  the new `obelisk.driver` option. The nixpkgs driver builds no wasm GHC of
+  its own. It reaches the wasm target through a ghc-wasm-meta bindist, which
+  the skeleton imports for it, and `obelisk.frontend.target` still defaults
+  to `"js"` under it.
+* The project result is per-driver: `{ haskell-nix, nixpkgs, config, pkgs,
+  serverModule }`, with `exe`, `serverExe`, `containerImage`, `server` and
+  `shell` under each driver namespace: `nix-build -A haskell-nix.serverExe.wasm`,
+  `nix-build -A nixpkgs.serverExe.js`, `nix-shell -A haskell-nix`. The raw
+  package set moved from `.nixpkgs` (now the driver namespace) to `.pkgs`.
+* `release.nix` is a matrix of driver, wasm-meta and frontend target, with
+  a leaf for each of `serverExe`, `containerImage`, `shell` and
+  `shell-build`, plus an `all` aggregate: `nix-build release.nix -A all`,
+  `nix-build release.nix -A serverExe.haskell-nix.wasm` (the flake's
+  `packages.<system>.release`). `shell-build` builds the skeleton with plain
+  cabal inside the project's shell.
+* The skeleton flake exposes the project directly as
+  `legacyPackages.<system>`, so `nix build .#haskell-nix.serverExe.wasm`
+  works without a `default` segment.
+* The `nix/lib.nix` overrides are per-driver attrsets
+  (`buildTypeOverride.haskell-nix`, `staticManifestOverride.nixpkgs`, ...);
+  the `overrides` list in `project.nix` is now `haskell-nix.overrides`, and
+  per-package flags/patches/hooks are driver-neutral options
+  (`packages.<name>.*`, scoped per driver via `nixpkgs.packages.<name>.*`).
+* nix-haskell's `reflex-platform` pin is gone; obelisk no longer exposes a
+  `reflex-platform` flake input.
+
+### WASM frontend
+
+* Complete wasm32-wasi frontend compilation target producing a `frontend.jsexe` directory the backend serves unchanged
+* Browser bootstrap shim (`lib/setup/data/shim.js`, served as `all.js`) using async IIFE with dynamic `import()`, resolving assets relative to script URL
+* The shim compiles `frontend.wasm` while it downloads (`WebAssembly.instantiateStreaming`) and accepts runtime overrides (WASI argv/env, stdout/stderr sinks) via a `globalThis.__obelisk_wasm` object
+* The backend emits a `<link rel="preload" as="fetch">` hint for `frontend.wasm` on WASM deployments (detected from the compiled frontend assets at startup)
+* Vendored `@bjorn3/browser_wasi_shim` for WASI browser support
+* `wasm-opt` optimization and `wasm-tools strip` for production builds
+* GHC JSFFI extraction via `post-link.mjs`
+* The wasm Setup hook finds the cross toolchain under either target prefix: `wasm32-unknown-wasi`, which haskell.nix builds, and `wasm32-wasi`, which a ghc-wasm-meta bindist carries. A cabal build of the wasm frontend therefore works under both
+
+### obelisk-setup
+
+* New `obelisk-setup` package with reusable Setup.hs hooks:
+  * `Obelisk.Setup.Backend`: symlinks frontend assets into backend data dir
+  * `Obelisk.Setup.Frontend.Js`: GHCJS cross-compilation with optimization forwarding
+  * `Obelisk.Setup.Frontend.Wasm`: WASM cross-compilation with jsexe assembly, JSFFI extraction, optional wasm-opt/wasm-tools
+  * `Obelisk.Setup.Static`: static manifest generation via `obelisk-asset-manifest-generate`
+  * `Obelisk.Setup.Utils`: shared utilities (project root discovery, symlinks, cabal-level optimization flags)
+
+### Static asset generation
+
+* Replace hackage overlay approach with `obelisk-generated-static` / `obelisk-generated-static-custom` package pair:
+  * `obelisk-generated-static` (`build-type: Simple`) builds on all platforms including JS/WASM
+  * `obelisk-generated-static-custom` (`build-type: Custom`) runs Setup.hs to generate `Obelisk.Generated.Static` module, `buildable: False` on JS/WASM
+* `obelisk-asset-manifest-generate --module-only` generates only the Haskell module without overwriting the `.cabal` file
+* Fix GHC 9.14 `Symbol` name resolution (`GHC.Types.Symbol` vs `GHC.Internal.Types.Symbol`)
+
+### Backend
+
+* Add `_backendConfig_frontendGhcjsAssets` field to `BackendConfig` for separate frontend asset paths
+* The `GhcjsWidgets` in `_backendConfig_ghcjsWidgets` now receive a `GhcjsAppUrls` record (all.js URL plus optional `frontend.wasm` URL) instead of a bare all.js URL; `defaultGhcjsWidgets` additionally preloads `frontend.wasm` on WASM builds (new `preloadWasm` and `renderFrontendWasmPath` exports)
+
+### Development tools
+
+* `ob-run`: watch-and-rebuild development server with inotifywait, forwards optimization level to cross-builds via `OBELISK_CROSS_CABAL_ARGS`, proper cleanup of all child processes on exit
+* `ob-repl`: optimizations-disabled REPL, defaults to loading backend + common + frontend
+* `ob-hoogle`: local Hoogle documentation server with start/stop/restart, automatic cleanup on shell exit
+* `ob-init`: scaffolds a project from the skeleton (read from `$OBELISK_SKELETON`), pinning `deps/obelisk` as a git submodule at the revision scaffolded from; `--link` symlinks it to the local obelisk source instead (`$OBELISK_SRC`, the working tree the nix shell was entered from)
+
+### Deployment
+
+* `nix/server.nix`: NixOS module (`services.obelisk`) with nginx reverse proxy (WebSocket support), ACME/HTTPS, systemd service, firewall rules, domain redirects
+* `mkServerExe`: assembles flat deployment directory (backend binary + compressed assets)
+* `mkContainerImage`: OCI container image via `dockerTools.buildLayeredImage` for podman/docker
+
+### Project skeleton
+
+* `skeleton/`: minimal obelisk project template with complete directory structure:
+  * backend, frontend, common, static packages
+  * frontend-js and frontend-wasm cross-compilation wrappers
+  * `project.nix` with `source-repository-packages` from obelisk, cross-platform shell (ghcjs + wasi32), hoogle
+  * `cabal.project` with arch conditionals excluding native-only packages from cross-builds
+
+### Other
+
+* `flake.nix` exposing lib and docs packages
+* Generated module option documentation (`nix/docs.nix`)
+* Broadened CPP guards from `ghcjs_HOST_OS` to `defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)` throughout frontend code
+
+## Unreleased (pre-v2)
 
 * [#1038](https://github.com/obsidiansystems/obelisk/pull/1038): `Obelisk.Route`: Add `pathQueryEncoder` and `generalizeIdentity`
 * [#1071](https://github.com/obsidiansystems/obelisk/pull/1071): Support deployment information repository sub-directories
@@ -12,7 +166,7 @@ This project's release branch is `master`. This log is written from the perspect
 
 ## v1.3.0.0
 * [#1047](https://github.com/obsidiansystems/obelisk/pull/1047): Update default ios sdk to 15
-* [#1048](https://github.com/obsidiansystems/obelisk/pull/1048): Expose ghcIosAarch64 to projects 
+* [#1048](https://github.com/obsidiansystems/obelisk/pull/1048): Expose ghcIosAarch64 to projects
 * [#1046](https://github.com/obsidiansystems/obelisk/pull/1046): Add support for aarch64-darwin and aarch64-linux (see [supported platforms](https://github.com/reflex-frp/reflex-platform/blob/release/1.2.0.0/docs/platform-support.md)).
 
 ## v1.2.0.0

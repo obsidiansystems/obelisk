@@ -1,18 +1,6 @@
 packages:
-  ./executable-config/inject
-  ./executable-config/lookup
-  ./frontend
-  ./route
-  ./tabulation
+  *
+  asset/*
+  executable-config/*
 
-if !arch(javascript) && !arch(wasm32)
-  packages:
-    ./asset/manifest
-    ./asset/serve-snap
-    ./backend
-    ./command
-    ./run
-    ./selftest
-    ./snap-extras
-
-import: cabal.dependencies.project
+import: cabal.project.config

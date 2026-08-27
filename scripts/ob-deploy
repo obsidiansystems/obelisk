@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# ob-deploy: Build a NixOS system closure and switch a remote host to it.
+#
+# This is a minimal NixOS deploy helper. It builds the target host's
+# system.build.toplevel, copies the closure to the host, and atomically
+# activates it (system profile + switch-to-configuration switch).
+#
+# NOT handled (intentionally, for now):
+#   - deploy staging directories (no on-disk deploy tree is created/managed)
+#   - ssh key generation / known-hosts management (use your ssh config)
+#   - config file rsync to the host
+#   - host redirection / multi-host fan-out
+#   - the macOS Docker VM remote builder for cross/native builds
+#   - reboot detection for kernel/initrd changes (always a plain `switch`,
+#     never `boot`; reboot manually if the kernel or initrd changed)
+set -euo pipefail
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -eq 0 ]]; then
+  echo "Usage: ob-deploy <nixos-config> <user@host>"
+  echo ""
+  echo "  Builds <nixos-config>'s system toplevel, copies it to <user@host>,"
+  echo "  and activates it there with:"
+  echo "    nix-env -p /nix/var/nix/profiles/system --set <result>"
+  echo "    <result>/bin/switch-to-configuration switch"
+  echo ""
+  echo "  <nixos-config> may be either:"
+  echo "    * a flake reference to a nixosConfiguration, e.g."
+  echo "        .#nixosConfigurations.myhost"
+  echo "      (ob-deploy appends '.config.system.build.toplevel'); or"
+  echo "    * a path to a plain nix file that evaluates to an attrset with"
+  echo "      'config.system.build.toplevel' (e.g. the result of"
+  echo "      nixpkgs.lib.nixosSystem { ... }), built with 'nix-build -A'."
+  echo ""
+  echo "  The referenced NixOS configuration should import obelisk's"
+  echo "  serverModule (nix/server.nix) and set services.obelisk, with"
+  echo "  services.obelisk.exe pointing at a serverExe build."
+  echo ""
+  echo "  Activation is always 'switch' (never 'boot'): if the deploy changed"
+  echo "  the kernel or initrd you must reboot the host yourself."
+  echo ""
+  echo "  OCI alternative: instead of a NixOS host you can build a"
+  echo "  containerImage and load it into a container runtime, e.g."
+  echo "    nix-build -A haskell-nix.containerImage.wasm"
+  echo "    podman load < result   # or: docker load < result"
+  exit 0
+fi
+
+if [[ $# -ne 2 ]]; then
+  echo "ob-deploy: expected exactly 2 arguments; see 'ob-deploy --help'." >&2
+  exit 1
+fi
+
+CONFIG="$1"
+HOST="$2"
+
+# Build the host's system toplevel. A '#' selects the flake code path.
+echo "Building system closure for ${CONFIG}..."
+if [[ "$CONFIG" == *"#"* ]]; then
+  RESULT="$(nix build --no-link --print-out-paths \
+    "${CONFIG}.config.system.build.toplevel")"
+else
+  RESULT="$(nix-build --no-out-link -A config.system.build.toplevel "$CONFIG")"
+fi
+
+if [[ -z "$RESULT" ]]; then
+  echo "ob-deploy: build produced no output path." >&2
+  exit 1
+fi
+echo "Built ${RESULT}"
+
+# Copy the closure to the host, reusing the binary cache where possible.
+echo "Copying closure to ${HOST}..."
+nix-copy-closure --to --use-substitutes "$HOST" "$RESULT"
+
+# Activate: update the system profile first, then switch. This order matches
+# master so the new generation is recorded even if activation is interrupted.
+echo "Activating ${RESULT} on ${HOST}..."
+# $RESULT is intentionally expanded client-side: it is the store path we just
+# copied to the host, and must be substituted before the command reaches it.
+# shellcheck disable=SC2029
+ssh "$HOST" \
+  "nix-env -p /nix/var/nix/profiles/system --set '$RESULT' && '$RESULT'/bin/switch-to-configuration switch"
+
+echo "Deployed ${RESULT} to ${HOST}."

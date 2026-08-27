@@ -1,10 +1,11 @@
-{-# Language OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module Obelisk.Asset.Cabal where
 
-import qualified Data.List as L
+import Data.List qualified as L
 import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
+import Data.Text qualified as T
+import Data.Text.IO qualified as T
 import System.Directory
 import System.FilePath
 
@@ -17,18 +18,19 @@ data SimplePkg = SimplePkg
   }
 
 cabalFile :: SimplePkg -> Text
-cabalFile (SimplePkg packageName moduleName _ deps) = T.unlines
-  [ "name: " <> packageName
-  , "version: 0"
-  , "cabal-version: >= 1.2"
-  , "build-type: Simple"
-  , ""
-  , "library"
-  , "  hs-source-dirs: src"
-  , "  build-depends:"
-  , "    " <> T.intercalate ", " deps
-  , "  exposed-modules: " <> moduleName
-  ]
+cabalFile (SimplePkg packageName moduleName _ deps) =
+  T.unlines
+    [ "name: " <> packageName
+    , "version: 0"
+    , "cabal-version: >= 1.2"
+    , "build-type: Simple"
+    , ""
+    , "library"
+    , "  hs-source-dirs: src"
+    , "  build-depends:"
+    , "    " <> T.intercalate ", " deps
+    , "  exposed-modules: " <> moduleName
+    ]
 
 writeCabalProject :: FilePath -> SimplePkg -> IO ()
 writeCabalProject target pkg = do

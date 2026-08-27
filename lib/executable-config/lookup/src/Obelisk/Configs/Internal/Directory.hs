@@ -1,24 +1,25 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
 module Obelisk.Configs.Internal.Directory where
 
-import Control.Monad
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+import Data.ByteString qualified as BS
+import Data.Foldable (fold)
 import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
+import Data.Traversable (for)
 import System.Directory
 import System.FilePath.Posix
 
 getConfigsFromDirectory :: FilePath -> IO (Map Text ByteString)
-getConfigsFromDirectory base = doesDirectoryExist base >>= \case
-  True -> do
-    ps <- listDirectory base
-    fmap mconcat $ forM ps $ \p -> do
-      subdirConfigs <- getConfigsFromDirectory $ base </> p
-      pure $ Map.mapKeys (T.pack . (p </>) . T.unpack) subdirConfigs
-  False -> doesFileExist base >>= \case
-    True -> Map.singleton "" <$> BS.readFile base
-    False -> pure mempty
+getConfigsFromDirectory base =
+  doesDirectoryExist base >>= \case
+    True -> do
+      ps <- listDirectory base
+      fmap fold $ for ps $ \p -> do
+        subdirConfigs <- getConfigsFromDirectory $ base </> p
+        pure $ Map.mapKeys (T.pack . (p </>) . T.unpack) subdirConfigs
+    False ->
+      doesFileExist base >>= \case
+        True -> Map.singleton "" <$> BS.readFile base
+        False -> pure mempty
