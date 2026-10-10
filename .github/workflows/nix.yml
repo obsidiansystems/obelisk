@@ -12,7 +12,7 @@ env:
   EXTRA_NIX_CONFIG: |
     experimental-features = nix-command flakes
     allow-import-from-derivation = true
-    extra-substituters = https://cache.iog.io https://nixcache.reflex-frp.org ${{ vars.NIX_CACHE_URL }}
+    extra-substituters = https://cache.iog.io https://nixcache.reflex-frp.org
     extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI= ${{ vars.NIX_CACHE_PUBLIC_KEY }}
 
 jobs:
