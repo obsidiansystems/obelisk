@@ -1,17 +1,5 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
 module Obelisk.Configs
-  ( HasConfigs(..)
+  ( HasConfigs (..)
   , ConfigsT
   , runConfigsT
   , mapConfigsT
@@ -22,6 +10,7 @@ import Control.Applicative (Alternative)
 import Control.Monad (MonadPlus)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
+import Control.Monad.Exception
 #if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
 #endif
@@ -34,14 +23,13 @@ import Control.Monad.Trans (MonadTrans, lift)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.Trans.Reader (ReaderT (..), ask, mapReaderT)
 import Control.Monad.Trans.State (StateT)
-import qualified Control.Monad.Trans.State.Strict as Strict
+import Control.Monad.Trans.State.Strict qualified as Strict
 import Data.ByteString (ByteString)
 import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 import Data.Text (Text)
-import qualified Data.Text.Encoding as T
+import Data.Text.Encoding qualified as T
 import Reflex
-import Reflex.Host.Class (MonadReflexCreateTrigger)
 import Reflex.Dom.Core
   ( DomBuilder
   , DomRenderHook
@@ -50,6 +38,7 @@ import Reflex.Dom.Core
   , StaticDomBuilderT
   , prerender
   )
+import Reflex.Host.Class (MonadReflexCreateTrigger)
 #ifndef ghcjs_HOST_OS
 import Language.Javascript.JSaddle (MonadJSM)
 #endif
@@ -59,15 +48,13 @@ class Monad m => HasConfigs m where
   default getConfigs :: (HasConfigs m', m ~ t m', MonadTrans t) => m (Map Text ByteString)
   getConfigs = lift getConfigs
   getConfig :: Text -> m (Maybe ByteString)
-  getConfig k = do
-    configs <- getConfigs
-    return $ Map.lookup k configs
+  getConfig k = Map.lookup k <$> getConfigs
 
 instance Monad m => HasConfigs (ConfigsT m) where
   getConfigs = ConfigsT ask
 
 getTextConfig :: HasConfigs m => Text -> m (Maybe Text)
-getTextConfig k = fmap T.decodeUtf8 <$> getConfig k
+getTextConfig k = fmap T.decodeUtf8Lenient <$> getConfig k
 
 instance HasConfigs m => HasConfigs (BehaviorWriterT t w m)
 instance HasConfigs m => HasConfigs (DynamicWriterT t w m)
@@ -81,35 +68,37 @@ instance HasConfigs m => HasConfigs (Strict.StateT w m)
 instance HasConfigs m => HasConfigs (StaticDomBuilderT t m)
 instance HasConfigs m => HasConfigs (TriggerEventT t m)
 
-newtype ConfigsT m a = ConfigsT { unConfigsT :: ReaderT (Map Text ByteString) m a }
+newtype ConfigsT m a = ConfigsT {unConfigsT :: ReaderT (Map Text ByteString) m a}
   deriving
-    ( Functor
+    ( Alternative
     , Applicative
+    , DomBuilder t
+    , DomRenderHook t
+    , Functor
+    , HasDocument
+    , MFunctor
     , Monad
-    , MonadPlus
-    , Alternative
-    , MonadFail
-    , MonadFix
-    , MonadThrow
-    , MonadIO
     , MonadBase m'
     , MonadBaseControl m'
-    , MonadRef
-    , MonadTrans
-    , MFunctor
-    , DomBuilder t
+    , MonadException
+    , MonadFail
+    , MonadFix
     , MonadHold t
+    , MonadIO
+    , MonadPlus
+    , MonadRef
     , MonadReflexCreateTrigger t
     , MonadSample t
+    , MonadThrow
+    , MonadTrans
     , NotReady t
     , PostBuild t
     , TriggerEvent t
-    , HasDocument
-    , DomRenderHook t
-#ifndef ghcjs_HOST_OS
-    , MonadJSM
-#endif
     )
+
+#ifndef ghcjs_HOST_OS
+deriving instance MonadJSM m => MonadJSM (ConfigsT m)
+#endif
 
 instance PerformEvent t m => PerformEvent t (ConfigsT m) where
   type Performable (ConfigsT m) = ConfigsT (Performable m)

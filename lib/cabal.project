@@ -1,0 +1,6 @@
+packages:
+  *
+  asset/*
+  executable-config/*
+
+import: cabal.project.config

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# ob-repl: GHCi REPL with optimizations disabled and cross builds skipped (-f native).
+set -euo pipefail
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  echo "Usage: ob-repl [TARGETS...] [-- CABAL_ARGS...]"
+  echo ""
+  echo "  Starts 'cabal repl' with optimizations disabled and cross builds skipped."
+  echo "  TARGETS defaults to 'lib:backend lib:common lib:frontend'. Examples:"
+  echo "    ob-repl                        # repl for backend, common, and frontend"
+  echo "    ob-repl lib:common             # repl for common library only"
+  echo "    ob-repl lib:backend -- -v      # repl for backend with verbose cabal output"
+  exit 0
+fi
+
+# Split arguments at '--' into targets and extra cabal args.
+TARGETS=()
+EXTRA_ARGS=()
+SEEN_DASHDASH=false
+for arg in "$@"; do
+  if [[ "$arg" == "--" ]]; then
+    SEEN_DASHDASH=true
+  elif $SEEN_DASHDASH; then
+    EXTRA_ARGS+=("$arg")
+  else
+    TARGETS+=("$arg")
+  fi
+done
+
+if [[ ${#TARGETS[@]} -eq 0 ]]; then
+  TARGETS=(lib:backend lib:common lib:frontend)
+fi
+
+DEV_GHC_OPTIONS=(
+  --ghc-options=-O0
+  --ghc-options=-fno-specialise
+  --ghc-options=-fno-expose-all-unfoldings
+  --ghc-options=-fno-specialise-aggressively
+  --ghc-options=-fno-late-specialise
+  --ghc-options=-fno-cross-module-specialise
+)
+
+export OBELISK_CROSS_CABAL_ARGS="-O0 ${DEV_GHC_OPTIONS[*]}"
+exec cabal repl "${TARGETS[@]}" -O0 -f native "${DEV_GHC_OPTIONS[@]}" "${EXTRA_ARGS[@]}"
