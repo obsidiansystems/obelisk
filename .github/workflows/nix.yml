@@ -3,7 +3,7 @@ name: nix
 on:
   pull_request:
   push:
-    branches: [ next, master ]
+    branches: [ develop, master ]
 
 env:
   # The nix every job installs. release.nix evaluates through
@@ -20,6 +20,14 @@ jobs:
   # parts state their cells from their matrix lists, so this evaluation
   # builds nothing.
   nix-attrs:
+    # A pull request whose head is `develop` or `master` in this repository
+    # gets the push run for the same commit, so its own run is skipped. The
+    # jobs below need this one, so the skip covers the whole run. The branch
+    # list repeats the push trigger's: an expression cannot read it.
+    if: >-
+      github.event_name == 'push'
+      || github.event.pull_request.head.repo.full_name != github.repository
+      || !contains(fromJSON('["develop", "master"]'), github.head_ref)
     runs-on: ubuntu-latest
     outputs:
       paths: ${{ steps.eval.outputs.paths }}
