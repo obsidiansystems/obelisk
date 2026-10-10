@@ -2,7 +2,7 @@
   inputs = {
     self.submodules = true;
 
-    obelisk.url = ../.;
+    obelisk.url = ./deps/obelisk;
     nix-haskell.follows = "obelisk/nix-haskell";
 
     nixpkgs.follows = "obelisk/nixpkgs";
