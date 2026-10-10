@@ -16,10 +16,9 @@ env:
     extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI= ${{ vars.NIX_CACHE_PUBLIC_KEY }}
 
 jobs:
-  # The `-A` path of every derivation in release.nix, for the smoke matrix.
-  # Evaluating it computes every cabal plan, so it needs the submodules and
-  # import-from-derivation like a build does. `--read-write-mode` lets the
-  # evaluation build those plans: `--eval` alone opens the store read-only.
+  # The `-A` path of every cell of release.nix, for the smoke matrix. The
+  # parts state their cells from their matrix lists, so this evaluation
+  # builds nothing.
   nix-attrs:
     runs-on: ubuntu-latest
     outputs:
@@ -39,8 +38,8 @@ jobs:
           paths=$(nix-instantiate --eval --strict --json --read-write-mode release.nix -A attr-paths)
           echo "paths=$paths" >> "$GITHUB_OUTPUT"
 
-  # One build per derivation, each on its own runner, and on a push each
-  # job signs and copies its own build closure to the cache. A broken cell
+  # One build per cell, each on its own runner, and on a push each job
+  # signs and copies its own build closure to the cache. A broken cell
   # cancels no other build and holds back no other upload.
   nix-smoke:
     needs: nix-attrs

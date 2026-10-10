@@ -7,6 +7,7 @@
 #   nix-build lib/release.nix -A tests
 #   nix-build lib/release.nix -A tests.obelisk-route.roundtrips
 #   nix-build lib/release.nix -A build.haskell-nix.wasi32.obelisk-route
+#   nix-instantiate --eval --strict --json lib/release.nix -A attr-paths
 #
 { system ? builtins.currentSystem
 , inputs ? import ../inputs.nix
@@ -80,14 +81,16 @@ let
     matrix = leaf: recurse-for-derivations
       (lib.genAttrs drivers (driver: lib.genAttrs platforms (leaf driver)));
 
+    checks = {
+      fourmolu = check "check-fourmolu" style.fourmolu "fourmolu --mode check";
+      hlint = check "check-hlint" style.hlint "hlint";
+    };
+
     released = {
 
       build = matrix libraries;
 
-      checks = recurse-for-derivations {
-        fourmolu = check "check-fourmolu" style.fourmolu "fourmolu --mode check";
-        hlint = check "check-hlint" style.hlint "hlint";
-      };
+      checks = recurse-for-derivations checks;
 
       tests = recurse-for-derivations (lib.genAttrs shipped (name:
         removeAttrs project.haskell-nix.hsPkgs.${name}.checks
@@ -95,8 +98,27 @@ let
 
     };
 
+    # One cell for each driver and platform.
+    buildCells = map (cell: "build.${cell.driver}.${cell.platform}")
+      (lib.cartesianProduct { driver = drivers; platform = platforms; });
+
 in released // {
 
   all = project.pkgs.linkFarm "obelisk-lib-release" (link-farm-entries "" released);
+
+  # What a CI matrix builds one job at a time, named the way `nix-build -A`
+  # takes it. A `build` cell is every library of one driver and platform,
+  # and `tests` is one cell: which packages a cross target keeps is known
+  # only from the plan, and these names must cost no plan.
+  #
+  # Example:
+  #
+  #   attr-paths
+  #   => [ "build.haskell-nix.native" ... "build.nixpkgs.wasi32" "checks.fourmolu" "checks.hlint" "tests" ]
+  attr-paths = lib.concatLists [
+    buildCells
+    (map (name: "checks.${name}") (lib.attrNames checks))
+    [ "tests" ]
+  ];
 
 }
