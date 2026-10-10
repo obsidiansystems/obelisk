@@ -7,11 +7,10 @@
 #
 #   recurse-for-derivations { wasm = <drv>; }
 #   => { wasm = <drv>; recurseForDerivations = true; }
-{ lib, inputs ? {} }:
+{ lib
+, inputs ? import ../../../inputs.nix
+}:
 
-let nix-haskell-src =
-      if inputs ? nix-haskell
-      then inputs.nix-haskell
-      else ../../../deps/nix-haskell;
+let nix-haskell-src = inputs.nix-haskell;
 
 in import (nix-haskell-src + "/libs/prelude") { inherit lib; }

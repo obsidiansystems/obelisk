@@ -21,7 +21,13 @@ if !(arch(javascript) || arch(wasm32))
 --  deps/obelisk/lib/*/*
 --
 --optional-packages:
---  deps/obelisk/deps/reflex-dom/*
+--  deps/obelisk/deps/reflex-dom/reflex-dom
+--  deps/obelisk/deps/reflex-dom/reflex-dom-core
+--
+--if os(linux) && arch(x86_64)
+--  optional-packages:
+--    deps/obelisk/deps/reflex-dom/chrome-test-utils
+--    deps/obelisk/deps/reflex-dom/reflex-dom-test-selenium
 
 multi-repl: True
 

@@ -1,12 +1,13 @@
 {
   inputs = {
-    # Dependencies are git submodules under deps/; this makes nix fetch them
-    # automatically when the flake is fetched over git (Nix 2.27+; on older
-    # Nix, add ?submodules=1 to the flake URL).
     self.submodules = true;
 
     nix-haskell.url = ./deps/nix-haskell;
-    reflex-dom.url = ./deps/reflex-dom;
+
+    reflex-dom = {
+      url = ./deps/reflex-dom;
+      flake = false;
+    };
 
     nixpkgs.follows = "nix-haskell/nixpkgs";
     haskell-nix.follows = "nix-haskell/haskell-nix";

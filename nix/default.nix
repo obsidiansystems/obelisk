@@ -1,14 +1,9 @@
-{ system ? builtins.currentSystem, inputs ? {} }:
+{ system ? builtins.currentSystem
+, inputs ? import ../inputs.nix
+, pkgs ? import inputs.nixpkgs { inherit system; }
+}:
 
-let pkgs =
-      if inputs ? nixpkgs
-      then import inputs.nixpkgs { inherit system; }
-      else import ../deps/nix-haskell/pins/nixpkgs { inherit system; };
-
-    nix-haskell =
-      if inputs ? nix-haskell
-      then import inputs.nix-haskell { inherit system pkgs inputs; }
-      else import ../deps/nix-haskell { inherit system; };
+let nix-haskell = import inputs.nix-haskell { inherit system pkgs inputs; };
 
     lib = import ./lib.nix { inherit system inputs pkgs; };
 

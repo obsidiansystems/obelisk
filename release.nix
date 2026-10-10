@@ -9,12 +9,11 @@
 #
 #   nix-build lib/release.nix -A all
 #   nix-build skeleton/release.nix -A all
-{ system ? builtins.currentSystem, inputs ? {} }:
+{ system ? builtins.currentSystem
+, inputs ? import ./inputs.nix
+}:
 
-let pkgs =
-      if inputs ? nixpkgs
-      then import inputs.nixpkgs { inherit system; }
-      else import ./deps/nix-haskell/pins/nixpkgs { inherit system; };
+let pkgs = import inputs.nixpkgs { inherit system; };
 
     lib = pkgs.lib;
 

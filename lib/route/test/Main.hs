@@ -21,11 +21,16 @@ import Data.Text (Text)
 import Data.Universe (Finite (universeF), Universe)
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-import Test.QuickCheck hiding (Some)
 import Test.QuickCheck.Instances ()
 import Test.Tasty (TestName, TestTree, defaultMain, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 import Prelude hiding (id, (.))
+
+#if MIN_VERSION_QuickCheck(2,16,0)
+import Test.QuickCheck hiding (Some)
+#else
+import Test.QuickCheck
+#endif
 
 #if !MIN_VERSION_base(4,18,0)
 import Control.Applicative (liftA2)

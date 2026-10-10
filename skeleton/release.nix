@@ -11,7 +11,9 @@
 # ghc-wasm-meta bindist instead of the compiler that driver builds itself.
 # The nixpkgs driver takes that bindist from the skeleton, which is the only
 # wasm compiler it has.
-{ system ? builtins.currentSystem, inputs ? {} }:
+{ system ? builtins.currentSystem
+, inputs ? import ./inputs.nix
+}:
 
 let obelisk = import ../nix { inherit system inputs; };
 

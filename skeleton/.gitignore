@@ -16,3 +16,4 @@ frontend/frontend.jsexe
 frontend.jsexe.assets
 static/result
 result
+flake.lock

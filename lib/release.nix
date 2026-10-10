@@ -1,15 +1,16 @@
 # Every obelisk library, built by each driver for the build platform and for
 # each cross target, the style checks over their source, and the test suites
-# they carry. Each cell is built two ways: as the drivers build it, and as a
-# person would inside that driver's shell.
+# they carry.
 #
 #   nix-build lib/release.nix -A all
 #   nix-build lib/release.nix -A checks
 #   nix-build lib/release.nix -A tests
 #   nix-build lib/release.nix -A tests.obelisk-route.roundtrips
 #   nix-build lib/release.nix -A build.haskell-nix.wasi32.obelisk-route
-#   nix-build lib/release.nix -A shell-build.nixpkgs.ghcjs
-{ system ? builtins.currentSystem, inputs ? {} }:
+#
+{ system ? builtins.currentSystem
+, inputs ? import ../inputs.nix
+}:
 
 let project = import ./default.nix { inherit system inputs; };
 
@@ -44,59 +45,25 @@ let
 
     drivers = lib.attrNames driverLibrary;
 
+    # The shipped libraries of one project, without the ones a cross target
+    # has no build for.
+    projectLibraries = driver: proj:
+      lib.filterAttrs (_: drv: drv != null)
+        (lib.genAttrs shipped (driverLibrary.${driver} proj));
+
     target = driver: platform:
       if platform == "native"
       then project.${driver}
       else project.${driver}.projectCross.${platform};
 
     libraries = driver: platform:
-      lib.filterAttrs (_: drv: drv != null)
-        (lib.genAttrs shipped (driverLibrary.${driver} (target driver platform)));
-
-    # The wrapper that puts a cross target's tools ahead of the ones the shell
-    # carries for the build platform, named after that target's own prefix.
-    dispatcher = driver: platform:
-      lib.removeSuffix "-"
-        (project.config.${driver}.cross-compiler platform).targetPrefix;
-
-    # cabal needs no package index: the shell's package database already
-    # carries every dependency, and naming no repository keeps cabal from
-    # fetching one it cannot reach. One `buildCommand` rather than phases,
-    # because the nixpkgs driver's shell states its own.
-    shellBuild = driver: platform:
-      let cross = if platform == "native" then "" else dispatcher driver platform;
-
-          # A cross target's tests are built for a machine this one cannot run.
-          test = lib.optionalString (platform == "native")
-            "cabal test --offline all";
-
-      in project.${driver}.shell.overrideAttrs (_: {
-        name = "obelisk-lib-${driver}-${platform}-shell-build";
-
-        buildCommand = ''
-          eval "$shellHook"
-
-          cp -r ${project.config.src-cleaned} source
-          chmod -R u+w source
-          cd source
-
-          export HOME=$TMPDIR
-          export CABAL_CONFIG=$TMPDIR/cabal.config
-          echo 'jobs: $ncpus' > $CABAL_CONFIG
-          echo 'active-repositories: :none' >> cabal.project.local
-
-          ${cross} cabal build --offline all
-          ${test}
-
-          touch $out
-        '';
-      });
+      projectLibraries driver (target driver platform);
 
     # The empty argument takes style.hs's own pin of each tool, so a failure
     # here is the one `nix run github:obsidiansystems/style.hs` reports.
     style = {
-      fourmolu = import ../deps/style.hs/fourmolu.nix {};
-      hlint = import ../deps/style.hs/hlint.nix {};
+      fourmolu = import ../deps/style.hs/fourmolu.nix { inherit system; };
+      hlint = import ../deps/style.hs/hlint.nix { inherit system; };
     };
 
     check = name: tool: command: project.pkgs.runCommand name {
@@ -116,8 +83,6 @@ let
     released = {
 
       build = matrix libraries;
-
-      shell-build = matrix shellBuild;
 
       checks = recurse-for-derivations {
         fourmolu = check "check-fourmolu" style.fourmolu "fourmolu --mode check";

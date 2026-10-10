@@ -1,4 +1,6 @@
-{ system ? builtins.currentSystem, inputs ? {} }:
+{ system ? builtins.currentSystem
+, inputs ? import ./inputs.nix
+}:
 
 # Obelisk's dev shell is the skeleton project's shell: it carries the GHC and
 # cross toolchains plus the ob-* scripts, and developing obelisk means

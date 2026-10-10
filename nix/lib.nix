@@ -1,25 +1,13 @@
-{ system
-, inputs ? {}
-, pkgs ?
-    if inputs ? nixpkgs
-    then import inputs.nixpkgs { inherit system; }
-    else import ../deps/nix-haskell/pins/nixpkgs { inherit system; }
+{ system ? builtins.currentSystem
+, inputs ? import ../inputs.nix
+, pkgs ? import inputs.nixpkgs { inherit system; }
 }:
 
 let src = ../.;
 
-    nix-haskell-src =
-      if inputs ? nix-haskell
-      then inputs.nix-haskell
-      else ../deps/nix-haskell;
+    nix-haskell-src = inputs.nix-haskell;
 
-    # A flake input wins over the submodule, so a project that follows its own
-    # reflex-dom gets that one in the source-repository-packages below rather
-    # than a second copy of obelisk's.
-    reflex-dom-src =
-      if inputs ? reflex-dom
-      then inputs.reflex-dom
-      else src + "/deps/reflex-dom";
+    reflex-dom-src = inputs.reflex-dom;
 
     nix-haskell = import nix-haskell-src { inherit system pkgs inputs; };
 

@@ -1,15 +1,12 @@
 {
   inputs = {
-    # obelisk lives at deps/obelisk as a git submodule, so the flake commands
-    # and plain nix-shell/nix-build (which go through default.nix) build from
-    # the same source. That makes obelisk part of this project's submodules:
-    # Nix 2.27+ fetches them from the line below, on older Nix add
-    # ?submodules=1 to this project's flake URL.
     self.submodules = true;
 
-    obelisk.url = ./deps/obelisk;
+    obelisk.url = ../.;
+    nix-haskell.follows = "obelisk/nix-haskell";
 
     nixpkgs.follows = "obelisk/nixpkgs";
+    flake-compat.follows = "obelisk/flake-compat";
   };
 
   outputs = inputs@{ self, ... }:
@@ -22,7 +19,10 @@
 
       packages = eachSystem (system:
         let project = import ./default.nix { inherit system inputs; };
+            release = import ./release.nix { inherit system inputs; };
         in rec {
+          inherit release;
+
           default = haskell-nix;
           haskell-nix = project.haskell-nix.serverExe.wasm;
           nixpkgs = project.nixpkgs.serverExe.js;
