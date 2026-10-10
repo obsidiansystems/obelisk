@@ -3,11 +3,53 @@ name: obelisk-route
 version: 0.2
 build-type: Simple
 
+common common
+  default-language: Haskell2010
+
+  default-extensions:
+      ApplicativeDo
+    , BangPatterns
+    , CPP
+    , ConstraintKinds
+    , DataKinds
+    , DefaultSignatures
+    , DeriveFunctor
+    , DeriveGeneric
+    , EmptyCase
+    , EmptyDataDecls
+    , FlexibleContexts
+    , FlexibleInstances
+    , FunctionalDependencies
+    , GADTs
+    , GeneralizedNewtypeDeriving
+    , ImportQualifiedPost
+    , KindSignatures
+    , LambdaCase
+    , LiberalTypeSynonyms
+    , MultiParamTypeClasses
+    , NumDecimals
+    , OverloadedStrings
+    , PackageImports
+    , PatternSynonyms
+    , QuantifiedConstraints
+    , RankNTypes
+    , RecursiveDo
+    , ScopedTypeVariables
+    , StandaloneDeriving
+    , TemplateHaskell
+    , TemplateHaskellQuotes
+    , TupleSections
+    , TypeApplications
+    , TypeFamilies
+    , TypeOperators
+    , UndecidableInstances
+    , ViewPatterns
+
 common warnings
   ghc-options: -Wall -Werror -fprint-potential-instances -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates
 
 library
-  import: warnings
+  import: common, warnings
   hs-source-dirs: src
   build-depends: base,
                  aeson,
@@ -48,12 +90,14 @@ library
   ghc-options: -O
 
 test-suite roundtrips
-  import: warnings
+  import: common, warnings
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: test
-  default-language: Haskell2010
   ghc-options: -O
+
+  -- QuickCheck 2.18 deprecates withMaxSuccess, and older versions lack withNumTests.
+  ghc-options: -Wno-deprecations
 
   -- https://gitlab.haskell.org/ghc/ghc/-/issues/25442
   if !os(wasi)

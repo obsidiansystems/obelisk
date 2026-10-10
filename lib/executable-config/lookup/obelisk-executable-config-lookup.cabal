@@ -1,30 +1,61 @@
+cabal-version: 2.2
 name: obelisk-executable-config-lookup
 version: 0.1.1
-cabal-version: >= 1.2
 build-type: Simple
 
+common common
+  default-language: Haskell2010
+
+  default-extensions:
+      ApplicativeDo
+    , BangPatterns
+    , CPP
+    , ConstraintKinds
+    , DataKinds
+    , DefaultSignatures
+    , DeriveFunctor
+    , DeriveGeneric
+    , EmptyCase
+    , EmptyDataDecls
+    , FlexibleContexts
+    , FlexibleInstances
+    , FunctionalDependencies
+    , GADTs
+    , GeneralizedNewtypeDeriving
+    , ImportQualifiedPost
+    , KindSignatures
+    , LambdaCase
+    , LiberalTypeSynonyms
+    , MultiParamTypeClasses
+    , NumDecimals
+    , OverloadedStrings
+    , PackageImports
+    , PatternSynonyms
+    , QuantifiedConstraints
+    , RankNTypes
+    , RecursiveDo
+    , ScopedTypeVariables
+    , StandaloneDeriving
+    , TemplateHaskell
+    , TemplateHaskellQuotes
+    , TupleSections
+    , TypeApplications
+    , TypeFamilies
+    , TypeOperators
+    , UndecidableInstances
+    , ViewPatterns
+
 library
+  import: common
   exposed-modules: Obelisk.ExecutableConfig.Lookup, Obelisk.Configs
-  if os(ios)
-    hs-source-dirs: src-ios, src
-    other-modules: Obelisk.Configs.Internal.Directory
-    build-depends: jsaddle-wkwebview
-    build-depends: directory
+
+  if impl(ghcjs) || arch(javascript) || arch(wasm32)
+    hs-source-dirs: src-js, src
+    build-depends: ghcjs-dom
   else
-    if os(linux-android)
-      hs-source-dirs: src-android, src
-      c-sources: cbits/ExecutableConfig.c
-      other-modules: Obelisk.ExecutableConfig.Internal.AssetManager
-      build-depends: android-activity
-      ld-options: -landroid
-    else
-      if impl(ghcjs) || arch(javascript)
-        hs-source-dirs: src-ghcjs, src
-        build-depends: ghcjs-dom
-      else
-        hs-source-dirs: src-other, src
-        other-modules: Obelisk.Configs.Internal.Directory
-        build-depends: directory
+    hs-source-dirs: src-other, src
+    other-modules: Obelisk.Configs.Internal.Directory
+    build-depends: directory
 
   build-depends:
     base,

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# ob-hoogle: Manage a local Hoogle documentation server.
+set -euo pipefail
+
+HOOGLE_PIDFILE="${TMPDIR:-/tmp}/ob-hoogle.pid"
+export HOOGLE_PIDFILE
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  echo "Usage: ob-hoogle [start|stop|restart] [PORT]"
+  echo ""
+  echo "  Manages a Hoogle server on the given PORT (default: 8080)."
+  echo "  Commands:"
+  echo "    start    Start the server (default)."
+  echo "    stop     Stop the running server."
+  echo "    restart  Restart the server."
+  echo "  Stopped automatically when exiting nix-shell."
+  exit 0
+fi
+
+stop() {
+  if [[ -f "$HOOGLE_PIDFILE" ]]; then
+    kill "$(cat "$HOOGLE_PIDFILE")" 2>/dev/null || true
+    rm -f "$HOOGLE_PIDFILE"
+    echo "Hoogle server stopped."
+  else
+    echo "Hoogle server is not running."
+  fi
+}
+
+start() {
+  local port="${1:-8080}"
+  # Check if already running.
+  if [[ -f "$HOOGLE_PIDFILE" ]] && kill -0 "$(cat "$HOOGLE_PIDFILE")" 2>/dev/null; then
+    echo "Hoogle server is already running (PID: $(cat "$HOOGLE_PIDFILE"))."
+  else
+    rm -f "$HOOGLE_PIDFILE"
+    hoogle server --local --port "$port" >/dev/null 2>&1 &
+    echo $! > "$HOOGLE_PIDFILE"
+    echo "Hoogle server started on http://localhost:$port (PID: $!)"
+  fi
+}
+
+CMD="${1:-start}"
+shift 2>/dev/null || true
+
+case "$CMD" in
+  start)   start "${1:-8080}" ;;
+  stop)    stop ;;
+  restart) stop; start "${1:-8080}" ;;
+  *)       start "$CMD" ;;
+esac

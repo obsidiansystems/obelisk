@@ -1,9 +1,52 @@
+cabal-version: 2.2
 name: obelisk-backend
 version: 0.1
-cabal-version: >= 1.2
 build-type: Simple
 
+common common
+  default-language: Haskell2010
+
+  default-extensions:
+      ApplicativeDo
+    , BangPatterns
+    , CPP
+    , ConstraintKinds
+    , DataKinds
+    , DefaultSignatures
+    , DeriveFunctor
+    , DeriveGeneric
+    , EmptyCase
+    , EmptyDataDecls
+    , FlexibleContexts
+    , FlexibleInstances
+    , FunctionalDependencies
+    , GADTs
+    , GeneralizedNewtypeDeriving
+    , ImportQualifiedPost
+    , KindSignatures
+    , LambdaCase
+    , LiberalTypeSynonyms
+    , MultiParamTypeClasses
+    , NumDecimals
+    , OverloadedStrings
+    , PackageImports
+    , PatternSynonyms
+    , QuantifiedConstraints
+    , RankNTypes
+    , RecursiveDo
+    , ScopedTypeVariables
+    , StandaloneDeriving
+    , TemplateHaskell
+    , TemplateHaskellQuotes
+    , TupleSections
+    , TypeApplications
+    , TypeFamilies
+    , TypeOperators
+    , UndecidableInstances
+    , ViewPatterns
+
 library
+  import: common
   hs-source-dirs: src
   build-depends: base,
                  bytestring,
@@ -13,6 +56,8 @@ library
                  data-default,
                  dependent-sum,
                  dependent-sum-template,
+                 directory,
+                 filepath,
                  lens,
                  mtl,
                  obelisk-asset-serve-snap,
@@ -29,5 +74,5 @@ library
   exposed-modules: Obelisk.Backend
   ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
 
-  if arch(javascript)
+  if arch(javascript) || arch(wasm32)
     buildable: False

@@ -1,35 +1,20 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PackageImports #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
-
 module Obelisk.Frontend.Cookie where
 
 import Control.Monad.Fix
+import Control.Monad.IO.Class
 import Control.Monad.Primitive
 import Control.Monad.Ref
-import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 import Data.Text.Encoding (encodeUtf8)
-import Reflex
-import Reflex.Host.Class
-import Reflex.Dom.Core
-import "ghcjs-dom" GHCJS.DOM.Document (getCookie, Document)
 import GHCJS.DOM.Types (MonadJSM)
-import Web.Cookie
-
 import Obelisk.Configs
 import Obelisk.Route.Frontend
+import Reflex
+import Reflex.Dom.Core
+import Reflex.Host.Class
+import Web.Cookie
+import "ghcjs-dom" GHCJS.DOM.Document (Document, getCookie)
 
 class Monad m => HasCookies m where
   askCookies :: m Cookies
@@ -51,18 +36,16 @@ instance HasCookies m => HasCookies (RoutedT t r m)
 instance HasCookies m => HasCookies (ConfigsT m)
 instance HasConfigs m => HasConfigs (CookiesT m)
 
-newtype CookiesT m a = CookiesT { unCookiesT :: ReaderT Cookies m a }
+newtype CookiesT m a = CookiesT {unCookiesT :: ReaderT Cookies m a}
   deriving
-    ( Functor
-    , Applicative
+    ( Applicative
     , DomBuilder t
+    , Functor
+    , HasDocument
     , Monad
     , MonadFix
     , MonadHold t
     , MonadIO
-#ifndef ghcjs_HOST_OS
-    , MonadJSM
-#endif
     , MonadRef
     , MonadReflexCreateTrigger t
     , MonadSample t
@@ -72,8 +55,11 @@ newtype CookiesT m a = CookiesT { unCookiesT :: ReaderT Cookies m a }
     , PostBuild t
     , Prerender t
     , TriggerEvent t
-    , HasDocument
     )
+
+#ifndef ghcjs_HOST_OS
+deriving instance MonadJSM m => MonadJSM (CookiesT m)
+#endif
 
 instance Adjustable t m => Adjustable t (CookiesT m) where
   runWithReplace a e = CookiesT $ runWithReplace (unCookiesT a) (unCookiesT <$> e)
