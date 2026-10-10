@@ -1,11 +1,13 @@
 # Everything to build before a release: obelisk's own libraries, and the
 # skeleton a project starts from. Each part carries its own matrix and is a
-# release of its own.
+# release of its own. `attr-paths` names every derivation here the way
+# `nix-build -A` takes it, for a CI matrix that builds each on its own runner.
 #
 #   nix-build release.nix -A all
 #   nix-build release.nix -A lib.checks
 #   nix-build release.nix -A lib.tests
 #   nix-build release.nix -A skeleton.serverExe.haskell-nix.wasm
+#   nix-instantiate --eval --strict --json --read-write-mode release.nix -A attr-paths
 #
 #   nix-build lib/release.nix -A all
 #   nix-build skeleton/release.nix -A all
@@ -29,8 +31,26 @@ let
       skeleton = part ./skeleton/release.nix;
     };
 
+    entries = link-farm-entries "" released;
+
+    # An entry's name walks the tree with slashes, where `nix-build -A`
+    # takes dots.
+    attr-path = entry: lib.replaceStrings [ "/" ] [ "." ] entry.name;
+
 in released // {
 
-  all = pkgs.linkFarm "obelisk-release" (link-farm-entries "" released);
+  all = pkgs.linkFarm "obelisk-release" entries;
+
+  # The `-A` path of every derivation above, one per CI runner.
+  #
+  # Example:
+  #
+  #   attr-paths
+  #   => [ "lib.build.haskell-nix.ghcjs.obelisk-executable-config-inject"
+  #        ...
+  #        "lib.checks.fourmolu"
+  #        ...
+  #        "skeleton.shell-build.wasm-meta.haskell-nix.wasm" ]
+  attr-paths = map attr-path entries;
 
 }
