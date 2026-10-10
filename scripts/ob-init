@@ -6,9 +6,10 @@
 #
 # obelisk wiring: when a revision is known (--rev, or OBELISK_PIN_REV, which
 # the `nix run github:obsidiansystems/obelisk#init` app sets to the revision
-# it was fetched at), obelisk is added as a git submodule at deps/obelisk,
-# checked out at that revision and initialised recursively (obelisk keeps its
-# own dependencies as submodules), so the project is portable. Otherwise (or
+# it was fetched at), obelisk is added as a shallow git submodule at
+# deps/obelisk, checked out at that revision and initialised recursively
+# (obelisk keeps its own dependencies as submodules), so the project is
+# portable. Otherwise (or
 # with --link) deps/obelisk is a symlink to the local obelisk source, which
 # builds only on this machine.
 set -euo pipefail
@@ -20,8 +21,8 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || $# -eq 0 ]]; then
   echo "  obelisk skeleton template, then:"
   echo "    * sets the project name in project.nix to NAME"
   echo "      (default: the basename of <project-dir>);"
-  echo "    * wires obelisk in at deps/obelisk: a git submodule pinned to the"
-  echo "      obelisk revision scaffolded from (when known, e.g. under"
+  echo "    * wires obelisk in at deps/obelisk: a shallow git submodule pinned"
+  echo "      to the obelisk revision scaffolded from (when known, e.g. under"
   echo "      'nix run ...#init'), else a symlink to the local obelisk source;"
   echo "    * runs 'git init' and creates an initial commit."
   echo ""
@@ -167,10 +168,11 @@ if [[ "$LINK_MODE" == false && -n "$REV" ]]; then
     *://*|*@*:*) OBELISK_URL="$PIN_FROM" ;;
     *) OBELISK_URL="https://github.com/${PIN_FROM}.git" ;;
   esac
-  echo "Adding obelisk as a git submodule from $OBELISK_URL at ${REV:0:12}..."
-  git -C "$DIR" submodule add -q -- "$OBELISK_URL" deps/obelisk
+  echo "Adding obelisk as a shallow git submodule from $OBELISK_URL at ${REV:0:12}..."
+  git -C "$DIR" submodule add -q --depth 1 -- "$OBELISK_URL" deps/obelisk
+  git -C "$DIR" config -f .gitmodules submodule.deps/obelisk.shallow true
   if ! git -C "$DIR/deps/obelisk" checkout -q --detach "$REV" 2>/dev/null; then
-    if git -C "$DIR/deps/obelisk" fetch -q origin "$REV" 2>/dev/null; then
+    if git -C "$DIR/deps/obelisk" fetch -q --depth 1 origin "$REV" 2>/dev/null; then
       git -C "$DIR/deps/obelisk" checkout -q --detach FETCH_HEAD
     else
       echo "ob-init: revision $REV not found in $OBELISK_URL." >&2
