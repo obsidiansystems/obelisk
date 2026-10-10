@@ -1,25 +1,22 @@
 # Building and running an Obelisk app with plain cabal
 
-Obelisk's custom `Setup.hs` hooks do the framework-specific work (frontend
-cross-compilation, static asset generation, asset linking) during an ordinary
-`cabal build`, so the nix dev shell is not required for development. "Plain
-cabal" still has prerequisites beyond cabal itself, and production asset
-processing uses nix. This guide covers the whole path: what you need, the
-edit loop, static assets, production builds, and deployment.
-
-In short: the edit loop works with cabal alone once the cross-toolchain is on
-`PATH`; production builds should use `nix-build -A haskell-nix.serverExe.wasm`.
+Obelisk's custom `Setup.hs` hooks cross-compile the frontend, generate the
+static assets and link them during an ordinary `cabal build`, so development
+needs no nix shell. The edit loop works with cabal alone once the
+cross-toolchain is on `PATH`. Production builds should use
+`nix-build -A haskell-nix.serverExe.wasm`.
 
 ## 1. Prerequisites
 
-`cabal build backend` triggers the frontend cross-build via the backend's and
-frontend wrapper's custom `Setup.hs` (see `lib/setup/README.md`). The hooks
-shell out, so the following must be available:
+The hooks (see `lib/setup/README.md`) shell out, so the following must be on
+`PATH`. The hooks find the wasm tools under either target prefix,
+`wasm32-unknown-wasi` (haskell.nix) or `wasm32-wasi` (a ghc-wasm-meta
+bindist), as the `<prefix>` dispatcher or as `<prefix>-<tool>`:
 
 | Requirement | Used for | Required? |
 |---|---|---|
-| `wasm32-unknown-wasi-cabal` (or the `wasm32-unknown-wasi` wrapper) | cross-compiling the frontend to WASM | yes (wasm target) |
-| `wasm32-unknown-wasi-ghc` | locating `post-link.mjs` (`--print-libdir`) | yes (wasm target) |
+| wasm `cabal` | cross-compiling the frontend to WASM | yes (wasm target) |
+| wasm `ghc` | locating `post-link.mjs` (`--print-libdir`) | yes (wasm target) |
 | `node` | running `post-link.mjs` to extract the JSFFI bindings | yes (wasm target) |
 | `OBELISK_WASI_SHIM` env var | locating the `@bjorn3/browser_wasi_shim` package (its `dist/*.js` is copied into the jsexe) | yes (wasm target); the Setup hook fails if unset |
 | `wasm-opt`, `wasm-tools` | optimizing/stripping `frontend.wasm` | optional (skipped with a warning) |
@@ -33,10 +30,7 @@ To go fully nix-free:
 
 - Get the WASM toolchain from
   [ghc-wasm-meta](https://gitlab.haskell.org/haskell-wasm/ghc-wasm-meta),
-  which distributes wasm32-wasi GHC/cabal binaries. Obelisk's Setup hook looks
-  for the executables under the names `wasm32-unknown-wasi-cabal` /
-  `wasm32-unknown-wasi-ghc` (or a `wasm32-unknown-wasi` wrapper); symlink
-  them if your installation names them differently.
+  which distributes `wasm32-wasi-ghc` and `wasm32-wasi-cabal` binaries.
 - Install the WASI browser polyfill and point `OBELISK_WASI_SHIM` at its
   package root:
 
@@ -116,12 +110,10 @@ custom `Setup.hs` (`Obelisk.Setup.Static`) which, on every native build:
 
 **Gotcha:** `static/generated/src/Obelisk/Generated/Static.hs` is a tracked
 placeholder that builds overwrite, so it can show as modified in
-`git status`. `static/generated/data/static` is a build artifact and
-gitignored; keep it (and any other in-tree build output) that way. Nix
-builds copy the project source filtered through its `.gitignore`, so an
-unignored or committed artifact lands inside every nix build sandbox: a
-stale `data/static` store symlink there breaks the static manifest
-generation, for example.
+`git status`. Keep `static/generated/data/static` and every other in-tree
+build output gitignored: nix builds copy the project source filtered through
+its `.gitignore`, and a committed store symlink there breaks the static
+manifest generation.
 
 **Going nix-free:** if your `static/` needs no build step, replace the
 `nix-build` line in `static/generate` with a plain copy:
@@ -186,6 +178,5 @@ Deployment section.
 
 - `cabal haddock all` builds package docs; the nix `docs` output builds the
   full set.
-- `ob-hoogle` runs `hoogle server` against whatever Hoogle database is on
-  `PATH`. A dependency-scoped database currently comes only from the nix
-  shell (`withHoogle`), so Hoogle is in practice a nix-shell feature.
+- `ob-hoogle` runs `hoogle server` against the Hoogle database on `PATH`.
+  Only the nix shell (`withHoogle`) builds one for the dependencies.

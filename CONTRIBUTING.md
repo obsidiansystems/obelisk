@@ -11,6 +11,7 @@ Contributions and issue reports are encouraged and appreciated!
   - [Guidelines for Pull Requests](#guidelines-for-pull-requests)
   - [Code Quality](#code-quality)
     - [Warnings](#warnings)
+    - [Formatting and lint](#formatting-and-lint)
     - [Build and Test](#build-and-test)
   - [Documentation](#documentation)
     - [In the code](#in-the-code)
@@ -79,12 +80,17 @@ Two things to know:
 
 #### Build and Test
 
-Make sure the project builds and that the tests pass! This will generally also be checked by CI before merge, but trying it yourself first means you'll catch problems earlier and your contribution can be merged that much sooner!
+Make sure the project builds and the tests pass. CI checks the same before merge.
 
 Build and test the libraries:
 ```bash
 cd lib && cabal build all
 cd lib && cabal test all
+```
+
+Or through nix, with both drivers:
+```bash
+nix-build release.nix -A lib.tests
 ```
 
 Build the skeleton with both drivers and frontend targets:
@@ -117,7 +123,7 @@ nix-build skeleton/release.nix -A all
 ### Documentation
 
 #### In the code
-We're always striving to improve documentation. Please include [haddock](https://haskell-haddock.readthedocs.io/en/latest/index.html) documentation for any added code, and update the documentation for any code you modify.
+Add [haddock](https://haskell-haddock.readthedocs.io/en/latest/index.html) documentation to new code, and update it for the code you modify.
 
 #### In the [Changelog](ChangeLog.md)
 Add an entry to the changelog when your PR:
@@ -132,6 +138,8 @@ The readme is the first place a lot of people look for information about the rep
 ## Development Environment
 
 ### Working on obelisk libraries
+
+Clone obelisk with `--recurse-submodules`. `release.nix` reads `deps/style.hs` while evaluating, and the skeleton's `deps/` symlinks point into the submodules.
 
 Enter the skeleton's nix shell to get a development environment with all obelisk libraries available:
 
@@ -157,15 +165,4 @@ ob-repl      # REPL with optimizations disabled
 
 ### Testing with the skeleton
 
-The skeleton serves as the integration test for obelisk. To verify your changes work end-to-end:
-
-```bash
-cd skeleton
-nix-shell -A haskell-nix
-ob-run       # test development workflow
-```
-
-For a full production build test:
-```bash
-nix-build release.nix -A all
-```
+The skeleton is obelisk's integration test. `ob-run` in its shell checks the development loop, and `nix-build release.nix -A all` checks every production build.

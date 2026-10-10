@@ -12,16 +12,15 @@ project by hand.
 
 ## What changed at a glance
 
-- **Nix backend.** reflex-platform is gone. The build is now a `nix-haskell`
-  module (built on haskell.nix). A project is described by a `project.nix`
-  module that consumes obelisk's `nix/module.nix`; build outputs come from
-  `nix/lib.nix` (`serverExe`, `containerImage`, `frontendWasm`/`frontendJs`).
-  See [`docs/module.md`](module.md) for the full option reference.
-- **Git submodules.** Obelisk keeps its own dependencies (`nix-haskell`,
-  `reflex-dom`) as git submodules under `deps/`, so it has to be pulled in
-  recursively. As a dependency it can be cloned with `--recurse-submodules`,
-  imported as a flake with `?submodules=1`, or imported as a nix-thunk with
-  `fetchSubmodules = true`.
+- **Nix backend.** reflex-platform is gone. The build is a `nix-haskell`
+  module with two drivers, haskell.nix and nixpkgs. A project is a
+  `project.nix` module over obelisk's `nix/module.nix`. The result carries
+  `exe`, `serverExe`, `containerImage`, `server` and `shell` under each
+  driver. See [`docs/module.md`](module.md) for the option reference.
+- **Git submodules.** Obelisk keeps its own dependencies as shallow git
+  submodules under `deps/`, so it has to be pulled in recursively: clone it
+  with `--recurse-submodules`, import it as a flake with `?submodules=1`, or
+  import it as a nix-thunk with `fetchSubmodules = true`.
 - **GHC 8.10 to 9.14.**
 - **GHCJS to WASM by default.** The default frontend target is now `"wasm"`
   (compiled with `wasm32-unknown-wasi-cabal`, run via jsaddle-wasm and a
@@ -39,24 +38,20 @@ project by hand.
 
 ## Command and attribute mapping
 
-> Note: `scripts/ob-init` and `scripts/ob-deploy` referenced below are added by
-> companion work alongside the existing `scripts/ob-run`, `scripts/ob-repl`,
-> and `scripts/ob-hoogle`.
-
 | v1 (`ob` / reflex-platform) | v2 replacement |
 |---|---|
 | `ob init` | `nix run github:obsidiansystems/obelisk#init -- my-app` (nothing to clone or install by hand; the scaffold gets obelisk as a git submodule at `deps/obelisk`, pinned to that revision), or `ob-init` from an obelisk shell. |
 | `ob init --branch BRANCH` / `--symlink PATH` | No managed init source. Copy/point at the skeleton you want; obelisk's own libraries are injected via `obeliskLib.source-repository-packages` in `project.nix`. |
-| `ob run` | `ob-run` (`scripts/ob-run`): watch-and-rebuild dev server on `:8000`; rebuilds on `.hs`/`.cabal`/`.project` change or Enter, cross-compiling the frontend (incrementally) during each rebuild. **Reload model regression:** v1 reloaded interpreted code in-process via ghcid, with the frontend running natively over jsaddle-warp; v2 currently relinks and restarts per change, so dev iteration is slower than v1 for now. Restoring the interpreted dev loop (ghcid + jsaddle-warp, selectable against the real-WASM mode) is the flagship post-2.0 follow-up. v1's `config/common/route` interpretation and dev-TLS are also gone: pass Snap's `--port` after `--`, and use a local reverse proxy (e.g. caddy) for https in development. |
-| `ob watch` | `ob-watch` (`scripts/ob-watch`): ghcid over `cabal repl`; type errors on every save at GHCi speed, no server, no cross builds. |
-| `ob repl` | `ob-repl` (`scripts/ob-repl`): GHCi for `backend`+`common`+`frontend`, `-O0`, cross builds skipped (`-f native`). `ob-repl lib:common` for a single target. |
-| `ob hoogle` | `ob-hoogle` (`scripts/ob-hoogle`): `ob-hoogle start [PORT]` / `stop` / `restart`. |
+| `ob run` | `ob-run`: watch-and-rebuild dev server on `:8000`. It rebuilds on a `.hs`, `.cabal` or `.project` change or on Enter, and cross-compiles the frontend during each rebuild. **Regression:** v1 reloaded interpreted code in-process (ghcid + jsaddle-warp). v2 relinks and restarts per change, so iteration is slower. Restoring the interpreted loop is the flagship post-2.0 follow-up. `config/common/route` and dev TLS are gone: pass Snap's `--port` after `--`, and put a local reverse proxy (caddy) in front for https. |
+| `ob watch` | `ob-watch`: ghcid over `cabal repl`. Type errors on every save, no server, no cross builds. |
+| `ob repl` | `ob-repl`: GHCi for `backend`, `common` and `frontend` at `-O0`, cross builds skipped (`-f native`). `ob-repl lib:common` for one target. |
+| `ob hoogle` | `ob-hoogle start [PORT]` / `stop` / `restart`. |
 | `ob shell` | `nix-shell -A haskell-nix` (or `nix develop`). Run a one-off command with `nix-shell -A haskell-nix --run '...'` / `nix develop -c '...'`. |
 | `ob shell --ghcjs` | Cross toolchains are selected by `shell.crossPlatforms` in `project.nix` (e.g. `ps: with ps; [ ghcjs wasi32 ]`) and by `obelisk.frontend.target`. There is no per-invocation `--ghcjs` flag. |
 | `ob profile` | Removed. Build with profiling through cabal/nix directly (e.g. a profiling-enabled `cabal build` in the nix shell, or a `--enable-profiling` cabal config). |
 | `ob doc` | Removed. Use `ob-hoogle` for searchable docs, or `cabal haddock` / the nix `docs` output. |
-| `ob deploy init` | `scripts/ob-deploy` (sets up a deploy directory), or wire the `services.obelisk` NixOS module into your host config directly. No managed deploy repo. |
-| `ob deploy push` | `scripts/ob-deploy` push step, or `nixos-rebuild switch` against a config that imports `serverModule` and sets `services.obelisk.exe = app.haskell-nix.serverExe.wasm`. For containers, push the OCI image from `haskell-nix.containerImage.wasm`. |
+| `ob deploy init` | Write a NixOS host config that imports `serverModule` and sets `services.obelisk`. No managed deploy repo. |
+| `ob deploy push` | `ob-deploy <nixos-config> <user@host>`, or `nixos-rebuild switch` against that config. For containers, push the OCI image from `<driver>.containerImage.<target>`. |
 | `ob deploy update` | Bump your source pins by hand: update the `tag`/`rev` in `source-repository-package` stanzas (`cabal.project`) or update the relevant git submodule, then rebuild. There is no managed thunk to "update". |
 | `ob deploy test android` | CapacitorJS: wrap the WASM/JS frontend bundle in an Android WebView shell. See [`docs/mobile.md`](mobile.md). |
 | `ob deploy test ios` | CapacitorJS: wrap the same bundle in a WKWebView shell. No Apple `TEAMID` flag in obelisk anymore; signing is handled in Xcode/Capacitor. See [`docs/mobile.md`](mobile.md). |
@@ -69,9 +64,9 @@ project by hand.
 
 | v1 | v2 |
 |---|---|
-| `nix-build -A exe` (reflex-platform) | `nix-build skeleton -A haskell-nix.serverExe.wasm` (or `.js`) |
-| reflex-platform `ghcjs` shell build | `nix-build skeleton -A haskell-nix.serverExe.js` (or `-A nixpkgs.serverExe.js`), or `cabal build` with `obelisk.frontend.target = "js"` |
-| (new) | `nix-build skeleton -A haskell-nix.containerImage.wasm` for an OCI image |
+| `nix-build -A exe` (reflex-platform) | `nix-build -A haskell-nix.serverExe.wasm` (or `.js`, or `nixpkgs.serverExe.<target>`) |
+| reflex-platform `ghcjs` shell build | `nix-build -A haskell-nix.serverExe.js`, or `cabal build backend -f js` |
+| (new) | `nix-build -A haskell-nix.containerImage.wasm` for an OCI image |
 | `ob run` triggering a JS build | `cabal build backend` / `cabal run backend` transparently cross-builds the frontend via the custom `Setup.hs` hooks (`OBELISK_CROSS_CABAL_ARGS` passes ghc-options through). |
 
 The nix shell is no longer mandatory for `cabal build`, but the cross-build
@@ -105,23 +100,23 @@ in {
     routeHost = "myapp.example.com";
     enableHttps = true;
     adminEmail = "admin@example.com";
+    acmeAcceptTerms = true;
   };
 }
 ```
 
-Apply it with `nixos-rebuild switch` (directly, via `deploy-rs`, or via the
-`scripts/ob-deploy` helper). Key options: `routeHost`, `enableHttps`,
-`adminEmail`, `internalPort` (default `8000`), `backendArgs`, `redirectHosts`,
-`configHash` (bump to force a restart).
+Apply it with `nixos-rebuild switch`, with `deploy-rs`, or with `ob-deploy`.
+Key options: `routeHost`, `enableHttps`, `adminEmail`, `acmeAcceptTerms`,
+`internalPort` (default `8000`), `backendArgs`, `redirectHosts`, `configHash`
+(bump to force a restart).
 
 ### obelisk-systemd (multiple apps / home-manager)
 
-For hosts running more than one obelisk app, or for user-level (non-root)
-deployment, [`obsidiansystems/obelisk-systemd`](https://github.com/obsidiansystems/obelisk-systemd)
+For hosts running more than one obelisk app, or for user-level deployment,
+[`obsidiansystems/obelisk-systemd`](https://github.com/obsidiansystems/obelisk-systemd)
 provides NixOS and home-manager modules that turn a built `serverExe` into a
-systemd service. It works with v2 unchanged: `serverExe.{wasm,js}` already has
-the directory layout it expects (a top-level `backend` binary plus assets), and
-it runs `./backend --port=...` just like the built-in module.
+systemd service. It works with v2 unchanged: `serverExe.<target>` has the
+layout it expects, a top-level `backend` binary plus assets.
 
 ```nix
 { ... }:
@@ -129,7 +124,7 @@ let app = import ./path/to/my-app { system = "x86_64-linux"; };
 in {
   # imports = [ obelisk-systemd.nixosModules.default ];  # however you wire the input
   obelisks."my-app" = {
-    obelisk = app.serverExe.wasm;          # or .js; a directory, not a bare binary
+    obelisk = app.haskell-nix.serverExe.wasm;   # the serverExe directory
     configSource = "/var/lib/my-app/config";
     port = 8000;
     enableNginxReverseProxy = true;
@@ -140,18 +135,16 @@ in {
 }
 ```
 
-`configSource` is the authoritative runtime config: point it at the
-project's *full* `config/` (common + frontend + backend, secrets included) kept
-on the host outside the Nix store. This complements `obelisk.config.path`: the
-build bakes only public `common`/`frontend` into `serverExe`, and `configSource`
-supplies everything (including `backend/` secrets) at runtime, so secrets never
-enter the store. Other options: `baseUrl` (default `/`, matching v2's relative
-routing), `userName`, `userHome`, `extraBackendArgs`.
+`configSource` is the runtime config: the project's full `config/`, secrets
+included, kept on the host outside the Nix store. `obelisk.config.path` bakes
+only the public `common/` and `frontend/` into `serverExe`, so secrets never
+enter the store. Other options: `baseUrl` (default `/`), `userName`,
+`userHome`, `extraBackendArgs`.
 
 ### OCI container
 
 ```bash
-nix-build skeleton -A containerImage.wasm
+nix-build -A haskell-nix.containerImage.wasm
 podman load < result            # or: docker load < result
 podman run -p 8000:8000 my-app:latest
 ```
@@ -159,12 +152,13 @@ podman run -p 8000:8000 my-app:latest
 The image runs `/app/backend --port=8000` and bundles the compressed static and
 frontend assets.
 
-### `scripts/ob-deploy`
+### `ob-deploy`
 
-A thin helper that wraps the above (build `serverExe`/`containerImage` and hand
-it to your host). It replaces the ergonomics of `ob deploy push`/`update`
-without the managed deploy repo. It is intentionally minimal; for anything
-custom, call `nixos-rebuild`/`podman` yourself.
+`ob-deploy <nixos-config> <user@host>` builds the host's NixOS system
+closure, copies it over SSH with `nix-copy-closure`, and activates it with
+`switch-to-configuration switch`. It keeps no deploy directory, manages no
+SSH keys, and never reboots. For anything else, call `nixos-rebuild` or
+`podman` yourself.
 
 ## Configuration and `common/route`
 
@@ -227,10 +221,10 @@ served at `/static/...`; the `$(static "...")` TH form still lives in
 - **Native-generates / cross-reuses split.** `obelisk-generated-static-custom` is
   `buildable: False` for wasm/ghcjs; the cross frontend build reuses the module
   produced by the native/backend build (which runs first).
-- **Gotcha:** the skeleton *tracks* placeholder
-  `static/generated/src/Obelisk/Generated/Static.hs` and
-  `static/generated/data/static`; builds overwrite them, so they can show as
-  modified in `git status`.
+- **Gotcha:** the skeleton tracks a placeholder
+  `static/generated/src/Obelisk/Generated/Static.hs`. Builds overwrite it, so
+  it can show as modified in `git status`. `static/generated/data/static` is
+  gitignored.
 
 To port: move your v1 `static/` files under `static/src/` and either keep the
 skeleton's `static/default.nix` (a build step) or set
@@ -250,14 +244,14 @@ These fail loudly; expect them:
   (`-no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"`). The
   checked encoder is now the top-level `checkedFullRouteEncoder` in
   `Common/Route.hs` rather than a `checkEncoder` call at the entry point.
-- **`cabal-version: 3.4` + `-Werror` hardening.** Packages use shared `common`
-  stanzas, `-Wunused-packages`, and `-Werror=incomplete-*`/`missing-*`. Expect to
-  trim dependency lists and fix incomplete patterns. `subPairRoute`/`subPairRoute_`
-  are deprecated in favor of `pairRoute`; under `-Werror` the deprecation is an
-  error.
-- **GHC 9.14 constraints.** You'll need the `allow-newer`/constraint blocks from
-  `cabal.project.config` (`if impl(ghc == 9.14.*)`, plus the `arch(wasm32)` block)
-  in your own `cabal.project`.
+- **`cabal-version: 3.4` and stricter warnings.** Packages share a `common`
+  stanza. Incomplete patterns, partial fields and missing fields are errors
+  always. The `strict` flag (`-f strict`) adds `-Werror`, so a CI build also
+  fails on an unused dependency and on the deprecated
+  `subPairRoute`/`subPairRoute_` (use `pairRoute`).
+- **GHC 9.14 constraints.** Nix builds append obelisk's
+  `lib/cabal.project.config` (the `impl(ghc == 9.14.*)` and `arch(wasm32)`
+  blocks) to your `cabal.project`, so your file needs no copy of them.
 - **Custom `Setup.hs` hard contracts.** A project must contain a root
   `cabal.project`, an executable `static/generate`, `backend/data/` and
   `frontend/data/` dirs, the cross cabals on `PATH`, and the env vars
@@ -272,9 +266,6 @@ These fail loudly; expect them:
   Apps using `defaultGhcjsWidgets` are unaffected (and gain a
   `frontend.wasm` preload hint on WASM); custom widgets should read
   `_ghcjsAppUrls_allJs` where they previously took the URL directly.
-- **reflex-dom is a fork** (`ymeister/reflex-dom`, pinned as a git submodule under
-  `deps/`). You cannot pin upstream `reflex-dom`/`reflex-dom-core` yet;
-  upstreaming the fork is planned.
 - **nix builds are supported on Linux only.** Outputs are exposed for all
   standard systems, but only `x86_64-linux` and `aarch64-linux` are
   tested and served by the binary caches; v1's macOS (`aarch64-darwin`) nix
@@ -301,15 +292,16 @@ These won't error; watch for them:
   `frontend.wasm`.
 - **WASM hydrates** the server-rendered DOM exactly like GHCJS (not a fresh
   client render).
-- **~45 `default-extensions` are applied globally** via shared cabal stanzas
-  (they were per-module in v1). Notably `OverloadedStrings` and
-  `ExtendedDefaultRules` are on everywhere, which can shift literal/defaulting
-  behavior in modules that didn't opt in.
+- **`default-extensions` apply globally** via the shared `common` stanza
+  (they were per-module in v1): `GHC2024` plus a long list, with
+  `OverloadedStrings` and `ExtendedDefaultRules` on everywhere, which can
+  shift literal and defaulting behaviour in modules that did not opt in.
 
 ## Porting checklist
 
-1. Re-scaffold from `skeleton/` (via `scripts/ob-init` or by copying it) and
-   move your `backend/`, `common/`, `frontend/`, and `static/` sources across.
+1. Re-scaffold with `nix run github:obsidiansystems/obelisk#init -- my-app`
+   (or `ob-init`) and move your `backend/`, `common/`, `frontend/` and
+   `static/` sources across.
 2. Replace reflex-platform `default.nix`/thunks with a `project.nix`
    (`nix-haskell` module). Inject obelisk via
    `inherit (obeliskLib) source-repository-packages;`.

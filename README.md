@@ -16,13 +16,16 @@ Supports both WASM and GHCJS frontend targets, GHC 9.14, and deploys to NixOS se
   - [ob-init](#ob-init)
   - [ob-run](#ob-run)
   - [ob-repl](#ob-repl)
+  - [ob-watch](#ob-watch)
   - [ob-hoogle](#ob-hoogle)
   - [ob-deploy](#ob-deploy)
 - [Nix Module System](#nix-module-system)
   - [project.nix](#projectnix)
+  - [Inputs](#inputs)
   - [Adding packages](#adding-packages)
   - [Package overrides](#package-overrides)
   - [Options](#options)
+  - [Fine-grained builds (Experimental)](#fine-grained-builds-experimental)
 - [Building](#building)
 - [Deployment](#deployment)
   - [NixOS Server](#nixos-server)
@@ -56,36 +59,35 @@ nix-shell -A haskell-nix
 ob-run
 ```
 
-Open http://localhost:8000 in your browser. The generated project carries
-obelisk as a git submodule at `deps/obelisk`, pinned to the revision it was
-scaffolded from and checked out recursively (obelisk keeps its own
-dependencies as submodules). Bump it later with `git -C deps/obelisk fetch &&
-git -C deps/obelisk checkout <rev> && git -C deps/obelisk submodule update
---init --recursive`.
+Open http://localhost:8000 in your browser. The project carries obelisk as a
+git submodule at `deps/obelisk`, pinned to the revision it was scaffolded
+from, with obelisk's own submodules checked out. Bump the pin with:
 
-Both `nix-shell`/`nix-build` and the flake commands build from that
-submodule, so clone the project with `--recurse-submodules` (or run `git
-submodule update --init --recursive` afterwards); on Nix < 2.27, also add
-`?submodules=1` to the project's flake URL.
+```bash
+git -C deps/obelisk fetch
+git -C deps/obelisk checkout <rev>
+git -C deps/obelisk submodule update --init --recursive
+```
 
-> **Set this once, on any machine that works with submodule-pinned
-> dependencies:**
+Every build reads that submodule, so clone the project with
+`--recurse-submodules`, or run `git submodule update --init --recursive`
+afterwards. On Nix < 2.27, also add `?submodules=1` to the project's flake
+URL.
+
+> Set this once on any machine that works with submodule-pinned
+> dependencies:
 >
 > ```bash
 > git config --global submodule.recurse true
 > git config --global diff.submodule log
 > ```
 >
-> `submodule.recurse` makes `clone`, `pull`, and `checkout` update submodules
-> for you, so switching branches or pulling can't silently leave `deps/` at
-> the wrong revision, the single most common way a submodule-pinned project
-> builds something you didn't expect. `diff.submodule log` shows a pin bump as
-> the commits it moves across instead of two opaque hashes. See
+> The first keeps `deps/` at the pinned revision across `clone`, `pull`, and
+> `checkout`. The second shows a pin bump as the commits it moves across. See
 > [docs/setup.md](docs/setup.md#2-git-submodules).
 
-If you have an obelisk checkout (for example to hack on obelisk itself),
-`nix-shell -A haskell-nix` in it and run `ob-init my-app` instead; see `ob-init --help`
-for the pin-vs-link details.
+From an obelisk checkout, run `nix-shell -A haskell-nix` and then
+`ob-init my-app` instead. `ob-init --help` explains pinning versus linking.
 
 ## Project Structure
 
@@ -95,6 +97,7 @@ A typical obelisk project:
 my-app/
   backend/             # Snap backend server
   common/              # Shared types and routes
+  config/              # Runtime config (common/, frontend/, backend/)
   frontend/            # Reflex-DOM frontend (library + executable)
     js/                # GHCJS cross-compilation wrapper
     wasm/              # WASM cross-compilation wrapper
@@ -104,9 +107,15 @@ my-app/
       custom/          # Custom Setup.hs for static manifest generation
   deps/
     obelisk/           # obelisk itself, as a git submodule
+    nix-haskell        # Symlink to obelisk/deps/nix-haskell
+    nixpkgs            # Symlink to nix-haskell/pins/nixpkgs
+    reflex-dom         # Symlink to obelisk/deps/reflex-dom
   cabal.project        # Cabal project file
   project.nix          # Nix-haskell project configuration
+  inputs.nix           # Dependency sources, from deps/ and flake.lock
   default.nix          # Nix entry point
+  shell.nix            # Nix shell entry point
+  release.nix          # Release matrix (every driver and frontend target)
   flake.nix            # Flake entry point (optional)
 ```
 
@@ -198,11 +207,14 @@ See [`docs/module.md`](docs/module.md) for obelisk-specific options and [`docs/n
   # Static assets path (hashed + compressed automatically)
   obelisk.static.path = import ./static { inherit pkgs; };
 
+  # Public config (common/ + frontend/) bundled into the production server
+  obelisk.config.path = ./config;
+
   # Frontend target: "wasm" (default) or "js"
   # obelisk.frontend.target = "wasm";
 
   shell = {
-    crossPlatforms = ps: with ps; [ ghcjs wasi32 ];
+    crossPlatforms = ps: with ps; [ wasi32 ];   # add ghcjs for `-f js` builds
     withHoogle = true;
   };
 }
@@ -212,21 +224,68 @@ See [`docs/module.md`](docs/module.md) for obelisk-specific options and [`docs/n
 
 Dependencies live under `inputs`, keyed the way flake inputs are. An entry accepts whatever a flake input can be: a flake input, a store path, a checkout, or a packed nix-thunk.
 
-`nixpkgs` and `haskell-nix` come from the pins under `deps/nix-haskell/pins`. The project's own flake inputs are picked up automatically, so following one is enough to override it, and entries of your own are carried through the same way:
+Without flakes, `inputs.nix` builds the set from two sources, the second winning:
+
+1. The inputs of `flake.lock`, when the file exists.
+2. Every directory or symlink under `deps/`. A packed nix-thunk resolves to the source it pins. A symlink to a git checkout is fetched with its submodules.
+
+The skeleton's `deps/nixpkgs`, `deps/nix-haskell` and `deps/reflex-dom` are symlinks into the obelisk submodule. nix-haskell's other pins (`haskell-nix`, `ghc-wasm-meta`, `sandstone`) come with it.
+
+The flake commands pass the flake's own inputs instead. The skeleton's `flake.nix` follows obelisk's:
 
 ```nix
-# flake.nix
 {
   inputs = {
-    obelisk.url = "path:./deps/obelisk";
+    self.submodules = true;
 
-    # Drop the `follows` to build against a different nixpkgs.
+    obelisk.url = ./deps/obelisk;
+    nix-haskell.follows = "obelisk/nix-haskell";
     nixpkgs.follows = "obelisk/nixpkgs";
+    flake-compat.follows = "obelisk/flake-compat";
+  };
+}
+```
+
+To override one, give it a URL in place of the `follows`. An entry of your own is carried through the same way:
+
+```nix
+{
+  inputs = {
+    self.submodules = true;
+
+    obelisk.url = ./deps/obelisk;
+    nix-haskell.follows = "obelisk/nix-haskell";
+    flake-compat.follows = "obelisk/flake-compat";
+
+    # A different nixpkgs.
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+
+    # A different haskell.nix.
+    haskell-nix.url = "github:input-output-hk/haskell.nix";
+
+    # A different ghc-wasm-meta, the wasm GHC bindist the nixpkgs driver
+    # builds the wasm target with.
+    ghc-wasm-meta = {
+      url = "github:haskell-wasm/ghc-wasm-meta";
+      flake = false;
+    };
+
+    # A different reflex-dom.
+    reflex-dom = {
+      url = "github:reflex-frp/reflex-dom/develop";
+      flake = false;
+    };
 
     # Available in project.nix as config.inputs.some-flake.
     some-flake.url = "github:someone/some-flake";
   };
 }
+```
+
+An input the flake declares can also be replaced for one command:
+
+```bash
+nix build --override-input haskell-nix github:input-output-hk/haskell.nix
 ```
 
 An entry set in `project.nix` wins over both, and works without flakes:
@@ -237,9 +296,9 @@ An entry set in `project.nix` wins over both, and works without flakes:
 }
 ```
 
-Precedence runs pins < flake inputs < `project.nix`. See [`docs/nix-haskell`](docs/nix-haskell) for the full option.
+Precedence runs flake inputs < `deps/` < `project.nix`. See [`docs/nix-haskell`](docs/nix-haskell) for the full option.
 
-The reflex-dom that obelisk builds against is separate: it comes from `deps/reflex-dom` in the obelisk checkout, and a `reflex-dom` flake input replaces it.
+`inputs.reflex-dom` is upstream [reflex-dom](https://github.com/reflex-frp/reflex-dom), from `deps/reflex-dom` or from a `reflex-dom` flake input.
 
 ### Adding packages
 
@@ -339,6 +398,32 @@ Key module options (see [`docs/module.md`](docs/module.md) for full reference):
 | `obelisk.frontend.js.optimization.level` | `"ADVANCED"` | Closure optimization level |
 | `obelisk.frontend.wasm.optimization.enable` | `true` | Run wasm-opt |
 | `obelisk.frontend.wasm.optimization.level` | `"2"` | wasm-opt -O level |
+
+### Fine-grained builds (Experimental)
+
+Off by default. nix-haskell can build the native packages one module at a time: sandstone writes one content-addressed derivation per module through Nix dynamic derivations, and the package's own build restores them and only links. A change to one module rebuilds one module. The wasm and js frontends build as before, since cross targets are never built this way.
+
+```nix
+{
+  fine-grained.enable = true;
+
+  # Every local package by default. Name the ones to build this way:
+  # fine-grained.packages = [ "backend" "common" ];
+
+  # A profiling library or haddock reads every module a second time.
+  packages.backend.enableLibraryProfiling = false;
+  packages.backend.doHaddock = false;
+}
+```
+
+The builds need a Nix with dynamic derivations, which a stock daemon lacks. `fine-grained.run` wraps one that drives a store of its own under `.nix/store` at the project root, filled from the machine's store by copy. `NIX_DYNAMIC_DRV_STORE` moves that store elsewhere.
+
+```bash
+nix-build -A config.fine-grained.run
+./result/bin/fine-grained-nix build -f . haskell-nix.serverExe.wasm
+```
+
+Add `.nix/` to the project's `.gitignore`, or every nix build copies the store into its source. See [`deps/nix-haskell/README.md`](deps/nix-haskell/README.md#fine-grained-builds) for what makes a plan recompile.
 
 ## Building
 
@@ -445,34 +530,20 @@ podman run -p 8000:8000 my-app:latest
 
 ### Native Apps
 
-Obelisk v2 does not cross-compile a native iOS/Android binary the way the legacy reflex-platform pipeline did; that build path has been removed. The mobile path for v2.0 is [CapacitorJS](https://capacitorjs.com/): a thin native WebView shell wrapped around the same WASM frontend web assets (HTML, JS, WASM) that the browser serves. There is no separate Haskell cross-compile for mobile: you ship the web build and Capacitor packages it for iOS and Android, exposing JavaScript hooks for OS features (camera, filesystem, push notifications, etc.) that your Haskell frontend reaches through GHC's JavaScript FFI.
+Obelisk v2 builds no native iOS or Android binary. The v1 cross-compile path is gone. [CapacitorJS](https://capacitorjs.com/) wraps the frontend web assets the browser serves (HTML, JS, WASM) in a native WebView shell for iOS and Android. It exposes OS features (camera, filesystem, push notifications) over a JavaScript bridge that the Haskell frontend reaches through the JavaScript FFI. Nothing mobile-specific is compiled in Haskell.
 
-See [`docs/mobile.md`](docs/mobile.md) for the step-by-step recipe.
+See [`docs/mobile.md`](docs/mobile.md) for the recipe.
 
-For desktop, the same web assets can be wrapped with [Tauri](https://tauri.app/) or [ElectronJS](https://www.electronjs.org/) (Capacitor also supports Electron).
+For desktop, [Tauri](https://tauri.app/) or [ElectronJS](https://www.electronjs.org/) wraps the same assets. Capacitor also supports Electron.
 
 #### Future: native mobile via Lynx
 
-Truly native (non-WebView) mobile rendering is a research direction, not a shipping feature. The most promising avenue is a Reflex renderer targeting [Lynx](https://lynxjs.org/). The cited experimental proof-of-concept is [miso-lynx](https://github.com/dmjio/miso), but it is not directly usable by Obelisk: miso follows the Elm architecture rather than Reflex's FRP model, so it serves only as evidence that the approach is feasible. A Reflex-Lynx renderer would be required before this becomes a real option.
+Native rendering without a WebView is a research direction. The candidate is a Reflex renderer for [Lynx](https://lynxjs.org/). [miso-lynx](https://github.com/dmjio/miso) shows the approach works for Haskell. miso follows the Elm architecture, so Obelisk needs a Reflex-Lynx renderer first.
 
 
 ## Skeleton
 
-The `skeleton/` directory provides a minimal project template. Copy it and modify to create a new project:
-
-```bash
-cp -r obelisk/skeleton my-new-app
-cd my-new-app
-# Edit project.nix, backend/src/Backend.hs, frontend/src/Frontend.hs, etc.
-```
-
-The skeleton includes:
-- Backend with Snap server and asset serving
-- Frontend with Reflex-DOM and route handling
-- Common route types
-- WASM and GHCJS cross-compilation wrappers
-- Static asset generation pipeline
-- Nix configuration (`default.nix`/`shell.nix`, plus an optional `flake.nix`)
+`skeleton/` is the template `ob-init` copies. Its layout is the one under [Project Structure](#project-structure). Its `deps/obelisk` is a symlink to the obelisk checkout, which `ob-init` replaces with a git submodule, or with `--link` a symlink to a local obelisk.
 
 
 ## Frequently Asked Questions (FAQ)

@@ -1,7 +1,7 @@
 # Machine setup: Nix, git submodules, binary caches, private repositories
 
-What a machine needs before it can build an Obelisk project. One-time setup;
-after this, the [Quick Start](../README.md#quick-start) applies.
+One-time setup for a machine that builds Obelisk projects. After it, the
+[Quick Start](../README.md#quick-start) applies.
 
 ## 1. Install Nix
 
@@ -15,13 +15,12 @@ Note: obelisk's nix builds currently support Linux only (`x86_64-linux` and
 
 ## 2. Git submodules
 
-obelisk keeps its own dependencies as git submodules, so it has to be pulled
-in recursively. Bring it into a project whichever way suits you: clone it with
-`--recurse-submodules`, import it as a flake with `?submodules=1`, or import
-it as a nix-thunk with `fetchSubmodules = true`.
+obelisk keeps its own dependencies as shallow git submodules, so it has to be
+pulled in recursively: clone it with `--recurse-submodules`, import it as a
+flake with `?submodules=1` (Nix 2.27 and later reads that from obelisk's
+`flake.nix`), or import it as a nix-thunk with `fetchSubmodules = true`.
 
-If you also pin your project's own dependencies as submodules (a scaffolded
-project already pins obelisk that way), set these once:
+A scaffolded project pins obelisk as a submodule too. Set these once:
 
 ```
 git config --global submodule.recurse true
@@ -37,10 +36,9 @@ or, in `~/.config/git/config` directly:
     submodule = log
 ```
 
-`submodule.recurse` makes `clone`, `pull`, `checkout`, and friends update
-submodules for you, so a branch switch or a pull can't silently leave a pin at
-the wrong revision. `diff.submodule = log` shows submodule bumps as the list
-of commits they move across, instead of a pair of opaque hashes.
+`submodule.recurse` makes `clone`, `pull` and `checkout` update submodules,
+so a branch switch or a pull cannot leave a pin at the wrong revision.
+`diff.submodule = log` shows a submodule bump as the commits it moves across.
 
 ## 3. Set up binary caches
 
@@ -49,10 +47,9 @@ and the WASM cross-compiler from source, which takes hours. With them it is a
 download. If any early build step runs longer than a few minutes, the caches
 are probably not active.
 
-The project's `flake.nix` declares the caches in `nixConfig`, so `nix
-develop`/`nix build` will offer to use them, but only if your user is in
-`trusted-users`, and classic `nix-shell`/`nix-build` ignores `nixConfig`
-entirely. Configuring them globally covers every case.
+The project's `flake.nix` declares the caches in `nixConfig`. `nix develop`
+and `nix build` apply that only for a user in `trusted-users`, and `nix-shell`
+and `nix-build` ignore it. A global configuration covers every case.
 
 On NixOS, add to `configuration.nix` and rebuild:
 

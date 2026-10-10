@@ -6,38 +6,22 @@ This project's release branch is `master`. This log is written from the perspect
 
 Obelisk v2.0.0 promotes the `next` line to the mainline release. It is a
 breaking rewrite: v1 projects do not build against v2 unchanged. See
-`docs/migrating-to-v2.md` for the full migration mapping. Projects that need the old stack should stay on the
-preserved `release/1.x` line.
+`docs/migrating-to-v2.md` for the migration mapping. Projects that need the
+old stack stay on the `release/1.x` line.
 
-* **GHC 8.10 to 9.14.** The toolchain moves to GHC 9.14.
-* **Frontend GHCJS to WASM.** WASM (`wasm32-unknown-wasi`) is the new default
-  frontend target; GHCJS remains available via `obelisk.frontend.target = "js"`.
-* **Build system reflex-platform to nix-haskell.** Builds are now driven by
-  nix-haskell/haskell.nix instead of reflex-platform, with obelisk's own
-  dependencies (`deps/nix-haskell`, `deps/reflex-dom`) as git submodules.
-  nix-haskell in turn carries its own nixpkgs and haskell.nix pins under
-  `pins/`.
-  Flakes are supported but optional: `nix-shell`/`nix-build` work throughout.
-* **`ob` CLI removed.** The Haskell `ob` command-line tool is gone, replaced by
-  shell scripts placed on `PATH` by the nix shell: `ob-run`, `ob-repl`,
-  `ob-watch` (ghcid error-watch), `ob-hoogle`, and the new `ob-init` (which
-  scaffolds a project with obelisk as a git submodule; also reachable as a
-  flake app: `nix run github:obsidiansystems/obelisk#init -- my-app`) and
-  `ob-deploy`. `ob-run` is a watch-and-rebuild dev server; v1's interpreted
-  in-process reload (ghcid + jsaddle-warp) is not yet restored and is the
-  flagship follow-up; see `docs/migrating-to-v2.md`. Plain-cabal workflows
-  (no nix shell) are documented in `docs/cabal.md`.
+* **GHC 8.10 to 9.14.**
+* **Frontend GHCJS to WASM.** WASM (`wasm32-unknown-wasi`) is the default
+  frontend target. GHCJS stays available via `obelisk.frontend.target = "js"`.
+* **Build system reflex-platform to nix-haskell.** Flakes are optional:
+  `nix-shell` and `nix-build` work throughout. See "Nix module system" and
+  "Two nix-haskell drivers" below.
+* **`ob` CLI removed.** Shell scripts on the nix shell's `PATH` replace it.
+  See "Development tools" below. Plain-cabal workflows are in `docs/cabal.md`.
 * **Deployment model changed.** The managed `ob deploy` workflow
-  (`init`/`push`/`test`) is removed. Deploy via the `services.obelisk` NixOS
-  module, the produced OCI container image, or the minimal `ob-deploy` script.
-* **Mobile pipeline changed.** The native iOS/Android build pipeline is removed.
-  CapacitorJS is the new path to mobile apps; Reflex-Lynx is an ongoing research
+  (`init`/`push`/`test`) is removed. See "Deployment" below.
+* **Mobile pipeline changed.** The native iOS/Android build pipeline is
+  removed. CapacitorJS is the path to mobile apps. Reflex-Lynx is a research
   direction.
-
-The sections below detail the rewrite summarized above: the nix build system
-is rebuilt around nix-haskell and a NixOS-style module system, replacing
-reflex-platform with direct haskell.nix integration, adding the WASM frontend
-target alongside GHCJS and GHC 9.14 support.
 
 ### Vanilla cabal builds
 
@@ -60,7 +44,11 @@ target alongside GHCJS and GHC 9.14 support.
 * The frontend bundle pipeline runs nix-haskell's `js-optimize`, `wasm-optimize` and `wasm-jsffi`. The `obelisk.frontend.{js,wasm}.optimization.*` options set the top layer of the `closure-compiler` and `wasm-opt` settings, so a project can still state any field at any layer. `obelisk.frontend.js.optimization.extraFlags` adds to the declared flags, while a direct `closure-compiler.extraFlags` replaces them
 * New `nix/lib.nix` with composable haskell.nix overrides: `buildTypeOverride`, `staticManifestOverride`, `frontendDataOverride`, `backendDataOverride`, and the `cleanSource` / `thunkSource` / `thunkSources` source helpers
 * All overrides use `mkOptionalPackages` to safely skip absent packages in cross-compilation projects
-* Dependency sources are declared as `inputs`: `nixpkgs` and `haskell-nix` come from the submodules under `deps/nix-haskell/pins`, the project's own flake inputs override them automatically (and are carried through to `config.inputs`), and `inputs.<name>` in `project.nix` wins over both
+* Dependency sources are declared as `inputs`. Obelisk keeps its own under `deps/` as shallow git submodules: `nix-haskell`, `reflex-dom` (upstream `reflex-frp/reflex-dom`, branch `develop`) and `style.hs`. nix-haskell carries `nixpkgs` and `ghc-wasm-meta` as nix-thunks and `haskell-nix` and `sandstone` as submodules under `pins/`
+* Every nix entry file takes `inputs`, defaulting to `import ./inputs.nix`. That merges the inputs of `flake.lock`, when the file exists, with every directory or symlink under `deps/`, the latter winning. A packed nix-thunk resolves to its source. A symlink to a git checkout is fetched with submodules. The flake commands pass the flake's inputs instead, and `inputs.<name>` in `project.nix` wins over both. The resolved set is `config.inputs`
+* The skeleton's `deps/` carries `obelisk` plus the symlinks `nix-haskell`, `nixpkgs` and `reflex-dom` into it, so a scaffold resolves every input without a `flake.lock`. Its `.gitignore` ignores `flake.lock`
+* `nix/libs/prelude` re-exports nix-haskell's prelude (`recurse-for-derivations`, `link-farm-entries`), which the release matrices use
+* The bumped nix-haskell adds experimental fine-grained builds, `fine-grained.enable = true` in `project.nix`: one derivation per module through sandstone, on a Nix with dynamic derivations. It also adds `packages.<name>.previousIntermediates`. `.nix/`, where `fine-grained.run` keeps its store, is gitignored
 * `source-repository-packages` takes a packed nix-thunk directly (no `obeliskLib.thunkSource` wrapper), and a `subdir` list, so a multi-package repository needs one entry rather than one per package
 * Project sources are filtered through the `.gitignore` they carry before being copied into the nix store (`clean-src`), so `dist-newstyle`, `result` and `.git` no longer land in every derivation that names the project source, or force a rehash after each build
 * Default compiler: each driver's own, GHC 9.14 for haskell.nix and GHC 9.12 for nixpkgs. Set `compiler.name` to change both drivers, or `<driver>.compiler.name` to change one
@@ -79,12 +67,19 @@ target alongside GHCJS and GHC 9.14 support.
   `shell` under each driver namespace: `nix-build -A haskell-nix.serverExe.wasm`,
   `nix-build -A nixpkgs.serverExe.js`, `nix-shell -A haskell-nix`. The raw
   package set moved from `.nixpkgs` (now the driver namespace) to `.pkgs`.
-* `release.nix` is a matrix of driver, wasm-meta and frontend target, with
-  a leaf for each of `serverExe`, `containerImage`, `shell` and
-  `shell-build`, plus an `all` aggregate: `nix-build release.nix -A all`,
-  `nix-build release.nix -A serverExe.haskell-nix.wasm` (the flake's
-  `packages.<system>.release`). `shell-build` builds the skeleton with plain
-  cabal inside the project's shell.
+* `lib/` is a nix-haskell project of its own, and its test suites build.
+  `lib/release.nix` builds every library with both drivers for the build
+  platform and each cross target (`build.<driver>.<platform>.<package>`),
+  runs the style checks (`checks`) and the test suites (`tests`).
+* `skeleton/release.nix` is a matrix of driver, wasm-meta and frontend
+  target, with a leaf for each of `serverExe`, `containerImage`, `shell` and
+  `shell-build`. `shell-build` builds the skeleton with plain cabal inside
+  the project's shell.
+* The top `release.nix` combines both under `lib` and `skeleton`, plus an
+  `all` aggregate (the flake's `packages.<system>.release`):
+  `nix-build release.nix -A all`, `-A lib.checks`, `-A lib.tests`,
+  `-A skeleton.serverExe.haskell-nix.wasm`. The skeleton flake exposes its
+  own matrix as `packages.<system>.release`.
 * The skeleton flake exposes the project directly as
   `legacyPackages.<system>`, so `nix build .#haskell-nix.serverExe.wasm`
   works without a `default` segment.
@@ -131,10 +126,12 @@ target alongside GHCJS and GHC 9.14 support.
 
 ### Development tools
 
-* `ob-run`: watch-and-rebuild development server with inotifywait, forwards optimization level to cross-builds via `OBELISK_CROSS_CABAL_ARGS`, proper cleanup of all child processes on exit
+* `ob-run`: watch-and-rebuild development server with inotifywait, forwards optimization level to cross-builds via `OBELISK_CROSS_CABAL_ARGS`, proper cleanup of all child processes on exit. v1's interpreted in-process reload (ghcid + jsaddle-warp) is not restored yet and is the flagship follow-up. See `docs/migrating-to-v2.md`
 * `ob-repl`: optimizations-disabled REPL, defaults to loading backend + common + frontend
+* `ob-watch`: ghcid over the same `cabal repl`, type errors on every save, no server, no cross builds
 * `ob-hoogle`: local Hoogle documentation server with start/stop/restart, automatic cleanup on shell exit
-* `ob-init`: scaffolds a project from the skeleton (read from `$OBELISK_SKELETON`), pinning `deps/obelisk` as a git submodule at the revision scaffolded from; `--link` symlinks it to the local obelisk source instead (`$OBELISK_SRC`, the working tree the nix shell was entered from)
+* `ob-init`: scaffolds a project from the skeleton (read from `$OBELISK_SKELETON`). It pins `deps/obelisk` as a git submodule at the revision scaffolded from. `--link` symlinks it to the local obelisk source instead (`$OBELISK_SRC`, the working tree the nix shell was entered from). Also a flake app: `nix run github:obsidiansystems/obelisk#init -- my-app`
+* `ob-deploy`: builds a NixOS configuration's system closure, copies it to a host over SSH and switches to it
 
 ### Deployment
 
@@ -149,6 +146,13 @@ target alongside GHCJS and GHC 9.14 support.
   * frontend-js and frontend-wasm cross-compilation wrappers
   * `project.nix` with `source-repository-packages` from obelisk, cross-platform shell (ghcjs + wasi32), hoogle
   * `cabal.project` with arch conditionals excluding native-only packages from cross-builds
+
+### Libraries and style
+
+* `lib/` follows the shared Obsidian Haskell style from the `deps/style.hs` submodule. `lib/fourmolu.yaml` and `lib/.hlint.yaml` symlink into it and run as Nix shebang scripts. CI checks both through `nix-build release.nix -A lib.checks`
+* Every LANGUAGE pragma moved into a `common` stanza per cabal file, which needs `cabal-version: 2.2` and SPDX license names
+* Twelve `decodeUtf8` calls became `decodeUtf8Lenient`: a malformed URL or config file now yields replacement characters where it threw
+* The plain-cabal CI matrix builds `lib/` with GHC 8.10 through 9.14. GHC 8.6 and 8.8 are dropped, because post-qualified imports need `ImportQualifiedPost`
 
 ### Other
 

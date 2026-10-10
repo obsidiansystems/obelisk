@@ -16,7 +16,7 @@
 
 ### How do I declare a new Haskell dependency?
 
-Every component is a standard [cabal](https://www.haskell.org/cabal/) package. Add dependencies to the `build-depends` field in the appropriate `.cabal` file. Nix will automatically pick up the corresponding packages from the haskell.nix package set.
+Add it to `build-depends` in the package's `.cabal` file. Nix picks the package up from the driver's package set, haskell.nix or nixpkgs.
 
 ### How do I add or override Haskell dependencies?
 
@@ -83,7 +83,7 @@ anything the common options do not cover.
 
 ### How do I add more local packages?
 
-Add the package directory to the `packages:` stanza in `cabal.project` and create a standard `.cabal` file for it. The package will be automatically available in the nix shell and to `ob-run`/`ob-repl`.
+Add the package directory to the `packages:` or `optional-packages:` stanza in `cabal.project` and give it a `.cabal` file. The nix shell, `ob-run` and `ob-repl` pick it up.
 
 ### How do I switch between WASM and GHCJS frontends?
 
@@ -96,7 +96,7 @@ In `project.nix`:
 }
 ```
 
-For nix builds, `haskell-nix.serverExe.wasm`, `haskell-nix.serverExe.js` and `nixpkgs.serverExe.js` are always available regardless of the default target.
+Nix builds every target regardless of the default: `haskell-nix.serverExe.wasm`, `haskell-nix.serverExe.js`, `nixpkgs.serverExe.wasm` and `nixpkgs.serverExe.js`.
 
 ### How do I disable frontend optimization?
 
@@ -150,13 +150,11 @@ var lib;
 
 ### ob-run rebuilds too much. How do I speed it up?
 
-`ob-run` already disables all GHC optimizations (`-O0`, `-fno-specialise`, etc.) for fast rebuilds. If the WASM/GHCJS cross-build is slow, you can disable it temporarily by setting the `cross` flag to false in `backend.cabal`:
+`ob-run` already disables GHC optimizations. To skip the frontend cross-build while you work on the backend, build with the `native` flag, as `ob-repl` and `ob-watch` do:
 
 ```bash
-cabal run backend -f-cross
+cabal run backend -f native
 ```
-
-This skips the cross-compilation step entirely, useful when you're only working on backend code.
 
 ### cabal can't find obelisk-setup during cross-compilation
 
@@ -176,19 +174,15 @@ If you see `unknown package: ...:setup.obelisk-setup` during a cross-build, ensu
 
 ### How do I cache individual build components with Nix?
 
-Create a `release.nix` that lists the attributes you want to cache:
+The skeleton ships `release.nix`: a matrix of driver and frontend target with a `serverExe`, `containerImage`, `shell` and `shell-build` leaf for each cell, plus `all`. Build the cells you want to cache and push the results:
 
-```nix
-let
-  project = import ./. {};
-in {
-  serverExe = project.haskell-nix.serverExe.wasm;
-  containerImage = project.haskell-nix.containerImage.wasm;
-  shell = project.haskell-nix.shell;
-}
+```bash
+nix-build release.nix -A all
+nix-build release.nix -A serverExe.haskell-nix.wasm
+nix-build release.nix -A shell.nixpkgs
 ```
 
-Then build with `nix-build release.nix -A skeleton.serverExe` etc. Use `nix repl` to explore available attributes.
+Use `nix repl` to explore the attributes.
 
 ### How do I fix "Ambiguous module name" errors?
 
