@@ -120,10 +120,10 @@ setInitialRoute useHash = do
   initialLocation <- DOM.getLocation window
   initialUri <- getLocationUri initialLocation
   history <- DOM.getHistory window
-  DOM.replaceState history jsNull ("" :: Text) $
-    Just $
-      show $
-        setAdaptedUriPath useHash "/" initialUri
+  DOM.replaceState history jsNull ("" :: Text)
+    $ Just
+    $ show
+    $ setAdaptedUriPath useHash "/" initialUri
 
 data FrontendMode = FrontendMode
   { _frontendMode_hydrate :: Bool

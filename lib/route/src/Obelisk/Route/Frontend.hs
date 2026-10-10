@@ -495,11 +495,11 @@ runRouteViewT routeEncoder switchover useHash a = do
                    -- See: https://github.com/whatwg/html/issues/2174
                    _historyStateUpdate_title = ""
                  , _historyStateUpdate_uri =
-                     Just $
-                       setAdaptedUriPath useHash newPath $
-                         (_historyItem_uri currentHistoryState)
-                           { uriQuery = newQuery
-                           }
+                     Just
+                       $ setAdaptedUriPath useHash newPath
+                       $ (_historyItem_uri currentHistoryState)
+                         { uriQuery = newQuery
+                         }
                  }
           setState = attachWith f ((,) <$> current historyState <*> current route) changeState
   pure result

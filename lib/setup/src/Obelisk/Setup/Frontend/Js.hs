@@ -91,9 +91,9 @@ linkFrontendAssets extraFlags = do
       jsexeDir = binPath <> ".jsexe"
 
   jsexeExists <- doesDirectoryExist jsexeDir
-  unless jsexeExists $
-    fail $
-      "[Setup] GHCJS output directory not found: " <> jsexeDir
+  unless jsexeExists
+    $ fail
+    $ "[Setup] GHCJS output directory not found: " <> jsexeDir
 
   symlink jsexeDir (dataDir </> "frontend.jsexe")
   symlink (projectRoot </> "static" </> "generated" </> "data" </> "static") (dataDir </> "static")

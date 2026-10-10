@@ -83,7 +83,7 @@ staticAssetWorker
   -> Q Exp
 staticAssetWorker root staticOut fp = do
   exists <- runIO $ doesFileExist $ staticOut </> fp
-  when (not exists) $
-    fail $
-      "The file " <> fp <> " was not found in " <> staticOut
+  when (not exists)
+    $ fail
+    $ "The file " <> fp <> " was not found in " <> staticOut
   pure $ LitE $ StringL $ root </> fp

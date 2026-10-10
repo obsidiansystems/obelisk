@@ -160,9 +160,9 @@ copyWasiShim jsexeDir = do
     Just p -> pure p
   let distDir = shimPath </> "dist"
   distExists <- doesDirectoryExist distDir
-  unless distExists $
-    fail $
-      "[Setup] OBELISK_WASI_SHIM dist directory not found: " <> distDir
+  unless distExists
+    $ fail
+    $ "[Setup] OBELISK_WASI_SHIM dist directory not found: " <> distDir
   files <- listDirectory distDir
   let jsFiles = filter (\f -> takeExtension f == ".js") files
   for_ jsFiles $ \f -> do

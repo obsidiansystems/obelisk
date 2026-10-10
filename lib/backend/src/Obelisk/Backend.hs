@@ -376,16 +376,16 @@ delayedGhcjsScript
   -- ^ URL to GHCJS app JavaScript
   -> FrontendWidgetT r ()
 delayedGhcjsScript n allJsUrl =
-  elAttr "script" ("type" =: "text/javascript") $
-    text $
-      T.unlines
-        [ "setTimeout(function() {"
-        , "  var all_js_script = document.createElement('script');"
-        , "  all_js_script.type = 'text/javascript';"
-        , "  all_js_script.src = '" <> allJsUrl <> "';"
-        , "  document.body.appendChild(all_js_script);"
-        , "}, " <> T.pack (show n) <> ");"
-        ]
+  elAttr "script" ("type" =: "text/javascript")
+    $ text
+    $ T.unlines
+      [ "setTimeout(function() {"
+      , "  var all_js_script = document.createElement('script');"
+      , "  all_js_script.type = 'text/javascript';"
+      , "  all_js_script.src = '" <> allJsUrl <> "';"
+      , "  document.body.appendChild(all_js_script);"
+      , "}, " <> T.pack (show n) <> ");"
+      ]
 
 instance HasCookies Snap where
   askCookies = fmap (\c -> (cookieName c, cookieValue c)) <$> getsRequest rqCookies

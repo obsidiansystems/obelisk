@@ -750,9 +750,9 @@ enumEncoder f = Encoder $ do
           : fmap (("    " <>) . tshow) (Set.toList vs)
   case itraverse checkSingleton reversed :: Validation (Map r (Set p)) (Map r p) of
     Failure ambiguousEntries ->
-      throwError $
-        T.unlines $
-          "enumEncoder: ambiguous encodings detected:" : fold (imap showRedundant ambiguousEntries)
+      throwError
+        $ T.unlines
+        $ "enumEncoder: ambiguous encodings detected:" : fold (imap showRedundant ambiguousEntries)
     Success m ->
       pure $
         EncoderImpl
@@ -816,19 +816,19 @@ pathSegmentsTextEncoder =
 
 queryParametersTextEncoder :: (Applicative check, Applicative parse) => Encoder check parse [(Text, Maybe Text)] Text
 queryParametersTextEncoder =
-  Encoder $
-    pure $
-      EncoderImpl
-        { _encoderImpl_encode = \case
-            [] -> ""
-            params -> T.intercalate "&" (fmap encodeParameter params)
-        , _encoderImpl_decode =
-            pure . \case
-              "" -> []
-              encoded ->
-                let h :| t = splitTextNonEmpty "&" encoded
-                in fmap decodeParameter $ h : t
-        }
+  Encoder
+    $ pure
+    $ EncoderImpl
+      { _encoderImpl_encode = \case
+          [] -> ""
+          params -> T.intercalate "&" (fmap encodeParameter params)
+      , _encoderImpl_decode =
+          pure . \case
+            "" -> []
+            encoded ->
+              let h :| t = splitTextNonEmpty "&" encoded
+              in fmap decodeParameter $ h : t
+      }
   where
     encodeParameter (k, mv) =
       urlEncodeText True k <> case mv of
@@ -847,44 +847,44 @@ urlDecodeText q = T.decodeUtf8Lenient . urlDecode q . T.encodeUtf8
 
 listToNonEmptyEncoder :: (Applicative check, Applicative parse, Monoid a, Eq a) => Encoder check parse [a] (NonEmpty a)
 listToNonEmptyEncoder =
-  Encoder $
-    pure $
-      EncoderImpl
-        { _encoderImpl_encode = \case
-            [] -> mempty :| []
-            h : t -> h :| t
-        , _encoderImpl_decode = \(h :| t) ->
-            pure $
-              if h == mempty
-                then []
-                else h : t
-        }
+  Encoder
+    $ pure
+    $ EncoderImpl
+      { _encoderImpl_encode = \case
+          [] -> mempty :| []
+          h : t -> h :| t
+      , _encoderImpl_decode = \(h :| t) ->
+          pure $
+            if h == mempty
+              then []
+              else h : t
+      }
 
 prefixTextEncoder :: (Applicative check, MonadError Text parse) => Text -> Encoder check parse Text Text
 prefixTextEncoder p =
-  Encoder $
-    pure $
-      EncoderImpl
-        { _encoderImpl_encode = (p <>)
-        , _encoderImpl_decode = \v -> case T.stripPrefix p v of
-            Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> tshow p <> ", got " <> tshow (T.take (T.length p) v)
-            Just stripped -> pure stripped
-        }
+  Encoder
+    $ pure
+    $ EncoderImpl
+      { _encoderImpl_encode = (p <>)
+      , _encoderImpl_decode = \v -> case T.stripPrefix p v of
+          Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> tshow p <> ", got " <> tshow (T.take (T.length p) v)
+          Just stripped -> pure stripped
+      }
 
 prefixNonemptyTextEncoder :: (Applicative check, MonadError Text parse) => Text -> Encoder check parse Text Text
 prefixNonemptyTextEncoder p =
-  Encoder $
-    pure $
-      EncoderImpl
-        { _encoderImpl_encode = \case
-            "" -> ""
-            v -> p <> v
-        , _encoderImpl_decode = \case
-            "" -> pure ""
-            v -> case T.stripPrefix p v of
-              Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> tshow p
-              Just stripped -> pure stripped
-        }
+  Encoder
+    $ pure
+    $ EncoderImpl
+      { _encoderImpl_encode = \case
+          "" -> ""
+          v -> p <> v
+      , _encoderImpl_decode = \case
+          "" -> pure ""
+          v -> case T.stripPrefix p v of
+            Nothing -> throwError $ "prefixTextEncoder: wrong prefix; expected " <> tshow p
+            Just stripped -> pure stripped
+      }
 
 packTextEncoder :: (Applicative check, Applicative parse, IsText text) => Encoder check parse String text
 packTextEncoder = viewEncoder packed
@@ -894,12 +894,12 @@ unpackTextEncoder = viewEncoder unpacked
 
 toListMapEncoder :: (Applicative check, Applicative parse, Ord k) => Encoder check parse (Map k v) [(k, v)]
 toListMapEncoder =
-  Encoder $
-    pure $
-      EncoderImpl
-        { _encoderImpl_encode = Map.toList
-        , _encoderImpl_decode = pure . Map.fromList -- TODO: Should we be stricter about repeated keys?
-        }
+  Encoder
+    $ pure
+    $ EncoderImpl
+      { _encoderImpl_encode = Map.toList
+      , _encoderImpl_decode = pure . Map.fromList -- TODO: Should we be stricter about repeated keys?
+      }
 
 joinPairTextEncoder :: (MonadError Text check, MonadError Text parse) => Text -> Encoder check parse (Text, Text) Text
 joinPairTextEncoder =
@@ -1168,17 +1168,17 @@ indexOnlyRouteEncoder = pathComponentEncoder indexOnlyRouteSegment
 
 someSumEncoder :: (Applicative check, Applicative parse) => Encoder check parse (Some (Sum a b)) (Either (Some a) (Some b))
 someSumEncoder =
-  Encoder $
-    pure $
-      EncoderImpl
-        { _encoderImpl_encode = \(Some t) -> case t of
-            InL l -> Left $ Some l
-            InR r -> Right $ Some r
-        , _encoderImpl_decode =
-            pure . \case
-              Left (Some l) -> Some (InL l)
-              Right (Some r) -> Some (InR r)
-        }
+  Encoder
+    $ pure
+    $ EncoderImpl
+      { _encoderImpl_encode = \(Some t) -> case t of
+          InL l -> Left $ Some l
+          InR r -> Right $ Some r
+      , _encoderImpl_decode =
+          pure . \case
+            Left (Some l) -> Some (InL l)
+            Right (Some r) -> Some (InR r)
+      }
 
 data Void1 :: Type -> Type
 
@@ -1188,12 +1188,12 @@ instance FiniteSome Void1
 
 void1Encoder :: (Applicative check, MonadError Text parse) => Encoder check parse (Some Void1) a
 void1Encoder =
-  Encoder $
-    pure $
-      EncoderImpl
-        { _encoderImpl_encode = foldSome $ \case {}
-        , _encoderImpl_decode = \_ -> throwError "void1Encoder: can't decode anything"
-        }
+  Encoder
+    $ pure
+    $ EncoderImpl
+      { _encoderImpl_encode = foldSome $ \case {}
+      , _encoderImpl_decode = \_ -> throwError "void1Encoder: can't decode anything"
+      }
 
 instance GShow Void1 where
   gshowsPrec _ = \case {}

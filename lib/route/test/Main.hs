@@ -267,10 +267,10 @@ overlaps =
       prop is f = f $ \n -> testProperty n . is . checkEncoder @(Either Text)
   in testGroup
        "Overlaps"
-       [ testGroup "No false positives" $
-           prop isRight $
-             const
-               []
+       [ testGroup "No false positives"
+           $ prop isRight
+           $ const
+             []
        , -- t "shadowEncoder" $ shadowEncoder bc ac -- https://github.com/obsidiansystems/obelisk/pull/987
 
          testGroup "No false negatives" $ prop isLeft $ \t ->
