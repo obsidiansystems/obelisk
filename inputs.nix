@@ -17,9 +17,10 @@ let src =
 
     flakeSrcs = builtins.mapAttrs (_: v: v.src or v) flakeInputs;
 
+    linkedCheckout = path: toString path + "/.";
     linkTarget = path:
       if builtins.pathExists (path + "/.git")
-      then builtins.fetchGit { url = path; submodules = true; }
+      then builtins.fetchGit { url = linkedCheckout path; submodules = true; }
       else builtins.path { inherit path; };
     thunkSource = path:
       if builtins.pathExists (path + "/thunk.nix")
