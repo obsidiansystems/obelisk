@@ -1,9 +1,11 @@
 # Migrating from Obelisk v1 to v2
 
-This guide covers moving a project from **Obelisk v1** (the `master` line: GHC
+This guide covers moving a project from **Obelisk v1** (`v1.3.0.0`: GHC
 8.10, GHCJS, reflex-platform, the Haskell `ob` CLI) to **Obelisk v2** (the
-`next` line: GHC 9.14, WASM and GHCJS frontends, `nix-haskell` /
-haskell.nix, and a small set of shell scripts in place of the `ob` binary).
+`master` release line, starting at `v2.0.0.0`: GHC 9.14, WASM and GHCJS
+frontends, `nix-haskell` / haskell.nix, and a small set of shell scripts in
+place of the `ob` binary). Projects that need the v1 stack should remain
+pinned to `v1.3.0.0`.
 
 v2 is a substantial rewrite. There is no automated upgrade path: the build
 system, the developer CLI, and the deployment model all changed. The mapping

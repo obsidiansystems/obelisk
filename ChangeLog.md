@@ -2,12 +2,13 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
-## 2.0.0.0
+## v2.0.0.0 - 2026-10-10
 
-Obelisk v2.0.0 promotes the `next` line to the mainline release. It is a
-breaking rewrite: v1 projects do not build against v2 unchanged. See
-`docs/migrating-to-v2.md` for the migration mapping. Projects that need the
-old stack stay on the `release/1.x` line.
+Obelisk v2.0.0.0 promotes `develop`, including the `next` rewrite, to the
+`master` release branch. It is a breaking rewrite: v1 projects do not build
+against v2 unchanged. See the [migration guide](docs/migrating-to-v2.md).
+Projects that need the old stack should remain pinned to
+[`v1.3.0.0`](https://github.com/obsidiansystems/obelisk/releases/tag/v1.3.0.0).
 
 * **GHC 8.10 to 9.14.**
 * **Frontend GHCJS to WASM.** WASM (`wasm32-unknown-wasi`) is the default
@@ -38,6 +39,8 @@ old stack stay on the `release/1.x` line.
 
 * New `nix/module.nix` module with declarative options:
   * `obelisk.static.path` / `obelisk.static.compress` / `obelisk.static.compressed`: static asset pipeline with cache-busting hashes, brotli + gzip compression
+  * `obelisk.config.path`: project configuration; only `common/` and `frontend/` are bundled as public config, never `backend/`
+  * `obelisk.driver`: select `"haskell-nix"` (default) or `"nixpkgs"`
   * `obelisk.frontend.target`: select `"js"` (GHCJS) or `"wasm"` (default) frontend compilation target
   * `obelisk.frontend.js.{package,optimization,optimized,compress,compressed}`: GHCJS pipeline with closure-compiler (ADVANCED mode by default)
   * `obelisk.frontend.wasm.{package,optimization,optimized,compress,compressed}`: WASM pipeline with wasm-opt + wasm-tools strip
@@ -152,7 +155,8 @@ old stack stay on the `release/1.x` line.
 * `lib/` follows the shared Obsidian Haskell style from the `deps/style.hs` submodule. `lib/fourmolu.yaml` and `lib/.hlint.yaml` symlink into it and run as Nix shebang scripts. CI checks both through `nix-build release.nix -A lib.checks`
 * Every LANGUAGE pragma moved into a `common` stanza per cabal file, which needs `cabal-version: 2.2` and SPDX license names
 * Twelve `decodeUtf8` calls became `decodeUtf8Lenient`: a malformed URL or config file now yields replacement characters where it threw
-* The plain-cabal CI matrix builds `lib/` with GHC 8.10 through 9.14. GHC 8.6 and 8.8 are dropped, because post-qualified imports need `ImportQualifiedPost`
+* GHC 8.6 and 8.8 are dropped, because post-qualified imports need `ImportQualifiedPost`. The plain-cabal GHC 8.10–9.14 CI matrix is currently disabled
+* `.github/workflows/haskell.yml` runs the shared formatting and lint checks. `.github/workflows/nix.yml` builds the library and skeleton matrix from `release.nix -A attr-paths`, including library tests and plain-cabal shell builds; push jobs also upload signed build closures to the binary cache
 
 ### Other
 
@@ -160,13 +164,12 @@ old stack stay on the `release/1.x` line.
 * Generated module option documentation (`nix/docs.nix`)
 * Broadened CPP guards from `ghcjs_HOST_OS` to `defined(ghcjs_HOST_OS) || defined(wasm32_HOST_ARCH)` throughout frontend code
 
-## Unreleased (pre-v2)
+### Changes carried forward from pre-v2 develop
 
 * [#1038](https://github.com/obsidiansystems/obelisk/pull/1038): `Obelisk.Route`: Add `pathQueryEncoder` and `generalizeIdentity`
-* [#1071](https://github.com/obsidiansystems/obelisk/pull/1071): Support deployment information repository sub-directories
-* [#1086](https://github.com/obsidiansystems/obelisk/pull/1086): Delete extraneous config files during deploy
 * [#1099](https://github.com/obsidiansystems/obelisk/pull/1099): `Obelisk.Route`: Add `pairRoute` and deprecate `subPairRoute` and `subPairRoute_`
 * [#1131](https://github.com/obsidiansystems/obelisk/pull/1131): Add `MonadException` instance to `ConfigsT`
+* Historical deployment changes on develop included support for deployment information repository sub-directories ([#1071](https://github.com/obsidiansystems/obelisk/pull/1071)) and deleting extraneous config files during deploy ([#1086](https://github.com/obsidiansystems/obelisk/pull/1086)). They applied to the managed `ob deploy` workflow, which is removed in v2
 
 ## v1.3.0.0
 * [#1047](https://github.com/obsidiansystems/obelisk/pull/1047): Update default ios sdk to 15
