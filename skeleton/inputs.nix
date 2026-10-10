@@ -3,13 +3,17 @@ let src =
       then builtins.fetchGit { url = ./.; submodules = true; }
       else { outPath = ./.; };
 
-    flakeInputs = (import
-      (let lock = builtins.fromJSON (builtins.readFile ./flake.lock);
-       in fetchTarball {
-         url = "https://github.com/${lock.nodes.flake-compat.locked.owner}/${lock.nodes.flake-compat.locked.repo}/archive/${lock.nodes.flake-compat.locked.rev}.tar.gz";
-         sha256 = lock.nodes.flake-compat.locked.narHash;
-       }) { inherit src; }
-    ).outputs.inputs;
+    flakeInputs =
+      if builtins.pathExists ./flake.lock
+      then
+        (import
+          (let lock = builtins.fromJSON (builtins.readFile ./flake.lock);
+           in fetchTarball {
+             url = "https://github.com/${lock.nodes.flake-compat.locked.owner}/${lock.nodes.flake-compat.locked.repo}/archive/${lock.nodes.flake-compat.locked.rev}.tar.gz";
+             sha256 = lock.nodes.flake-compat.locked.narHash;
+           }) { inherit src; }
+        ).outputs.inputs
+      else {};
 
     flakeSrcs = builtins.mapAttrs (_: v: v.src or v) flakeInputs;
 
