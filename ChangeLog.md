@@ -2,6 +2,34 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+
+## Unreleased
+
+* **Portable web bundle output.** `mkWebBundle` assembles a self-contained,
+  symlink-free bundle (manifest + `www/index.html` + `www/ghcjs/` +
+  content-hashed `www/static/` with original-name aliases) for each frontend
+  target, exposed as `project.<driver>.webBundle.<target>` and released
+  through the skeleton matrix. Public config (`config/common`,
+  `config/frontend`) is baked into the generated HTML by the new native
+  `obelisk-frontend-html` executable; `config/backend` is never read.
+* **Explicit client boot modes.** Reserved head metadata
+  `<meta name="obelisk-frontend-mode" content="client|client-hash">` makes
+  `runFrontend` render immediately from the current URL (path/query or hash
+  fragment) without resetting the route; unrecognized values are errors, and
+  behavior without the metadata is unchanged. `obelisk.static.hashed` is a
+  new read-only option.
+* **Hash-mode link hrefs agree with history.** `runRouteViewT`'s URL
+  function (`runRouteUrl`) emits `/?q=x#item/a.b` in hash mode, so link
+  hrefs, reloads and back/forward name the same route.
+* **Mobile workflow.** `docs/mobile.md` now documents the exporter plus the
+  independently pinned
+  [`obelisk-capacitor`](https://github.com/obsidiansystems/obelisk-capacitor)
+  sibling instead of the unvalidated copy recipe. Core has no dependency on
+  the sibling.
+* **jsaddle-warp pinned** to the batch-pump stall fix
+  ([ghcjs/jsaddle#172](https://github.com/ghcjs/jsaddle/pull/172)) until it
+  is released upstream.
+
 ## v2.0.0.0 - 2026-10-10
 
 Obelisk v2.0.0.0 promotes `develop`, including the `next` rewrite, to the

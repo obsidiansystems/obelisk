@@ -530,11 +530,11 @@ podman run -p 8000:8000 my-app:latest
 
 ### Native Apps
 
-Obelisk v2 builds no native iOS or Android binary. The v1 cross-compile path is gone. [CapacitorJS](https://capacitorjs.com/) wraps the frontend web assets the browser serves (HTML, JS, WASM) in a native WebView shell for iOS and Android. It exposes OS features (camera, filesystem, push notifications) over a JavaScript bridge that the Haskell frontend reaches through the JavaScript FFI. Nothing mobile-specific is compiled in Haskell.
+Obelisk v2 builds no native iOS or Android binary. The v1 cross-compile path is gone. The frontend builds to a portable **web bundle** - `nix-build default.nix -A nixpkgs.webBundle.js` (or `haskell-nix.webBundle.wasm`) - a self-contained `www/` tree plus a manifest, with client-bootstrap HTML, public config injection, and the content-hashed static tree, servable from any origin root. [CapacitorJS](https://capacitorjs.com/) wraps that JavaScript bundle in a native WebView shell for iOS and Android; native OS features (camera, filesystem, push notifications) are reached over a JavaScript bridge from the Haskell frontend through jsaddle. Nothing mobile-specific is compiled in Haskell.
 
-See [`docs/mobile.md`](docs/mobile.md) for the recipe.
+The supported workflow - bundle export, an independently pinned Capacitor sibling with `ob-capacitor init`/`sync`, application-owned native projects, plugin interop, backend origins and CORS, signing, and the exercised platform matrix - is in [`docs/mobile.md`](docs/mobile.md).
 
-For desktop, [Tauri](https://tauri.app/) or [ElectronJS](https://www.electronjs.org/) wraps the same assets. Capacitor also supports Electron.
+For desktop, [Tauri](https://tauri.app/) or [ElectronJS](https://www.electronjs/) wraps the same assets. Capacitor also supports Electron.
 
 #### Future: native mobile via Lynx
 

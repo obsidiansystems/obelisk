@@ -1,139 +1,104 @@
 # Mobile apps on Obelisk v2 (CapacitorJS)
 
-> **Status: UNVALIDATED. This recipe is the intended path; the spike (running
-> the bundle in a real WebView on iOS/Android) has not yet been executed.
-> Validate before relying on it.**
+> **Status: the exporter and bundle format are validated in Obelisk's own CI**
+> (`webBundle.*` in the release matrix; browser boot/routing/asset assertions
+> run in the sibling's workflow). **Native iOS/Android acceptance runs in the
+> sibling repository's CI**, whose exercised platform matrix is recorded in
+> its [`compatibility.json`](https://github.com/obsidiansystems/obelisk-capacitor/blob/master/compatibility.json).
+> A platform not listed there is not claimed to work; simulator/emulator
+> proof is what is claimed, not physical-device or signed-store distribution.
 
 ## How this differs from Obelisk v1
 
 In v1, `ob deploy test android|ios` cross-compiled the Haskell frontend for
-the device. In v2 the frontend compiles to web assets (HTML, JavaScript and by
-default WebAssembly) that the system WebView runs:
+the device. In v2 the frontend compiles to web assets that the system WebView
+runs (iOS: `WKWebView`; Android: the Chromium-based Android WebView), wrapped
+by [CapacitorJS](https://capacitorjs.com/). Web, iOS and Android run the same
+frontend artifact; nothing mobile-specific is compiled in Haskell.
 
-- **iOS:** `WKWebView`
-- **Android:** the Chromium-based Android System WebView
-
-[CapacitorJS](https://capacitorjs.com/) wraps that bundle. It produces an
-Xcode project and an Android Gradle project whose web root is your bundle,
-and exposes native OS APIs (camera, filesystem, push) over a JS bridge that
-the Haskell frontend calls through the JavaScript FFI. Web, iOS and Android
-run the same frontend artifact.
-
-## The bundle you are wrapping
-
-The artifact to point Capacitor at is the assembled frontend output directory
-(the `jsexe`-style directory).
-
-- **WASM (default).** Built by the wasm32 cross-compile and assembled by
-  `Obelisk.Setup.Frontend.Wasm` into `frontend/data/frontend.jsexe/` during
-  `cabal build backend`. The directory contains `frontend.wasm`,
-  `ghc_wasm_jsffi.js`, `all.js` (the loader, source `lib/setup/data/shim.js`)
-  and `wasi-shim.js` from `@bjorn3/browser_wasi_shim`. Under nix, the
-  optimized and compressed variants are `obelisk.frontend.wasm.optimized` and
-  `.compressed`, and `serverExe.wasm` embeds them.
-- **GHCJS.** If you set `obelisk.frontend.target = "js"`, the equivalent output
-  is a classic GHCJS `frontend.jsexe`, assembled the same way into
-  `frontend/data/`. This avoids the WASI-shim question below entirely and is the
-  safer fallback if the WASM path misbehaves in a WebView.
-
-You also need an `index.html` that loads the bundle (the same entry point the
-backend serves). Whatever HTML the backend serves at `/` for the web app is the
-HTML the WebView should load.
-
-## Recipe
-
-### 1. Build the frontend bundle
-
-`cabal build backend` cross-builds the frontend and assembles the bundle:
+## The portable web bundle
 
 ```bash
-cabal build backend
-# frontend/data/frontend.jsexe/ now holds the bundle
+nix-build default.nix -A nixpkgs.webBundle.js -o result-mobile
+# haskell-nix driver: nix-build default.nix -A haskell-nix.webBundle.js
 ```
 
-For an optimized bundle, build the server exe and take its frontend assets:
+The output is a self-contained directory, copyable anywhere and servable as
+the web root of any origin:
+
+```text
+obelisk-web-bundle.json     {"format":"obelisk-web-bundle","version":1,"target":"js","webDir":"www"}
+www/
+  index.html                client-bootstrap HTML: public config injected,
+                            <meta name="obelisk-frontend-mode" content="client">,
+                            and the deferred /ghcjs/all.js entry
+  ghcjs/                    complete optimized compiler output, filenames preserved
+  static/                   content-hashed files AND original-name aliases,
+                            as regular files
+```
+
+No symlinks, no `.assets` metadata, no precompressed encodings, no Nix store
+references. Only public configuration (`config/common`, `config/frontend`) is
+baked into the HTML; `config/backend` is never read, so nothing in the bundle
+is secret - treat everything in it as public. Consumers reject unknown
+manifest versions/targets and missing payloads.
+
+Booting is selected by the reserved head metadata: `client` renders
+immediately from the current path/query; the sibling switches it to
+`client-hash`, which routes through the URL hash (`/?q=x#item/a.b`) -
+Capacitor's local-server fallback is not a general SPA router, and a dotted
+route segment can otherwise be mistaken for an asset. Hash-mode link hrefs,
+reloads and back/forward all name the same URL. Without the metadata,
+ordinary web behavior (server-side rendering + hydration) is unchanged.
+
+WASM bundles (`haskell-nix.webBundle.wasm`) are produced by the same
+exporter; the initial mobile release consumes `target: "js"` only - the
+GHC WASM backend's asynchronous JSFFI depends on JSPI, which older
+WKWebView/Android WebView releases lack.
+
+## The supported workflow
+
+The Capacitor-specific contract lives in the independently pinned sibling
+[`obsidiansystems/obelisk-capacitor`](https://github.com/obsidiansystems/obelisk-capacitor),
+so Obelisk's own releases never wait on mobile SDKs and vice versa. Apps pin
+it under `deps/obelisk-capacitor`, separately from `deps/obelisk`:
 
 ```bash
-nix-build -A haskell-nix.serverExe.wasm   # or .js for GHCJS
-# the result's frontend.jsexe and static dirs are the optimized, compressed bundle
+git clone git@github.com:obsidiansystems/obelisk-capacitor.git deps/obelisk-capacitor
+(cd deps/obelisk-capacitor && npm ci)
+
+# 1. Build the bundle (in your Obelisk application)
+nix-build default.nix -A nixpkgs.webBundle.js -o result-mobile
+
+# 2. Scaffold the application (needs Node/npm only, not Xcode or the SDK)
+node deps/obelisk-capacitor/bin/ob-capacitor.mjs init DIR \
+  --app-id com.example.app --app-name "My App" --bundle result-mobile
+
+# 3. Add native projects once (application-owned and source-controlled)
+cd DIR && npx cap add android && npx cap add ios   # ios add needs macOS
+
+# 4. After each frontend rebuild: rebuild the bundle, then
+node deps/obelisk-capacitor/bin/ob-capacitor.mjs sync \
+  --project DIR --bundle result-mobile --platform android
+npx cap run android     # or cap open / native build tools
 ```
 
-To target GHCJS instead of WASM, set `obelisk.frontend.target = "js"` in
-`project.nix` (or pass `-f js` to `cabal build backend`) and rebuild.
+The sibling's README documents plugin interop (the `ObeliskCapacitor` jsaddle
+boundary, application-owned `native.mjs`), backend origins and CORS
+(Capacitor's `capacitor://localhost` / `https://localhost`), signing and
+release workflows, and migration from `obelisk-ios-xcode` (whose native C
+FFI/WKWebView handles do not carry across).
 
-### 2. Scaffold a Capacitor project
+## Why not just copy the jsexe?
 
-```bash
-npm init -y
-npm install @capacitor/core @capacitor/cli
-npx cap init my-app com.example.myapp --web-dir=www
-npm install @capacitor/ios @capacitor/android
-```
+The raw `frontend.jsexe` is not an application: its `index.html` is the GHCJS
+stock template (no `<base>`, no injected public config, no static tree), and
+the server's processed `*.assets` trees are metadata directories full of
+store-absolute links - neither is a portable payload. That is exactly what
+`webBundle` assembles, and what the sibling validates before staging.
 
-### 3. Point the web root at the bundle
-
-Copy (or symlink during development) the assembled bundle and its `index.html`
-into Capacitor's `web-dir` (`www/` above). The directory must contain
-`index.html` plus `frontend.wasm`, `ghc_wasm_jsffi.js`, `all.js`,
-`wasi-shim.js` (WASM), or `frontend.jsexe/*` (GHCJS).
-
-```bash
-mkdir -p www
-cp -rL frontend/data/frontend.jsexe/* www/   # or the serverExe's frontend.jsexe
-# ensure www/index.html loads the bundle the same way the web app does
-```
-
-### 4. Add platforms and run
-
-```bash
-npx cap add ios
-npx cap add android
-npx cap sync
-
-npx cap run ios          # boots an iOS simulator (needs Xcode)
-npx cap run android      # boots an Android emulator (needs Android Studio)
-```
-
-Re-run `npx cap sync` after each rebuild of the frontend bundle to copy the new
-assets into the native projects.
-
-### Tauri v2 as an alternative
+## Alternatives
 
 [Tauri v2](https://tauri.app/) also loads a web bundle into the system
-WebView on iOS and Android: point its frontend dist at the bundle directory.
-The WASI-shim risk below applies to it too.
-
-## Key risk to validate first
-
-**Does jsaddle-wasm + the browser WASI shim run inside `WKWebView`
-specifically?** This is the load-bearing unknown and the reason this doc is
-marked unvalidated.
-
-The WASM frontend depends on:
-
-- `jsaddle-wasm` driving the DOM from WASM,
-- the `@bjorn3/browser_wasi_shim` WASI polyfill (`wasi-shim.js`), loaded by
-  `all.js` and located at build time through `OBELISK_WASI_SHIM`.
-
-Both run in desktop browsers. `WKWebView` has differed from Safari in WASM
-instantiation limits, module caching, `instantiateStreaming` MIME handling
-and `SharedArrayBuffer` availability, and Android System WebView is
-version-skewed across devices. Streaming instantiation, file-descriptor
-emulation and any threading assumption in the shim are the likely failure
-points.
-
-**Spike to run before trusting this path:** assemble the WASM bundle, load it in
-a bare `WKWebView` on the iOS simulator (and Android System WebView on an
-emulator), and confirm the app boots, renders, and round-trips an event. If
-`WKWebView` chokes on the WASI shim, fall back to `obelisk.frontend.target =
-"js"` (GHCJS `frontend.jsexe`), which has no WASM/WASI dependency and is the
-conservative WebView target.
-
-## Future: native rendering via Reflex-Lynx
-
-WebView wrapping gives a web app in a native shell. A research track aims at
-native widgets: driving a platform UI toolkit from Reflex instead of the DOM.
-The proof of concept is miso-lynx, Miso rendering to ByteDance's
-[Lynx](https://lynxjs.org/) views. Miso and Reflex are different FRP
-frameworks, so this path needs a Reflex host for Lynx ("Reflex-Lynx") first.
-The Capacitor recipe above is the supported v2 mobile path.
+WebView; point its frontend dist at the bundle directory. The JSPI caveat
+above applies to WASM there too.

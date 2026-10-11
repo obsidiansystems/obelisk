@@ -55,8 +55,8 @@ project by hand.
 | `ob deploy init` | Write a NixOS host config that imports `serverModule` and sets `services.obelisk`. No managed deploy repo. |
 | `ob deploy push` | `ob-deploy <nixos-config> <user@host>`, or `nixos-rebuild switch` against that config. For containers, push the OCI image from `<driver>.containerImage.<target>`. |
 | `ob deploy update` | Bump your source pins by hand: update the `tag`/`rev` in `source-repository-package` stanzas (`cabal.project`) or update the relevant git submodule, then rebuild. There is no managed thunk to "update". |
-| `ob deploy test android` | CapacitorJS: wrap the WASM/JS frontend bundle in an Android WebView shell. See [`docs/mobile.md`](mobile.md). |
-| `ob deploy test ios` | CapacitorJS: wrap the same bundle in a WKWebView shell. No Apple `TEAMID` flag in obelisk anymore; signing is handled in Xcode/Capacitor. See [`docs/mobile.md`](mobile.md). |
+| `ob deploy test android` | Build the portable web bundle (`nix-build default.nix -A nixpkgs.webBundle.js`) and wrap it in an Android WebView shell with the [`obelisk-capacitor`](https://github.com/obsidiansystems/obelisk-capacitor) sibling (`ob-capacitor init`/`sync`). See [`docs/mobile.md`](mobile.md). |
+| `ob deploy test ios` | Same JavaScript web bundle in a WKWebView shell via the sibling; no Apple `TEAMID` flag in obelisk anymore, signing is handled in Xcode/Capacitor. See [`docs/mobile.md`](mobile.md). |
 | `ob thunk pack` | The `nix-thunk` CLI: `nix-thunk pack deps/<name>`. Thunks remain first-class for project deps: keep them under `deps/` and consume them in `project.nix` with `source-repository-packages = { my-dep = ./deps/my-dep; };`. Plain `source-repository-package` stanzas in `cabal.project` (git `location` + `tag`) also work. |
 | `ob thunk unpack` | `nix-thunk unpack deps/<name>` checks the dep out in place; the nix side keeps working (`source-repository-packages` handles both packed and unpacked thunks). |
 | `ob thunk update` | `nix-thunk update deps/<name>`, or edit the `tag`/`rev` in a `source-repository-package` stanza, then commit. |
@@ -285,9 +285,10 @@ These won't error; watch for them:
   callers on the frontend need the `JSM` context; `HasConfigs`/`getTextConfig`
   users are unaffected.
 - **`<base href="/">` is now unconditional** (the v1 `if os == "ios"` branch is
-  gone). A no-op for web, but under a Capacitor `capacitor://`/`file://` origin a
-  root-anchored base can break relative asset/route resolution; validate on the
-  Capacitor path.
+  gone). The portable web bundle serves the app at the origin root, so this is
+  a no-op for web and for Capacitor's local server; a hand-rolled embedding
+  that mounts the bundle under a subpath should validate asset/route
+  resolution.
 - **"GHCJS" names now govern WASM too.** `all.js`, `frontend.jsexe`,
   `ResourceRoute_Ghcjs`, and `_backendConfig_frontendGhcjsAssets` all apply to the
   WASM target; on WASM, `all.js` is a small bootstrap shim that fetches
@@ -315,8 +316,10 @@ These won't error; watch for them:
 5. Replace `ob run`/`ob repl`/`ob hoogle` muscle memory with
    `ob-run`/`ob-repl`/`ob-hoogle`.
 6. Replace `ob deploy` with the `services.obelisk` module or the OCI image (see
-   above); replace `ob deploy test android|ios` with the Capacitor path in
-   [`docs/mobile.md`](mobile.md).
+   above); replace `ob deploy test android|ios` with the
+   [`obelisk-capacitor`](https://github.com/obsidiansystems/obelisk-capacitor)
+   sibling's `ob-capacitor init`/`sync` around `nixpkgs.webBundle.js` (see
+   [`docs/mobile.md`](mobile.md)).
 7. Move `static/` files under `static/src/` and keep a `static/default.nix` (or
    set `obelisk.static.path = ./static/src`); see [Static assets](#static-assets).
 8. Decide whether you still need `config/common/route`; drop the hard dependency
