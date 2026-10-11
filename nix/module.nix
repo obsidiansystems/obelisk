@@ -17,10 +17,13 @@ let obeliskLib = import ./lib.nix { inherit system; };
 
     # Hash and copy static files into a flat directory with cache-busting names.
     hashedStatic = if rawStatic != null
-      then pkgs.runCommand "hashed-static" {
+      then pkgs.runCommand "hashed-static" ({
         LANG = "en_US.UTF-8";
+      } // lib.optionalAttrs pkgs.stdenv.isLinux {
+        # glibcLocales does not exist on darwin; macOS libc provides the
+        # UTF-8 locale without an archive.
         LOCALE_ARCHIVE = "${pkgs.glibcLocales}/lib/locale/locale-archive";
-      } ''
+      }) ''
         ${perDriver obeliskLib.obelisk-asset-manifest-generate} --module-only ${rawStatic} "$TMPDIR" Obelisk.Generated.Static $out
       ''
       else null;
