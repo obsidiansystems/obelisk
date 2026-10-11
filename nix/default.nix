@@ -31,6 +31,9 @@ in lib // {
 
             inherit serverExe;
 
+            webBundle = pkgs.lib.genAttrs targets (target:
+              lib.mkWebBundle { inherit proj target; });
+
             containerImage = pkgs.lib.genAttrs targets (target:
               lib.mkContainerImage { inherit proj target; });
 

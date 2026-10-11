@@ -19,6 +19,7 @@ module Obelisk.Backend
     -- * all.js script loading functions
   , deferredGhcjsScript
   , delayedGhcjsScript
+  , renderClientBootstrapHtml
 
     -- * all.js preload functions
   , preloadGhcjs
@@ -340,6 +341,28 @@ renderGhcjsFrontend
 renderGhcjsFrontend urlEnc ghcjsWidgets route configs f = do
   cookies <- askCookies
   renderFrontendHtml configs cookies urlEnc route f (_ghcjsWidgets_preload ghcjsWidgets) (_ghcjsWidgets_script ghcjsWidgets)
+
+-- | HTML that boots the compiled frontend as a standalone client: no
+-- prerendered body, the public configs injected into the head, and the
+-- reserved @obelisk-frontend-mode@ metadata selecting immediate client
+-- rendering from the current URL. The portable web bundle exporter
+-- (@obelisk-frontend-html@) emits this for the bundle's fixed entry URLs.
+renderClientBootstrapHtml
+  :: MonadIO m
+  => Map Text ByteString
+  -> GhcjsAppUrls
+  -> m ByteString
+renderClientBootstrapHtml configs urls = do
+  let widgets = ($ urls) <$> defaultGhcjsWidgets
+      modeMeta = elAttr "meta" ("name" =: "obelisk-frontend-mode" <> "content" =: "client") blank
+  renderFrontendHtml
+    configs
+    mempty
+    (const "/")
+    ()
+    (Frontend blank blank)
+    (modeMeta >> _ghcjsWidgets_preload widgets)
+    (_ghcjsWidgets_script widgets)
 
 -- | Preload all.js in a link tag.
 -- This is the default preload method.

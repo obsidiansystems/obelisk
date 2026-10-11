@@ -6,6 +6,8 @@ module Obelisk.Frontend
   , renderFrontendHtml
   , removeHTMLConfigs
   , FrontendMode (..)
+  , BootstrapMode (..)
+  , parseBootstrapModeContent
   , FrontendWidgetT
   , module Obelisk.Frontend.Cookie
   ) where
@@ -33,6 +35,7 @@ import Data.Foldable (for_)
 import Data.Map (Map)
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
+import Data.Text qualified as T
 import GHCJS.DOM (currentDocument)
 import GHCJS.DOM qualified as DOM
 import GHCJS.DOM.History qualified as DOM
@@ -41,7 +44,7 @@ import GHCJS.DOM.NodeList (IsNodeList, getLength, item)
 import GHCJS.DOM.ParentNode (querySelectorAll)
 import GHCJS.DOM.Types qualified as DOM
 import GHCJS.DOM.Window qualified as DOM
-import Language.Javascript.JSaddle (JSM, MonadJSM, jsNull)
+import Language.Javascript.JSaddle (JSM, JSString, MonadJSM, jsNull)
 import Obelisk.Configs
 import Obelisk.ExecutableConfig.Inject (injectExecutableConfigs)
 import Obelisk.ExecutableConfig.Lookup qualified as Lookup
@@ -50,6 +53,7 @@ import Reflex.Dom.Core
 import Reflex.Host.Class
 import Web.Cookie
 import "ghcjs-dom" GHCJS.DOM.Document (getHead)
+import "ghcjs-dom" GHCJS.DOM.Element (getAttribute)
 import Prelude hiding ((.))
 
 import Obelisk.Frontend.Cookie
@@ -94,6 +98,75 @@ data Frontend route = Frontend
 baseTag :: forall route t m. ObeliskWidget t route m => RoutedT t route m ()
 baseTag =
   elAttr "base" ("href" =: "/") blank -- TODO: Figure out the base URL from the routes
+
+-- | How 'runFrontend' should boot, selected by reserved head metadata:
+--
+-- > <meta name="obelisk-frontend-mode" content="client">
+--
+-- Absent metadata keeps the platform default ('platformFrontendMode').
+data BootstrapMode
+  = BootstrapMode_Platform
+  | BootstrapMode_Client
+  | BootstrapMode_ClientHash
+  deriving (Eq, Ord, Show)
+
+bootstrapModeMetaName :: Text
+bootstrapModeMetaName = "obelisk-frontend-mode"
+
+-- | Interpret the @content@ of one reserved bootstrap-mode metadata element.
+-- An unrecognized or missing value is an error rather than an implicit
+-- fallback to hydration.
+parseBootstrapModeContent :: Maybe Text -> Either Text BootstrapMode
+parseBootstrapModeContent = \case
+  Nothing -> Left "content attribute missing"
+  Just c
+    | c == "client" -> Right BootstrapMode_Client
+    | c == "client-hash" -> Right BootstrapMode_ClientHash
+    | otherwise ->
+        Left $
+          "unrecognized content "
+            <> T.pack (show c)
+            <> "; expected \"client\" or \"client-hash\""
+
+-- | Read the reserved bootstrap-mode metadata from the current document's
+-- head. Must run before the immediate renderer replaces the head and body
+-- (and before 'removeHTMLConfigs').
+lookupBootstrapMode :: JSM BootstrapMode
+lookupBootstrapMode = do
+  mContents <- runMaybeT $ do
+    doc <- MaybeT currentDocument
+    hd <- MaybeT $ getHead doc
+    els <- nodeListNodes =<< querySelectorAll hd ("meta[name=" <> bootstrapModeMetaName <> "]" :: Text)
+    traverse (MaybeT . elementContent) els
+  case mContents of
+    Nothing -> pure BootstrapMode_Platform
+    Just [] -> pure BootstrapMode_Platform
+    Just [c] -> either bootstrapError pure $ parseBootstrapModeContent c
+    Just _ -> bootstrapError "multiple metadata elements"
+  where
+    elementContent node =
+      DOM.castTo DOM.Element node >>= \case
+        Nothing -> pure Nothing
+        Just e -> Just <$> getAttribute e ("content" :: JSString)
+    bootstrapError msg =
+      error $ T.unpack $ "runFrontend: invalid " <> bootstrapModeMetaName <> " metadata: " <> msg
+
+-- | The 'FrontendMode' a bootstrap mode selects, and whether the current URL
+-- may be reset to the root route. Client modes render immediately from the
+-- current URL (path/query, or hash fragment) and never reset it.
+bootstrapFrontendMode :: BootstrapMode -> FrontendMode
+bootstrapFrontendMode = \case
+  BootstrapMode_Platform -> platformFrontendMode
+  BootstrapMode_Client ->
+    FrontendMode
+      { _frontendMode_hydrate = False
+      , _frontendMode_adjustRoute = False
+      }
+  BootstrapMode_ClientHash ->
+    FrontendMode
+      { _frontendMode_hydrate = False
+      , _frontendMode_adjustRoute = True
+      }
 
 removeHTMLConfigs :: JSM ()
 removeHTMLConfigs = void $ runMaybeT $ do
@@ -143,14 +216,21 @@ runFrontend
   -> Frontend (R route)
   -> JSM ()
 runFrontend validFullEncoder frontend = do
-  let mode = platformFrontendMode
+  -- The reserved head metadata and public configs must both be read before
+  -- any rendering: the immediate renderer replaces the head and body, taking
+  -- the metadata and injected configs with them.
+  bootstrapMode <- lookupBootstrapMode
+  let mode = bootstrapFrontendMode bootstrapMode
   configs <- lookupConfigs
   when (_frontendMode_hydrate mode) removeHTMLConfigs
   -- There's no fundamental reason that adjustRoute needs to control setting the
   -- initial route and *also* the useHash parameter; that's why these are
-  -- separate here.  However, currently, they are always the same.
-  when (_frontendMode_adjustRoute mode) $ do
-    setInitialRoute $ _frontendMode_adjustRoute mode
+  -- separate here.  Currently they only differ for client-hash boot, which
+  -- routes an explicit URL through its hash fragment and must not have that
+  -- route reset to the root.
+  when (bootstrapMode == BootstrapMode_Platform && _frontendMode_adjustRoute mode)
+    $ setInitialRoute
+    $ _frontendMode_adjustRoute mode
   runFrontendWithConfigsAndCurrentRoute mode configs validFullEncoder frontend
 
 -- A browser build arrives with server-rendered markup, a route already in the

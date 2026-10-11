@@ -70,3 +70,16 @@ library
     Obelisk.Frontend
     Obelisk.Frontend.Cookie
   ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+
+test-suite bootstrap
+  import: common
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  build-depends:
+      base
+    , obelisk-frontend
+    , tasty
+    , tasty-hunit
+    , text
+  ghc-options: -Wall -Werror

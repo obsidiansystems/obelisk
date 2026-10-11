@@ -78,6 +78,11 @@ let
         names = cell: targetEntries cell targets;
       };
 
+      webBundle = {
+        leaf = cell: lib.genAttrs targets (target: cell.project.${cell.driver}.webBundle.${target});
+        names = cell: targetEntries cell targets;
+      };
+
       shell = {
         leaf = cell: cell.project.${cell.driver}.shell;
         names = cell: [ (dotted cell.path) ];

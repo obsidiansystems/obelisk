@@ -33,6 +33,7 @@ module Obelisk.Route.Frontend
   , dynRouteLink
   , adaptedUriPath
   , setAdaptedUriPath
+  , runRouteUrl
   ) where
 
 #ifdef __GLASGOW_HASKELL__
@@ -477,7 +478,7 @@ runRouteViewT routeEncoder switchover useHash a = do
             where
               errorLeft (Left e) = error (T.unpack e)
               errorLeft (Right x) = x
-      (result, changeState) <- runRouteToUrlT (runSetRouteT $ runRoutedT a route) $ (\(p, q) -> T.pack $ p <> q) . encode theEncoder
+      (result, changeState) <- runRouteToUrlT (runSetRouteT $ runRoutedT a route) $ runRouteUrl useHash . encode theEncoder
       let f (currentHistoryState, oldRoute) change =
             let newRoute = appEndo change oldRoute
                 (newPath, newQuery) = encode theEncoder newRoute
@@ -693,3 +694,14 @@ pathToHash = ('#' :) . fromMaybe "" . L.stripPrefix "/"
 
 hashToPath :: String -> String
 hashToPath = ('/' :) . fromMaybe "" . L.stripPrefix "#"
+
+-- | The URL text for a route in the URL function 'runRouteViewT' supplies to
+-- widgets, agreeing with the history updates it performs for the same route:
+-- path mode is @path <> query@; hash mode keeps the query on the URI and puts
+-- the path in the fragment (@\/\@ <> query <> @\#@path@), e.g. @\/?q=x\#item\/a.b@.
+runRouteUrl :: Bool -> PathQuery -> Text
+runRouteUrl useHash (p, q) =
+  T.pack $
+    if useHash
+      then "/" <> q <> pathToHash p
+      else p <> q

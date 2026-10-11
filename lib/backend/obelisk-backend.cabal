@@ -76,3 +76,37 @@ library
 
   if arch(javascript) || arch(wasm32)
     buildable: False
+
+executable obelisk-frontend-html
+  import: common
+  hs-source-dirs: src-bin
+  main-is: frontend-html.hs
+  build-depends: base,
+                 bytestring,
+                 obelisk-backend,
+                 text
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+
+  if arch(javascript) || arch(wasm32)
+    buildable: False
+
+test-suite bootstrap-html
+  import: common
+  type: exitcode-stdio-1.0
+  main-is: BootstrapHtml.hs
+  hs-source-dirs: test
+  build-depends: base,
+                 base64-bytestring,
+                 bytestring,
+                 containers,
+                 directory,
+                 filepath,
+                 obelisk-backend,
+                 tasty,
+                 tasty-hunit,
+                 temporary,
+                 text
+  ghc-options: -Wall -Werror -Wredundant-constraints -Wincomplete-uni-patterns -Wincomplete-record-updates -O
+
+  if arch(javascript) || arch(wasm32)
+    buildable: False

@@ -18,11 +18,13 @@ import Data.Map (Map)
 import Data.Some (Some)
 import Data.Tabulation (HasFields (Field, fieldLens, tabulateFieldsA))
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Universe (Finite (universeF), Universe)
 import Data.Word (Word8)
 import GHC.Generics (Generic)
 import Test.QuickCheck.Instances ()
 import Test.Tasty (TestName, TestTree, defaultMain, testGroup)
+import Test.Tasty.HUnit (testCase, (@?=))
 import Test.Tasty.QuickCheck (testProperty)
 import Prelude hiding (id, (.))
 
@@ -36,7 +38,10 @@ import Test.QuickCheck
 import Control.Applicative (liftA2)
 #endif
 
+import Network.URI (parseURIReference, uriQuery)
+
 import Obelisk.Route
+import Obelisk.Route.Frontend (adaptedUriPath, runRouteUrl)
 import Obelisk.Route.TH
 
 data Input
@@ -317,6 +322,32 @@ roundtrips =
           ]
       ]
 
+-- The URL text runRouteViewT hands to widgets must, read back the way the
+-- router reads URLs (adaptedUriPath with the same useHash), decode to the
+-- route it came from - so a link href, a reload, and the history entry all
+-- name the same route. A dotted path segment with an encoded query is the
+-- case a plain path-join href gets wrong in hash mode.
+routeUrls :: TestTree
+routeUrls =
+  testGroup
+    "runRouteUrl"
+    [ testCase "path mode keeps path <> query" $
+        runRouteUrl False dotted @?= "/item/a.b?q=x"
+    , testCase "hash mode puts a dotted path in the fragment, query on the URI" $
+        runRouteUrl True dotted @?= "/?q=x#item/a.b"
+    , testCase "hash mode with no query" $
+        runRouteUrl True ("/deep/dir/x", "") @?= "/#deep/dir/x"
+    , testCase "hash-mode href reloads to the same path and query" $
+        decodeRoute True (runRouteUrl True dotted) @?= Just dotted
+    , testCase "path-mode href reloads to the same path and query" $
+        decodeRoute False (runRouteUrl False dotted) @?= Just dotted
+    ]
+  where
+    dotted = ("/item/a.b", "?q=x")
+    decodeRoute useHash urlText = do
+      u <- parseURIReference (T.unpack urlText)
+      pure (adaptedUriPath useHash u, uriQuery u)
+
 tests :: IO ()
 tests = do
   defaultMain $
@@ -325,6 +356,7 @@ tests = do
       [ testGroup "Exhaustive search" [exhaustive]
       , testGroup "Unit testing" [overlaps]
       , testGroup "Property testing" [roundtrips]
+      , testGroup "Frontend route URLs" [routeUrls]
       ]
 
 main :: IO ()

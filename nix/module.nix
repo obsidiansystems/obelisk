@@ -58,6 +58,20 @@ in {
         example = lib.literalExpression "import ./static { inherit pkgs; }";
       };
 
+      hashed = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        readOnly = true;
+        default = hashedStatic;
+        defaultText = lib.literalExpression "obelisk-asset-manifest-generate --module-only over obelisk.static.path";
+        description = ''
+          Read-only: static assets under content-hashed filenames with
+          original-name symlinks beside them - the URL space
+          Obelisk.Generated.Static addresses. Regular files and relative
+          symlinks only: no `.assets` metadata and no precompressed
+          encodings, which is what a portable web bundle copies.
+        '';
+      };
+
       compress = lib.mkOption {
         type = lib.types.bool;
         default = true;

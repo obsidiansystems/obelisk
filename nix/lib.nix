@@ -71,6 +71,13 @@ in rec {
     nixpkgs = proj: proj.packages.backend;
   };
 
+  # The native obelisk-frontend-html of a project's obelisk-backend: the
+  # portable web bundle's bootstrap-HTML generator.
+  frontendHtmlExe = {
+    haskell-nix = proj: proj.hsPkgs.obelisk-backend.components.exes.obelisk-frontend-html;
+    nixpkgs = proj: proj.haskellPackages.obelisk-backend;
+  };
+
   source-repository-packages = {
     obelisk-asset-manifest = src + "/lib/asset/manifest";
     obelisk-asset-serve-snap = src + "/lib/asset/serve-snap";
@@ -288,6 +295,64 @@ in rec {
       ${pkgs.lib.optionalString (configPath != null && builtins.pathExists (configPath + "/frontend")) ''
         cp -RL ${configPath + "/frontend"} $out/config/frontend
       ''}
+    '';
+
+  # Assemble the portable web bundle for the given frontend target: a
+  # self-contained directory holding a manifest, the client-bootstrap
+  # index.html, the optimized compiler output under www/ghcjs, and the
+  # content-hashed static tree (hashed files plus original-name aliases,
+  # dereferenced to regular files) under www/static. No symlinks, no
+  # `.assets` metadata, no precompressed encodings, nothing that depends on
+  # the Nix store: the tree is copyable and servable as the web root of any
+  # origin. Only public config (config/common, config/frontend) is baked
+  # into the HTML; config/backend is never read.
+  mkWebBundle = { proj, target }:
+    let targetProj = proj.override { obelisk.frontend.target = target; };
+        htmlExe = perDriver targetProj.config frontendHtmlExe targetProj;
+        optimized = targetProj.config.obelisk.frontend.${target}.optimized;
+        hashed = targetProj.config.obelisk.static.hashed;
+        configPath = targetProj.config.obelisk.config.path;
+    in pkgs.runCommand "obelisk-web-bundle" {
+      passthru = { inherit target; };
+    } ''
+      set -euo pipefail
+      mkdir -p $out/www/ghcjs $out/www/static
+
+      # The bootstrap HTML is generated from the project's public configs
+      # alone, in a staging directory carrying only those.
+      stage=$(mktemp -d)
+      mkdir -p "$stage/config"
+      ${pkgs.lib.optionalString (configPath != null && builtins.pathExists (configPath + "/common")) ''
+        cp -R ${configPath + "/common"} "$stage/config/common"
+      ''}
+      ${pkgs.lib.optionalString (configPath != null && builtins.pathExists (configPath + "/frontend")) ''
+        cp -R ${configPath + "/frontend"} "$stage/config/frontend"
+      ''}
+      (cd "$stage" && ${htmlExe}/bin/obelisk-frontend-html ${target}) > $out/www/index.html
+
+      # The optimized compiler output, filenames preserved.
+      cp -RL ${optimized}/. $out/www/ghcjs/
+
+      # The hashed static tree, original-name aliases dereferenced into
+      # regular files. Empty or absent static input leaves an empty dir.
+      ${pkgs.lib.optionalString (hashed != null) ''
+        cp -RL ${hashed}/. $out/www/static/
+      ''}
+
+      # The payload must stay portable: no symlinks and no asset metadata
+      # trees may survive the copies above.
+      if links=$(find $out -type l) && [ -n "$links" ]; then
+        echo "web bundle: symlinks left in payload:" >&2
+        echo "$links" >&2
+        exit 1
+      fi
+      if assets=$(find $out -name '*.assets') && [ -n "$assets" ]; then
+        echo "web bundle: .assets metadata in payload:" >&2
+        echo "$assets" >&2
+        exit 1
+      fi
+
+      echo '{"format":"obelisk-web-bundle","version":1,"target":"${target}","webDir":"www"}' > $out/obelisk-web-bundle.json
     '';
 
   # Build an OCI container image (podman/docker) for the given frontend target.
