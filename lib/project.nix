@@ -2,6 +2,12 @@
 
 let cabal = import "${nix-haskell-libs}/cabal.nix" { inherit pkgs; };
 
+    # jsaddle-warp carrying the batch-pump stall fix
+    # (https://github.com/ghcjs/jsaddle/pull/172) until upstream releases it.
+    jsaddle-warp-src = builtins.fetchGit {
+      url = "https://github.com/ghcjs/jsaddle.git";
+      rev = "2152422657602dc29c89140cebd3d7fae080acf1";
+    };
 in {
 
   imports = [
@@ -20,6 +26,7 @@ in {
     reflex-dom = ../deps/reflex-dom/reflex-dom;
     reflex-dom-core = ../deps/reflex-dom/reflex-dom-core;
     chrome-test-utils = ../deps/reflex-dom/chrome-test-utils;
+    jsaddle-warp = jsaddle-warp-src + "/jsaddle-warp";
   };
 
   nixpkgs.options.use-plan = true;

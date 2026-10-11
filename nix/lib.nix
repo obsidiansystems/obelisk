@@ -11,6 +11,12 @@ let src = ../.;
 
     nix-haskell = import nix-haskell-src { inherit system pkgs inputs; };
 
+    # jsaddle-warp carrying the batch-pump stall fix
+    # (https://github.com/ghcjs/jsaddle/pull/172) until upstream releases it.
+    jsaddle-warp-src = builtins.fetchGit {
+      url = "https://github.com/ghcjs/jsaddle.git";
+      rev = "2152422657602dc29c89140cebd3d7fae080acf1";
+    };
     # Standalone project built only to produce the manifest generator executable.
     obelisk-asset-manifest = nix-haskell {
       name = "obelisk-asset-manifest";
@@ -86,6 +92,7 @@ in rec {
     obelisk-executable-config-lookup = src + "/lib/executable-config/lookup";
     obelisk-frontend = src + "/lib/frontend";
     obelisk-route = src + "/lib/route";
+    jsaddle-warp = jsaddle-warp-src + "/jsaddle-warp";
     obelisk-snap-extras = src + "/lib/snap-extras";
     obelisk-setup = src + "/lib/setup";
     tabulation = src + "/lib/tabulation";
