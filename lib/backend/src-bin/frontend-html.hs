@@ -9,36 +9,29 @@
 module Main (main) where
 
 import Data.ByteString qualified as BS
-import Data.Text (Text)
+import Obelisk.Backend (GhcjsAppUrls (..), getPublicConfigs, renderClientBootstrapHtml)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 
-import Obelisk.Backend (GhcjsAppUrls (..), getPublicConfigs, renderClientBootstrapHtml)
-
-webBundleUrls :: Text -> Maybe GhcjsAppUrls
+webBundleUrls :: String -> Maybe GhcjsAppUrls
 webBundleUrls target = case target of
-  "js" ->
-    Just
-      GhcjsAppUrls
-        { _ghcjsAppUrls_allJs = "/ghcjs/all.js"
-        , _ghcjsAppUrls_wasm = Nothing
-        }
-  "wasm" ->
-    Just
-      GhcjsAppUrls
-        { _ghcjsAppUrls_allJs = "/ghcjs/all.js"
-        , _ghcjsAppUrls_wasm = Just "/ghcjs/frontend.wasm"
-        }
+  "js" -> Just GhcjsAppUrls
+    { _ghcjsAppUrls_allJs = "/ghcjs/all.js"
+    , _ghcjsAppUrls_wasm = Nothing
+    }
+  "wasm" -> Just GhcjsAppUrls
+    { _ghcjsAppUrls_allJs = "/ghcjs/all.js"
+    , _ghcjsAppUrls_wasm = Just "/ghcjs/frontend.wasm"
+    }
   _ -> Nothing
 
 main :: IO ()
-main =
-  getArgs >>= \case
-    [target] | Just urls <- webBundleUrls target -> do
-      configs <- getPublicConfigs
-      html <- renderClientBootstrapHtml configs urls
-      BS.putStr html
-    _ -> do
-      hPutStrLn stderr "usage: obelisk-frontend-html js|wasm"
-      exitFailure
+main = getArgs >>= \case
+  [target] | Just urls <- webBundleUrls target -> do
+    configs <- getPublicConfigs
+    html <- renderClientBootstrapHtml configs urls
+    BS.putStr html
+  _ -> do
+    hPutStrLn stderr "usage: obelisk-frontend-html js|wasm"
+    exitFailure
