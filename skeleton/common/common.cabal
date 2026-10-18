@@ -59,8 +59,6 @@ common common
       GHC2024
       --
     , AllowAmbiguousTypes
-    , ApplicativeDo
-    , Arrows
     , BangPatterns
     , BinaryLiterals
     , BlockArguments
