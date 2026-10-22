@@ -133,7 +133,7 @@ Projects that need the old stack should remain pinned to
 * `ob-repl`: optimizations-disabled REPL, defaults to loading backend + common + frontend
 * `ob-watch`: ghcid over the same `cabal repl`, type errors on every save, no server, no cross builds
 * `ob-hoogle`: local Hoogle documentation server with start/stop/restart, automatic cleanup on shell exit
-* `ob-init`: scaffolds a project from the skeleton (read from `$OBELISK_SKELETON`). It pins `deps/obelisk` as a git submodule at the revision scaffolded from. `--link` symlinks it to the local obelisk source instead (`$OBELISK_SRC`, the working tree the nix shell was entered from). Also a flake app: `nix run github:obsidiansystems/obelisk#init -- my-app`
+* `ob-init`: scaffolds a project from the skeleton (read from `$OBELISK_SKELETON`). It pins `deps/obelisk` as a git submodule at the revision scaffolded from. `--link` symlinks it to the local obelisk source instead (`$OBELISK_SRC`, the working tree the nix shell was entered from). Also a flake app: `nix run "git+https://github.com/obsidiansystems/obelisk?submodules=1"#init -- my-app`
 * `ob-deploy`: builds a NixOS configuration's system closure, copies it to a host over SSH and switches to it
 
 ### Deployment

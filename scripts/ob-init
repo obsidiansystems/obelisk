@@ -5,11 +5,11 @@
 # obelisk in under deps/, and creates an initial git commit.
 #
 # obelisk wiring: when a revision is known (--rev, or OBELISK_PIN_REV, which
-# the `nix run github:obsidiansystems/obelisk#init` app sets to the revision
-# it was fetched at), obelisk is added as a shallow git submodule at
-# deps/obelisk, checked out at that revision and initialised recursively
-# (obelisk keeps its own dependencies as submodules), so the project is
-# portable. Otherwise (or
+# the `nix run "git+https://github.com/obsidiansystems/obelisk?submodules=1"#init`
+# app sets to the revision it was fetched at), obelisk is added as a shallow
+# git submodule at deps/obelisk, checked out at that revision and initialised
+# recursively (obelisk keeps its own dependencies as submodules), so the
+# project is portable. Otherwise (or
 # with --link) deps/obelisk is a symlink to the local obelisk source, which
 # builds only on this machine.
 set -euo pipefail

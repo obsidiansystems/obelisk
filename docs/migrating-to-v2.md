@@ -42,7 +42,7 @@ project by hand.
 
 | v1 (`ob` / reflex-platform) | v2 replacement |
 |---|---|
-| `ob init` | `nix run github:obsidiansystems/obelisk#init -- my-app` (nothing to clone or install by hand; the scaffold gets obelisk as a git submodule at `deps/obelisk`, pinned to that revision), or `ob-init` from an obelisk shell. |
+| `ob init` | `nix run "git+https://github.com/obsidiansystems/obelisk?submodules=1"#init -- my-app` (nothing to clone or install by hand; the scaffold gets obelisk as a git submodule at `deps/obelisk`, pinned to that revision), or `ob-init` from an obelisk shell. |
 | `ob init --branch BRANCH` / `--symlink PATH` | No managed init source. Copy/point at the skeleton you want; obelisk's own libraries are injected via `obeliskLib.source-repository-packages` in `project.nix`. |
 | `ob run` | `ob-run`: watch-and-rebuild dev server on `:8000`. It rebuilds on a `.hs`, `.cabal` or `.project` change or on Enter, and cross-compiles the frontend during each rebuild. **Regression:** v1 reloaded interpreted code in-process (ghcid + jsaddle-warp). v2 relinks and restarts per change, so iteration is slower. Restoring the interpreted loop is the flagship post-2.0 follow-up. `config/common/route` and dev TLS are gone: pass Snap's `--port` after `--`, and put a local reverse proxy (caddy) in front for https. |
 | `ob watch` | `ob-watch`: ghcid over `cabal repl`. Type errors on every save, no server, no cross builds. |
@@ -301,7 +301,7 @@ These won't error; watch for them:
 
 ## Porting checklist
 
-1. Re-scaffold with `nix run github:obsidiansystems/obelisk#init -- my-app`
+1. Re-scaffold with `nix run "git+https://github.com/obsidiansystems/obelisk?submodules=1"#init -- my-app`
    (or `ob-init`) and move your `backend/`, `common/`, `frontend/` and
    `static/` sources across.
 2. Replace reflex-platform `default.nix`/thunks with a `project.nix`
