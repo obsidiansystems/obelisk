@@ -36,7 +36,7 @@
         });
 
       # Scaffold a new project without cloning obelisk by hand:
-      #   nix run github:obsidiansystems/obelisk#init -- my-app
+      #   nix run "git+https://github.com/obsidiansystems/obelisk?submodules=1"#init -- my-app
       # The generated project gets obelisk as a git submodule at deps/obelisk,
       # pinned to the exact revision this flake was fetched at.
       apps = eachSystem (system:
