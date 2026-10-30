@@ -1,4 +1,7 @@
-{ pkgs ? import <nixpkgs> {} }:
+{ system ? builtins.currentSystem
+, inputs ? import ../inputs.nix { inherit system; }
+, pkgs ? inputs.pkgs
+}:
 
 # Static assets derivation.
 # Add build steps here (e.g. postcss, tailwind, sass).
