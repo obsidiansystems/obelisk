@@ -1,6 +1,6 @@
 { system ? builtins.currentSystem
-, inputs ? import ../inputs.nix
-, pkgs ? import inputs.nixpkgs { inherit system; }
+, inputs ? import ../inputs.nix { inherit system; }
+, pkgs ? inputs.pkgs
 }:
 
 let nix-haskell = import inputs.nix-haskell { inherit system pkgs inputs; };

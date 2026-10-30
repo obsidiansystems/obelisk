@@ -10,16 +10,27 @@
   };
 
   outputs = inputs@{ self, ... }:
-    let nixpkgs = if inputs ? "nixpkgs" then inputs.nixpkgs else builtins.getFlake "nixpkgs";
-        eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
+    let sources = import ./inputs.nix { overrides = inputs; };
+
+        lib = import "${sources.nixpkgs}/lib";
+
+        eachSystem = lib.genAttrs lib.systems.flakeExposed;
+
+        inputsFor = system: import ./inputs.nix {
+          inherit system;
+          overrides = inputs;
+        };
     in {
       legacyPackages = eachSystem (system:
-        import ./default.nix { inherit system inputs; }
+        import ./default.nix {
+          inherit system;
+          inputs = inputsFor system;
+        }
       );
 
       packages = eachSystem (system:
-        let project = import ./default.nix { inherit system inputs; };
-            release = import ./release.nix { inherit system inputs; };
+        let project = import ./default.nix { inherit system; inputs = inputsFor system; };
+            release = import ./release.nix { inherit system; inputs = inputsFor system; };
         in rec {
           inherit release;
 
@@ -29,7 +40,7 @@
         });
 
       devShells = eachSystem (system:
-        let shells = import ./shell.nix { inherit system inputs; };
+        let shells = import ./shell.nix { inherit system; inputs = inputsFor system; };
         in {
           default = shells.haskell-nix;
           inherit (shells) nixpkgs;

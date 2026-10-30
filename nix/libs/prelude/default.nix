@@ -8,7 +8,7 @@
 #   recurse-for-derivations { wasm = <drv>; }
 #   => { wasm = <drv>; recurseForDerivations = true; }
 { lib
-, inputs ? import ../../../inputs.nix
+, inputs ? import ../../../inputs.nix {}
 }:
 
 let nix-haskell-src = inputs.nix-haskell;
