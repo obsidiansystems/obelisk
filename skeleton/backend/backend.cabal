@@ -86,7 +86,6 @@ common common
     , AllowAmbiguousTypes
     , BangPatterns
     , BinaryLiterals
-    , BlockArguments
     , ConstrainedClassMethods
     , ConstraintKinds
     , DataKinds
