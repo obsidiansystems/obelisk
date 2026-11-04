@@ -51,9 +51,10 @@ custom-setup
 library
     build-depends:      base
                         --
-                      , frontend
+                      , obelisk-generated-static
 
-    reexported-modules: Frontend
+    hs-source-dirs:     src
+    exposed-modules:    Frontend.Cross.Wasm
 
     default-language:   Haskell2010
 
