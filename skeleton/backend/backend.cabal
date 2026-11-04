@@ -86,7 +86,6 @@ common common
     , AllowAmbiguousTypes
     , BangPatterns
     , BinaryLiterals
-    , BlockArguments
     , ConstrainedClassMethods
     , ConstraintKinds
     , DataKinds
@@ -249,14 +248,11 @@ executable backend
                       --
                     , backend
 
-    if flag(native)
-      build-depends: frontend
-    elif flag(js)
-      build-depends: frontend-js
-    elif flag(wasm)
-      build-depends: frontend-wasm
-    else
-      build-depends: frontend
+    if !flag(native)
+      if flag(js)
+        build-depends: frontend-js
+      elif flag(wasm)
+        build-depends: frontend-wasm
 
     -- Directories containing source files.
     hs-source-dirs:   app

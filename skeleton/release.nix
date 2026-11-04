@@ -13,7 +13,7 @@
 # The nixpkgs driver takes that bindist from the skeleton, which is the only
 # wasm compiler it has.
 { system ? builtins.currentSystem
-, inputs ? import ./inputs.nix
+, inputs ? import ./inputs.nix { inherit system; }
 }:
 
 let obelisk = import ../nix { inherit system inputs; };

@@ -1,34 +1,81 @@
-let src =
+# Example:
+#   import ./inputs.nix { system = "x86_64-linux"; }
+#   => { haskell-nix = <source>; nixpkgs = <source>; sandstone = <source>; pkgs = <package set>; }
+#
+#   import ./inputs.nix { system = "x86_64-linux"; overrides = inputs; }  # in flake.nix
+#   => the same shape, with each flake input in place of the entry of the same name
+#
+#   import ./inputs.nix { system = "x86_64-linux"; overrides = { pkgs = myPkgs; }; }
+#   => the same sources, with myPkgs as pkgs
+{ system ? builtins.currentSystem
+, overrides ? {}
+}:
+
+let
+
+    # ------------------------------------------------------------------------
+    # Configuration
+    # ------------------------------------------------------------------------
+
+    # Directories of thunks and git submodules. Each replaces the flake.lock entry of the same name.
+    thunkDirs = [ ./deps ];
+
+    # The package set for every consumer.
+    mkPkgs = sources: import sources.nixpkgs {
+      inherit system;
+      overlays = builtins.attrValues (import ./nix/overlays.nix);
+    };
+
+    # ------------------------------------------------------------------------
+    # Flake inputs
+    # ------------------------------------------------------------------------
+
+    src =
       if builtins.pathExists ./.git
       then builtins.fetchGit { url = ./.; submodules = true; }
       else { outPath = ./.; };
 
-    flakeInputs =
+    lock = builtins.fromJSON (builtins.readFile ./flake.lock);
+
+    nodeName = ref:
+      if builtins.isList ref
+      then builtins.foldl' (name: input: nodeName lock.nodes.${name}.inputs.${input}) lock.root ref
+      else ref;
+
+    flakeCompat = lock.nodes.${nodeName lock.nodes.${lock.root}.inputs.flake-compat}.locked;
+
+    lockedInputs =
       if builtins.pathExists ./flake.lock
       then
         (import
-          (let lock = builtins.fromJSON (builtins.readFile ./flake.lock);
-           in fetchTarball {
-             url = "https://github.com/${lock.nodes.flake-compat.locked.owner}/${lock.nodes.flake-compat.locked.repo}/archive/${lock.nodes.flake-compat.locked.rev}.tar.gz";
-             sha256 = lock.nodes.flake-compat.locked.narHash;
-           }) { inherit src; }
+          (fetchTarball {
+            url = "https://github.com/${flakeCompat.owner}/${flakeCompat.repo}/archive/${flakeCompat.rev}.tar.gz";
+            sha256 = flakeCompat.narHash;
+          }) { inherit src; }
         ).outputs.inputs
       else {};
 
-    flakeSrcs = builtins.mapAttrs (_: v: v.src or v) flakeInputs;
+    flakeSources = inputs: builtins.mapAttrs (_: v: v.src or v) inputs;
+
+    # ------------------------------------------------------------------------
+    # Thunks
+    # ------------------------------------------------------------------------
 
     linkedCheckout = path: toString path + "/.";
+
     linkTarget = path:
       if builtins.pathExists (path + "/.git")
       then builtins.fetchGit { url = linkedCheckout path; submodules = true; }
       else builtins.path { inherit path; };
+
     thunkSource = path:
       if builtins.pathExists (path + "/thunk.nix")
       then import (path + "/thunk.nix")
-      else if builtins.readFileType path == "symlink"
+      else if builtins.readFileType path == "symlink" || builtins.pathExists (path + "/.git")
       then linkTarget path
       else path;
-    thunkSources = dir:
+
+    thunkSourcesIn = dir:
       let entries = builtins.readDir dir;
           trees = builtins.filter
             (name: builtins.elem entries.${name} [ "directory" "symlink" ])
@@ -39,6 +86,12 @@ let src =
           };
       in builtins.listToAttrs (map entryFor trees);
 
-    thunkSrcs = thunkSources ./deps;
+    thunkSources = builtins.foldl' (srcs: dir: srcs // thunkSourcesIn dir) {} thunkDirs;
 
-in flakeSrcs // thunkSrcs
+    # ------------------------------------------------------------------------
+    # Result
+    # ------------------------------------------------------------------------
+
+    sources = flakeSources lockedInputs // thunkSources // flakeSources overrides;
+
+in sources // { pkgs = overrides.pkgs or (mkPkgs sources); }

@@ -3,7 +3,10 @@
 # `obelisk.frontend.target` selects which pipeline feeds the backend.
 { config, options, lib, pkgs, system, nix-haskell-patches, ... }:
 
-let obeliskLib = import ./lib.nix { inherit system; };
+let obeliskLib = import ./lib.nix {
+      inherit system;
+      inputs = config.inputs;
+    };
 
     perDriver = obeliskLib.perDriver config;
 
@@ -279,6 +282,12 @@ in {
 
   config = {
     _module.args.obeliskLib = obeliskLib;
+
+    overlays = [
+      (final: prev: {
+        inputs.pkgs = prev.inputs.pkgs.appendOverlays (builtins.attrValues (import ./overlays.nix));
+      })
+    ];
 
     inherit (obeliskLib) extraCabalProject;
     # source-repository-packages disabled; using optional-packages in cabal.project instead.
