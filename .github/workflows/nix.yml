@@ -47,8 +47,9 @@ jobs:
           echo "paths=$paths" >> "$GITHUB_OUTPUT"
 
   # One build per cell, each on its own runner, and on a push each job
-  # signs and copies its own build closure to the cache. A broken cell
-  # cancels no other build and holds back no other upload.
+  # signs and copies to the cache every path its build made, also when the
+  # build fails or runs out of time. A broken cell cancels no other build
+  # and holds back no other upload.
   nix-smoke:
     needs: nix-attrs
     runs-on: ubuntu-latest
@@ -65,18 +66,29 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: ${{ env.EXTRA_NIX_CONFIG }}
-      - name: Build release.nix -A ${{ matrix.attr }}
+      - name: Instantiate release.nix -A ${{ matrix.attr }}
+        id: instantiate
         run: |
-          nix-build release.nix -A ${{ matrix.attr }} \
-            --no-out-link \
-            > "$RUNNER_TEMP/nix-build-outputs"
-          mapfile -t outputs < "$RUNNER_TEMP/nix-build-outputs"
-          nix-store --query --deriver "${outputs[@]}" > "$RUNNER_TEMP/nix-build-derivations"
+          nix-instantiate release.nix -A ${{ matrix.attr }} \
+            > "$RUNNER_TEMP/nix-build-derivations"
+      - name: Build release.nix -A ${{ matrix.attr }}
+        # Under the 360-minute job limit, so a build that runs out of time
+        # fails here and the upload below still runs.
+        timeout-minutes: 330
+        run: |
           mapfile -t derivations < "$RUNNER_TEMP/nix-build-derivations"
+          # Keep going past a failure, so the rest is built and uploaded.
+          nix-build "${derivations[@]}" --keep-going --no-out-link
+      - name: Collect the built paths
+        id: collect
+        if: ${{ !cancelled() && steps.instantiate.outcome == 'success' }}
+        run: |
+          mapfile -t derivations < "$RUNNER_TEMP/nix-build-derivations"
+          # `--include-outputs` adds only the outputs that exist.
           nix-store --query --requisites --include-outputs "${derivations[@]}" \
             | sort -u > "$RUNNER_TEMP/nix-build-paths"
       - name: Upload to S3 binary cache
-        if: github.event_name == 'push'
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.collect.outcome == 'success' }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
