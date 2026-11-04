@@ -2,6 +2,35 @@
 
 This project's release branch is `master`. This log is written from the perspective of the release branch: when changes hit `master`, they are considered released.
 
+## Unreleased
+
+* **Breaking:** the skeleton's `backend`, `common` and `frontend` packages
+  no longer list `ApplicativeDo`, `Arrows` and `BlockArguments` in
+  `default-extensions`.
+* The skeleton's frontend cross build no longer waits for the native
+  frontend. Under the `js` or `wasm` flag, `backend` depends only on
+  `frontend-js` or `frontend-wasm`, and imports `Frontend.Cross.Javascript`
+  or `Frontend.Cross.Wasm`.
+* `inputs.nix` builds every source and the package set, `inputs.pkgs`, for
+  flake and non-flake use alike. `nix/overlays.nix` holds named nixpkgs
+  overlays. `nix/module.nix` applies them to `inputs.pkgs` through
+  nix-haskell's `overlays`.
+* The `init` flake app is documented with its
+  `git+https://github.com/obsidiansystems/obelisk?submodules=1` URL.
+* CI uploads what a nix build made to the binary cache, also when the build
+  fails or runs out of time.
+* nix-haskell is bumped. Its
+  [changelog](deps/nix-haskell/CHANGELOG.md) lists every change. These
+  reach obelisk projects:
+  * For a compiler the project supplies, the haskell.nix driver also copies
+    the boot packages that the copied boot packages need, such as
+    `template-haskell-lift`.
+  * The ghc-wasm-meta module makes the bindist's `ghc --info` report the
+    `ghc-internal` id of its own database, which cabal 3.18 checks.
+  * `shell.withHoogle = false` takes effect in the haskell.nix driver.
+    nixpkgs' hoogle builds the shell's index.
+  * Pins: haskell.nix `e39eab3`, nixpkgs `7dcdd87` (nixos-26.05).
+
 ## v2.0.0.0 - 2026-10-10
 
 Obelisk v2.0.0.0 promotes `develop`, including the `next` rewrite, to the
