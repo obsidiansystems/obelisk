@@ -1,5 +1,5 @@
 { system ? builtins.currentSystem
-, inputs ? import ./inputs.nix
+, inputs ? import ./inputs.nix { inherit system; }
 }:
 
 # Obelisk's dev shell is the skeleton project's shell: it carries the GHC and

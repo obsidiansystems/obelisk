@@ -16,31 +16,42 @@
   };
 
   outputs = inputs@{ self, ... }:
-    let nixpkgs = if inputs ? "nixpkgs" then inputs.nixpkgs else builtins.getFlake "nixpkgs";
-        eachSystem = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
+    let sources = import ./inputs.nix { overrides = inputs; };
+
+        lib = import "${sources.nixpkgs}/lib";
+
+        eachSystem = lib.genAttrs lib.systems.flakeExposed;
+
+        inputsFor = system: import ./inputs.nix {
+          inherit system;
+          overrides = inputs;
+        };
     in {
       lib = eachSystem (system:
-        import ./nix { inherit system inputs; }
+        import ./nix {
+          inherit system;
+          inputs = inputsFor system;
+        }
       );
 
       packages = eachSystem (system: {
-        docs = (import ./nix/docs.nix { inherit system inputs; }).md;
-        release = (import ./release.nix { inherit system inputs; }).all;
+        docs = (import ./nix/docs.nix { inherit system; inputs = inputsFor system; }).md;
+        release = (import ./release.nix { inherit system; inputs = inputsFor system; }).all;
       });
 
       devShells = eachSystem (system:
-        let shells = import ./shell.nix { inherit system inputs; };
+        let shells = import ./shell.nix { inherit system; inputs = inputsFor system; };
         in {
           default = shells.haskell-nix;
           inherit (shells) nixpkgs;
         });
 
       # Scaffold a new project without cloning obelisk by hand:
-      #   nix run github:obsidiansystems/obelisk#init -- my-app
+      #   nix run "git+https://github.com/obsidiansystems/obelisk?submodules=1"#init -- my-app
       # The generated project gets obelisk as a git submodule at deps/obelisk,
       # pinned to the exact revision this flake was fetched at.
       apps = eachSystem (system:
-        let pkgs = nixpkgs.legacyPackages.${system};
+        let pkgs = (inputsFor system).pkgs;
             ob-init = pkgs.writeShellApplication {
               name = "ob-init";
               runtimeInputs = [ pkgs.git ];

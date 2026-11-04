@@ -3,7 +3,7 @@ name: nix
 on:
   pull_request:
   push:
-    branches: [ next, develop, master ]
+    branches: [ develop, master ]
 
 env:
   # The nix every job installs. release.nix evaluates through
@@ -20,15 +20,14 @@ jobs:
   # parts state their cells from their matrix lists, so this evaluation
   # builds nothing.
   nix-attrs:
-    # A pull request whose head is `next`, `develop` or `master` in this
-    # repository gets the push run for the same commit, so its own run is
-    # skipped. The jobs below need this one, so the skip covers the whole
-    # run. The branch list repeats the push trigger's: an expression cannot
-    # read it.
+    # A pull request whose head is `develop` or `master` in this repository
+    # gets the push run for the same commit, so its own run is skipped. The
+    # jobs below need this one, so the skip covers the whole run. The branch
+    # list repeats the push trigger's: an expression cannot read it.
     if: >-
       github.event_name == 'push'
       || github.event.pull_request.head.repo.full_name != github.repository
-      || !contains(fromJSON('["next", "develop", "master"]'), github.head_ref)
+      || !contains(fromJSON('["develop", "master"]'), github.head_ref)
     runs-on: ubuntu-latest
     outputs:
       paths: ${{ steps.eval.outputs.paths }}
@@ -48,8 +47,9 @@ jobs:
           echo "paths=$paths" >> "$GITHUB_OUTPUT"
 
   # One build per cell, each on its own runner, and on a push each job
-  # signs and copies its own build closure to the cache. A broken cell
-  # cancels no other build and holds back no other upload.
+  # signs and copies to the cache every path its build made, also when the
+  # build fails or runs out of time. A broken cell cancels no other build
+  # and holds back no other upload.
   nix-smoke:
     needs: nix-attrs
     runs-on: ubuntu-latest
@@ -66,18 +66,29 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: ${{ env.EXTRA_NIX_CONFIG }}
-      - name: Build release.nix -A ${{ matrix.attr }}
+      - name: Instantiate release.nix -A ${{ matrix.attr }}
+        id: instantiate
         run: |
-          nix-build release.nix -A ${{ matrix.attr }} \
-            --no-out-link \
-            > "$RUNNER_TEMP/nix-build-outputs"
-          mapfile -t outputs < "$RUNNER_TEMP/nix-build-outputs"
-          nix-store --query --deriver "${outputs[@]}" > "$RUNNER_TEMP/nix-build-derivations"
+          nix-instantiate release.nix -A ${{ matrix.attr }} \
+            > "$RUNNER_TEMP/nix-build-derivations"
+      - name: Build release.nix -A ${{ matrix.attr }}
+        # Under the 360-minute job limit, so a build that runs out of time
+        # fails here and the upload below still runs.
+        timeout-minutes: 330
+        run: |
           mapfile -t derivations < "$RUNNER_TEMP/nix-build-derivations"
+          # Keep going past a failure, so the rest is built and uploaded.
+          nix-build "${derivations[@]}" --keep-going --no-out-link
+      - name: Collect the built paths
+        id: collect
+        if: ${{ !cancelled() && steps.instantiate.outcome == 'success' }}
+        run: |
+          mapfile -t derivations < "$RUNNER_TEMP/nix-build-derivations"
+          # `--include-outputs` adds only the outputs that exist.
           nix-store --query --requisites --include-outputs "${derivations[@]}" \
             | sort -u > "$RUNNER_TEMP/nix-build-paths"
       - name: Upload to S3 binary cache
-        if: github.event_name == 'push'
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.collect.outcome == 'success' }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

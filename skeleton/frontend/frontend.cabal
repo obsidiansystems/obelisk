@@ -61,10 +61,8 @@ common common
       GHC2024
       --
     , AllowAmbiguousTypes
-    , Arrows
     , BangPatterns
     , BinaryLiterals
-    , BlockArguments
     , ConstrainedClassMethods
     , ConstraintKinds
     , DataKinds

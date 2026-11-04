@@ -1,9 +1,12 @@
+{-# LANGUAGE CPP #-}
+
 import Backend (run)
 
--- The Frontend import keeps the frontend dependency marked as used: under
--- the default flags it is the frontend-wasm/frontend-js wrapper package,
--- whose custom Setup.hs cross-compiles the frontend during this build.
-import Frontend ()
+#if defined(MIN_VERSION_frontend_js)
+import Frontend.Cross.Javascript ()
+#elif defined(MIN_VERSION_frontend_wasm)
+import Frontend.Cross.Wasm ()
+#endif
 
 main :: IO ()
 main = run

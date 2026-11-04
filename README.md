@@ -52,8 +52,7 @@ the toolchain from source.
 Scaffold a project without cloning anything by hand:
 
 ```bash
-nix run github:obsidiansystems/obelisk#init -- my-app
-# Nix < 2.27: nix run 'github:obsidiansystems/obelisk?submodules=1#init' -- my-app
+nix run "git+https://github.com/obsidiansystems/obelisk?submodules=1"#init -- my-app
 cd my-app
 nix-shell -A haskell-nix
 ob-run

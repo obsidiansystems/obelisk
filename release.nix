@@ -13,10 +13,10 @@
 #   nix-build lib/release.nix -A all
 #   nix-build skeleton/release.nix -A all
 { system ? builtins.currentSystem
-, inputs ? import ./inputs.nix
+, inputs ? import ./inputs.nix { inherit system; }
 }:
 
-let pkgs = import inputs.nixpkgs { inherit system; };
+let pkgs = inputs.pkgs;
 
     lib = pkgs.lib;
 
