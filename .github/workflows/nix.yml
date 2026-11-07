@@ -75,7 +75,7 @@ jobs:
       - name: Build release.nix -A ${{ matrix.attr }}
         # Under the 360-minute job limit, so a build that runs out of time
         # fails here and the upload below still runs.
-        timeout-minutes: 330
+        timeout-minutes: 300
         run: |
           mapfile -t derivations < "$RUNNER_TEMP/nix-build-derivations"
           # Keep going past a failure, so the rest is built and uploaded.
