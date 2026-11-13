@@ -6,6 +6,8 @@ on:
     branches: [ develop, master ]
 
 env:
+  # The lib packages state no license, and haskell.nix marks them unfree.
+  NIXPKGS_ALLOW_UNFREE: 1
   # The nix every job installs. release.nix evaluates through
   # import-from-derivation. The S3 cache is a substituter with its own key
   # trusted, so a job reuses what an earlier job pushed.
