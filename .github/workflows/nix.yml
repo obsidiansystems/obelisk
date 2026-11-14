@@ -6,14 +6,16 @@ on:
     branches: [ develop, master ]
 
 env:
+  # The lib packages state no license, and haskell.nix marks them unfree.
+  NIXPKGS_ALLOW_UNFREE: 1
   # The nix every job installs. release.nix evaluates through
   # import-from-derivation. The S3 cache is a substituter with its own key
   # trusted, so a job reuses what an earlier job pushed.
   EXTRA_NIX_CONFIG: |
     experimental-features = nix-command flakes
     allow-import-from-derivation = true
-    extra-substituters = https://cache.iog.io https://nixcache.reflex-frp.org
-    extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI= ${{ vars.NIX_CACHE_PUBLIC_KEY }}
+    extra-substituters = https://cache.iog.io https://nixcache.reflex-frp.org https://cache.zw3rk.com
+    extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI= loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk= ${{ vars.NIX_CACHE_PUBLIC_KEY }}
 
 jobs:
   # The `-A` path of every cell of release.nix, for the smoke matrix. The
@@ -46,10 +48,11 @@ jobs:
           paths=$(nix-instantiate --eval --strict --json --read-write-mode release.nix -A attr-paths)
           echo "paths=$paths" >> "$GITHUB_OUTPUT"
 
-  # One build per cell, each on its own runner, and on a push each job
-  # signs and copies to the cache every path its build made, also when the
-  # build fails or runs out of time. A broken cell cancels no other build
-  # and holds back no other upload.
+  # One build per cell, each on its own runner. On a push, and on a pull
+  # request from a branch of this repository, each job signs and copies to
+  # the cache every path its build made, also when the build fails or runs
+  # out of time. A broken cell cancels no other build and holds back no
+  # other upload.
   nix-smoke:
     needs: nix-attrs
     runs-on: ubuntu-latest
@@ -88,7 +91,12 @@ jobs:
           nix-store --query --requisites --include-outputs "${derivations[@]}" \
             | sort -u > "$RUNNER_TEMP/nix-build-paths"
       - name: Upload to S3 binary cache
-        if: ${{ !cancelled() && github.event_name == 'push' && steps.collect.outcome == 'success' }}
+        # A fork's pull request runs code nobody trusted, so it does not upload.
+        if: >-
+          steps.collect.outcome == 'success'
+          && !cancelled()
+          && (github.event_name == 'push'
+          || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
