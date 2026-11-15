@@ -202,8 +202,10 @@ optimizeWasm wasmFile = do
           ExitFailure _ ->
             hPutStrLn stderr "[Setup] wasm-tools strip failed; continuing"
 
--- | The target prefixes a wasm32 toolchain names its tools with. haskell.nix
--- builds its own compiler for @wasm32-unknown-wasi@, and a ghc-wasm-meta
--- bindist is built for @wasm32-wasi@.
+-- | The target prefixes a wasm32 toolchain names its tools with:
+--
+-- - @wasm32-unknown-wasip1@: haskell.nix's own compiler
+-- - @wasm32-unknown-wasi@: the nixpkgs driver's compiler
+-- - @wasm32-wasi@: a ghc-wasm-meta bindist
 wasmTargetPrefixes :: [String]
-wasmTargetPrefixes = ["wasm32-unknown-wasi", "wasm32-wasi"]
+wasmTargetPrefixes = ["wasm32-unknown-wasip1", "wasm32-unknown-wasi", "wasm32-wasi"]

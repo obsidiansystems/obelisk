@@ -6,6 +6,8 @@ on:
     branches: [ develop, master ]
 
 env:
+  # The lib packages state no license, and haskell.nix marks them unfree.
+  NIXPKGS_ALLOW_UNFREE: 1
   # The nix every job installs. release.nix evaluates through
   # import-from-derivation. The S3 cache is a substituter with its own key
   # trusted, so a job reuses what an earlier job pushed.
@@ -71,7 +73,18 @@ jobs:
         run: |
           nix-instantiate release.nix -A ${{ matrix.attr }} \
             > "$RUNNER_TEMP/nix-build-derivations"
+      - name: Check whether a cache has every output
+        # A cell with nothing left to build skips the build and the upload.
+        id: cache
+        run: |
+          mapfile -t derivations < "$RUNNER_TEMP/nix-build-derivations"
+          plan=$(nix-store --realise --dry-run "${derivations[@]}" 2>&1)
+          printf '%s\n' "$plan"
+          if grep -q 'will be built' <<< "$plan"; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build release.nix -A ${{ matrix.attr }}
+        if: ${{ steps.cache.outputs.build == 'true' }}
         # Under the 360-minute job limit, so a build that runs out of time
         # fails here and the upload below still runs.
         timeout-minutes: 330
@@ -81,7 +94,7 @@ jobs:
           nix-build "${derivations[@]}" --keep-going --no-out-link
       - name: Collect the built paths
         id: collect
-        if: ${{ !cancelled() && steps.instantiate.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.instantiate.outcome == 'success' && steps.cache.outputs.build == 'true' }}
         run: |
           mapfile -t derivations < "$RUNNER_TEMP/nix-build-derivations"
           # `--include-outputs` adds only the outputs that exist.
