@@ -1,6 +1,7 @@
 cabal-version: 2.2
 name: obelisk-route
 version: 0.2
+license: BSD-3-Clause
 build-type: Simple
 
 common common

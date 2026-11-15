@@ -1,7 +1,7 @@
 cabal-version:      3.4
 name:               obelisk-generated-static-custom
 version:            0.1.0.0
-license:            NONE
+license:            BSD-3-Clause
 build-type:         Custom
 data-dir:           data
 
