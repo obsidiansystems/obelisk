@@ -29,7 +29,7 @@ version:            0.1.0.0
 -- description:
 
 -- The license under which the package is released.
-license:            NONE
+license:            BSD-3-Clause
 
 -- The package author(s).
 -- author:
